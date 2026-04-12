@@ -1,0 +1,13 @@
+# Rust
+target/
+Cargo.lock.bak
+**/*.rs.bk
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+.idea/
+.vscode/
