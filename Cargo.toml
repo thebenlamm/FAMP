@@ -1,0 +1,73 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/famp-core",
+  "crates/famp-canonical",
+  "crates/famp-crypto",
+  "crates/famp-envelope",
+  "crates/famp-identity",
+  "crates/famp-causality",
+  "crates/famp-fsm",
+  "crates/famp-protocol",
+  "crates/famp-extensions",
+  "crates/famp-transport",
+  "crates/famp-transport-http",
+  "crates/famp-conformance",
+  "crates/famp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/benlamm/FAMP"
+authors = ["FAMP contributors"]
+
+[workspace.dependencies]
+# Crypto
+ed25519-dalek = { version = "2.2.0", default-features = false, features = ["std", "zeroize"] }
+sha2 = { version = "0.11.0", default-features = false }
+
+# Canonical JSON + serde
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.149", default-features = false, features = ["std"] }
+serde_jcs = "0.2.0"
+
+# Identifiers
+uuid = { version = "1.23.0", features = ["v7", "serde"] }
+base64 = "0.22.1"
+
+# HTTP / async
+axum = "0.8.8"
+reqwest = { version = "0.13.2", default-features = false, features = ["rustls-tls-native-roots", "json"] }
+rustls = { version = "0.23.38", default-features = false, features = ["ring", "std", "tls12"] }
+tokio = { version = "1.51.1", default-features = false }
+
+# Errors
+thiserror = "2.0.18"
+anyhow = "1.0.102"
+
+# Testing
+proptest = "1.11.0"
+stateright = "0.31.0"
+insta = "1.47.2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_crate_dependencies = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
