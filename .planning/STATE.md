@@ -1,3 +1,16 @@
+---
+gsd_state_version: 1.0
+milestone: v0.5.1
+milestone_name: "**Goal**: `FAMP-v0.5.1-spec.md` exists with every ambiguity from the 4-reviewer audit resolved in writing, with a documented changelog from v0.5. No Rust code in this phase — output is pure documentation that locks the interop contract before anyone writes bytes against it."
+status: unknown
+last_updated: "2026-04-12T23:53:05.253Z"
+progress:
+  total_phases: 9
+  completed_phases: 0
+  total_plans: 3
+  completed_plans: 1
+---
+
 # STATE: FAMP v0.5 Rust Reference Implementation
 
 **Last Updated:** 2026-04-12
@@ -6,15 +19,12 @@
 
 **Core Value:** A byte-exact, signature-verifiable implementation of FAMP that two independent parties can interop against from day one. If canonicalization or signature verification disagrees, nothing else matters.
 
-**Current Focus:** Roadmap approved — ready for Phase 0 (Toolchain & Workspace Scaffold).
+**Current Focus:** Phase 00 — toolchain-workspace-scaffold
 
 ## Current Position
 
-**Milestone:** v1 (Level 2 + Level 3 conformance)
-**Phase:** 0 — Toolchain & Workspace Scaffold
-**Plan:** Not yet planned
-**Status:** Roadmap created; awaiting `/gsd:plan-phase 0`
-**Progress:** `[░░░░░░░░░]` 0/9 phases complete
+Phase: 00 (toolchain-workspace-scaffold) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -24,6 +34,7 @@
 | Requirements validated | 0 / 153 |
 | Requirements mapped | 153 / 153 (100%) |
 | CI status | Not yet established |
+| Phase 00-toolchain-workspace-scaffold P01 | 1 | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -38,6 +49,8 @@
 - **tokio + axum + rustls + reqwest** — no async-std, no OpenSSL, no actix
 - **Native `async fn` in traits** (Rust ≥1.75), no `#[async_trait]`
 - **`MemoryTransport` + `HttpTransport` both in v1** — memory runs flows in microseconds, HTTP is the wire reference
+- **[00-01] rust-toolchain.toml pins 1.87.0** with rustfmt+clippy; declarative pin auto-applied by rustup on cd into repo
+- **[00-01] Dual Apache-2.0 OR MIT license** — both full-text files on disk before Plan 02 crate metadata references them
 
 ### Open TODOs
 
@@ -50,7 +63,7 @@
 
 - **User is new to Rust** — Phase 0 must budget for `cargo` edit-build-test loop learning before FAMP code begins
 - **`serde_jcs` correctness unknown** on RFC 8785 edge cases — fallback plan ready if CI gate fails
-- **No git history yet** — repo contains only `FAMP-v0.5-spec.md` + `.planning/`
+- **`serde_jcs` correctness unknown** on RFC 8785 edge cases — fallback plan ready if CI gate fails
 
 ## Session Continuity
 
@@ -65,6 +78,7 @@
 - **2026-04-12:** Project initialized; PROJECT.md, REQUIREMENTS.md (153 v1 reqs across 16 categories), research/ (SUMMARY, ARCHITECTURE, PITFALLS) created
 - **2026-04-12:** ROADMAP.md created — 9 phases derived from research DAG; 100% requirement coverage validated
 - **2026-04-12:** STATE.md initialized
+- **2026-04-12:** Plan 00-01 complete — rust-toolchain.toml, .gitignore, docs/.gitkeep, LICENSE-APACHE, LICENSE-MIT, README.md committed (3 tasks, 6 files, 1 min)
 
 ---
 *State initialized: 2026-04-12*

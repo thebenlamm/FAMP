@@ -34,7 +34,10 @@
   4. GitHub Actions CI runs fmt + clippy (strict, `unsafe_code = "forbid"`) + build + nextest on every push, green on main
   5. All crate versions pinned once via `[workspace.dependencies]`; no drift possible across crates
 
-**Plans**: TBD
+**Plans**: 3 plans
+  - [x] 0-01-PLAN.md — Toolchain pin + repo hygiene (rust-toolchain.toml, licenses, README, .gitignore)
+  - [ ] 0-02-PLAN.md — Workspace scaffold (root Cargo.toml with [workspace.dependencies] + lints, 13 crate stubs)
+  - [ ] 0-03-PLAN.md — Justfile + nextest config + GitHub Actions CI workflow
 
 ---
 
@@ -208,7 +211,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 0. Toolchain & Workspace Scaffold | 0/0 | Not started | - |
+| 0. Toolchain & Workspace Scaffold | 1/3 | In Progress|  |
 | 1. Spec Fork v0.5.1 | 0/0 | Not started | - |
 | 2. Canonical + Crypto Foundations | 0/0 | Not started | - |
 | 3. Envelope + Message Schemas | 0/0 | Not started | - |

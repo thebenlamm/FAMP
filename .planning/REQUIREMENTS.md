@@ -9,7 +9,7 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 
 ### Toolchain
 
-- [ ] **TOOL-01**: Rust toolchain installed via `rustup` with pinned version in `rust-toolchain.toml`
+- [x] **TOOL-01**: Rust toolchain installed via `rustup` with pinned version in `rust-toolchain.toml`
 - [ ] **TOOL-02**: Cargo workspace scaffolded with 12 library crates + 1 umbrella (or staged merge for Phase 2-3)
 - [ ] **TOOL-03**: `just` task runner installed with common targets (build, test, lint, fmt, bench)
 - [ ] **TOOL-04**: `cargo-nextest` configured as default test runner
@@ -266,7 +266,7 @@ Deferred to future milestone. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TOOL-01 | Phase 0 | Pending |
+| TOOL-01 | Phase 0 | Complete |
 | TOOL-02 | Phase 0 | Pending |
 | TOOL-03 | Phase 0 | Pending |
 | TOOL-04 | Phase 0 | Pending |
