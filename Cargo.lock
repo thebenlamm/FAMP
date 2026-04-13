@@ -316,6 +316,7 @@ name = "famp-fsm"
 version = "0.1.0"
 dependencies = [
  "famp-core",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror",
