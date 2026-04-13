@@ -1,4 +1,4 @@
-//! Narrow decoded input for TaskFsm::step.
+//! Narrow decoded input for `TaskFsm::step`.
 //!
 //! Derived from the §7.3a FSM-observable whitelist. famp-fsm never parses
 //! JSON, never verifies signatures, never touches wire bytes — callers

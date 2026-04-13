@@ -5,10 +5,12 @@
 //! the authoritative decision log. v0.7 is single-instance; competing-
 //! instance commit races (§11.5a) defer to Federation Profile v0.8+.
 
+pub mod engine;
 pub mod error;
 pub mod input;
 pub mod state;
 
+pub use engine::TaskFsm;
 pub use error::TaskFsmError;
 pub use input::TaskTransitionInput;
 pub use state::TaskState;
