@@ -12,6 +12,10 @@ build:
 test:
     cargo nextest run --workspace
 
+# Run famp-canonical test suite only (fast feedback loop)
+test-canonical:
+    cargo nextest run -p famp-canonical
+
 # Run doc tests (nextest does not run doctests)
 test-doc:
     cargo test --workspace --doc
