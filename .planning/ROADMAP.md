@@ -7,7 +7,7 @@
 
 ## Phases
 
-- [ ] **Phase 0: Toolchain & Workspace Scaffold** — Rust install, cargo workspace, CI skeleton (learning-budgeted)
+- [x] **Phase 0: Toolchain & Workspace Scaffold** — Rust install, cargo workspace, CI skeleton (learning-budgeted) (completed 2026-04-13)
 - [ ] **Phase 1: Spec Fork v0.5.1** — Docs-only; resolve ambiguities, lock canonicalization, domain separation, body schemas
 - [ ] **Phase 2: Canonical + Crypto Foundations** — RFC 8785 JCS, Ed25519 strict, core types, invariants (HIGHEST RISK)
 - [ ] **Phase 3: Envelope + Message Schemas** — 9 message classes, mandatory signatures, signed round-trip
@@ -37,7 +37,7 @@
 **Plans**: 3 plans
   - [x] 0-01-PLAN.md — Toolchain pin + repo hygiene (rust-toolchain.toml, licenses, README, .gitignore)
   - [x] 0-02-PLAN.md — Workspace scaffold (root Cargo.toml with [workspace.dependencies] + lints, 13 crate stubs)
-  - [ ] 0-03-PLAN.md — Justfile + nextest config + GitHub Actions CI workflow
+  - [x] 0-03-PLAN.md — Justfile + nextest config + GitHub Actions CI workflow
 
 ---
 
@@ -211,7 +211,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 0. Toolchain & Workspace Scaffold | 1/3 | In Progress|  |
+| 0. Toolchain & Workspace Scaffold | 3/3 | Complete   | 2026-04-13 |
 | 1. Spec Fork v0.5.1 | 0/0 | Not started | - |
 | 2. Canonical + Crypto Foundations | 0/0 | Not started | - |
 | 3. Envelope + Message Schemas | 0/0 | Not started | - |

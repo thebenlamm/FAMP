@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: "**Goal**: `FAMP-v0.5.1-spec.md` exists with every ambiguity from the 4-reviewer audit resolved in writing, with a documented changelog from v0.5. No Rust code in this phase — output is pure documentation that locks the interop contract before anyone writes bytes against it."
 status: unknown
-last_updated: "2026-04-13T00:03:24.661Z"
+last_updated: "2026-04-13T00:08:49.860Z"
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # STATE: FAMP v0.5 Rust Reference Implementation
@@ -19,7 +19,7 @@ progress:
 
 **Core Value:** A byte-exact, signature-verifiable implementation of FAMP that two independent parties can interop against from day one. If canonicalization or signature verification disagrees, nothing else matters.
 
-**Current Focus:** Phase 00 — toolchain-workspace-scaffold
+**Current Focus:** Phase 00 — toolchain-workspace-scaffold (COMPLETE — ready for Phase 01)
 
 ## Current Position
 
@@ -33,9 +33,10 @@ Plan: 3 of 3
 | Phases complete | 0 / 9 |
 | Requirements validated | 0 / 153 |
 | Requirements mapped | 153 / 153 (100%) |
-| CI status | Not yet established |
+| CI status | Green locally (just ci exits 0); first GitHub push will confirm |
 | Phase 00-toolchain-workspace-scaffold P01 | 1 | 3 tasks | 6 files |
 | Phase 00-toolchain-workspace-scaffold P02 | 7 | 2 tasks | 29 files |
+| Phase 00-toolchain-workspace-scaffold P03 | 12 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -54,6 +55,8 @@ Plan: 3 of 3
 - **[00-01] Dual Apache-2.0 OR MIT license** — both full-text files on disk before Plan 02 crate metadata references them
 - **[00-02] famp bin unused_crate_dependencies** — `#![allow(unused_crate_dependencies)]` in bin is a false positive suppress; remove in Phase 8 when bin uses lib re-exports
 - **[00-02] All 16 workspace deps pre-pinned** — stubs use none; later phases flip `workspace = true` without touching version strings
+- **[00-03] cargo-nextest 0.9.109** — 0.9.132 requires rustc 1.91; workspace pins 1.87.0; CI uses taiki-e/install-action which resolves automatically
+- **[00-03] just ci is the single pre-push gate** — fmt-check → lint → build → test → test-doc; green local implies green CI on push
 
 ### Open TODOs
 
@@ -83,6 +86,7 @@ Plan: 3 of 3
 - **2026-04-12:** STATE.md initialized
 - **2026-04-12:** Plan 00-01 complete — rust-toolchain.toml, .gitignore, docs/.gitkeep, LICENSE-APACHE, LICENSE-MIT, README.md committed (3 tasks, 6 files, 1 min)
 - **2026-04-13:** Plan 00-02 complete — root Cargo.toml, rustfmt.toml, 13 crate stubs with smoke tests committed (2 tasks, 29 files, 7 min). cargo build + clippy + test all green.
+- **2026-04-13:** Plan 00-03 complete — Justfile, .config/nextest.toml, .github/workflows/ci.yml committed (2 tasks, 3 files, 12 min). just ci exits 0; Phase 00 fully complete.
 
 ---
 *State initialized: 2026-04-12*

@@ -11,9 +11,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 
 - [x] **TOOL-01**: Rust toolchain installed via `rustup` with pinned version in `rust-toolchain.toml`
 - [x] **TOOL-02**: Cargo workspace scaffolded with 12 library crates + 1 umbrella (or staged merge for Phase 2-3)
-- [ ] **TOOL-03**: `just` task runner installed with common targets (build, test, lint, fmt, bench)
-- [ ] **TOOL-04**: `cargo-nextest` configured as default test runner
-- [ ] **TOOL-05**: GitHub Actions CI runs fmt, clippy (strict), build, and nextest on every push
+- [x] **TOOL-03**: `just` task runner installed with common targets (build, test, lint, fmt, bench)
+- [x] **TOOL-04**: `cargo-nextest` configured as default test runner
+- [x] **TOOL-05**: GitHub Actions CI runs fmt, clippy (strict), build, and nextest on every push
 - [x] **TOOL-06**: Workspace `[workspace.dependencies]` block pins every crate version in one place
 - [x] **TOOL-07**: Strict `clippy` config with `unsafe_code = "forbid"` at workspace root
 
@@ -268,9 +268,9 @@ Deferred to future milestone. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | TOOL-01 | Phase 0 | Complete |
 | TOOL-02 | Phase 0 | Complete |
-| TOOL-03 | Phase 0 | Pending |
-| TOOL-04 | Phase 0 | Pending |
-| TOOL-05 | Phase 0 | Pending |
+| TOOL-03 | Phase 0 | Complete |
+| TOOL-04 | Phase 0 | Complete |
+| TOOL-05 | Phase 0 | Complete |
 | TOOL-06 | Phase 0 | Complete |
 | TOOL-07 | Phase 0 | Complete |
 | SPEC-01 | Phase 1 | Pending |
