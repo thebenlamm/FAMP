@@ -1,8 +1,17 @@
-//! `famp-fsm` — FAMP v0.5.1 reference implementation.
-//!
-//! Phase 0 stub. Bodies land in later phases.
-
 #![forbid(unsafe_code)]
+//! famp-fsm — 5-state task lifecycle FSM for FAMP v0.7 Personal Runtime.
+//!
+//! See `.planning/phases/02-minimal-task-lifecycle/02-CONTEXT.md` for
+//! the authoritative decision log. v0.7 is single-instance; competing-
+//! instance commit races (§11.5a) defer to Federation Profile v0.8+.
+
+pub mod error;
+pub mod input;
+pub mod state;
+
+pub use error::TaskFsmError;
+pub use input::TaskTransitionInput;
+pub use state::TaskState;
 
 #[cfg(test)]
 mod tests {

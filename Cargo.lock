@@ -314,6 +314,12 @@ version = "0.1.0"
 [[package]]
 name = "famp-fsm"
 version = "0.1.0"
+dependencies = [
+ "famp-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "famp-identity"
