@@ -8,7 +8,7 @@
 ## Phases
 
 - [x] **Phase 0: Toolchain & Workspace Scaffold** — Rust install, cargo workspace, CI skeleton (learning-budgeted) (completed 2026-04-13)
-- [ ] **Phase 1: Spec Fork v0.5.1** — Docs-only; resolve ambiguities, lock canonicalization, domain separation, body schemas
+- [x] **Phase 1: Spec Fork v0.5.1** — Docs-only; resolve ambiguities, lock canonicalization, domain separation, body schemas (completed 2026-04-13)
 - [ ] **Phase 2: Canonical + Crypto Foundations** — RFC 8785 JCS, Ed25519 strict, core types, invariants (HIGHEST RISK)
 - [ ] **Phase 3: Envelope + Message Schemas** — 9 message classes, mandatory signatures, signed round-trip
 - [ ] **Phase 4: Identity + Causality** — Agent Cards, trust stub, replay cache, freshness, supersession
@@ -63,7 +63,7 @@
   - [x] 01-03-PLAN.md — Wave 1 identity (Agent Card federation_credential, card versioning) [parallel with 01-02]
   - [x] 01-04-PLAN.md — Wave 2 state-machine hole resolutions (SPEC-09..16 with D-19 δ guard-band adjustment) [parallel with 01-05]
   - [x] 01-05-PLAN.md — Wave 2 body schemas (§8a inline tables for commit/propose/deliver/control/delegate) [parallel with 01-04]
-  - [ ] 01-06-PLAN.md — Wave 3 worked Ed25519 example (externally-sourced bytes per PITFALLS P10) + changelog finalization
+  - [x] 01-06-PLAN.md — Wave 3 worked Ed25519 example (externally-sourced bytes per PITFALLS P10) + changelog finalization
 
 > **Research flag**: This phase needs `/gsd:research-phase` before `/gsd:plan-phase` — spec-fork decisions drive the rest of v1 and must be validated against RFC 8785 edge cases + reviewer findings. [COMPLETE: RESEARCH.md + VALIDATION.md + CONTEXT.md all present.]
 
@@ -218,7 +218,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 0. Toolchain & Workspace Scaffold | 3/3 | Complete   | 2026-04-13 |
-| 1. Spec Fork v0.5.1 | 5/6 | In Progress|  |
+| 1. Spec Fork v0.5.1 | 6/6 | Complete   | 2026-04-13 |
 | 2. Canonical + Crypto Foundations | 0/0 | Not started | - |
 | 3. Envelope + Message Schemas | 0/0 | Not started | - |
 | 4. Identity + Causality | 0/0 | Not started | - |

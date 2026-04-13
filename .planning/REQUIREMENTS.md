@@ -19,7 +19,7 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 
 ### Spec Fork
 
-- [ ] **SPEC-01**: `FAMP-v0.5.1-spec.md` forked from v0.5 with documented changelog citing review findings
+- [x] **SPEC-01**: `FAMP-v0.5.1-spec.md` forked from v0.5 with documented changelog citing review findings
 - [ ] **SPEC-02**: Canonical JSON serialization locked to RFC 8785 JCS (explicit reference, not paraphrase)
 - [ ] **SPEC-03**: Signature domain-separation byte format specified with hex-dump worked example
 - [ ] **SPEC-04**: Signature covers `to` field (recipient binding) to prevent cross-recipient replay
@@ -273,7 +273,7 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | TOOL-05 | Phase 0 | Complete |
 | TOOL-06 | Phase 0 | Complete |
 | TOOL-07 | Phase 0 | Complete |
-| SPEC-01 | Phase 1 | Pending |
+| SPEC-01 | Phase 1 | Complete |
 | SPEC-02 | Phase 1 | Pending |
 | SPEC-03 | Phase 1 | Pending |
 | SPEC-04 | Phase 1 | Pending |
