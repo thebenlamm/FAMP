@@ -235,7 +235,114 @@ small-order public key is itself malformed.
 
 ## §6.1 Agent Card (revised)
 
-*Placeholder — populated by Plan 03.*
+This section supersedes v0.5 §6.1. An Agent Card describes an agent's current
+capability posture and the identity under which it transacts. Cards are
+discoverable artifacts; any third party that holds a card and the federation
+trust list MUST be able to verify the card's authenticity without a live
+round-trip to the agent.
+
+### §6.1.1 Structural fields
+
+An Agent Card is a JSON object. The following fields are REQUIRED:
+
+| Field                     | Type    | Notes                                                                                                                |
+|---------------------------|---------|----------------------------------------------------------------------------------------------------------------------|
+| `famp`                    | string  | MUST equal `FAMP_SPEC_VERSION` (see top of spec).                                                                    |
+| `principal`               | string  | The agent's principal identifier (e.g. `agent:example.com/alice`).                                                   |
+| `public_key`              | string  | The agent's Ed25519 public key, unpadded base64url (per §7.1b).                                                      |
+| `card_version`            | integer | Monotonic non-negative integer (see §6.3).                                                                           |
+| `min_compatible_version`  | integer | Non-negative integer, MUST be ≤ `card_version` (see §6.3).                                                           |
+| `issued`                  | string  | RFC 3339 timestamp.                                                                                                  |
+| `expires`                 | string  | RFC 3339 timestamp.                                                                                                  |
+| `capabilities`            | array   | Capability declarations per §6.2.                                                                                    |
+| `endpoints`               | array   | Transport endpoints per §6.4.                                                                                        |
+| `federation_credential`   | string  | Opaque identifier of the federation-scoped credential whose public key signed this card (see §6.1.2).                |
+| `federation_signature`    | string  | Unpadded base64url Ed25519 signature (86 characters, per §7.1b) over the canonical JSON of the card body with `federation_signature` omitted (see §6.1.3). |
+
+Optional fields (`name`, `description`, and extension namespaces) MAY be
+present. Unknown fields MUST be rejected at decode per §8a
+`additionalProperties: false` semantics.
+
+The v0.5 `signature` field is REMOVED from the Agent Card. The Agent Card is
+**NOT self-signed** in v0.5.1: the v0.5 circular-signature construction (where
+a card claimed to sign itself with its own advertised key) is retracted
+because a card signed by its own advertised key provides no third-party
+verifiability — any attacker who mints a fresh Ed25519 keypair can mint a
+fresh "valid" card under that key. In v0.5.1, cards are signed by a
+federation-scoped credential whose public key is distributed via the
+federation trust list. Trust-list distribution is federation-specific and is
+out of scope for this specification beyond the interface boundary defined in
+§6.1.2.
+
+### §6.1.2 `federation_credential`
+
+`federation_credential` is an opaque string identifier that references the
+federation-scoped credential used to sign the card. The format is
+federation-specific and opaque to FAMP. The only normative constraint is that
+the identifier MUST resolve to an Ed25519 public key in the federation trust
+list using a lookup procedure published by the federation.
+
+FAMP implementations MUST NOT parse structure out of `federation_credential`
+beyond treating it as a byte-string key into the trust-list lookup.
+Federations MAY use human-readable names (e.g.
+`fed:bst-house.org/root-2026`), hash-based identifiers, or any other scheme,
+provided the lookup is deterministic.
+
+`federation_credential` and `public_key` are distinct and serve different
+purposes. `public_key` is the agent's own Ed25519 key, used to sign envelopes
+per §7.1. `federation_credential` names the federation-scoped credential that
+signs *this card*. The two keys MUST NOT be assumed equal; verifiers MUST
+always look `federation_credential` up in the trust list.
+
+### §6.1.3 `federation_signature` and verification procedure
+
+`federation_signature` is an unpadded base64url Ed25519 signature (86
+characters, per §7.1b) over the canonical JSON (per §4a) of the Agent Card
+body with the `federation_signature` field **omitted**. The signing key is the
+federation-scoped credential referenced by `federation_credential`; the
+signing key is NOT the card's own `public_key`.
+
+To verify an Agent Card:
+
+1. Parse the card as JSON per §4a (duplicate keys rejected).
+2. Extract `federation_credential` and `federation_signature`.
+3. Construct the card body with the `federation_signature` field omitted.
+4. Canonicalize the result per §4a (RFC 8785 JCS).
+5. Look up the Ed25519 public key corresponding to `federation_credential` in
+   the federation trust list.
+6. Run `verify_strict` per §7.1b over the canonical bytes from step 4 (with
+   the §7.1a domain-separation prefix applied).
+7. On any failure — unknown credential, decode error, non-canonical signature,
+   failed verification — the card MUST be rejected with error `unauthorized`.
+
+A receiver that has not loaded the federation trust list cannot verify cards
+issued by that federation and MUST reject them with `unauthorized`.
+
+### §6.1.4 Example
+
+```json
+{
+  "famp": "0.5.1",
+  "principal": "agent:bst-house.org/ocr-transcriber",
+  "name": "BST Manuscript Transcriber",
+  "description": "Transcribes historical Hebrew, Aramaic, and Yiddish manuscripts from page images.",
+  "capabilities": [ "..." ],
+  "endpoints": [ "..." ],
+  "public_key": "<Ed25519 public key, unpadded base64url>",
+  "issued": "2026-04-12T00:00:00Z",
+  "expires": "2026-07-12T00:00:00Z",
+  "card_version": 3,
+  "min_compatible_version": 2,
+  "federation_credential": "fed:bst-house.org/root-2026",
+  "federation_signature": "<Ed25519 signature over canonical JSON of card with federation_signature omitted, unpadded base64url>"
+}
+```
+
+**BREAKING CHANGE from v0.5.** Removing the self-signature `signature` field
+and adding the REQUIRED `federation_credential` and `federation_signature`
+fields is a wire-incompatible change. v0.5 cards MUST be rejected by v0.5.1
+verifiers; v0.5.1 cards MUST be rejected by v0.5 verifiers. See changelog
+entry `v0.5.1-Δ11`.
 
 ## §6.3 Card versioning
 
@@ -353,6 +460,7 @@ are stable references of the form `v0.5.1-Δnn`.
 - `v0.5.1-Δ08 — §7.1a Domain separation — PITFALLS P5 — Fixed prefix b"FAMP-sig-v1\x00" (12 bytes); prepended to canonical JSON before Ed25519 sign/verify.`
 - `v0.5.1-Δ09 — §7.1 — v0.5 reviewer finding (cross-recipient replay) — signature binds the to field; recipient anti-replay made normative.`
 - `v0.5.1-Δ10 — §7.1b Ed25519 encoding — PITFALLS P4 — Raw 32/64-byte, unpadded base64url (RFC 4648 §5); verify_strict semantics normative; decoder rejection list specified.`
+- `v0.5.1-Δ11 — §6.1 Agent Card — v0.5 reviewer finding (circular self-signature) — Remove self-signature field; add required federation_credential (identifier) and federation_signature (Ed25519 sig via federation trust list). BREAKING change from v0.5.`
 - `v0.5.1-Δ14 — §13.1 — CONTEXT D-15 (PITFALLS freshness-window finding) — Clock skew tolerance bumped from ±30s to ±60s RECOMMENDED; validity window 300s RECOMMENDED; federation caps ±300s/1800s MUST NOT exceed.`
 - `v0.5.1-Δ15 — §13.2 — CONTEXT D-16 — Idempotency key locked to 128-bit random, 22-char unpadded base64url; scope (sender, recipient); replay cache tuple (id, idempotency_key, content_hash).`
 - `v0.5.1-Δ25 — §3.6a — CONTEXT D-28 — Artifact IDs locked to sha256:<hex> lowercase 64 chars over canonical JSON of artifact body; sha<N>: reserved.`
