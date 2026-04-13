@@ -1,0 +1,114 @@
+# Requirements: FAMP — v0.7 Personal Runtime
+
+**Defined:** 2026-04-13
+**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
+
+**Scope:** Minimal usable library on two transports. The same signed `request → commit → deliver` cycle runs (a) in one binary via `MemoryTransport`, and (b) across two processes/machines via a minimal HTTP binding, with trust bootstrapped from a local keyring file. Three negative tests (unsigned / wrong-key / canonical divergence) fail closed on both transports.
+
+**REQ-ID continuity:** IDs reuse the catalog established during v0.6 planning (`ENV-*`, `FSM-*`, `TRANS-*`, `CONF-*`). `v0.7` adds `KEY-*` and `EX-*` for the keyring and example binaries, which were not in the v0.6 catalog. `(narrowed)` means the requirement exists in the wider v0.6 catalog but is intentionally scoped down for Personal Profile; the federation-grade form defers to v0.8+.
+
+## v0.7 Requirements
+
+### Envelope — `famp-envelope`
+
+- [ ] **ENV-01**: `famp-envelope` crate with typed `Envelope` struct matching v0.5.1 spec §7.1
+- [ ] **ENV-02**: Envelope encode/decode with `deny_unknown_fields` everywhere
+- [ ] **ENV-03**: Mandatory signature enforcement on decode (INV-10) — unsigned messages rejected with a typed error, not warned about
+- [ ] **ENV-06**: `ack` message class with body schema (disposition values restricted to what the 5-state task FSM actually emits)
+- [ ] **ENV-07**: `request` message class with body schema
+- [ ] **ENV-09 (narrowed)**: `commit` message class with body schema. No capability-snapshot binding in v0.7 (defers with Agent Cards to v0.8).
+- [ ] **ENV-10**: `deliver` message class with body schema and envelope-level `terminal_status`
+- [ ] **ENV-12 (cancel-only)**: `control` message class with body schema restricted to `cancel`. No `supersede`, no `close`.
+- [ ] **ENV-14**: Scope enforcement (standalone / conversation / task) for the five shipped classes
+- [ ] **ENV-15**: Envelope signed-message round-trip test for every shipped message class
+
+### Task FSM — minimal 5-state lifecycle
+
+- [ ] **FSM-02 (narrowed)**: `TaskFsm` with 5 states — `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`. 1 initial + 1 intermediate + 3 terminals. No `REJECTED`, no `EXPIRED`.
+- [ ] **FSM-03**: Compile-time terminal-state enforcement via exhaustive enum `match` (INV-5), under `#![deny(unreachable_patterns)]` in a downstream consumer stub
+- [ ] **FSM-04**: Transitions driven by `(class, relation, terminal_status, current_state)` tuple, rejected when illegal
+- [ ] **FSM-05**: Owned state types only — no lifetimes in FSM state enums
+- [ ] **FSM-08**: `proptest` property tests for transition legality (every illegal tuple rejected, every legal tuple accepted)
+
+### Transport — trait + `MemoryTransport`
+
+- [ ] **TRANS-01**: `famp-transport` crate with `Transport` trait (async send + incoming stream)
+- [ ] **TRANS-02**: `MemoryTransport` in-process impl (~50 LoC), dev-dep for all crates that need an end-to-end fixture
+
+### Transport — minimal HTTP binding
+
+- [ ] **TRANS-03**: `famp-transport-http` crate with axum server + `reqwest` client
+- [ ] **TRANS-04**: `POST /famp/v0.5.1/inbox` endpoint per principal
+- [ ] **TRANS-06**: rustls-only TLS (no OpenSSL) via `rustls-platform-verifier`
+- [ ] **TRANS-07**: Body-size limit (1 MB per spec §18) as a tower layer
+- [ ] **TRANS-09**: Signature verification runs as HTTP middleware **before** routing, so unsigned or wrong-key messages cannot reach handler code
+
+### Trust-on-first-use Keyring
+
+- [ ] **KEY-01**: `HashMap<Principal, VerifyingKey>` keyring type, principal = raw Ed25519 pubkey (no Agent Card, no federation credential, no pluggable trust store)
+- [ ] **KEY-02**: Keyring load/save from a local file format (one-line-per-principal, base64url-unpadded pubkey); format committed and round-trip tested
+- [ ] **KEY-03**: CLI-flag bootstrap path alongside the file path (`--peer <principal>:<pubkey>`), for example binaries
+
+### Examples
+
+- [ ] **EX-01**: `famp/examples/personal_two_agents.rs` — single-binary happy-path `request → commit → deliver → ack` over `MemoryTransport`, printing a typed conversation trace and exiting `0`
+- [ ] **EX-02**: `famp/examples/cross_machine_two_agents.rs` — same flow split across two processes over HTTPS, with both ends loading the other's pubkey from a local keyring file or `--peer` flag
+
+### Negative tests (`CONF-*` subset)
+
+Three cases, run against **both** transports — six test rows, not eighteen.
+
+- [ ] **CONF-03**: Happy-path two-node integration over `MemoryTransport` (`request → commit → deliver`)
+- [ ] **CONF-04**: Happy-path two-node integration over `HttpTransport` (same flow, real HTTP + TLS)
+- [ ] **CONF-05**: Adversarial — unsigned message rejected (both transports)
+- [ ] **CONF-06**: Adversarial — wrong-key signature rejected (both transports)
+- [ ] **CONF-07**: Adversarial — canonicalization divergence detected (both transports)
+
+## Deferred to Federation Profile (v0.8+)
+
+These items exist in the broader REQ catalog and are explicitly **not v0.7 scope**. Tracked here for traceability; no checkboxes.
+
+### Envelope / message classes
+- **ENV-04** `announce`, **ENV-05** `describe`, **ENV-08** `propose`, **ENV-11** `delegate`, **ENV-12** `supersede`/`close` variants, **ENV-13** all 11 causal relations
+
+### FSM
+- **FSM-01** `ConversationFsm`, **FSM-06** terminal precedence (no competing terminals in Personal Profile), **FSM-07** `stateright` model check
+
+### Transport
+- **TRANS-05** `.well-known` Agent Card distribution, **TRANS-08** cancellation-safe spawn-channel send path
+
+### Conformance (all adversarial cases beyond the minimal three)
+- **CONF-01/02** language-neutral fixture crate, **CONF-08** stale commit, **CONF-09** replay/duplicate, **CONF-10** unknown-critical extension, **CONF-11** round overflow, **CONF-12** silent subcontracting, **CONF-13** competing commits, **CONF-14** cancellation race, **CONF-15** drop-at-every-await, **CONF-16** key rotation, **CONF-17/18** Level 2/3 badge scripts
+
+### Federation-scale systems
+- Agent Card + federation credential + trust registry (**SPEC-04..06**)
+- Causality beyond `in_reply_to` — freshness, replay cache, supersession, idempotency (**SPEC-07/08**)
+- Negotiation, delegation, provenance, extensions registry (entire `famp-protocol`, `famp-delegate`, `famp-provenance`, `famp-extensions` crates)
+- CLI (`famp keygen`, `famp envelope sign`, `famp serve`, …)
+
+## Out of Scope (permanent — repeated from PROJECT.md)
+
+| Feature | Reason |
+|---------|--------|
+| Python / TypeScript bindings in v1 | Core must be proven first; bindings follow as a separate milestone |
+| Additional transports (libp2p, NATS, WebSocket) | `Transport` trait leaves them open; not v1 |
+| Multi-party commitment profiles | v0.5.1 spec §23 Q1 explicitly defers; bilateral only |
+| Cross-federation delegation | Spec §23 Q3; bilateral peering not defined |
+| Streaming (token-by-token) deliver | Spec §23 Q2; `interim: true` deliveries sufficient |
+| Economic / reputation / payment layers | Spec §21 exclusions stand |
+| Agent lifecycle management | Out of protocol scope per §21 |
+| Production deployment tooling | Library-first; ops concerns deferred |
+
+## Traceability
+
+Populated by the roadmapper in Step 10. Empty at requirements-definition time.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| (populated by roadmapper) | — | Pending |
+
+**Coverage target:** 100% of v0.7 checkboxes mapped to exactly one phase.
+
+---
+*Requirements defined: 2026-04-13*
+*Last updated: 2026-04-13 after v0.7 initialization*
