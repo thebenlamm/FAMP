@@ -110,6 +110,40 @@ Named "must-reject" fixtures live under
 `tests/vectors/must-reject/weak-keys.json` and are exercised by
 `tests/weak_key_rejection.rs`.
 
+## Content addressing (CRYPTO-07)
+
+FAMP content-addresses artifacts using the form `sha256:<lowercase-hex>`,
+matching the spec's `artifact-id` scheme. This crate exposes the single
+sanctioned path to produce that string — callers MUST NOT re-implement the
+hash or the hex encoding locally.
+
+Public API:
+
+- `famp_crypto::sha256_artifact_id(bytes: &[u8]) -> String` — returns a
+  71-character `String` of the form `sha256:<64-lowercase-hex>`.
+- `famp_crypto::sha256_digest(bytes: &[u8]) -> [u8; 32]` — the raw
+  SHA-256 digest, exposed for callers that need the unformatted bytes.
+
+Example:
+
+```rust
+use famp_crypto::sha256_artifact_id;
+let id = sha256_artifact_id(b"abc");
+assert_eq!(
+    id,
+    "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+);
+```
+
+The helper is backed by the RustCrypto `sha2` crate, pinned at the
+workspace root (`sha2 = "0.11.0"`). The conformance gate is
+`crates/famp-crypto/tests/sha256_vectors.rs`, which asserts three NIST
+FIPS 180-2 Known Answer Tests byte-exactly (empty string, `"abc"`, and
+the 56-byte Appendix B.2 vector) plus shape invariants and
+digest/artifact-id agreement. It runs as a blocking check via
+`just test-crypto` and the CI `test-crypto` job — if any KAT regresses,
+the whole crate is unshippable.
+
 ## Constant-time verification (CRYPTO-08)
 
 The Phase 2 constant-time claim, per decisions D-22 and D-23:
