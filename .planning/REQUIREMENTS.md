@@ -56,7 +56,7 @@ Requirements originally scoped for a Level 2 + Level 3 conformance release. Sect
 
 - [x] **SPEC-01**: `FAMP-v0.5.1-spec.md` forked from v0.5 with documented changelog citing review findings
 - [x] **SPEC-02**: Canonical JSON serialization locked to RFC 8785 JCS (explicit reference, not paraphrase)
-- [ ] **SPEC-03**: Signature domain-separation byte format specified with hex-dump worked example
+- [x] **SPEC-03**: Signature domain-separation byte format specified with hex-dump worked example
 - [ ] **SPEC-04**: Signature covers `to` field (recipient binding) to prevent cross-recipient replay
 - [ ] **SPEC-05**: Agent Card includes federation credential field (resolves circular self-signature)
 - [ ] **SPEC-06**: Agent Card versioning rules pinned for key rotation without breaking in-flight commits
@@ -342,7 +342,7 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | CRYPTO-06 | Phase 2 | Complete |
 | CRYPTO-07 | Phase 2 | Complete |
 | CRYPTO-08 | Phase 2 | Complete |
-| SPEC-03  | Phase 2 | Pending |
+| SPEC-03  | Phase 2 | Complete |
 | SPEC-19  | Phase 2 | Complete |
 | CORE-01  | Phase 3 | Pending |
 | CORE-02  | Phase 3 | Pending |
