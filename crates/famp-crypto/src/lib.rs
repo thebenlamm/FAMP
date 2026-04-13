@@ -1,14 +1,10 @@
-//! `famp-crypto` — FAMP v0.5.1 reference implementation.
-//!
-//! Phase 0 stub. Bodies land in later phases.
-
 #![forbid(unsafe_code)]
+#![doc = "FAMP v0.5.1 famp-crypto: Ed25519 sign/verify with domain separation."]
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles_and_links() {
-        // Smoke test per D-25: ensures nextest reports >0 tests per crate
-        // so a broken runner fails loudly instead of silently passing.
-    }
-}
+pub mod error;
+pub mod keys;
+pub mod prefix;
+
+pub use error::CryptoError;
+pub use keys::{FampSignature, FampSigningKey, TrustedVerifyingKey};
+pub use prefix::DOMAIN_PREFIX;
