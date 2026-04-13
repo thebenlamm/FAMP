@@ -469,15 +469,40 @@ class `malformed`.
 
 ## §9.6a Terminal precedence
 
-*Placeholder — populated by Plan 04.*
+**§9.6a Terminal precedence.** A terminal state crystallizes when the FSM
+validly processes one of: (a) a `deliver` message carrying envelope-level
+`terminal_status ∈ {completed, failed}`; (b) a `control` message with
+relation `cancels` against a task in COMMITTED state; (c) a transfer-timeout
+reversion event (Section 12.3a) against a task in transitional state.
+Semantic acknowledgment (`ack`) updates causality metadata and delivery
+disposition, but does NOT crystallize terminal state. An `ack` with
+disposition `refused` or `stale` on a terminal-producing message is valid
+and does not reverse crystallization; the terminal state has already been
+decided by the FSM at processing time. (ack-disposition does not crystallize terminal state.)
 
 ## §9.6b Conditional-lapse precedence
 
-*Placeholder — populated by Plan 04.*
+**Conditional-lapse precedence.** A `control` message with relation
+`cancels` and disposition `condition_failed` (Section 11.4) sent by the
+committing agent takes precedence over a concurrent `deliver` with terminal
+status. The default 'delivery wins' rule (Section 9.6) is overridden when
+both messages are in-flight and the `control:condition_failed` is valid
+(i.e., the condition was machine-evaluable and has provably become false per
+Section 11.4). The task crystallizes to CANCELLED with cause
+`condition_failed`. The counter-party receiving the late `deliver` responds
+with `ack` disposition `orphaned` (the commitment no longer exists).
 
 ## §10.3a Supersession round counting
 
-*Placeholder — populated by Plan 04.*
+**Rule 4a: Supersession does not reset round counting.** The negotiation
+round counter for a task is `count(messages with relation proposes_against
+in the task's conversation graph, including messages that have been
+subsequently superseded)`. A `supersedes` relation voids the prior message
+for commitment purposes but does NOT remove it from round accounting. This
+prevents a buggy or malicious agent from circumventing INV-11 via repeated
+supersession-then-re-propose cycles. When the counter reaches
+`max_negotiation_rounds` (default 20), the task transitions to EXPIRED as
+specified in INV-11.
 
 ## §11.2a Capability snapshot
 
@@ -493,7 +518,13 @@ class `malformed`.
 
 ## §7.3a FSM-observable whitelist
 
-*Placeholder — populated by Plan 04.*
+**FSM-observable field whitelist.** The FSM inspects exactly these fields.
+The conversation and task state machines are driven by a closed set of
+fields: (envelope) `class`, `relation`, `terminal_status`; (body) `interim`,
+`scope_subset`, `target`. No other fields participate in state transitions.
+Extensions MUST NOT define body fields named `interim`, `scope_subset`,
+`target`, or `terminal_status`. The v0.5 claim that 'no body inspection is
+required' is retracted; the whitelist is the normative replacement.
 
 ## §8a Body schemas
 
@@ -534,4 +565,8 @@ are stable references of the form `v0.5.1-Δnn`.
 - `v0.5.1-Δ12 — §6.3 Card versioning — CONTEXT D-14 — Pin card_version (monotonic int) and min_compatible_version (int); in-flight commits bound to card N survive rotation iff new card's min_compatible_version ≤ N; cross-linked to §11.2a.`
 - `v0.5.1-Δ14 — §13.1 — CONTEXT D-15 (PITFALLS freshness-window finding) — Clock skew tolerance bumped from ±30s to ±60s RECOMMENDED; validity window 300s RECOMMENDED; federation caps ±300s/1800s MUST NOT exceed.`
 - `v0.5.1-Δ15 — §13.2 — CONTEXT D-16 — Idempotency key locked to 128-bit random, 22-char unpadded base64url; scope (sender, recipient); replay cache tuple (id, idempotency_key, content_hash).`
+- `v0.5.1-Δ16 — §9.6a — PITFALLS §9.6 terminal precedence hole / CONTEXT D-17 — Ack-disposition decoupled from terminal-state crystallization; crystallization only via deliver-with-terminal-status, control:cancels, or transfer-timeout reversion.`
+- `v0.5.1-Δ17 — §7.3a — PITFALLS §7.3 "no body inspection" contradiction / CONTEXT D-18 — Retract claim; publish FSM-observable field whitelist {class, relation, terminal_status, interim, scope_subset, target}; extensions prohibited from reusing these names.`
+- `v0.5.1-Δ20 — §9.6b — PITFALLS conditional-lapse vs delivery-wins conflict / CONTEXT D-21 — Committer-side control:condition_failed overrides delivery-wins default; late deliver gets ack:orphaned.`
+- `v0.5.1-Δ22 — §10.3a — PITFALLS supersession round-limit circumvention / CONTEXT D-23 — Round counter includes superseded messages; supersession does NOT reset counter.`
 - `v0.5.1-Δ25 — §3.6a — CONTEXT D-28 — Artifact IDs locked to sha256:<hex> lowercase 64 chars over canonical JSON of artifact body; sha<N>: reserved.`
