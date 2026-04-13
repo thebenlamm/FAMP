@@ -36,7 +36,7 @@
 
 **Plans**: 3 plans
   - [x] 0-01-PLAN.md — Toolchain pin + repo hygiene (rust-toolchain.toml, licenses, README, .gitignore)
-  - [ ] 0-02-PLAN.md — Workspace scaffold (root Cargo.toml with [workspace.dependencies] + lints, 13 crate stubs)
+  - [x] 0-02-PLAN.md — Workspace scaffold (root Cargo.toml with [workspace.dependencies] + lints, 13 crate stubs)
   - [ ] 0-03-PLAN.md — Justfile + nextest config + GitHub Actions CI workflow
 
 ---

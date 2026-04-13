@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v0.5.1
 milestone_name: "**Goal**: `FAMP-v0.5.1-spec.md` exists with every ambiguity from the 4-reviewer audit resolved in writing, with a documented changelog from v0.5. No Rust code in this phase — output is pure documentation that locks the interop contract before anyone writes bytes against it."
 status: unknown
-last_updated: "2026-04-12T23:53:05.253Z"
+last_updated: "2026-04-13T00:03:24.661Z"
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # STATE: FAMP v0.5 Rust Reference Implementation
 
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-04-13
 
 ## Project Reference
 
@@ -24,7 +24,7 @@ progress:
 ## Current Position
 
 Phase: 00 (toolchain-workspace-scaffold) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -35,6 +35,7 @@ Plan: 2 of 3
 | Requirements mapped | 153 / 153 (100%) |
 | CI status | Not yet established |
 | Phase 00-toolchain-workspace-scaffold P01 | 1 | 3 tasks | 6 files |
+| Phase 00-toolchain-workspace-scaffold P02 | 7 | 2 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -51,6 +52,8 @@ Plan: 2 of 3
 - **`MemoryTransport` + `HttpTransport` both in v1** — memory runs flows in microseconds, HTTP is the wire reference
 - **[00-01] rust-toolchain.toml pins 1.87.0** with rustfmt+clippy; declarative pin auto-applied by rustup on cd into repo
 - **[00-01] Dual Apache-2.0 OR MIT license** — both full-text files on disk before Plan 02 crate metadata references them
+- **[00-02] famp bin unused_crate_dependencies** — `#![allow(unused_crate_dependencies)]` in bin is a false positive suppress; remove in Phase 8 when bin uses lib re-exports
+- **[00-02] All 16 workspace deps pre-pinned** — stubs use none; later phases flip `workspace = true` without touching version strings
 
 ### Open TODOs
 
@@ -79,6 +82,7 @@ Plan: 2 of 3
 - **2026-04-12:** ROADMAP.md created — 9 phases derived from research DAG; 100% requirement coverage validated
 - **2026-04-12:** STATE.md initialized
 - **2026-04-12:** Plan 00-01 complete — rust-toolchain.toml, .gitignore, docs/.gitkeep, LICENSE-APACHE, LICENSE-MIT, README.md committed (3 tasks, 6 files, 1 min)
+- **2026-04-13:** Plan 00-02 complete — root Cargo.toml, rustfmt.toml, 13 crate stubs with smoke tests committed (2 tasks, 29 files, 7 min). cargo build + clippy + test all green.
 
 ---
 *State initialized: 2026-04-12*
