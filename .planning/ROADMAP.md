@@ -57,7 +57,10 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
   3. Every body struct uses `#[serde(deny_unknown_fields)]`; adding an unknown key at any depth produces a decode error in a committed fixture test.
   4. `ENV-12 (cancel-only)` is enforced at the type level: there is no constructor or deserialize path that yields a `control` body with `supersede` or `close`; the wider v0.6-catalog form is explicitly gated out for v0.7.
   5. `ENV-09 (narrowed)` contains no capability-snapshot binding; the commit body schema compiles and round-trips without any reference to Agent Cards, and this omission is documented inline with a pointer to v0.8.
-**Plans:** TBD
+**Plans:** 1/3 plans executed
+- [x] 01-01-PLAN.md — Crate scaffold + primitive types (class/scope/version/timestamp) + error skeleton + §7.1c vector 0 fixtures on disk
+- [ ] 01-02-PLAN.md — Sealed BodySchema trait + five shipped body types with ENV-09 and ENV-12 narrowings enforced at the type level
+- [ ] 01-03-PLAN.md — Type-state UnsignedEnvelope/SignedEnvelope + decode pipeline + AnySignedEnvelope dispatch + vector 0 byte-exact regression + full adversarial + proptest suite
 
 ### Phase 2: Minimal Task Lifecycle
 **Goal:** The 5-state task FSM (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`) is compiler-checked and every illegal transition is unreachable, not merely rejected at runtime.
@@ -110,7 +113,7 @@ Rough ordering, not committed:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Canonical JSON Foundations | v0.6 | 3/3 | Complete | 2026-04-13 |
+| 1. Canonical JSON Foundations | v0.6 | 1/3 | In Progress|  |
 | 2. Crypto Foundations | v0.6 | 4/4 | Complete | 2026-04-13 |
 | 3. Core Types & Invariants | v0.6 | 2/2 | Complete | 2026-04-13 |
 | 1. Minimal Signed Envelope | v0.7 | 0/? | Not started | - |

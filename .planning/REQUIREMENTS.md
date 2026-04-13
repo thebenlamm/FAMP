@@ -11,8 +11,8 @@
 
 ### Envelope — `famp-envelope`
 
-- [ ] **ENV-01**: `famp-envelope` crate with typed `Envelope` struct matching v0.5.1 spec §7.1
-- [ ] **ENV-02**: Envelope encode/decode with `deny_unknown_fields` everywhere
+- [x] **ENV-01**: `famp-envelope` crate with typed `Envelope` struct matching v0.5.1 spec §7.1
+- [x] **ENV-02**: Envelope encode/decode with `deny_unknown_fields` everywhere
 - [ ] **ENV-03**: Mandatory signature enforcement on decode (INV-10) — unsigned messages rejected with a typed error, not warned about
 - [ ] **ENV-06**: `ack` message class with body schema (disposition values restricted to what the 5-state task FSM actually emits)
 - [ ] **ENV-07**: `request` message class with body schema
@@ -20,7 +20,7 @@
 - [ ] **ENV-10**: `deliver` message class with body schema and envelope-level `terminal_status`
 - [ ] **ENV-12 (cancel-only)**: `control` message class with body schema restricted to `cancel`. No `supersede`, no `close`.
 - [ ] **ENV-14**: Scope enforcement (standalone / conversation / task) for the five shipped classes
-- [ ] **ENV-15**: Envelope signed-message round-trip test for every shipped message class
+- [x] **ENV-15**: Envelope signed-message round-trip test for every shipped message class
 
 ### Task FSM — minimal 5-state lifecycle
 
@@ -103,8 +103,8 @@ These items exist in the broader REQ catalog and are explicitly **not v0.7 scope
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENV-01 | Phase 1: Minimal Signed Envelope | Pending |
-| ENV-02 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-01 | Phase 1: Minimal Signed Envelope | Complete |
+| ENV-02 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-03 | Phase 1: Minimal Signed Envelope | Pending |
 | ENV-06 | Phase 1: Minimal Signed Envelope | Pending |
 | ENV-07 | Phase 1: Minimal Signed Envelope | Pending |
@@ -112,7 +112,7 @@ These items exist in the broader REQ catalog and are explicitly **not v0.7 scope
 | ENV-10 | Phase 1: Minimal Signed Envelope | Pending |
 | ENV-12 (cancel-only) | Phase 1: Minimal Signed Envelope | Pending |
 | ENV-14 | Phase 1: Minimal Signed Envelope | Pending |
-| ENV-15 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-15 | Phase 1: Minimal Signed Envelope | Complete |
 | FSM-02 (narrowed) | Phase 2: Minimal Task Lifecycle | Pending |
 | FSM-03 | Phase 2: Minimal Task Lifecycle | Pending |
 | FSM-04 | Phase 2: Minimal Task Lifecycle | Pending |

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
-status: roadmap_ready
-last_updated: "2026-04-13T17:00:00.000Z"
+status: unknown
+last_updated: "2026-04-13T17:03:58.489Z"
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
 ---
 
 # STATE: FAMP — v0.7 Personal Runtime
@@ -21,16 +21,12 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** v0.7 Personal Runtime — roadmap ready; Phase 1 (Minimal Signed Envelope) queued for planning.
+**Current focus:** Phase 01 — minimal-signed-envelope
 
 ## Current Position
 
-Milestone: **v0.7 Personal Runtime**
-Phase: **Phase 1: Minimal Signed Envelope**
-Plan: —
-Status: Not started (ready for `/gsd:plan-phase 1`)
-Progress: Phases 0/4 · Plans 0/0
-Last activity: 2026-04-13 — v0.7 roadmap canonicalized (4 phases, 32 requirements, 100% coverage)
+Phase: 01 (minimal-signed-envelope) — EXECUTING
+Plan: 2 of 3
 
 ## Last Shipped
 
