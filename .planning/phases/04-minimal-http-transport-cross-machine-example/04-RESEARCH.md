@@ -740,26 +740,29 @@ mod adversarial { mod mod_; mod memory; mod http; mod fixtures; }
 
 **Empty? No — A2 / A3 / A8 are the three meaningful ones.** The planner MUST resolve A2 and A8 by reading the Phase 1 envelope source before writing the middleware, and SHOULD prototype A3 before locking the cert-trust path.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`famp-envelope`'s decode-with-key API shape** (A2 + A8 + Pitfall 3)
-   - What we know: Phase 3 runtime glue uses a two-phase decode (`peek_sender` → `keyring.get` → `AnySignedEnvelope::decode`). The runtime glue lives in `crates/famp/src/runtime/`, not in any of the lower crates.
-   - What's unclear: Whether `famp-transport-http`'s sig-verify middleware should (a) pull `peek_sender` from a shared crate, (b) call into `crates/famp/src/runtime/` directly (requires inverting a dependency — `famp-transport-http` does NOT depend on `crates/famp`), or (c) re-implement the same shape inline.
-   - Recommendation: **Lift `peek_sender` from `crates/famp/src/runtime/peek.rs` into `famp-envelope`** (or into a thin new sibling). It is a pure function over bytes; it has no FSM coupling; and both the runtime and the middleware need it. This is a one-file move with `pub use` re-exports and is the cleanest layering. Planner makes the call in the plan.
+   - What we knew: Phase 3 runtime glue uses a two-phase decode (`peek_sender` → `keyring.get` → `AnySignedEnvelope::decode`).
+   - RESOLVED: Lift `peek_sender` from `crates/famp/src/runtime/peek.rs` into `famp-envelope` (implemented in 04-01 Task 3). `AnySignedEnvelope::decode(bytes, &TrustedVerifyingKey)` confirmed via `crates/famp-envelope/src/dispatch.rs`. `EnvelopeDecodeError::MalformedJson` wraps `famp_canonical::CanonicalError` (NOT `serde_json::Error`). There is NO `EnvelopeDecodeError::CanonicalDivergence` variant — canonical divergence is detected by the runtime via `canonicalize(parsed) != bytes` (see `crates/famp/src/runtime/loop_fn.rs`). The HTTP middleware must mirror this: run the canonical re-check pre-decode, mapping to `MiddlewareError::CanonicalDivergence` (a middleware-side-only variant).
 
 2. **`rustls-platform-verifier 0.5` + extra root anchor combination** (A3 + Pitfall 4)
-   - What we know: Both APIs exist in isolation. The combination is not documented in a single example.
-   - What's unclear: Whether the cleanest path is `ConfigVerifierExt::with_platform_verifier()` + post-construction anchor injection, or a manual `RootCertStore` + manual platform-roots load.
-   - Recommendation: Spend 30 minutes prototyping option 1; if it doesn't yield in that time, ship option 2 (explicit-trust-only `ClientConfig` for the example) and document the production upgrade path inline.
+   - What we knew: Both APIs exist in isolation.
+   - RESOLVED: Use `rustls_platform_verifier::Verifier::new_with_extra_roots(extra_certs)` (verified on docs.rs 2026-04-13; signature `pub fn new_with_extra_roots(roots: impl IntoIterator<Item = CertificateDer<'static>>) -> Result<Self, TlsError>`). The verifier combines "platform-provided root certificates augmented by the provided extra root certificates." Wire into `ClientConfig::builder().dangerous().with_custom_certificate_verifier(Arc::new(verifier)).with_no_client_auth()` (implemented in 04-03 Task 1 — honors D-B5 in full).
 
 3. **Whether the `http_happy_path.rs` same-process fallback ships alongside the subprocess test** (D-E7)
-   - What we know: D-E7 marks it Claude's discretion with a recommendation to ship both for CI stability.
-   - What's unclear: Whether the subprocess test will be reliable enough on the local CI to not need a fallback.
-   - Recommendation: **Ship both.** The cost is low (one extra test file), and the same-process test catches axum/tower/middleware bugs even if the subprocess infrastructure is broken — they are testing different layers.
+   - RESOLVED: Ship both (implemented in 04-04 Task 3). Subprocess test owns CONF-04; same-process test is a safety net catching axum/tower/middleware bugs even if subprocess infrastructure is broken.
 
 4. **Whether to ship `peek_sender` lift as a Phase 4 plan or as a Phase 3 retroactive fixup** (intersects Q1)
-   - What we know: Phase 3 is closed.
-   - Recommendation: Phase 4 plan owns the lift. Document it as a deliberate layering improvement, not a Phase 3 bug.
+   - RESOLVED: Phase 4 Plan 04-01 owns the lift as a deliberate layering improvement (not a Phase 3 bug).
+
+5. **axum 0.8 TLS server backend** (new — surfaced during plan revision)
+   - What we know: axum 0.8 itself does not ship `serve_tls`.
+   - RESOLVED: Use `axum-server = "0.8"` with feature `tls-rustls-no-provider` (verified on docs.rs 2026-04-13 — axum-server 0.8.0 supports rustls 0.23). `RustlsConfig::from_config(Arc<ServerConfig>)` then `axum_server::bind_rustls(addr, rustls_config).serve(router.into_make_service())` (implemented in 04-03 as `tls_server::serve` helper called from 04-04 Task 2). `axum-server` is added to `famp-transport-http`'s `[dependencies]` in 04-01.
+
+6. **`TransportMessage.sender` population in the HTTP handler** (new — surfaced during plan revision)
+   - What we know: `TransportMessage { sender, recipient, bytes }` is the shape of the in-process queue item; Phase 3 runtime's `process_one_message` does NOT use `msg.sender` for the signature verification path (it re-derives via `peek_sender`), but it IS used by the recipient cross-check and trace logging.
+   - RESOLVED: The handler reads `Extension<Arc<AnySignedEnvelope>>` stashed by the sig-verify middleware (D-C3) and populates `sender` from `famp::runtime::adapter::envelope_sender(&env)` (or the equivalent per-variant accessor). It MUST NOT set `sender = recipient` — that is a wrong-data bug. Implemented in 04-02 Task 2.
 
 ## Environment Availability
 
