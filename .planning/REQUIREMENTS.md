@@ -101,9 +101,9 @@ Requirements originally scoped for a Level 2 + Level 3 conformance release. Sect
 - [x] **CORE-01**: `Principal` and `Instance` identity types with parse/display round-trip
 - [x] **CORE-02**: `MessageId` (UUIDv7) and `ConversationId` / `TaskId` / `CommitmentId` types
 - [x] **CORE-03**: `ArtifactId` content-addressed type with `sha256:` prefix
-- [ ] **CORE-04**: Typed error enum with all 15 error categories from spec §15.1
-- [ ] **CORE-05**: Invariant constants INV-1 through INV-11 documented in code
-- [ ] **CORE-06**: Authority scope enum (advisory, negotiate, commit_local, commit_delegate, transfer)
+- [x] **CORE-04**: Typed error enum with all 15 error categories from spec §15.1
+- [x] **CORE-05**: Invariant constants INV-1 through INV-11 documented in code
+- [x] **CORE-06**: Authority scope enum (advisory, negotiate, commit_local, commit_delegate, transfer)
 
 ### Envelope & Messages [MIXED — minimal subset is Personal V1 (v0.7); full set is Federation Profile]
 
@@ -347,9 +347,9 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | CORE-01  | Phase 3 | Complete |
 | CORE-02  | Phase 3 | Complete |
 | CORE-03  | Phase 3 | Complete |
-| CORE-04  | Phase 3 | Pending |
-| CORE-05  | Phase 3 | Pending |
-| CORE-06  | Phase 3 | Pending |
+| CORE-04  | Phase 3 | Complete |
+| CORE-05  | Phase 3 | Complete |
+| CORE-06  | Phase 3 | Complete |
 
 ---
 *Requirements defined: 2026-04-12*

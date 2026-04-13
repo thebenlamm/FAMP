@@ -95,7 +95,7 @@
 
 **Plans:** 2 plans
 - [x] 03-01-PLAN.md — Identity (Principal/Instance), UUIDv7 ID newtypes, ArtifactId with narrow parse errors (CORE-01, CORE-02, CORE-03)
-- [ ] 03-02-PLAN.md — ProtocolErrorKind (15 §15.1 categories), AuthorityScope ladder, INV-1..INV-11 invariants module, exhaustive consumer stub (CORE-04, CORE-05, CORE-06)
+- [x] 03-02-PLAN.md — ProtocolErrorKind (15 §15.1 categories), AuthorityScope ladder, INV-1..INV-11 invariants module, exhaustive consumer stub (CORE-04, CORE-05, CORE-06)
 
 ---
 
