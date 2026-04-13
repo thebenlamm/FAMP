@@ -1,0 +1,18 @@
+[package]
+name = "famp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FAMP v0.5.1 — umbrella crate and CLI"
+
+[lints]
+workspace = true
+
+[dependencies]
+
+[[bin]]
+name = "famp"
+path = "src/bin/famp.rs"
