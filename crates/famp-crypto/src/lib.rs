@@ -9,6 +9,8 @@ use zeroize as _;
 // Dev-deps referenced only by integration tests in `tests/`. Silence
 // `unused_crate_dependencies` for the lib-test compile unit.
 #[cfg(test)]
+use hex as _;
+#[cfg(test)]
 use insta as _;
 #[cfg(test)]
 use proptest as _;

@@ -1,7 +1,8 @@
-//! Signer / Verifier traits — thin sugar over the free functions in
-//! `sign` / `verify` (D-01). No direct `ed25519_dalek::Signer` impl is
-//! provided for FAMP newtypes; FAMP signing rules (domain prefix,
-//! canonical JSON input) are protocol-specific.
+//! Signer / Verifier traits — thin sugar over the free functions (D-01).
+//!
+//! No direct `ed25519_dalek::Signer` impl is provided for FAMP newtypes;
+//! FAMP signing rules (domain prefix, canonical JSON input) are
+//! protocol-specific.
 
 use crate::{
     error::CryptoError,
