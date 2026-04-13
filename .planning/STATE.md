@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
 status: unknown
-last_updated: "2026-04-13T17:44:29.955Z"
+last_updated: "2026-04-13T18:50:36.505Z"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 6
+  completed_plans: 4
 ---
 
 # STATE: FAMP — v0.7 Personal Runtime
@@ -21,15 +21,16 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 01 — minimal-signed-envelope
+**Current focus:** Phase 02 — minimal-task-lifecycle
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
+Phase: 02 (minimal-task-lifecycle) — EXECUTING
+Plan: 2 of 3
 
 ## Last Shipped
 
+- **Phase 02 Plan 01** (2026-04-13) — Type lift: `MessageClass` and `TerminalStatus` moved to `famp-core`. Backward-compatible re-exports in `famp-envelope`. 184/184 workspace tests green. `famp-fsm` crate layering constraint (D-D1) now satisfiable.
 - **v0.6 Foundation Crates** (2026-04-13) — `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests, `just ci` green. Archived to `.planning/milestones/v0.6-*.md` and `.planning/milestones/v0.6-phases/`. Git tag: `v0.6`.
 
 ## Accumulated Context
@@ -48,6 +49,7 @@ Plan: Not started
 - **v0.7 TOFU keyring stays local-file** — `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey, loaded from file or `--peer` CLI flag. Explicitly not an "identity system" or "trust store"; Agent Cards defer to v0.8.
 - **v0.7 adversarial matrix = 3 cases × 2 transports, not 18** — CONF-05/06/07 own the three cases on `MemoryTransport`; Phase 4 extends the same matrix to HTTP without introducing new CONF-0x requirements.
 - **ENV-09 and ENV-12 are intentionally narrowed for v0.7** — ENV-09 ships with no capability-snapshot binding; ENV-12 ships cancel-only (no supersede, no close). The wider v0.6-catalog forms defer to Federation Profile.
+- **D-B5 + D-D1 resolved (2026-04-13, Phase 02 Plan 01):** `TerminalStatus` lifted to `famp-core` alongside `MessageClass`; `famp-fsm` depends only on `famp-core`, never on `famp-envelope`. Backward-compatible re-export pattern established: define in lower crate, `pub use` in former home.
 
 ### Open TODOs
 
@@ -61,6 +63,7 @@ Plan: Not started
 
 ### Recent Activity
 
+- **2026-04-13:** **Phase 02 Plan 01 complete.** Type lift: `MessageClass` and `TerminalStatus` to `famp-core`. D-D1 crate layering blocker resolved. 184/184 workspace tests. Commits: `65c8ac1`, `012b807`.
 - **2026-04-13:** **v0.7 roadmap canonicalized.** 4 phases, 32 requirements, 100% coverage. Phase 1 (Minimal Signed Envelope) queued for `/gsd:plan-phase 1`.
 - **2026-04-13:** **v0.6 Foundation Crates milestone shipped and archived.** 3 phases, 9 plans, 16 tasks, 25/25 requirements satisfied. ROADMAP.md and REQUIREMENTS.md archived to `.planning/milestones/v0.6-*.md`; phase directories moved to `.planning/milestones/v0.6-phases/`. PROJECT.md evolved: all v0.6 requirements moved to Validated, Key Decisions annotated with outcomes.
 - **2026-04-13:** Phase 3 (core-types-invariants) complete. `famp-core` ships Principal/Instance, UUIDv7 IDs, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, and exhaustive consumer stub. 66/66 famp-core + 112/112 workspace tests green.
@@ -68,4 +71,4 @@ Plan: Not started
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*State updated: 2026-04-13 — v0.7 roadmap ready; Phase 1 queued*
+*State updated: 2026-04-13 — Phase 02 Plan 01 complete; Phase 02 Plan 02 (famp-fsm TaskFsm) queued*
