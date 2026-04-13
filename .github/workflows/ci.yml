@@ -53,9 +53,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
 
+  test-canonical:
+    name: famp-canonical RFC 8785 conformance gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest
+      - name: famp-canonical conformance gate (SEED-001)
+        run: just test-canonical-strict
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: test-canonical
     strategy:
       fail-fast: false
       matrix:

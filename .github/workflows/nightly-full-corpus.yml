@@ -1,0 +1,43 @@
+name: nightly-full-corpus
+
+# Per CONTEXT.md D-12: the full 100M cyberphone float corpus is a required
+# release gate, not a per-PR best-effort. This workflow runs nightly, on
+# every release tag, and on manual dispatch. Per-PR coverage uses the 100K
+# sampled subset enforced by the `test-canonical` job in ci.yml.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-full-corpus-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  full-corpus:
+    name: famp-canonical 100M float corpus (RFC 8785)
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest
+      - name: download cyberphone es6testfile100m float corpus
+        run: |
+          mkdir -p crates/famp-canonical/tests/vectors/full_corpus
+          curl -sSL https://github.com/cyberphone/json-canonicalization/releases/download/es6testfile/es6testfile100m.txt.gz \
+            | gunzip > crates/famp-canonical/tests/vectors/full_corpus/es6testfile100m.txt
+          echo "0f7dda6b0837dde083c5d6b896f7d62340c8a2415b0c7121d83145e08a755272  crates/famp-canonical/tests/vectors/full_corpus/es6testfile100m.txt" | sha256sum -c
+      - name: run full corpus gate
+        run: just test-canonical-full

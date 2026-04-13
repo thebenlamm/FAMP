@@ -16,6 +16,14 @@ test:
 test-canonical:
     cargo nextest run -p famp-canonical
 
+# Run famp-canonical with strict no-fail-fast (RFC 8785 conformance gate; CI per-PR)
+test-canonical-strict:
+    cargo nextest run -p famp-canonical --no-fail-fast
+
+# Run famp-canonical with the 100M float corpus (nightly / release tags only — D-12)
+test-canonical-full:
+    cargo nextest run -p famp-canonical --features full-corpus --no-fail-fast
+
 # Run doc tests (nextest does not run doctests)
 test-doc:
     cargo test --workspace --doc
