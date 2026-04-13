@@ -58,19 +58,20 @@ pub fn from_str_strict<T: serde::de::DeserializeOwned>(input: &str) -> Result<T,
 /// other way to attach structured payloads to the error.
 fn map_serde_err(e: serde_json::Error) -> CanonicalError {
     let msg = e.to_string();
-    if let Some(rest) = msg.strip_prefix("__DUPLICATE_KEY__:") {
-        // serde_json appends " at line N column M" to custom errors; trim it
-        // so the reported key matches what the user actually wrote.
-        let key = rest
-            .split(" at line")
-            .next()
-            .unwrap_or(rest)
-            .trim()
-            .to_string();
-        CanonicalError::DuplicateKey { key }
-    } else {
-        CanonicalError::InvalidJson(e)
-    }
+    msg.strip_prefix("__DUPLICATE_KEY__:").map_or_else(
+        || CanonicalError::InvalidJson(e),
+        |rest| {
+            // serde_json appends " at line N column M" to custom errors; trim
+            // it so the reported key matches what the user actually wrote.
+            let key = rest
+                .split(" at line")
+                .next()
+                .unwrap_or(rest)
+                .trim()
+                .to_string();
+            CanonicalError::DuplicateKey { key }
+        },
+    )
 }
 
 /// Internal "strict tree" representation. The only purpose of this type is

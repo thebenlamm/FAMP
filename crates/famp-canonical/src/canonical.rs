@@ -30,7 +30,7 @@ pub fn canonicalize<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Canonic
 /// callers do not have to import this trait to use the free function — but
 /// can if they prefer the method-call form.
 pub trait Canonicalize: Serialize {
-    /// Equivalent to [`crate::canonical::canonicalize`]`(self)`.
+    /// Equivalent to [`crate::canonical::canonicalize`] called with `self`.
     fn canonicalize(&self) -> Result<Vec<u8>, CanonicalError> {
         crate::canonical::canonicalize(self)
     }

@@ -55,9 +55,9 @@ impl CanonicalError {
     pub(crate) fn from_serde(e: serde_json::Error) -> Self {
         let msg = e.to_string();
         if msg.contains("NaN") || msg.contains("infinit") || msg.contains("Infinit") {
-            CanonicalError::NonFiniteNumber
+            Self::NonFiniteNumber
         } else {
-            CanonicalError::Serialize(e)
+            Self::Serialize(e)
         }
     }
 }
