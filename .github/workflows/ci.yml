@@ -66,10 +66,23 @@ jobs:
       - name: famp-canonical conformance gate (SEED-001)
         run: just test-canonical-strict
 
+  test-crypto:
+    name: famp-crypto §7.1c worked-example + RFC 8032 gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest
+      - name: famp-crypto conformance gate (§7.1c + RFC 8032)
+        run: just test-crypto
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: test-canonical
+    needs: [test-canonical, test-crypto]
     strategy:
       fail-fast: false
       matrix:
