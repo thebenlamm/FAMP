@@ -12,7 +12,7 @@ description = "FAMP v0.5.1 — famp-canonical crate (stub)"
 workspace = true
 
 [features]
-default = []
+default = ["wave2_impl"]
 wave2_impl = []
 full-corpus = []
 
