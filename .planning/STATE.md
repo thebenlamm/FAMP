@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
-status: ready_for_new_milestone
+status: defining_requirements
 last_updated: "2026-04-13T16:00:00.000Z"
 progress:
   total_phases: 0
@@ -21,15 +21,15 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Planning v0.7 Personal Runtime — minimal usable library on `MemoryTransport` + minimal HTTP transport.
+**Current focus:** v0.7 Personal Runtime — defining requirements → roadmap.
 
 ## Current Position
 
-Milestone: **v0.7 Personal Runtime** (not yet started)
-Phase: —
+Milestone: **v0.7 Personal Runtime**
+Phase: Not started (defining requirements)
 Plan: —
-
-Use `/gsd:new-milestone` to initialize v0.7 (requirements → roadmap).
+Status: Defining requirements
+Last activity: 2026-04-13 — v0.7 milestone initialized
 
 ## Last Shipped
 

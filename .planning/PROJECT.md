@@ -4,7 +4,7 @@
 
 A Rust implementation of FAMP (Federated Agent Messaging Protocol) v0.5.1, staged in **two profiles** so a single developer can get a usable library before the full federation-grade semantics are built out.
 
-1. **Personal Profile (v0.6 + v0.7)** — the minimum usable library. Byte-exact canonical JSON, Ed25519-signed envelopes with domain separation, a four-state task lifecycle, and an in-process `MemoryTransport`. Goal: one developer can wire two locally-trusted agents in a single binary and run a signature-verified `request → commit → deliver` cycle end to end.
+1. **Personal Profile (v0.6 + v0.7)** — the minimum usable library. Byte-exact canonical JSON, Ed25519-signed envelopes with domain separation, a five-state task lifecycle, and an in-process `MemoryTransport`. Goal: one developer can wire two locally-trusted agents in a single binary and run a signature-verified `request → commit → deliver` cycle end to end.
 
 2. **Federation Profile (v0.8+)** — adds the semantics that matter at ecosystem scale: Agent Cards + federation credentials, negotiation/counter-proposal, the three delegation forms, provenance graphs, an extensions registry, an HTTP transport binding, the adversarial conformance matrix, and Level 2 + Level 3 conformance badges.
 
@@ -30,7 +30,7 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 **v0.7 Personal Runtime — minimal usable library (next):**
 - [ ] `famp-envelope` — signed envelope with INV-10 enforcement; body schemas for `request`, `commit`, `deliver`, `ack`, `control/cancel` only
-- [ ] Minimal task lifecycle FSM: `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}` (4 states, compiler-checked terminals). No `REJECTED`, no `EXPIRED`, no timeouts.
+- [ ] Minimal task lifecycle FSM: `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}` (5 states: 1 initial + 1 intermediate + 3 terminals, compiler-checked terminals). No `REJECTED`, no `EXPIRED`, no timeouts.
 - [ ] `famp-transport` trait + `MemoryTransport` (in-process, ~50 LoC)
 - [ ] Trust-on-first-use keyring — local `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey. No Agent Card.
 - [ ] `famp-transport-http` (minimal) — axum `POST /famp/v0.5.1/inbox` endpoint, `reqwest` client send, rustls TLS, 1 MB body limit, signature-verification middleware before routing. **No** `.well-known` Agent Card distribution (TOFU keyring only), **no** cancellation-safe spawn-channel pattern.
@@ -137,26 +137,13 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v0.6 Foundation Crates (Personal Profile — part 1 of 2)
-
-**Goal:** Deliver byte-exact canonical JSON and signature-verifiable Ed25519 primitives, plus compiler-checked core types — the substrate every downstream FAMP crate (Personal and Federation profiles alike) signs against.
-
-**Target crates:**
-- `famp-canonical` — RFC 8785 JCS canonicalization with an external-vector conformance gate (SEED-001)
-- `famp-crypto` — Ed25519 sign/verify with domain-separation prefix (v0.5.1 §7.1) and raw 32/64-byte base64url-unpadded wire encoding
-- `famp-core` — shared types, errors, and invariant scaffolding (INV-1..11) used by every other crate
-
-**Success shape:** `just ci` green; RFC 8785 external test vectors byte-exact; worked Ed25519 example from PITFALLS P10 verifies in Rust; `famp-core` types compile-check INV-5 exhaustiveness via enum `match`.
-
-**Phase numbering:** reset to Phase 1 (v0.5.1 was a doc milestone; v0.6 is the first code milestone).
-
-## Next Milestone: v0.7 Personal Runtime (Personal Profile — part 2 of 2)
+## Current Milestone: v0.7 Personal Runtime (Personal Profile — part 2 of 2)
 
 **Goal:** A single developer can run the same signed `request → commit → deliver` cycle **two ways**: (a) in one binary via `MemoryTransport`, and (b) across two machines / two processes via a minimal HTTP binding, with trust bootstrapped from a local keyring file. This is the finish line for "something I can use myself."
 
 **Target crates / deliverables:**
 - `famp-envelope` — signed envelope with mandatory-signature enforcement; body schemas for **only** `request`, `commit`, `deliver`, `ack`, `control/cancel`. Negotiation, delegation, announce, describe bodies explicitly omitted.
-- Minimal task FSM — 4 states (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`), compiler-checked terminals, no `stateright` model check (defer), no timeouts.
+- Minimal task FSM — 5 states (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`; 1 initial + 1 intermediate + 3 terminals), compiler-checked terminals, no `stateright` model check (defer), no timeouts.
 - `famp-transport` trait + `MemoryTransport` (in-process, ~50 LoC).
 - `famp-transport-http` **minimal subset**: axum `POST /famp/v0.5.1/inbox` endpoint, `reqwest` client send, rustls TLS, 1 MB body-size limit, signature-verification middleware running **before** routing. No `.well-known` Agent Card distribution (TRANS-05), no cancellation-safe spawn-channel send (TRANS-08) — both defer to Federation Profile.
 - Trust-on-first-use keyring — local `HashMap<Principal, VerifyingKey>`; principal = raw Ed25519 pubkey, bootstrapped from a keyring file or CLI flags. No Agent Card, no federation credential, no trust registry.
@@ -168,13 +155,15 @@ This document evolves at phase transitions and milestone boundaries.
 
 **Success shape:** `cargo run --example personal_two_agents` prints a signed conversation trace and exits 0; running `cross_machine_two_agents` server in one shell and client in another completes the same cycle over HTTPS; the three negative tests fail closed with typed errors on both transports; `just ci` green.
 
+**Phase numbering:** reset to Phase 1 (milestone-local numbering; v0.6 ended at Phase 3 but phase numbers are not continuous across milestones).
+
 ## Current State
 
 **Shipped:**
 - **v0.5.1 Spec Fork** (2026-04-13) — interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
 - **v0.6 Foundation Crates** (2026-04-13) — substrate fully shipped. `famp-canonical` (RFC 8785 JCS, SEED-001 resolved `serde_jcs`, 12/12 conformance gate, nightly 100M float corpus), `famp-crypto` (Ed25519 `verify_strict`-only, SPEC-03 domain separation, PITFALLS §7.1c worked example byte-exact, NIST KATs, `sha256_artifact_id`), `famp-core` (Principal/Instance, UUIDv7 ID newtypes, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, exhaustive consumer stub under `#![deny(unreachable_patterns)]`). 25/25 requirements satisfied. 112/112 workspace tests green. `just ci` clean end-to-end.
 
-**Next:** v0.7 Personal Runtime — `famp-envelope`, 4-state task FSM, `MemoryTransport`, minimal HTTP transport, TOFU keyring, both two-agent examples.
+**Next:** v0.7 Personal Runtime — `famp-envelope`, 5-state task FSM, `MemoryTransport`, minimal HTTP transport, TOFU keyring, both two-agent examples.
 
 ---
-*Last updated: 2026-04-13 — v0.6 Foundation Crates milestone shipped and archived*
+*Last updated: 2026-04-13 — v0.7 Personal Runtime milestone initialized*
