@@ -8,6 +8,7 @@ pub mod identity;
 pub mod ids;
 pub mod invariants;
 pub mod scope;
+pub mod terminal_status;
 
 pub use artifact::{ArtifactId, ParseArtifactIdError};
 pub use class::MessageClass;
@@ -15,6 +16,7 @@ pub use error::{ProtocolError, ProtocolErrorKind};
 pub use identity::{Instance, ParseInstanceError, ParsePrincipalError, Principal};
 pub use ids::{CommitmentId, ConversationId, MessageId, TaskId};
 pub use scope::{AuthorityScope, ParseAuthorityScopeError};
+pub use terminal_status::TerminalStatus;
 
 // serde_json is used by integration tests under `tests/` which are separate
 // crates; silence the workspace `unused_crate_dependencies` warning for the

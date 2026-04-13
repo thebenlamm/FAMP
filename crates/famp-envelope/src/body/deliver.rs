@@ -55,14 +55,7 @@ pub enum ErrorCategory {
     Other,
 }
 
-/// Terminal status carried on the envelope header for terminal deliveries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum TerminalStatus {
-    Completed,
-    Failed,
-    Cancelled,
-}
+pub use famp_core::TerminalStatus;
 
 impl DeliverBody {
     /// Cross-field validation tying `interim` + `terminal_status` + required fields.
