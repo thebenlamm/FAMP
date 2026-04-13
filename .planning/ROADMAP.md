@@ -45,7 +45,7 @@
 
 **Plans:** 3 plans
 - [x] 01-01-PLAN.md — Wave 0 scaffolding: workspace dep fix, fallback.md (BEFORE gate), test harness skeletons + cyberphone fixtures
-- [ ] 01-02-PLAN.md — Implement canonicalize/strict_parse/artifact_id sources + author supplementary fixtures + sampled float corpus
+- [x] 01-02-PLAN.md — Implement canonicalize/strict_parse/artifact_id sources + author supplementary fixtures + sampled float corpus
 - [ ] 01-03-PLAN.md — Run RFC 8785 gate, record SEED-001 decision with cited evidence, wire CI + nightly full-corpus workflows
 
 > **HIGHEST-RISK PHASE OF THE PROJECT.** Research flag: `/gsd:research-phase` mandatory. Canonical-JSON correctness is the interop contract — a bug here invalidates every downstream phase. Front-load external vectors. Be prepared to drop `serde_jcs` for the fallback if it fails conformance; the fallback plan must exist *before* the decision.

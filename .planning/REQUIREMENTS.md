@@ -71,18 +71,18 @@ Requirements originally scoped for a Level 2 + Level 3 conformance release. Sect
 - [x] **SPEC-15**: Negotiation round counting under supersession pinned
 - [x] **SPEC-16**: Capability snapshot binding vs card version drift contradiction resolved
 - [x] **SPEC-17**: Body schemas defined for `commit`, `propose`, `deliver`, `control`, `delegate`
-- [ ] **SPEC-18**: Artifact identifier scheme locked (`sha256:<hex>`)
+- [x] **SPEC-18**: Artifact identifier scheme locked (`sha256:<hex>`)
 - [ ] **SPEC-19**: Ed25519 key encoding locked (raw 32-byte pub, 64-byte sig, unpadded base64url)
 - [x] **SPEC-20**: Spec-version constant defined and referenced by implementations
 
 ### Canonical JSON [Personal V1 — v0.6 Phase 1]
 
-- [ ] **CANON-01**: `famp-canonical` crate wraps `serde_jcs` behind a stable `Canonicalize` trait
+- [x] **CANON-01**: `famp-canonical` crate wraps `serde_jcs` behind a stable `Canonicalize` trait
 - [ ] **CANON-02**: RFC 8785 Appendix B test vectors pass as hard CI gate
 - [ ] **CANON-03**: cyberphone 100M-sample float corpus integrated as CI check
-- [ ] **CANON-04**: UTF-16 key sort verified on supplementary-plane characters (emoji, CJK Ext B)
-- [ ] **CANON-05**: ECMAScript number formatting verified against cyberphone reference
-- [ ] **CANON-06**: Duplicate-key rejection on parse
+- [x] **CANON-04**: UTF-16 key sort verified on supplementary-plane characters (emoji, CJK Ext B)
+- [x] **CANON-05**: ECMAScript number formatting verified against cyberphone reference
+- [x] **CANON-06**: Duplicate-key rejection on parse
 - [x] **CANON-07**: Documented from-scratch fallback plan (~500 LoC) if `serde_jcs` fails conformance
 
 ### Crypto [Personal V1 — v0.6 Phase 2]
@@ -325,15 +325,15 @@ Deferred to future milestone. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CANON-01 | Phase 1 | Pending |
+| CANON-01 | Phase 1 | Complete |
 | CANON-02 | Phase 1 | Pending |
 | CANON-03 | Phase 1 | Pending |
-| CANON-04 | Phase 1 | Pending |
-| CANON-05 | Phase 1 | Pending |
-| CANON-06 | Phase 1 | Pending |
+| CANON-04 | Phase 1 | Complete |
+| CANON-05 | Phase 1 | Complete |
+| CANON-06 | Phase 1 | Complete |
 | CANON-07 | Phase 1 | Complete |
 | SPEC-02  | Phase 1 | Complete |
-| SPEC-18  | Phase 1 | Pending |
+| SPEC-18  | Phase 1 | Complete |
 | CRYPTO-01 | Phase 2 | Pending |
 | CRYPTO-02 | Phase 2 | Pending |
 | CRYPTO-03 | Phase 2 | Pending |
