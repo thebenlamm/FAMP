@@ -78,8 +78,8 @@ Requirements originally scoped for a Level 2 + Level 3 conformance release. Sect
 ### Canonical JSON [Personal V1 — v0.6 Phase 1]
 
 - [x] **CANON-01**: `famp-canonical` crate wraps `serde_jcs` behind a stable `Canonicalize` trait
-- [ ] **CANON-02**: RFC 8785 Appendix B test vectors pass as hard CI gate
-- [ ] **CANON-03**: cyberphone 100M-sample float corpus integrated as CI check
+- [x] **CANON-02**: RFC 8785 Appendix B test vectors pass as hard CI gate
+- [x] **CANON-03**: cyberphone 100M-sample float corpus integrated as CI check
 - [x] **CANON-04**: UTF-16 key sort verified on supplementary-plane characters (emoji, CJK Ext B)
 - [x] **CANON-05**: ECMAScript number formatting verified against cyberphone reference
 - [x] **CANON-06**: Duplicate-key rejection on parse
@@ -326,8 +326,8 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CANON-01 | Phase 1 | Complete |
-| CANON-02 | Phase 1 | Pending |
-| CANON-03 | Phase 1 | Pending |
+| CANON-02 | Phase 1 | Complete |
+| CANON-03 | Phase 1 | Complete |
 | CANON-04 | Phase 1 | Complete |
 | CANON-05 | Phase 1 | Complete |
 | CANON-06 | Phase 1 | Complete |

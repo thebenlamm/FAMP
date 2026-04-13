@@ -20,7 +20,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Canonical JSON Foundations** — `famp-canonical` wrapping `serde_jcs` with RFC 8785 Appendix B conformance gate (SEED-001 decision point) and documented ~500 LoC fallback plan
+- [x] **Phase 1: Canonical JSON Foundations** — `famp-canonical` wrapping `serde_jcs` with RFC 8785 Appendix B conformance gate (SEED-001 RESOLVED 2026-04-13, 12/12 gate green, keep serde_jcs) and documented 357-LoC fallback plan on disk. **Shipped 2026-04-13.**
 - [ ] **Phase 2: Crypto Foundations** — `famp-crypto` Ed25519 sign/verify with domain-separation prefix, `verify_strict`-only exposure, weak-key rejection, and byte-exact replay of PITFALLS P10 worked example
 - [ ] **Phase 3: Core Types & Invariants** — `famp-core` shared types (Principal, Instance, MessageId UUIDv7, ArtifactId), typed 15-category error enum, and INV-1..INV-11 scaffolding
 
@@ -46,7 +46,7 @@
 **Plans:** 3 plans
 - [x] 01-01-PLAN.md — Wave 0 scaffolding: workspace dep fix, fallback.md (BEFORE gate), test harness skeletons + cyberphone fixtures
 - [x] 01-02-PLAN.md — Implement canonicalize/strict_parse/artifact_id sources + author supplementary fixtures + sampled float corpus
-- [ ] 01-03-PLAN.md — Run RFC 8785 gate, record SEED-001 decision with cited evidence, wire CI + nightly full-corpus workflows
+- [x] 01-03-PLAN.md — Run RFC 8785 gate, record SEED-001 decision with cited evidence, wire CI + nightly full-corpus workflows
 
 > **HIGHEST-RISK PHASE OF THE PROJECT.** Research flag: `/gsd:research-phase` mandatory. Canonical-JSON correctness is the interop contract — a bug here invalidates every downstream phase. Front-load external vectors. Be prepared to drop `serde_jcs` for the fallback if it fails conformance; the fallback plan must exist *before* the decision.
 
@@ -98,7 +98,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Canonical JSON Foundations | 0/0 | Not started | - |
+| 1. Canonical JSON Foundations | 3/3 | Complete | 2026-04-13 |
 | 2. Crypto Foundations | 0/0 | Not started | - |
 | 3. Core Types & Invariants | 0/0 | Not started | - |
 
