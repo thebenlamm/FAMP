@@ -21,11 +21,11 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 - [x] Rust toolchain bootstrap (install rustup, pin toolchain, workspace scaffold) — *Validated in Phase 00: toolchain-workspace-scaffold*
 - [x] Fork spec to `FAMP-v0.5.1-spec.md` and resolve identified ambiguities/bugs (canonical JSON, body schemas, state-machine holes) — *Validated in v0.5.1 milestone (Phase 01: spec-fork). 1038-line spec, 28 changelog entries, 21/21 spec-lint anchors green, worked Ed25519 example byte-exact from external reference per PITFALLS P10.*
 - [x] `famp-canonical` — RFC 8785 JCS canonicalization with external-vector conformance gate — *Validated in Phase 01: canonical-json-foundations. 12/12 conformance tests green (Appendix B/C/E byte-exact, 100K cyberphone float corpus, UTF-16 supplementary, duplicate-key rejection). SEED-001 resolved: keep `serde_jcs 0.2.0`. CI gate + nightly 100M full-corpus workflow live; fallback plan on disk as insurance.*
+- [x] `famp-crypto` — Ed25519 sign/verify with domain-separation prefix, `verify_strict`-only — *Validated in Phase 02: crypto-foundations. 7/7 truths verified. Ed25519 sign/verify with SPEC-03 domain-separation prefix, `verify_strict`-only (raw `verify` unreachable), weak-key rejection at ingress, base64url-unpadded strict codec, RFC 8032 KAT gate, §7.1c worked-example byte-exact interop gate, SHA-256 content-addressing via `sha2 0.11` (CRYPTO-07), constant-time verify via `subtle`. 24/24 nextest + clippy clean.*
 
 ### Active — Personal Profile (v0.6 + v0.7)
 
 **v0.6 Foundation Crates — substrate (in progress):**
-- [ ] `famp-crypto` — Ed25519 sign/verify with domain-separation prefix, `verify_strict`-only
 - [ ] `famp-core` — shared types, typed error enum, INV-1..11 scaffolding
 
 **v0.7 Personal Runtime — minimal usable library (next):**
@@ -167,7 +167,7 @@ This document evolves at phase transitions and milestone boundaries.
 
 **Shipped:** v0.5.1 Spec Fork (2026-04-13). Interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
 
-**In progress:** v0.6 Foundation Crates — Phase 01 complete (`famp-canonical` shipped, SEED-001 resolved → keep `serde_jcs 0.2.0`). Phase 02 (crypto-foundations) ready to start.
+**In progress:** v0.6 Foundation Crates — Phases 01–02 complete (`famp-canonical` + `famp-crypto` shipped). Phase 03 (core-types-&-invariants) ready to start.
 
 ---
-*Last updated: 2026-04-13 — Phase 01 canonical-json-foundations complete*
+*Last updated: 2026-04-13 — Phase 02 crypto-foundations complete*
