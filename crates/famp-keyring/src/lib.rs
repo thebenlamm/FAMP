@@ -89,7 +89,7 @@ impl Keyring {
     /// entry, no comment header re-emitted (D-B5).
     pub fn save_to_file(&self, path: &Path) -> Result<(), KeyringError> {
         let mut keys: Vec<&Principal> = self.map.keys().collect();
-        keys.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+        keys.sort_by_cached_key(ToString::to_string);
         let mut f = std::fs::File::create(path)?;
         for p in keys {
             let line = file_format::serialize_entry(p, &self.map[p]);

@@ -1,9 +1,9 @@
 //! TOFU semantics + `--peer` flag parser tests (D-B3, D-B4).
 //!
 //! TOFU-1: re-pinning the same (principal, key) is idempotent.
-//! TOFU-2: pinning a DIFFERENT key for the same principal returns KeyConflict.
+//! TOFU-2: pinning a DIFFERENT key for the same principal returns `KeyConflict`.
 //! PEER-1: valid flag parses to (principal, key).
-//! PEER-2: colon separator (`:`) instead of `=` returns InvalidPeerFlag.
+//! PEER-2: colon separator (`:`) instead of `=` returns `InvalidPeerFlag`.
 //! PEER-3: malformed base64 pubkey surfaces as Crypto error.
 
 #![allow(clippy::unwrap_used, unused_crate_dependencies)]

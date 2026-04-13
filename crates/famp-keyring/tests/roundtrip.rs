@@ -3,7 +3,7 @@
 //! RT-1/RT-2: byte-identical round-trip against committed canonical fixture.
 //! RT-3: duplicate principal line rejected with line number.
 //! RT-4: same pubkey under two principals rejected with line number.
-//! RT-5: inline `#` comment rejected as MalformedEntry.
+//! RT-5: inline `#` comment rejected as `MalformedEntry`.
 //! RT-6: `\r\n` line endings tolerated on load.
 
 #![allow(clippy::unwrap_used, unused_crate_dependencies)]

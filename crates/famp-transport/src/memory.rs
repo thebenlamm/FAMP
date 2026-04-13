@@ -1,6 +1,6 @@
 //! In-process byte transport for same-process examples and tests.
 //!
-//! Sized to TRANS-02's ~50 LoC budget for the `impl Transport` body + inbox
+//! Sized to TRANS-02's ~50 `LoC` budget for the `impl Transport` body + inbox
 //! hub struct. `register`, `send_raw_for_test`, and the error variants live
 //! outside that count (D-C6).
 
@@ -176,7 +176,9 @@ mod tests {
             MemoryTransportError::UnknownRecipient { principal } => {
                 assert_eq!(principal, bob);
             }
-            other => panic!("expected UnknownRecipient, got {other:?}"),
+            other @ MemoryTransportError::InboxClosed { .. } => {
+                panic!("expected UnknownRecipient, got {other:?}")
+            }
         }
     }
 

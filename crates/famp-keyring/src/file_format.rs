@@ -22,14 +22,14 @@ use famp_core::Principal;
 use famp_crypto::TrustedVerifyingKey;
 use std::str::FromStr;
 
-pub(crate) struct ParsedEntry {
+pub struct ParsedEntry {
     pub principal: Principal,
     pub key: TrustedVerifyingKey,
 }
 
 /// Parse a single non-comment, non-blank line. `line_no` is 1-based and used
 /// only for error reporting.
-pub(crate) fn parse_line(raw: &str, line_no: usize) -> Result<ParsedEntry, KeyringError> {
+pub fn parse_line(raw: &str, line_no: usize) -> Result<ParsedEntry, KeyringError> {
     // Tolerate trailing `\r` for cross-platform sanity.
     let line = raw.strip_suffix('\r').unwrap_or(raw);
 
@@ -42,11 +42,11 @@ pub(crate) fn parse_line(raw: &str, line_no: usize) -> Result<ParsedEntry, Keyri
     }
 
     let mut parts = line.split_whitespace();
-    let principal_str = parts.next().ok_or(KeyringError::MalformedEntry {
+    let principal_str = parts.next().ok_or_else(|| KeyringError::MalformedEntry {
         line: line_no,
         reason: "missing principal".to_string(),
     })?;
-    let pubkey_str = parts.next().ok_or(KeyringError::MalformedEntry {
+    let pubkey_str = parts.next().ok_or_else(|| KeyringError::MalformedEntry {
         line: line_no,
         reason: "missing pubkey".to_string(),
     })?;
@@ -69,6 +69,6 @@ pub(crate) fn parse_line(raw: &str, line_no: usize) -> Result<ParsedEntry, Keyri
 
 /// Emit one canonical save-format line: `{principal}  {pubkey}\n` — EXACTLY
 /// two spaces as separator (D-B5).
-pub(crate) fn serialize_entry(principal: &Principal, key: &TrustedVerifyingKey) -> String {
+pub fn serialize_entry(principal: &Principal, key: &TrustedVerifyingKey) -> String {
     format!("{}  {}\n", principal, key.to_b64url())
 }

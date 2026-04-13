@@ -86,7 +86,11 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
   3. `cargo run --example personal_two_agents` exits `0` and prints a typed conversation trace containing, in order, a signed `request`, `commit`, `deliver`, and `ack` over `MemoryTransport` (CONF-03).
   4. The three adversarial cases (CONF-05 unsigned / CONF-06 wrong-key / CONF-07 canonical divergence) each fail closed with a distinct typed `ProtocolError` when injected into `MemoryTransport`; no panics, no silent drops, no generic `Error::Other`.
   5. The keyring file format is round-trip tested (load → save → load produces byte-identical bytes) and committed as a fixture.
-**Plans:** TBD
+**Plans:** 4 plans
+- [ ] 03-01-PLAN.md — famp-transport: Transport trait + MemoryTransport + test-util feature (TRANS-01, TRANS-02)
+- [ ] 03-02-PLAN.md — famp-keyring: Keyring + file format + TOFU + --peer flag + round-trip fixture (KEY-01, KEY-02, KEY-03)
+- [ ] 03-03-PLAN.md — Runtime glue in crates/famp/src/runtime/: RuntimeError + peek_sender + canonical pre-check + recipient cross-check + envelope→FSM adapter
+- [ ] 03-04-PLAN.md — personal_two_agents example + subprocess test + CONF-05/06/07 adversarial tests + REQUIREMENTS.md KEY-01 D-A1 fix (EX-01, CONF-03, CONF-05, CONF-06, CONF-07)
 
 ### Phase 4: Minimal HTTP Transport + Cross-Machine Example
 **Goal:** The same signed cycle runs across two processes over HTTPS, bootstrapped from the same TOFU keyring, and the Phase 3 adversarial matrix is extended to `HttpTransport` — no new conformance categories are introduced.
@@ -121,7 +125,7 @@ Rough ordering, not committed:
 | 3. Core Types & Invariants | v0.6 | 2/2 | Complete | 2026-04-13 |
 | 1. Minimal Signed Envelope | v0.7 | 0/? | Not started | - |
 | 2. Minimal Task Lifecycle | v0.7 | 0/3 | Not started | - |
-| 3. MemoryTransport + TOFU Keyring + Same-Process Example | v0.7 | 0/? | Not started | - |
+| 3. MemoryTransport + TOFU Keyring + Same-Process Example | v0.7 | 0/4 | Not started | - |
 | 4. Minimal HTTP Transport + Cross-Machine Example | v0.7 | 0/? | Not started | - |
 
 ---
