@@ -1,0 +1,18 @@
+{
+  "scope": {
+    "task": "translate"
+  },
+  "bounds": {
+    "deadline": "2026-05-01T00:00:00Z",
+    "hop_limit": 3
+  },
+  "accepted_policies": [
+    "policy://famp/v0.7/personal"
+  ],
+  "terminal_condition": {
+    "type": "final_delivery"
+  },
+  "capability_snapshot": {
+    "anything": true
+  }
+}

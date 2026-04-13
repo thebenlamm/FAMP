@@ -1,0 +1,9 @@
+{
+  "interim": false,
+  "result": {
+    "text": "Bonjour le monde."
+  },
+  "provenance": {
+    "signer": "did:example:translator"
+  }
+}

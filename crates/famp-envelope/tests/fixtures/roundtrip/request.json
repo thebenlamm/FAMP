@@ -1,0 +1,10 @@
+{
+  "scope": {
+    "task": "translate"
+  },
+  "bounds": {
+    "deadline": "2026-05-01T00:00:00Z",
+    "hop_limit": 3
+  },
+  "natural_language_summary": "Translate the attached document to French."
+}

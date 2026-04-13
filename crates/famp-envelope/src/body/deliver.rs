@@ -66,8 +66,8 @@ pub enum TerminalStatus {
 
 impl DeliverBody {
     /// Cross-field validation tying `interim` + `terminal_status` + required fields.
-    #[allow(dead_code, clippy::missing_const_for_fn)] // exercised by body_shapes tests (Task 3)
-    pub(crate) fn validate_against_terminal_status(
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn validate_against_terminal_status(
         &self,
         terminal_status: Option<&TerminalStatus>,
     ) -> Result<(), EnvelopeDecodeError> {
