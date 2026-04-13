@@ -35,7 +35,7 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [x] **SPEC-14**: Competing-instance commit intermediate state defined (INV-5 hole closed)
 - [x] **SPEC-15**: Negotiation round counting under supersession pinned
 - [x] **SPEC-16**: Capability snapshot binding vs card version drift contradiction resolved
-- [ ] **SPEC-17**: Body schemas defined for `commit`, `propose`, `deliver`, `control`, `delegate`
+- [x] **SPEC-17**: Body schemas defined for `commit`, `propose`, `deliver`, `control`, `delegate`
 - [ ] **SPEC-18**: Artifact identifier scheme locked (`sha256:<hex>`)
 - [ ] **SPEC-19**: Ed25519 key encoding locked (raw 32-byte pub, 64-byte sig, unpadded base64url)
 - [x] **SPEC-20**: Spec-version constant defined and referenced by implementations
@@ -289,7 +289,7 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SPEC-14 | Phase 1 | Complete |
 | SPEC-15 | Phase 1 | Complete |
 | SPEC-16 | Phase 1 | Complete |
-| SPEC-17 | Phase 1 | Pending |
+| SPEC-17 | Phase 1 | Complete |
 | SPEC-18 | Phase 1 | Pending |
 | SPEC-19 | Phase 1 | Pending |
 | SPEC-20 | Phase 1 | Complete |
