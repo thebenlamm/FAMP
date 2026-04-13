@@ -93,7 +93,9 @@
   4. Invariant constants INV-1 through INV-11 are documented in code (doc comments or const declarations) so every future crate can link to them
   5. Authority scope enum (`advisory`, `negotiate`, `commit_local`, `commit_delegate`, `transfer`) is defined and exhaustive `match` against it compiles across consumer stubs
 
-**Plans**: TBD
+**Plans:** 2 plans
+- [x] 03-01-PLAN.md — Identity (Principal/Instance), UUIDv7 ID newtypes, ArtifactId with narrow parse errors (CORE-01, CORE-02, CORE-03)
+- [ ] 03-02-PLAN.md — ProtocolErrorKind (15 §15.1 categories), AuthorityScope ladder, INV-1..INV-11 invariants module, exhaustive consumer stub (CORE-04, CORE-05, CORE-06)
 
 ---
 
@@ -103,7 +105,7 @@
 |-------|----------------|--------|-----------|
 | 1. Canonical JSON Foundations | 3/3 | Complete | 2026-04-13 |
 | 2. Crypto Foundations | 0/3 | Planning | - |
-| 3. Core Types & Invariants | 0/0 | Not started | - |
+| 3. Core Types & Invariants | 0/2 | Planning | - |
 
 ## Coverage Summary
 
