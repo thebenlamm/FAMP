@@ -33,6 +33,7 @@ use insta as _;
 use proptest as _;
 
 pub mod error;
+pub mod hash;
 pub mod keys;
 pub mod prefix;
 pub mod sign;
@@ -40,6 +41,7 @@ pub mod traits;
 pub mod verify;
 
 pub use error::CryptoError;
+pub use hash::{sha256_artifact_id, sha256_digest};
 pub use keys::{FampSignature, FampSigningKey, TrustedVerifyingKey};
 pub use prefix::{canonicalize_for_signature, DOMAIN_PREFIX};
 pub use sign::{sign_canonical_bytes, sign_value};

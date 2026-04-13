@@ -11,6 +11,7 @@ use hex as _;
 use insta as _;
 use serde as _;
 use serde_json as _;
+use sha2 as _;
 use subtle as _;
 use thiserror as _;
 use zeroize as _;
