@@ -1,11 +1,13 @@
-//! `famp` — FAMP v0.5.1 umbrella crate.
-//!
-//! Phase 0 stub. Re-exports land in Phase 8.
+//! FAMP top-level crate — runtime composition of envelope, crypto,
+//! canonical JSON, FSM, transport, and keyring. Examples live under
+//! `examples/`; integration tests under `tests/`.
 
 #![forbid(unsafe_code)]
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles_and_links() {}
-}
+// These crates are used by Task 2 (loop_fn) and integration tests. Silence
+// the workspace `unused_crate_dependencies` lint until then.
+use famp_crypto as _;
+use famp_transport as _;
+use tokio as _;
+
+pub mod runtime;

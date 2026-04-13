@@ -244,6 +244,18 @@ dependencies = [
 [[package]]
 name = "famp"
 version = "0.1.0"
+dependencies = [
+ "famp-canonical",
+ "famp-core",
+ "famp-crypto",
+ "famp-envelope",
+ "famp-fsm",
+ "famp-keyring",
+ "famp-transport",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "famp-canonical"

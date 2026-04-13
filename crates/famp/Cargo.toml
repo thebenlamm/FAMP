@@ -12,6 +12,22 @@ description = "FAMP v0.5.1 — umbrella crate and CLI"
 workspace = true
 
 [dependencies]
+famp-core = { path = "../famp-core" }
+famp-canonical = { path = "../famp-canonical" }
+famp-crypto = { path = "../famp-crypto" }
+famp-envelope = { path = "../famp-envelope" }
+famp-fsm = { path = "../famp-fsm" }
+famp-transport = { path = "../famp-transport" }
+famp-keyring = { path = "../famp-keyring" }
+tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# test-util feature of famp-transport is ONLY enabled in dev-dependencies so
+# send_raw_for_test is unreachable from production builds (D-D6).
+famp-transport = { path = "../famp-transport", features = ["test-util"] }
+tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
 
 [[bin]]
 name = "famp"
