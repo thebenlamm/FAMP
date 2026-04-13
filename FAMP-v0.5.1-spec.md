@@ -91,13 +91,95 @@ Two worked canonical-JSON examples (Example A, Example B) appear below in
 this section; a full Ed25519 worked signature example using canonical JSON
 is provided in §7.1c.
 
+## §7.1 Signature (amendment — recipient binding)
+
+The `to` field is part of the canonical JSON that is signed by the sender. A
+signed envelope binds `to` the recipient: **a signed envelope addressed to
+agent A MUST NOT be replayable to agent B**. This property is FAMP's
+**recipient anti-replay** guarantee.
+
+Any verifier that accepts an envelope without enforcing `envelope.to ==
+self_principal` is non-conformant. The signature-over-canonical-JSON
+machinery of §7.1a provides the cryptographic binding; this section makes
+the policy normative.
+
 ## §7.1a Domain separation
 
-*Placeholder — populated by Plan 02.*
+The FAMP signature domain is separated from every other Ed25519 signing
+context by a fixed prefix prepended to the canonical JSON input before
+Ed25519 signing.
+
+**Prefix (literal bytes):** `b"FAMP-sig-v1\x00"` — 12 bytes total: the 11
+ASCII characters `F A M P - s i g - v 1` followed by one NUL byte.
+
+**Prefix (hex):** `46 41 4d 50 2d 73 69 67 2d 76 31 00`
+
+**Signing formula:**
+
+```
+signing_input   = prefix || canonical_json_bytes
+signature       = Ed25519.sign(sk, signing_input)
+```
+
+where `canonical_json_bytes` is the RFC 8785 output (see §4a) of the
+envelope **with the `signature` field omitted** from the object before
+canonicalization.
+
+Verification MUST apply the identical prefix in the identical position. The
+prefix is prepended; it is **not** appended, **not** interleaved, and **not**
+included as a JSON field in the envelope body.
+
+**Rationale.** Domain separation prevents cross-protocol signature confusion
+where a FAMP signature could be mistaken for a signature over arbitrary JSON
+in an unrelated protocol that happens to share an Ed25519 key. Without a
+prefix, an adversary could extract a FAMP signature and present it as a
+valid signature in another system whose signed payloads happen to collide
+with a FAMP canonical-JSON form.
+
+A byte-level worked example (test keypair, canonical-JSON bytes, full
+signing-input hex, 64-byte signature hex) is provided in §7.1c.
 
 ## §7.1b Ed25519 encoding
 
-*Placeholder — populated by Plan 02.*
+Ed25519 signing, key format, and verification semantics follow RFC 8032.
+
+**Key and signature format (RFC 8032 §5.1.2, §5.1.6):**
+
+- Ed25519 public keys are raw **32 bytes** (compressed Edwards point per
+  RFC 8032 §5.1.2).
+- Ed25519 signatures are raw **64 bytes** (`R || S` concatenation per
+  RFC 8032 §5.1.6).
+
+**Wire encoding (RFC 4648 §5):**
+
+Both public keys and signatures are wire-encoded as **unpadded base64url**
+per RFC 4648 §5, Table 2 alphabet (`A-Z a-z 0-9 - _`).
+
+Encoded lengths:
+
+| Field           | Raw bytes | Base64url chars |
+|-----------------|-----------|-----------------|
+| Public key      | 32        | 43              |
+| Signature       | 64        | 86              |
+| Idempotency key | 16        | 22              |
+
+**Decoder rejection list.** Decoders MUST reject:
+
+a. any `=` padding character;
+b. the standard (non-url) alphabet characters `+` and `/`;
+c. embedded whitespace (spaces, tabs, newlines) within the encoded string;
+d. trailing garbage (any byte after the expected number of base64url chars).
+
+**Strict verification (RFC 8032 §5.1.7).** Signature verification MUST use
+the **strict** form: reject `R` that decodes to a small-order point, and
+reject non-canonical `S` (enforce the upper bound `S < L` where `L` is the
+Ed25519 group order). This matches `ed25519-dalek 2.2`'s `verify_strict`.
+**Cofactor-tolerant verification** (the raw §5.1.7 equation
+`[8]SB = [8]R + [8]kA`) is non-conformant for FAMP.
+
+**Weak key rejection.** Weak (8-torsion) public keys MUST be rejected at
+**trust-list ingress**, not only at verify time. A trust list containing a
+small-order public key is itself malformed.
 
 ## §7.1c Worked signature example
 
@@ -168,3 +250,6 @@ are stable references of the form `v0.5.1-Δnn`.
 
 - `v0.5.1-Δ04 — §4a Canonical JSON — PITFALLS P1/P2/P3 — RFC 8785 JCS made normative with §3.2.3 and §3.2.2.3 pull-quotes, duplicate-key rejection, no-Unicode-normalization clause.`
 - `v0.5.1-Δ05 — §4a Canonical JSON — CONTEXT D-08 — serde arbitrary_precision and preserve_order forbidden; NaN/±Infinity rejected; integers > 2^53 serialized as strings.`
+- `v0.5.1-Δ08 — §7.1a Domain separation — PITFALLS P5 — Fixed prefix b"FAMP-sig-v1\x00" (12 bytes); prepended to canonical JSON before Ed25519 sign/verify.`
+- `v0.5.1-Δ09 — §7.1 — v0.5 reviewer finding (cross-recipient replay) — signature binds the to field; recipient anti-replay made normative.`
+- `v0.5.1-Δ10 — §7.1b Ed25519 encoding — PITFALLS P4 — Raw 32/64-byte, unpadded base64url (RFC 4648 §5); verify_strict semantics normative; decoder rejection list specified.`
