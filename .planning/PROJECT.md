@@ -2,11 +2,17 @@
 
 ## What This Is
 
-A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.5 — a protocol defining semantics for communication among autonomous AI agents within a trusted federation. The implementation provides a conformance-grade library covering identity, causality, negotiation, commitment, delegation, and provenance across three protocol layers, plus a reference HTTP transport binding.
+A Rust implementation of FAMP (Federated Agent Messaging Protocol) v0.5.1, staged in **two profiles** so a single developer can get a usable library before the full federation-grade semantics are built out.
+
+1. **Personal Profile (v0.6 + v0.7)** — the minimum usable library. Byte-exact canonical JSON, Ed25519-signed envelopes with domain separation, a four-state task lifecycle, and an in-process `MemoryTransport`. Goal: one developer can wire two locally-trusted agents in a single binary and run a signature-verified `request → commit → deliver` cycle end to end.
+
+2. **Federation Profile (v0.8+)** — adds the semantics that matter at ecosystem scale: Agent Cards + federation credentials, negotiation/counter-proposal, the three delegation forms, provenance graphs, an extensions registry, an HTTP transport binding, the adversarial conformance matrix, and Level 2 + Level 3 conformance badges.
+
+The signing substrate is the same in both profiles. Canonicalization, signing, and core types are done once and correctly in v0.6; Personal Profile exercises that substrate against a minimal runtime in v0.7; Federation Profile stacks ecosystem semantics on top without re-deriving the interop bytes.
 
 ## Core Value
 
-**A byte-exact, signature-verifiable implementation of FAMP that two independent parties can interop against from day one.** If canonicalization or signature verification disagrees, nothing else matters.
+**A byte-exact, signature-verifiable FAMP substrate a single developer can use from their own code today, and two independent parties can interop against later.** If canonicalization or signature verification disagrees, nothing else matters — so Personal Profile exercises the same signing contract Federation Profile will depend on.
 
 ## Requirements
 
@@ -14,38 +20,50 @@ A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.
 
 - [x] Rust toolchain bootstrap (install rustup, pin toolchain, workspace scaffold) — *Validated in Phase 00: toolchain-workspace-scaffold*
 - [x] Fork spec to `FAMP-v0.5.1-spec.md` and resolve identified ambiguities/bugs (canonical JSON, body schemas, state-machine holes) — *Validated in v0.5.1 milestone (Phase 01: spec-fork). 1038-line spec, 28 changelog entries, 21/21 spec-lint anchors green, worked Ed25519 example byte-exact from external reference per PITFALLS P10.*
+- [x] `famp-canonical` — RFC 8785 JCS canonicalization with external-vector conformance gate — *Validated in Phase 01: canonical-json-foundations. 12/12 conformance tests green (Appendix B/C/E byte-exact, 100K cyberphone float corpus, UTF-16 supplementary, duplicate-key rejection). SEED-001 resolved: keep `serde_jcs 0.2.0`. CI gate + nightly 100M full-corpus workflow live; fallback plan on disk as insurance.*
 
-### Active
-- [ ] `famp-canonical` crate implementing RFC 8785 JCS canonical JSON
-- [ ] `famp-crypto` crate wrapping Ed25519 sign/verify with domain separation
-- [ ] `famp-core` types, errors, invariants (INV-1 through INV-11)
-- [ ] `famp-envelope` encode/decode/validate with mandatory signatures
-- [ ] `famp-identity` principal/instance, Agent Card, federation trust stub
-- [ ] `famp-causality` relations, semantic ack, freshness, replay cache
-- [ ] `famp-fsm` conversation + task state machines (compiler-checked terminal states)
-- [ ] `famp-negotiate` proposals, counter-proposals, commit binding, round limits
-- [ ] `famp-delegate` three delegation forms, transfer timeout, delegation ceiling
-- [ ] `famp-provenance` deterministic provenance graph, redaction, signed terminal reports
-- [ ] `famp-extensions` critical/non-critical registry, INV-9 fail-closed
-- [ ] `famp-transport` trait + `MemoryTransport` (in-process) + `HttpTransport` (reference wire)
-- [ ] Conformance test vectors published as language-neutral JSON fixtures
-- [ ] State machine model checking via `proptest` + `stateright`
-- [ ] Adversarial test suite (replay, stale commit, canonical divergence, silent delegation, competing commits, round overflow)
-- [ ] Two-node integration test exercising negotiate → commit → delegate → deliver happy path and cancellation races
-- [ ] Level 2 (Conversational) + Level 3 (Task-capable) conformance
+### Active — Personal Profile (v0.6 + v0.7)
 
-### Out of Scope
+**v0.6 Foundation Crates — substrate (in progress):**
+- [ ] `famp-crypto` — Ed25519 sign/verify with domain-separation prefix, `verify_strict`-only
+- [ ] `famp-core` — shared types, typed error enum, INV-1..11 scaffolding
 
-- **Level 1-only release** — tempts users to build on a base without signature discipline exercised against real flows
+**v0.7 Personal Runtime — minimal usable library (next):**
+- [ ] `famp-envelope` — signed envelope with INV-10 enforcement; body schemas for `request`, `commit`, `deliver`, `ack`, `control/cancel` only
+- [ ] Minimal task lifecycle FSM: `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}` (4 states, compiler-checked terminals). No `REJECTED`, no `EXPIRED`, no timeouts.
+- [ ] `famp-transport` trait + `MemoryTransport` (in-process, ~50 LoC)
+- [ ] Trust-on-first-use keyring — local `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey. No Agent Card.
+- [ ] `famp-transport-http` (minimal) — axum `POST /famp/v0.5.1/inbox` endpoint, `reqwest` client send, rustls TLS, 1 MB body limit, signature-verification middleware before routing. **No** `.well-known` Agent Card distribution (TOFU keyring only), **no** cancellation-safe spawn-channel pattern.
+- [ ] `famp/examples/personal_two_agents.rs` — end-to-end signed request/commit/deliver in one binary via `MemoryTransport`, with typed trace
+- [ ] `famp/examples/cross_machine_two_agents.rs` — same flow across two processes/machines via HTTP, bootstrapped from a local keyring file or CLI flags (no Agent Card fetch)
+- [ ] Minimal negative tests: unsigned rejected, wrong-key rejected, canonical divergence detected — run against **both** transports
+
+### Deferred — Federation Profile (v0.8+)
+
+These are tracked in `REQUIREMENTS.md` but are **not v1-blocking**. They matter at ecosystem scale, not for a personally-usable library.
+
+- **Agent Card + federation credential + trust registry** — Personal Profile uses a local pubkey keyring; Federation Profile adds the card format, self-signature resolution, capability declaration, and pluggable trust store.
+- **`famp-causality` beyond `in_reply_to`** — freshness windows, bounded replay cache, supersession, idempotency-key scoping all defer.
+- **Negotiation / counter-proposal / round limits** (`famp-protocol`) — Personal Profile uses direct `request → commit`; no `propose` body.
+- **Three delegation forms** (`assist`, `subtask`, `transfer`) + transfer timeout + delegation ceiling — defer entire `famp-delegate` crate.
+- **Provenance graph** (`famp-provenance`) — deterministic construction, redaction, signed terminal reports all defer.
+- **Extensions registry** (`famp-extensions`) — critical/non-critical classification, INV-9 fail-closed. Defer.
+- **HTTP transport — Agent-Card-aware pieces only.** Personal V1 ships a minimal HTTP binding (inbox endpoint, reqwest client, rustls, sig-verification middleware). Deferred: `.well-known` Agent Card distribution (TRANS-05), cancellation-safe spawn-channel send path (TRANS-08).
+- **Adversarial conformance matrix** — replay, stale commit, canonical divergence, silent delegation, competing commits, round overflow, drop-at-every-await, key rotation. Personal Profile ships a minimal 3-case negative suite only.
+- **`stateright` model checking** — defer; `proptest` transition-legality tests are sufficient for Personal Profile.
+- **Level 2 (Conversational) + Level 3 (Task-capable) conformance badges** — defer to Federation Profile. Personal Profile is not a conformance-release target.
+- **CLI (`famp keygen`, `famp envelope sign`, `famp serve`, …)** — library-first; CLI lands with Federation Profile.
+
+### Out of Scope (permanent)
+
 - **Python/TypeScript bindings in v1** — core must be proven first; bindings follow as separate milestone
-- **Additional transports (libp2p, NATS, WebSocket)** — `Transport` trait leaves them open; only HTTP+JSON reference in v1
-- **Multi-party commitment profiles** — spec §23 Q1 explicitly defers; bilateral only in v1
+- **Additional transports (libp2p, NATS, WebSocket)** — `Transport` trait leaves them open; not v1
+- **Multi-party commitment profiles** — spec §23 Q1 explicitly defers; bilateral only
 - **Cross-federation delegation** — spec §23 Q3; bilateral peering not defined
-- **Streaming (token-by-token) deliver** — spec §23 Q2; `interim: true` deliveries sufficient for v1
-- **Real federation trust registry** — stub with hardcoded trust list; production trust infra is federation-specific
+- **Streaming (token-by-token) deliver** — spec §23 Q2; `interim: true` deliveries sufficient
 - **Economic/reputation/payment layers** — spec §21 exclusions stand
 - **Agent lifecycle management** (start/stop/upgrade/monitor) — out of protocol scope per §21
-- **Production deployment tooling** (packaging, observability, dashboards) — library-first; ops concerns deferred
+- **Production deployment tooling** — library-first; ops concerns deferred
 
 ## Context
 
@@ -88,7 +106,8 @@ A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Language: Rust | Compiler-checked invariants (INV-5 via enum `match`), byte-exact Ed25519 and canonical JSON, single core can feed future bindings | — Pending |
-| Ship Level 2 + Level 3 together as v1 | Level 1 alone doesn't exercise signature discipline against real message flows; tempts fragile downstream builds | — Pending |
+| **Personal Profile before Federation Profile** | Solo-dev usability is the near-term goal; federation-grade semantics (delegation taxonomy, provenance graph, Agent Cards, adversarial matrix, conformance badges) are expensive and mostly matter at ecosystem scale. Ship the signing substrate + a minimal usable runtime first, then stack federation on top without changing the substrate. | **Adopted 2026-04-12** |
+| ~~Ship Level 2 + Level 3 together as v1~~ | **Superseded 2026-04-12.** Rationale still valid for Federation Profile, but Personal Profile explicitly is not a conformance-release target. Level 2 + Level 3 badges now live in Federation Profile. | Superseded |
 | Fork spec to v0.5.1 rather than write profile addendum | State-machine findings are real bugs not ambiguities; profile-that-contradicts-spec causes interop confusion | — Pending |
 | Both `MemoryTransport` and `HttpTransport` in v1 | Memory transport is ~50 lines and makes full-flow tests run in microseconds; HTTP is the wire reference everyone points at | — Pending |
 | RFC 8785 JCS for canonical JSON | Only widely-reviewed canonical JSON spec; avoids inventing our own corner-case rules for Unicode/number/duplicate-key handling | — Pending |
@@ -113,9 +132,9 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v0.6 Foundation Crates
+## Current Milestone: v0.6 Foundation Crates (Personal Profile — part 1 of 2)
 
-**Goal:** Deliver byte-exact canonical JSON and signature-verifiable Ed25519 primitives, plus compiler-checked core types — the substrate every downstream FAMP crate signs against.
+**Goal:** Deliver byte-exact canonical JSON and signature-verifiable Ed25519 primitives, plus compiler-checked core types — the substrate every downstream FAMP crate (Personal and Federation profiles alike) signs against.
 
 **Target crates:**
 - `famp-canonical` — RFC 8785 JCS canonicalization with an external-vector conformance gate (SEED-001)
@@ -126,9 +145,29 @@ This document evolves at phase transitions and milestone boundaries.
 
 **Phase numbering:** reset to Phase 1 (v0.5.1 was a doc milestone; v0.6 is the first code milestone).
 
+## Next Milestone: v0.7 Personal Runtime (Personal Profile — part 2 of 2)
+
+**Goal:** A single developer can run the same signed `request → commit → deliver` cycle **two ways**: (a) in one binary via `MemoryTransport`, and (b) across two machines / two processes via a minimal HTTP binding, with trust bootstrapped from a local keyring file. This is the finish line for "something I can use myself."
+
+**Target crates / deliverables:**
+- `famp-envelope` — signed envelope with mandatory-signature enforcement; body schemas for **only** `request`, `commit`, `deliver`, `ack`, `control/cancel`. Negotiation, delegation, announce, describe bodies explicitly omitted.
+- Minimal task FSM — 4 states (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`), compiler-checked terminals, no `stateright` model check (defer), no timeouts.
+- `famp-transport` trait + `MemoryTransport` (in-process, ~50 LoC).
+- `famp-transport-http` **minimal subset**: axum `POST /famp/v0.5.1/inbox` endpoint, `reqwest` client send, rustls TLS, 1 MB body-size limit, signature-verification middleware running **before** routing. No `.well-known` Agent Card distribution (TRANS-05), no cancellation-safe spawn-channel send (TRANS-08) — both defer to Federation Profile.
+- Trust-on-first-use keyring — local `HashMap<Principal, VerifyingKey>`; principal = raw Ed25519 pubkey, bootstrapped from a keyring file or CLI flags. No Agent Card, no federation credential, no trust registry.
+- `famp/examples/personal_two_agents.rs` — end-to-end happy path in one binary via `MemoryTransport`, printing a typed trace.
+- `famp/examples/cross_machine_two_agents.rs` — same flow across two processes via HTTP. Both ends load the other's pubkey from a local file.
+- Negative tests run against **both** transports: unsigned rejected, wrong-key rejected, canonical divergence detected. Three cases × two transports, not eighteen.
+
+**Explicitly NOT in v0.7:** Agent Card, federation credential, trust registry, `.well-known` distribution, negotiation/counter-proposal, three delegation forms, provenance graph, extensions registry, `stateright` model checking, adversarial conformance matrix, Level 2/3 badges, CLI, cancellation-safe send path. All move to Federation Profile milestones v0.8+.
+
+**Success shape:** `cargo run --example personal_two_agents` prints a signed conversation trace and exits 0; running `cross_machine_two_agents` server in one shell and client in another completes the same cycle over HTTPS; the three negative tests fail closed with typed errors on both transports; `just ci` green.
+
 ## Current State
 
 **Shipped:** v0.5.1 Spec Fork (2026-04-13). Interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
 
+**In progress:** v0.6 Foundation Crates — Phase 01 complete (`famp-canonical` shipped, SEED-001 resolved → keep `serde_jcs 0.2.0`). Phase 02 (crypto-foundations) ready to start.
+
 ---
-*Last updated: 2026-04-12 — v0.6 Foundation Crates milestone started*
+*Last updated: 2026-04-13 — Phase 01 canonical-json-foundations complete*
