@@ -105,15 +105,20 @@ These are tracked in `REQUIREMENTS.md` but are **not v1-blocking**. They matter 
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Language: Rust | Compiler-checked invariants (INV-5 via enum `match`), byte-exact Ed25519 and canonical JSON, single core can feed future bindings | — Pending |
-| **Personal Profile before Federation Profile** | Solo-dev usability is the near-term goal; federation-grade semantics (delegation taxonomy, provenance graph, Agent Cards, adversarial matrix, conformance badges) are expensive and mostly matter at ecosystem scale. Ship the signing substrate + a minimal usable runtime first, then stack federation on top without changing the substrate. | **Adopted 2026-04-12** |
+| Language: Rust | Compiler-checked invariants (INV-5 via enum `match`), byte-exact Ed25519 and canonical JSON, single core can feed future bindings | ✓ Good — CORE-05/06 exhaustive `match` under `#![deny(unreachable_patterns)]` validated the claim; `serde_jcs` + `ed25519-dalek` gave byte-exact on first try |
+| **Personal Profile before Federation Profile** | Solo-dev usability is the near-term goal; federation-grade semantics are expensive and mostly matter at ecosystem scale. Ship the signing substrate + a minimal usable runtime first, then stack federation on top without changing the substrate. | ✓ Good — v0.6 substrate shipped in one day because scope was narrow; v0.7 runtime sits on top without substrate churn |
 | ~~Ship Level 2 + Level 3 together as v1~~ | **Superseded 2026-04-12.** Rationale still valid for Federation Profile, but Personal Profile explicitly is not a conformance-release target. Level 2 + Level 3 badges now live in Federation Profile. | Superseded |
-| Fork spec to v0.5.1 rather than write profile addendum | State-machine findings are real bugs not ambiguities; profile-that-contradicts-spec causes interop confusion | — Pending |
-| Both `MemoryTransport` and `HttpTransport` in v1 | Memory transport is ~50 lines and makes full-flow tests run in microseconds; HTTP is the wire reference everyone points at | — Pending |
-| RFC 8785 JCS for canonical JSON | Only widely-reviewed canonical JSON spec; avoids inventing our own corner-case rules for Unicode/number/duplicate-key handling | — Pending |
-| Ed25519 key encoding: raw 32-byte pub / 64-byte sig, unpadded base64url | Matches `ed25519-dalek` defaults; simplest interop contract | — Pending |
-| Artifact IDs: `sha256:<hex>` prefix scheme | SHA-256 is "RECOMMENDED" in spec; hex encoding is canonical and unambiguous | — Pending |
-| Test strategy: conformance vectors → FSM model checking → adversarial suite → two-node integration | Each layer catches a distinct failure class; vectors are the interop contract future implementations hold us to | — Pending |
+| Fork spec to v0.5.1 rather than write profile addendum | State-machine findings are real bugs not ambiguities; profile-that-contradicts-spec causes interop confusion | ✓ Good — v0.5.1 shipped; spec-lint anchors + FAMP_SPEC_VERSION constant make drift detectable |
+| Both `MemoryTransport` and `HttpTransport` in v1 | Memory transport is ~50 lines; HTTP is the wire reference everyone points at | — Pending (v0.7) |
+| **Keep `serde_jcs 0.2.0` rather than fork to `famp-canonical` (SEED-001)** | 12/12 RFC 8785 conformance gate green end-to-end (Appendix B/C/E, 100K float corpus, UTF-16 supplementary, NaN/Inf, duplicate-key). `ryu-js` number formatter proven correct. Fork would be ~500 LoC for zero measurable gain. Fallback plan on disk as insurance. | ✓ Good — decision recorded 2026-04-13 in `.planning/SEED-001.md` with cited evidence; nightly 100M-line full-corpus workflow re-validates on cron |
+| **`verify_strict`-only public surface for Ed25519** | Raw `verify` tolerates non-canonical / small-subgroup signatures; unacceptable for protocol-level non-repudiation. Typing-out `verify` from the public API makes misuse unreachable, not just discouraged. | ✓ Good — README + wrapper audit landed in Plan 02-03; §7.1c worked example re-verifies every CI run |
+| **Domain separation prefix prepended internally, never by callers** | Callers who assemble signing input by hand will eventually assemble it wrong (PITFALLS P10 worked example is the standing receipt). `famp-crypto::canonicalize_for_signature` is the only sanctioned path. | ✓ Good — §7.1c fixture byte-exact on first run against external Python reference |
+| **Narrow, phase-appropriate error enums (not one god enum)** | Compiler-checked `match` over a 5-variant crypto error catches 100% of crypto failure modes; bolting the same enum onto canonical / envelope / transport would produce a 40-variant monster that matches nothing specific. | ✓ Good — pattern repeated in Plans 01-01 (D-16) and 02-01 with no regret |
+| Ed25519 key encoding: raw 32-byte pub / 64-byte sig, unpadded base64url | Matches `ed25519-dalek` defaults; simplest interop contract; strict codec rejects padding and mixed alphabets | ✓ Good — base64 round-trip property tests green; strict decoder catches malformed fixtures |
+| Artifact IDs: `sha256:<hex>` prefix scheme | SHA-256 is "RECOMMENDED" in spec; hex encoding is canonical and unambiguous; `famp-canonical`, `famp-crypto::sha256_artifact_id`, and `famp-core::ArtifactId` all agree on the exact string form | ✓ Good — NIST FIPS 180-2 KATs + cross-crate agreement test green |
+| **15-category flat `ProtocolErrorKind` + exhaustive consumer stub under `#![deny(unreachable_patterns)]`** | Every downstream crate that adds a `_ => …` arm instead of exhaustively matching is a future interop bug. The consumer stub turns "forgot a new error category" into a hard compile error, not a runtime surprise. | ✓ Good — stub pattern ready to be re-used in `famp-envelope` |
+| **`AuthorityScope` with hand-written 5×5 `satisfies()` truth table, no `Ord` derive** | Authority is a ladder, not a total order; deriving `Ord` would silently admit "commit_delegate > negotiate" comparisons that aren't meaningful. Hand-written table makes the spec §10 semantics reviewable. | ✓ Good — truth table committed; proptest round-trip + symmetry checks green |
+| Test strategy: conformance vectors → FSM model checking → adversarial suite → two-node integration | Each layer catches a distinct failure class; vectors are the interop contract future implementations hold us to | ✓ Good so far — v0.6 exercised conformance vectors; FSM model checking and adversarial suite still ahead |
 
 ## Evolution
 
@@ -165,9 +170,11 @@ This document evolves at phase transitions and milestone boundaries.
 
 ## Current State
 
-**Shipped:** v0.5.1 Spec Fork (2026-04-13). Interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
+**Shipped:**
+- **v0.5.1 Spec Fork** (2026-04-13) — interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
+- **v0.6 Foundation Crates** (2026-04-13) — substrate fully shipped. `famp-canonical` (RFC 8785 JCS, SEED-001 resolved `serde_jcs`, 12/12 conformance gate, nightly 100M float corpus), `famp-crypto` (Ed25519 `verify_strict`-only, SPEC-03 domain separation, PITFALLS §7.1c worked example byte-exact, NIST KATs, `sha256_artifact_id`), `famp-core` (Principal/Instance, UUIDv7 ID newtypes, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, exhaustive consumer stub under `#![deny(unreachable_patterns)]`). 25/25 requirements satisfied. 112/112 workspace tests green. `just ci` clean end-to-end.
 
-**In progress:** v0.6 Foundation Crates — Phases 01–02 complete (`famp-canonical` + `famp-crypto` shipped). Phase 03 (core-types-&-invariants) ready to start.
+**Next:** v0.7 Personal Runtime — `famp-envelope`, 4-state task FSM, `MemoryTransport`, minimal HTTP transport, TOFU keyring, both two-agent examples.
 
 ---
-*Last updated: 2026-04-13 — Phase 03 core-types-invariants complete; v0.6 Foundation Crates substrate fully shipped*
+*Last updated: 2026-04-13 — v0.6 Foundation Crates milestone shipped and archived*

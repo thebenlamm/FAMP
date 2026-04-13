@@ -1,9 +1,9 @@
 ---
 phase: 1
 slug: canonical-json-foundations
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: planned
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-12
 ---
 
@@ -38,7 +38,14 @@ created: 2026-04-12
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| TBD — populated by planner | | | | | | | ⬜ pending |
+| 01-01-T1 | 01-01 | 1 | SPEC-02 (deps) | build | `cargo build -p famp-canonical` | ❌ Wave 0 | ⬜ pending |
+| 01-01-T2 | 01-01 | 1 | CANON-07 | manual | `test -f crates/famp-canonical/docs/fallback.md && wc -l` | ❌ Wave 0 | ⬜ pending |
+| 01-01-T3 | 01-01 | 1 | CANON-02/03/04/05/06, SPEC-18 (harness) | build | `cargo build -p famp-canonical --tests` | ❌ Wave 0 | ⬜ pending |
+| 01-02-T1 | 01-02 | 2 | CANON-01, CANON-06, SPEC-18 | unit | `cargo nextest run -p famp-canonical duplicate_keys artifact_id` | ❌ Wave 2 | ⬜ pending |
+| 01-02-T2 | 01-02 | 2 | CANON-04 (fixtures), CANON-03 (corpus sample) | unit (compile) | `cargo build -p famp-canonical --tests` | ❌ Wave 2 | ⬜ pending |
+| 01-03-T1 | 01-03 | 3 | CANON-02, CANON-03, CANON-04, CANON-05 | unit + manual ADR | `cargo nextest run -p famp-canonical && grep "Decision:" .planning/SEED-001.md` | ❌ Wave 3 | ⬜ pending |
+| 01-03-T2 | 01-03 | 3 | CANON-02 (CI gate) | manual + recipe | `just test-canonical-strict` | ❌ Wave 3 | ⬜ pending |
+| 01-03-T3 | 01-03 | 3 | Phase closeout | checkpoint | human-verify | ❌ Wave 3 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

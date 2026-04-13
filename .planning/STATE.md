@@ -2,74 +2,69 @@
 gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
-status: unknown
-last_updated: "2026-04-13T15:04:49.918Z"
+status: ready_for_new_milestone
+last_updated: "2026-04-13T16:00:00.000Z"
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
-# STATE: FAMP v0.6 Foundation Crates
+# STATE: FAMP — Between Milestones
 
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-04-13
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-12)
+See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 03 — core-types-invariants
+**Current focus:** Planning v0.7 Personal Runtime — minimal usable library on `MemoryTransport` + minimal HTTP transport.
 
 ## Current Position
 
-Phase: 03
-Plan: Not started
+Milestone: **v0.7 Personal Runtime** (not yet started)
+Phase: —
+Plan: —
 
-## Milestone Roadmap Snapshot
+Use `/gsd:new-milestone` to initialize v0.7 (requirements → roadmap).
 
-- [x] Phase 1: Canonical JSON Foundations (CANON-01..07, SPEC-02, SPEC-18) — **COMPLETE** 2026-04-13, SEED-001 RESOLVED (keep serde_jcs, 12/12 gate green)
-- [x] Phase 2: Crypto Foundations (CRYPTO-01..08, SPEC-03, SPEC-19) — **COMPLETE** 2026-04-13, CRYPTO-07 gap closed via plan 02-04 (sha256_artifact_id + NIST KAT gate)
-- [ ] Phase 3: Core Types & Invariants (CORE-01..06)
+## Last Shipped
+
+- **v0.6 Foundation Crates** (2026-04-13) — `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests, `just ci` green. Archived to `.planning/milestones/v0.6-*.md` and `.planning/milestones/v0.6-phases/`. Git tag: `v0.6`.
 
 ## Accumulated Context
 
-### Key Decisions Logged (carried from v0.5.1)
+### Key Decisions Logged (carried forward)
 
-- **Language: Rust** — Compiler-checked INV-5 via exhaustive enum `match`; byte-exact Ed25519 + canonical JSON
-- **Ship Level 2 + Level 3 together** — L1-only doesn't exercise signature discipline
+- **Language: Rust** — compiler-checked INV-5 via exhaustive enum `match`
+- **Personal Profile before Federation Profile** (adopted 2026-04-12) — v0.6 + v0.7 are the solo-dev finish line; v0.8+ stacks federation semantics on top without substrate churn
 - **v0.5.1 spec fork is authority** — all implementation bytes hash against `FAMP-v0.5.1-spec.md`
-- **`serde_jcs` wrapped in `famp-canonical`** with RFC 8785 CI gate + documented ~500 LoC fallback (SEED-001 — decision lands in Phase 1)
-- **Only `verify_strict`** exposed from `famp-crypto`; weak keys rejected at ingress
-- **Domain separation prefix** added in v0.5.1 §7.1 — `famp-crypto` must implement with hex-dump worked example
-- **Ed25519 wire encoding:** raw 32-byte pub / 64-byte sig, unpadded base64url
-- **Phase numbering reset to 1 for v0.6** — v0.5.1 was a doc milestone; v0.6 is first code milestone
+- **SEED-001 RESOLVED 2026-04-13:** keep `serde_jcs 0.2.0` — 12/12 RFC 8785 conformance gate green; fallback plan on disk as insurance. Evidence in `.planning/SEED-001.md`.
+- **`verify_strict`-only public surface** — raw `verify` unreachable from `famp-crypto` public API
+- **Domain separation prefix prepended internally** — callers never assemble signing input by hand; `canonicalize_for_signature` is the only sanctioned path
+- **Narrow, phase-appropriate error enums** — not one god enum (repeated pattern in Plans 01-01 D-16 and 02-01)
+- **15-category flat `ProtocolErrorKind` + exhaustive consumer stub under `#![deny(unreachable_patterns)]`** — new error categories become compile errors in downstream crates
+- **`AuthorityScope` hand-written 5×5 `satisfies()` truth table, no `Ord` derive** — authority is a ladder, not a total order
 
-### Open TODOs (carried)
+### Open TODOs
 
-- Test-files clippy hygiene sweep (`unwrap_used` / `expect_used` workspace denies) — carried from Plan 01-02, non-blocking for Phase 2
-
-### Resolved (Phase 1)
-
-- ✅ **SEED-001** resolved 2026-04-13: keep `serde_jcs 0.2.0`. 12/12 RFC 8785 conformance gate green (Appendix B/C/E + cyberphone weird + 100K float corpus + supplementary-plane + NaN/Inf + duplicate-key). Decision + cited evidence in `.planning/SEED-001.md`. CI-enforced via `just test-canonical-strict` as blocking prerequisite job; nightly 100M full-corpus wired with SHA-256 integrity check.
-- ✅ Phase 1 number formatter decision closed: `serde_jcs`'s `ryu-js` backend proven correct against RFC 8785 Appendix B + 100K cyberphone corpus — no port needed.
+- None carried. v0.6 Plan 01-02 test-file clippy hygiene TODO closed 2026-04-13 in the audit tech-debt cleanup pass.
 
 ### Known Blockers
 
-- **None.** Phase 1 substrate is byte-exact, CI-enforced, and ready to feed Phase 2 Ed25519 signing.
+- **None.** v0.6 substrate is byte-exact, CI-enforced, and ready to feed v0.7 envelope/transport layers.
 
 ## Session Continuity
 
 ### Recent Activity
 
-- **2026-04-13:** **Phase 2 complete — crypto-foundations shipped.** Plan 02-04 closed the single remaining gap flagged by `02-VERIFICATION.md` (CRYPTO-07 SHA-256 content-addressing). Added `famp_crypto::sha256_artifact_id` + `sha256_digest` backed by `sha2::Sha256` (workspace-pinned 0.11.0), gated by three NIST FIPS 180-2 Known Answer Tests (empty string, `"abc"`, 56-byte vector) plus shape-invariant and digest/id-agreement assertions in `tests/sha256_vectors.rs`. All 24 crypto tests pass under `just test-crypto`; clippy `-D warnings` green. Additive-only: `sign.rs`, `verify.rs`, `keys.rs`, `prefix.rs`, `traits.rs`, `error.rs` untouched. Phase 2 score moves from 6/7 → 7/7 truths verified. Auto-fixed during execution (deviation Rule 3): silenced `unused_crate_dependencies` in four pre-existing test binaries via `use sha2 as _;` (matches existing pattern), and wrapped `RustCrypto` in backticks + switched `format!/push_str` to `write!` to clear pedantic lints.
-- **2026-04-13:** **Phase 1 complete — canonical-json-foundations shipped.** Plan 03 ran the full SEED-001 gate (12/12 PASS) and recorded the decision: keep `serde_jcs 0.2.0`. RFC 8785 Appendix B/C/E all byte-exact. 100K cyberphone float corpus byte-exact. cyberphone weird.json byte-exact. Supplementary-plane UTF-16 sort correct. NaN/Infinity rejected. Duplicate-key rejected at parse. Gate wired into CI as a dedicated `test-canonical` job that blocks the workspace test matrix on failure (no `continue-on-error`). Nightly `.github/workflows/nightly-full-corpus.yml` downloads the full 100M corpus with SHA-256 integrity check and runs on cron `0 6 * * *` + `v*` tags + manual dispatch. SEED-001 removed from blockers. Phase 1 REQs (CANON-01..07, SPEC-02, SPEC-18) all complete. Ready for Phase 2 (Crypto Foundations).
-- **2026-04-12:** **v0.7 scope expansion — two-machine HTTP added.** After the profile split was adopted, clarified that "personally usable" requires cross-machine, not just same-process. v0.7 grows a fourth phase: minimal `famp-transport-http` (axum inbox endpoint + reqwest client + rustls + 1 MB body limit + sig-verification middleware) with a `cross_machine_two_agents.rs` example, and negative tests (unsigned / wrong-key / canonical divergence) run against both transports. TOFU keyring loads peer pubkeys from a local file. TRANS-05 (`.well-known` Agent Card distribution) and TRANS-08 (cancellation-safe spawn-channel send) stay deferred to Federation Profile — no Agent Cards in personal profile, and best-effort send is acceptable. Federation Profile milestone sketch collapsed: old "v0.8 Trusted-Peer Transport" slot removed; v0.8 is now Identity & Cards.
-- **2026-04-12:** **Direction change — Personal Profile / Federation Profile split adopted.** Mid-Phase-1 review flagged that the v1 scope (Level 2 + Level 3 conformance, 12-crate library, adversarial matrix, 150+ REQ-IDs) was too large for the actual near-term goal of "a library a single developer can use today." Decision: keep v0.6 Foundation Crates unchanged (canonical/crypto/core are the expensive substrate and must be done once), add **v0.7 Personal Runtime** as the next milestone (minimal envelope + 4-state task FSM + MemoryTransport + trust-on-first-use keyring + same-process two-agent example), and defer everything else — Agent Cards, negotiation, three delegation forms, provenance graph, extensions registry, HTTP transport, the 11-case adversarial matrix, Level 2/3 conformance badges, CLI — to a Federation Profile milestone cluster (v0.8+). PROJECT.md, REQUIREMENTS.md, and ROADMAP.md updated to reflect the split. v0.6 Phase 1 canonical-JSON research already completed; that work carries forward unchanged. SEED-001 canonical-JSON conformance gate is unaffected by the re-scope and is still the gate for Phase 1.
-- **2026-04-12:** v0.6 roadmap drafted. Three phases: Canonical JSON (1), Crypto (2), Core Types (3). 25/25 requirements mapped. Research flags on Phases 1 and 2. SEED-001 decision point placed in Phase 1 success criteria.
-- **2026-04-12:** v0.5.1 Spec Fork milestone archived; v0.6 Foundation Crates started. Scope: `famp-canonical` + `famp-crypto` + `famp-core`. Phase numbering reset.
+- **2026-04-13:** **v0.6 Foundation Crates milestone shipped and archived.** 3 phases, 9 plans, 16 tasks, 25/25 requirements satisfied. ROADMAP.md and REQUIREMENTS.md archived to `.planning/milestones/v0.6-*.md`; phase directories moved to `.planning/milestones/v0.6-phases/`. PROJECT.md evolved: all v0.6 requirements moved to Validated, Key Decisions annotated with outcomes. Next: `/gsd:new-milestone` for v0.7 Personal Runtime.
+- **2026-04-13:** Phase 3 (core-types-invariants) complete. `famp-core` ships Principal/Instance, UUIDv7 IDs, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, and exhaustive consumer stub. 66/66 famp-core + 112/112 workspace tests green.
+- **2026-04-13:** Phase 2 (crypto-foundations) complete. Plan 02-04 closed CRYPTO-07 (SHA-256 content-addressing) with NIST KAT gate.
+- **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*State updated: 2026-04-13 — Phase 2 complete, CRYPTO-07 closed*
+*State updated: 2026-04-13 — v0.6 shipped; awaiting v0.7 initialization*
