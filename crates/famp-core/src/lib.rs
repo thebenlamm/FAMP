@@ -8,3 +8,9 @@ pub mod artifact;
 pub use identity::{Principal, Instance, ParsePrincipalError, ParseInstanceError};
 pub use ids::{MessageId, ConversationId, TaskId, CommitmentId};
 pub use artifact::{ArtifactId, ParseArtifactIdError};
+
+// serde_json is used by integration tests under `tests/` which are separate
+// crates; silence the workspace `unused_crate_dependencies` warning for the
+// library test profile.
+#[cfg(test)]
+use serde_json as _;
