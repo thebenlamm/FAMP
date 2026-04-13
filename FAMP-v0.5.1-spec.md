@@ -465,7 +465,15 @@ class `malformed`.
 
 ## §9.5a EXPIRED vs deliver tiebreak
 
-*Placeholder — populated by Plan 04.*
+**EXPIRED vs deliver tiebreak.** Let `ts_expire` be the task's computed
+EXPIRED deadline. Let `δ` be the federation clock skew tolerance. A
+`deliver` message is accepted and crystallizes its `terminal_status` iff
+`deliver.ts ≤ ts_expire − δ`. A `deliver` with `deliver.ts > ts_expire − δ`
+is rejected with `stale:expired` and the task transitions to EXPIRED. This
+rule applies identically to interim deliveries that happen to race
+expiration: they are accepted if on-time, rejected if off-time.
+
+The default value of δ is defined in §13.1 (±60 seconds RECOMMENDED).
 
 ## §9.6a Terminal precedence
 
@@ -514,7 +522,28 @@ specified in INV-11.
 
 ## §12.3a Transfer-timeout tiebreak
 
-*Placeholder — populated by Plan 04.*
+**Transfer-timeout tiebreak.** Let `ts_transfer` be the `ts` of the
+`delegate` message with `form: transfer`. Let `ts_deadline = ts_transfer +
+transfer_deadline` (default 5 minutes). Let `δ` be the federation clock
+skew tolerance (default 60 seconds). A `commit` from the delegate is
+considered on-time iff `delegate_commit.ts ≤ ts_deadline − δ`. On-time
+commits crystallize ownership-transfer and close the original commitment.
+Commits with `ts > ts_deadline − δ` are rejected with
+`conflict:transfer_timeout`; the transferring agent's auto-reversion wins
+and the original commitment reactivates (Section 12.3 item 5). The `δ`
+guard band ensures that no commit whose on-time status depends on
+clock-skew interpretation is accepted.
+
+**Note on D-19.1.** CONTEXT.md D-19 was ratified with an addendum (D-19.1,
+2026-04-13) that specifies the δ = 60-second guard band against the
+transferring agent's clock (it is the authority on its own timeout timer),
+sacrificing a 60-second window of legitimate-but-ambiguous commits for
+deterministic tiebreak. A delegate that self-checks and finds itself inside
+the guard band MUST send a `control:cancels` (target:
+`transfer_commit_race`) rather than a `commit`. δ matches the clock-skew
+tolerance from §13.1 for consistency.
+
+See §8a (control body schema) for the `target` enumeration.
 
 ## §7.3a FSM-observable whitelist
 
@@ -567,6 +596,8 @@ are stable references of the form `v0.5.1-Δnn`.
 - `v0.5.1-Δ15 — §13.2 — CONTEXT D-16 — Idempotency key locked to 128-bit random, 22-char unpadded base64url; scope (sender, recipient); replay cache tuple (id, idempotency_key, content_hash).`
 - `v0.5.1-Δ16 — §9.6a — PITFALLS §9.6 terminal precedence hole / CONTEXT D-17 — Ack-disposition decoupled from terminal-state crystallization; crystallization only via deliver-with-terminal-status, control:cancels, or transfer-timeout reversion.`
 - `v0.5.1-Δ17 — §7.3a — PITFALLS §7.3 "no body inspection" contradiction / CONTEXT D-18 — Retract claim; publish FSM-observable field whitelist {class, relation, terminal_status, interim, scope_subset, target}; extensions prohibited from reusing these names.`
+- `v0.5.1-Δ18 — §12.3a — PITFALLS transfer-timeout race / CONTEXT D-19 + D-19.1 (LOCKED 2026-04-13) — Tiebreak rule uses transferring agent's clock with δ=60s guard band from §13.1; on-time iff delegate_commit.ts ≤ ts_deadline − δ; loser gets conflict:transfer_timeout; new control target value transfer_commit_race introduced.`
+- `v0.5.1-Δ19 — §9.5a — PITFALLS EXPIRED vs deliver race / CONTEXT D-20 — Same δ guard band applied: deliver accepted iff ts ≤ ts_expire − δ; else stale:expired.`
 - `v0.5.1-Δ20 — §9.6b — PITFALLS conditional-lapse vs delivery-wins conflict / CONTEXT D-21 — Committer-side control:condition_failed overrides delivery-wins default; late deliver gets ack:orphaned.`
 - `v0.5.1-Δ22 — §10.3a — PITFALLS supersession round-limit circumvention / CONTEXT D-23 — Round counter includes superseded messages; supersession does NOT reset counter.`
 - `v0.5.1-Δ25 — §3.6a — CONTEXT D-28 — Artifact IDs locked to sha256:<hex> lowercase 64 chars over canonical JSON of artifact body; sha<N>: reserved.`
