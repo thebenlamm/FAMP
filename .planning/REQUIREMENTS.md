@@ -13,11 +13,11 @@
 
 - [x] **ENV-01**: `famp-envelope` crate with typed `Envelope` struct matching v0.5.1 spec §7.1
 - [x] **ENV-02**: Envelope encode/decode with `deny_unknown_fields` everywhere
-- [ ] **ENV-03**: Mandatory signature enforcement on decode (INV-10) — unsigned messages rejected with a typed error, not warned about
+- [x] **ENV-03**: Mandatory signature enforcement on decode (INV-10) — unsigned messages rejected with a typed error, not warned about
 - [x] **ENV-06**: `ack` message class with body schema (disposition values restricted to what the 5-state task FSM actually emits)
 - [x] **ENV-07**: `request` message class with body schema
 - [ ] **ENV-09 (narrowed)**: `commit` message class with body schema. No capability-snapshot binding in v0.7 (defers with Agent Cards to v0.8).
-- [ ] **ENV-10**: `deliver` message class with body schema and envelope-level `terminal_status`
+- [x] **ENV-10**: `deliver` message class with body schema and envelope-level `terminal_status`
 - [ ] **ENV-12 (cancel-only)**: `control` message class with body schema restricted to `cancel`. No `supersede`, no `close`.
 - [x] **ENV-14**: Scope enforcement (standalone / conversation / task) for the five shipped classes
 - [x] **ENV-15**: Envelope signed-message round-trip test for every shipped message class
@@ -105,11 +105,11 @@ These items exist in the broader REQ catalog and are explicitly **not v0.7 scope
 |-------------|-------|--------|
 | ENV-01 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-02 | Phase 1: Minimal Signed Envelope | Complete |
-| ENV-03 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-03 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-06 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-07 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-09 (narrowed) | Phase 1: Minimal Signed Envelope | Pending |
-| ENV-10 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-10 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-12 (cancel-only) | Phase 1: Minimal Signed Envelope | Pending |
 | ENV-14 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-15 | Phase 1: Minimal Signed Envelope | Complete |
