@@ -12,6 +12,15 @@ use serde_json as _;
 // for clarity and forward-compat with Plan 02 helpers.
 use zeroize as _;
 
+// Dev-deps referenced only by integration tests in `tests/`. Silence
+// `unused_crate_dependencies` for the lib-test compile unit.
+#[cfg(test)]
+use hex as _;
+#[cfg(test)]
+use insta as _;
+#[cfg(test)]
+use proptest as _;
+
 pub mod error;
 pub mod keys;
 pub mod prefix;

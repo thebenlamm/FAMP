@@ -1,0 +1,8 @@
+[
+  {"name": "padded-equals",          "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="},
+  {"name": "standard-alphabet-plus", "input": "AAAA+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+  {"name": "standard-alphabet-slash","input": "AAAA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+  {"name": "embedded-whitespace",    "input": "AAAA AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+  {"name": "short-length",           "input": "AAAA"},
+  {"name": "long-length",            "input": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+]

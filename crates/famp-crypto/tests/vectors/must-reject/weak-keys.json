@@ -1,0 +1,32 @@
+[
+  {
+    "name": "identity-point-all-zero",
+    "description": "Ed25519 identity / all-zero encoding; always rejected at ingress",
+    "public_key_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+    "name": "order-1-point-y-equals-1",
+    "description": "Canonical 8-torsion point of order 1 (compressed y=1)",
+    "public_key_hex": "0100000000000000000000000000000000000000000000000000000000000000"
+  },
+  {
+    "name": "order-2-torsion-ecffffff",
+    "description": "Small-order 8-torsion representative (order 2) from curve25519-dalek EIGHT_TORSION",
+    "public_key_hex": "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"
+  },
+  {
+    "name": "order-4-torsion-high-bit",
+    "description": "Small-order 8-torsion representative (order 4) from curve25519-dalek EIGHT_TORSION",
+    "public_key_hex": "0000000000000000000000000000000000000000000000000000000000000080"
+  },
+  {
+    "name": "order-8-torsion-26e8958f",
+    "description": "Small-order 8-torsion representative (order 8) from ed25519 test corpus",
+    "public_key_hex": "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"
+  },
+  {
+    "name": "order-8-torsion-c7176a70",
+    "description": "Small-order 8-torsion representative (order 8) from ed25519 test corpus",
+    "public_key_hex": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"
+  }
+]
