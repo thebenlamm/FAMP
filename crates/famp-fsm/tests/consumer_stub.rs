@@ -10,7 +10,12 @@
 //! See `famp-core/tests/exhaustive_consumer_stub.rs` for the precedent.
 
 #![deny(unreachable_patterns)]
-#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    unused_crate_dependencies,
+    clippy::match_same_arms,
+)]
 
 use famp_fsm::TaskState;
 
@@ -25,7 +30,7 @@ const fn describe_state(s: TaskState) -> &'static str {
     }
 }
 
-/// Exhaustive is_terminal classifier — zero catch-all arms.
+/// Exhaustive `is_terminal` classifier — zero catch-all arms.
 const fn is_terminal(s: TaskState) -> bool {
     match s {
         TaskState::Requested => false,

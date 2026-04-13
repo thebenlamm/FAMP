@@ -5,6 +5,11 @@
 //! the authoritative decision log. v0.7 is single-instance; competing-
 //! instance commit races (§11.5a) defer to Federation Profile v0.8+.
 
+// Dev-deps referenced only by integration tests in `tests/`. Silence
+// `unused_crate_dependencies` for the lib compile unit.
+#[cfg(test)]
+use proptest as _;
+
 pub mod engine;
 pub mod error;
 pub mod input;
