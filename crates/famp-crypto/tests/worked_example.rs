@@ -70,8 +70,7 @@ fn section_7_1c_worked_example_byte_exact() {
         .expect("pk hex")
         .try_into()
         .expect("pk len");
-    let vk =
-        TrustedVerifyingKey::from_bytes(&pk_bytes).expect("public key must pass ingress");
+    let vk = TrustedVerifyingKey::from_bytes(&pk_bytes).expect("public key must pass ingress");
 
     let canonical = hex::decode(&f.canonical_json_hex).expect("canonical hex");
     let sig_bytes: [u8; 64] = hex::decode(&f.signature_hex)

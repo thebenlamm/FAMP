@@ -1,3 +1,10 @@
+#![allow(
+    unused_crate_dependencies,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::pedantic
+)]
+
 //! Sampled float corpus driver (CANON-03).
 //!
 //! Source: cyberphone/json-canonicalization es6testfile100m.txt.gz

@@ -31,8 +31,7 @@ use famp_crypto::{sha256_artifact_id, sha256_digest};
 fn nist_kat_empty_string() {
     let id = sha256_artifact_id(b"");
     assert_eq!(
-        id,
-        "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        id, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "SHA-256 of empty input must match FIPS 180-2 empty-string KAT"
     );
 }
@@ -41,8 +40,7 @@ fn nist_kat_empty_string() {
 fn nist_kat_abc() {
     let id = sha256_artifact_id(b"abc");
     assert_eq!(
-        id,
-        "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        id, "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
         "SHA-256 of b\"abc\" must match FIPS 180-2 B.1 KAT"
     );
 }
@@ -52,8 +50,7 @@ fn nist_kat_56byte_vector() {
     let input: &[u8] = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
     let id = sha256_artifact_id(input);
     assert_eq!(
-        id,
-        "sha256:248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
+        id, "sha256:248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
         "SHA-256 of the 56-byte FIPS 180-2 B.2 KAT must match"
     );
 }

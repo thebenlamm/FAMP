@@ -1,3 +1,10 @@
+#![allow(
+    unused_crate_dependencies,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::pedantic
+)]
+
 //! `sha256:<hex>` artifact ID helper (SPEC-18, CANON-06, D-19..D-22).
 //!
 //! Asserts:
@@ -32,7 +39,8 @@ fn sha256_lowercase_only() {
     let hex = &s["sha256:".len()..];
     assert_eq!(hex.len(), 64, "hex digest must be exactly 64 characters");
     assert!(
-        hex.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        hex.chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
         "hex digest must be lowercase only (no uppercase per spec §3.6a): {hex}"
     );
 }

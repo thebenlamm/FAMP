@@ -1,3 +1,10 @@
+#![allow(
+    unused_crate_dependencies,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::pedantic
+)]
+
 //! Duplicate-key rejection on strict-parse path (CANON-01, D-04..D-07).
 //!
 //! Verbatim from `.planning/phases/01-canonical-json-foundations/01-RESEARCH.md`

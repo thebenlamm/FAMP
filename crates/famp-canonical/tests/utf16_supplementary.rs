@@ -1,3 +1,10 @@
+#![allow(
+    unused_crate_dependencies,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::pedantic
+)]
+
 //! UTF-16 supplementary-plane key sort fixtures (CANON-04, RESEARCH Pitfall 3).
 //!
 //! Oracle approach: rather than depend on the cyberphone JS reference at

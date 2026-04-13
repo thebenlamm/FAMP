@@ -23,10 +23,7 @@ pub fn sign_value<T: serde::Serialize + ?Sized>(
 /// Sign already-canonical bytes: prepend `DOMAIN_PREFIX` internally, then sign.
 /// The caller MUST pass bytes produced by `famp_canonical::canonicalize`.
 #[must_use]
-pub fn sign_canonical_bytes(
-    signing_key: &FampSigningKey,
-    canonical_bytes: &[u8],
-) -> FampSignature {
+pub fn sign_canonical_bytes(signing_key: &FampSigningKey, canonical_bytes: &[u8]) -> FampSignature {
     let mut input = Vec::with_capacity(DOMAIN_PREFIX.len() + canonical_bytes.len());
     input.extend_from_slice(DOMAIN_PREFIX);
     input.extend_from_slice(canonical_bytes);

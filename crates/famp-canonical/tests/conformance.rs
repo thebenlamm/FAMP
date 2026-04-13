@@ -1,3 +1,10 @@
+#![allow(
+    unused_crate_dependencies,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::pedantic
+)]
+
 //! RFC 8785 Appendix B conformance vector harness.
 //!
 //! These tests are gated behind `--features wave2_impl` because they reference
@@ -107,7 +114,10 @@ fn rfc8785_appendix_e_complex() {
 #[test]
 fn nan_rejected() {
     let result = famp_canonical::canonicalize(&f64::NAN);
-    assert!(result.is_err(), "NaN must be rejected per RFC 8785 §3.2.2.2");
+    assert!(
+        result.is_err(),
+        "NaN must be rejected per RFC 8785 §3.2.2.2"
+    );
 }
 
 #[test]
