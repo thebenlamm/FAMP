@@ -113,11 +113,22 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
+## Current Milestone: v0.6 Foundation Crates
+
+**Goal:** Deliver byte-exact canonical JSON and signature-verifiable Ed25519 primitives, plus compiler-checked core types — the substrate every downstream FAMP crate signs against.
+
+**Target crates:**
+- `famp-canonical` — RFC 8785 JCS canonicalization with an external-vector conformance gate (SEED-001)
+- `famp-crypto` — Ed25519 sign/verify with domain-separation prefix (v0.5.1 §7.1) and raw 32/64-byte base64url-unpadded wire encoding
+- `famp-core` — shared types, errors, and invariant scaffolding (INV-1..11) used by every other crate
+
+**Success shape:** `just ci` green; RFC 8785 external test vectors byte-exact; worked Ed25519 example from PITFALLS P10 verifies in Rust; `famp-core` types compile-check INV-5 exhaustiveness via enum `match`.
+
+**Phase numbering:** reset to Phase 1 (v0.5.1 was a doc milestone; v0.6 is the first code milestone).
+
 ## Current State
 
-**Shipped:** v0.5.1 Spec Fork (2026-04-13). The interop contract is locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries citing reviewer findings, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`. No Rust code yet — that's next milestone.
-
-**Next milestone (proposed):** v0.5.2 Foundations — Phase 2 only (Canonical + Crypto). Highest-risk phase in the project. RFC 8785 JCS + Ed25519 byte-exact against externally-sourced vectors. Fallback plan: ~500 LoC hand-written JCS if `serde_jcs` fails conformance.
+**Shipped:** v0.5.1 Spec Fork (2026-04-13). Interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
 
 ---
-*Last updated: 2026-04-13 after v0.5.1 Spec Fork milestone shipped*
+*Last updated: 2026-04-12 — v0.6 Foundation Crates milestone started*
