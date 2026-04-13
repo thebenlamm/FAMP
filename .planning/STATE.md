@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
-status: defining_requirements
-last_updated: "2026-04-13T16:00:00.000Z"
+status: roadmap_ready
+last_updated: "2026-04-13T17:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
 ---
 
-# STATE: FAMP — Between Milestones
+# STATE: FAMP — v0.7 Personal Runtime
 
 **Last Updated:** 2026-04-13
 
@@ -21,15 +21,16 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** v0.7 Personal Runtime — defining requirements → roadmap.
+**Current focus:** v0.7 Personal Runtime — roadmap ready; Phase 1 (Minimal Signed Envelope) queued for planning.
 
 ## Current Position
 
 Milestone: **v0.7 Personal Runtime**
-Phase: Not started (defining requirements)
+Phase: **Phase 1: Minimal Signed Envelope**
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-13 — v0.7 milestone initialized
+Status: Not started (ready for `/gsd:plan-phase 1`)
+Progress: Phases 0/4 · Plans 0/0
+Last activity: 2026-04-13 — v0.7 roadmap canonicalized (4 phases, 32 requirements, 100% coverage)
 
 ## Last Shipped
 
@@ -48,10 +49,13 @@ Last activity: 2026-04-13 — v0.7 milestone initialized
 - **Narrow, phase-appropriate error enums** — not one god enum (repeated pattern in Plans 01-01 D-16 and 02-01)
 - **15-category flat `ProtocolErrorKind` + exhaustive consumer stub under `#![deny(unreachable_patterns)]`** — new error categories become compile errors in downstream crates
 - **`AuthorityScope` hand-written 5×5 `satisfies()` truth table, no `Ord` derive** — authority is a ladder, not a total order
+- **v0.7 TOFU keyring stays local-file** — `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey, loaded from file or `--peer` CLI flag. Explicitly not an "identity system" or "trust store"; Agent Cards defer to v0.8.
+- **v0.7 adversarial matrix = 3 cases × 2 transports, not 18** — CONF-05/06/07 own the three cases on `MemoryTransport`; Phase 4 extends the same matrix to HTTP without introducing new CONF-0x requirements.
+- **ENV-09 and ENV-12 are intentionally narrowed for v0.7** — ENV-09 ships with no capability-snapshot binding; ENV-12 ships cancel-only (no supersede, no close). The wider v0.6-catalog forms defer to Federation Profile.
 
 ### Open TODOs
 
-- None carried. v0.6 Plan 01-02 test-file clippy hygiene TODO closed 2026-04-13 in the audit tech-debt cleanup pass.
+- None carried. v0.6 Plan 01-02 test-file clippy hygiene TODO closed 2026-04-13.
 
 ### Known Blockers
 
@@ -61,10 +65,11 @@ Last activity: 2026-04-13 — v0.7 milestone initialized
 
 ### Recent Activity
 
-- **2026-04-13:** **v0.6 Foundation Crates milestone shipped and archived.** 3 phases, 9 plans, 16 tasks, 25/25 requirements satisfied. ROADMAP.md and REQUIREMENTS.md archived to `.planning/milestones/v0.6-*.md`; phase directories moved to `.planning/milestones/v0.6-phases/`. PROJECT.md evolved: all v0.6 requirements moved to Validated, Key Decisions annotated with outcomes. Next: `/gsd:new-milestone` for v0.7 Personal Runtime.
+- **2026-04-13:** **v0.7 roadmap canonicalized.** 4 phases, 32 requirements, 100% coverage. Phase 1 (Minimal Signed Envelope) queued for `/gsd:plan-phase 1`.
+- **2026-04-13:** **v0.6 Foundation Crates milestone shipped and archived.** 3 phases, 9 plans, 16 tasks, 25/25 requirements satisfied. ROADMAP.md and REQUIREMENTS.md archived to `.planning/milestones/v0.6-*.md`; phase directories moved to `.planning/milestones/v0.6-phases/`. PROJECT.md evolved: all v0.6 requirements moved to Validated, Key Decisions annotated with outcomes.
 - **2026-04-13:** Phase 3 (core-types-invariants) complete. `famp-core` ships Principal/Instance, UUIDv7 IDs, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, and exhaustive consumer stub. 66/66 famp-core + 112/112 workspace tests green.
 - **2026-04-13:** Phase 2 (crypto-foundations) complete. Plan 02-04 closed CRYPTO-07 (SHA-256 content-addressing) with NIST KAT gate.
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*State updated: 2026-04-13 — v0.6 shipped; awaiting v0.7 initialization*
+*State updated: 2026-04-13 — v0.7 roadmap ready; Phase 1 queued*

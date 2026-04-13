@@ -101,13 +101,47 @@ These items exist in the broader REQ catalog and are explicitly **not v0.7 scope
 
 ## Traceability
 
-Populated by the roadmapper in Step 10. Empty at requirements-definition time.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmapper) | — | Pending |
+| ENV-01 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-02 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-03 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-06 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-07 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-09 (narrowed) | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-10 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-12 (cancel-only) | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-14 | Phase 1: Minimal Signed Envelope | Pending |
+| ENV-15 | Phase 1: Minimal Signed Envelope | Pending |
+| FSM-02 (narrowed) | Phase 2: Minimal Task Lifecycle | Pending |
+| FSM-03 | Phase 2: Minimal Task Lifecycle | Pending |
+| FSM-04 | Phase 2: Minimal Task Lifecycle | Pending |
+| FSM-05 | Phase 2: Minimal Task Lifecycle | Pending |
+| FSM-08 | Phase 2: Minimal Task Lifecycle | Pending |
+| TRANS-01 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| TRANS-02 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| KEY-01 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| KEY-02 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| KEY-03 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| EX-01 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| CONF-03 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| CONF-05 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| CONF-06 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| CONF-07 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
+| TRANS-03 | Phase 4: Minimal HTTP Transport + Cross-Machine Example | Pending |
+| TRANS-04 | Phase 4: Minimal HTTP Transport + Cross-Machine Example | Pending |
+| TRANS-06 | Phase 4: Minimal HTTP Transport + Cross-Machine Example | Pending |
+| TRANS-07 | Phase 4: Minimal HTTP Transport + Cross-Machine Example | Pending |
+| TRANS-09 | Phase 4: Minimal HTTP Transport + Cross-Machine Example | Pending |
+| EX-02 | Phase 4: Minimal HTTP Transport + Cross-Machine Example | Pending |
+| CONF-04 | Phase 4: Minimal HTTP Transport + Cross-Machine Example | Pending |
 
-**Coverage target:** 100% of v0.7 checkboxes mapped to exactly one phase.
+**Coverage:**
+- v0.7 requirements: 32 total
+- Mapped to phases: 32
+- Unmapped: 0 ✓
+
+Phase 4 extends the Phase 3 adversarial matrix (CONF-05/06/07) to HTTP — those IDs stay owned by Phase 3 and are not re-listed as new Phase 4 requirements.
 
 ---
 *Requirements defined: 2026-04-13*
