@@ -64,12 +64,14 @@ impl Transport for MemoryTransport {
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
         let senders = self.senders.clone();
         async move {
-            let map = senders.lock().await;
-            let tx = map
-                .get(&msg.recipient)
-                .ok_or_else(|| MemoryTransportError::UnknownRecipient {
-                    principal: msg.recipient.clone(),
-                })?;
+            let tx = {
+                let map = senders.lock().await;
+                map.get(&msg.recipient)
+                    .ok_or_else(|| MemoryTransportError::UnknownRecipient {
+                        principal: msg.recipient.clone(),
+                    })?
+                    .clone()
+            };
             tx.send(msg.clone())
                 .map_err(|_| MemoryTransportError::InboxClosed {
                     principal: msg.recipient,
