@@ -3,6 +3,19 @@
 **Defined:** 2026-04-12
 **Core Value:** A byte-exact, signature-verifiable implementation of FAMP that two independent parties can interop against from day one.
 
+## Current Milestone: v0.6 Foundation Crates
+
+**Goal:** Ship byte-exact canonical JSON + Ed25519 signing/verification + core types — the substrate every downstream FAMP crate signs against.
+
+**In-scope REQ-IDs (25):**
+
+- **Canonical JSON:** CANON-01, CANON-02, CANON-03, CANON-04, CANON-05, CANON-06, CANON-07
+- **Crypto:** CRYPTO-01, CRYPTO-02, CRYPTO-03, CRYPTO-04, CRYPTO-05, CRYPTO-06, CRYPTO-07, CRYPTO-08
+- **Core Types & Invariants:** CORE-01, CORE-02, CORE-03, CORE-04, CORE-05, CORE-06
+- **Spec prerequisites (carried from v0.5.1):** SPEC-02, SPEC-03, SPEC-18, SPEC-19
+
+Everything else in this document (ENV-*, ID-*, CAUS-*, FSM-*, NEGO-*, DEL-*, PROV-*, EXT-*, TRANS-*, CONF-*, CLI-*, and SPEC-04/05/06/07/08) is deferred to future milestones (v0.7+). Traceability table below will be rewritten by the roadmapper to reflect v0.6 phase numbering only; downstream requirements are tracked in the full v1 list above.
+
 ## v1 Requirements
 
 Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap phase.
