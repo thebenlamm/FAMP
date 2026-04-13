@@ -165,13 +165,14 @@ impl FromStr for Instance {
 
         // Reject a second '#' in instance_id.
         if instance_id.contains('#') {
-            return Err(ParseInstanceError::InvalidInstanceId("multiple '#' separators"));
+            return Err(ParseInstanceError::InvalidInstanceId(
+                "multiple '#' separators",
+            ));
         }
 
         validate_authority(authority).map_err(ParseInstanceError::InvalidAuthority)?;
         validate_name_or_instance_id(name).map_err(ParseInstanceError::InvalidName)?;
-        validate_name_or_instance_id(instance_id)
-            .map_err(ParseInstanceError::InvalidInstanceId)?;
+        validate_name_or_instance_id(instance_id).map_err(ParseInstanceError::InvalidInstanceId)?;
 
         Ok(Self {
             authority: authority.to_owned(),
@@ -183,7 +184,11 @@ impl FromStr for Instance {
 
 impl fmt::Display for Instance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "agent:{}/{}#{}", self.authority, self.name, self.instance_id)
+        write!(
+            f,
+            "agent:{}/{}#{}",
+            self.authority, self.name, self.instance_id
+        )
     }
 }
 

@@ -28,7 +28,9 @@ fn principal_preserves_case_no_normalization() {
 #[test]
 fn principal_rejects_instance_tail() {
     // D-01: Principal parser MUST reject instance-bearing strings.
-    let err = "agent:example.com/alice#i1".parse::<Principal>().unwrap_err();
+    let err = "agent:example.com/alice#i1"
+        .parse::<Principal>()
+        .unwrap_err();
     assert_eq!(err, ParsePrincipalError::UnexpectedInstanceTail);
 }
 
@@ -228,7 +230,9 @@ fn principal_table_roundtrip() {
         "agent:host/Z",
     ];
     for input in table {
-        let p: Principal = input.parse().unwrap_or_else(|e| panic!("parse {input}: {e:?}"));
+        let p: Principal = input
+            .parse()
+            .unwrap_or_else(|e| panic!("parse {input}: {e:?}"));
         assert_eq!(p.to_string(), input, "round trip: {input}");
         let again: Principal = Principal::from_str(&p.to_string()).unwrap();
         assert_eq!(again, p);
