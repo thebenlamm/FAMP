@@ -12,3 +12,12 @@ description = "FAMP v0.5.1 — famp-transport crate (stub)"
 workspace = true
 
 [dependencies]
+famp-core = { path = "../famp-core" }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "rt", "macros", "rt-multi-thread", "time"] }
+
+[features]
+test-util = []
