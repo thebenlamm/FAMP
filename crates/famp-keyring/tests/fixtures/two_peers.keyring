@@ -1,0 +1,5 @@
+# FAMP v0.7 TOFU keyring
+# One entry per principal; principal is agent:<authority>/<name>
+# pubkey is base64url-unpadded 32-byte Ed25519 verifying key
+agent:local/alice  iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w
+agent:local/bob    gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q
