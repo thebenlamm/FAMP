@@ -20,7 +20,9 @@ use insta as _;
 use proptest as _;
 use thiserror as _;
 
-use famp_envelope::body::{CommitBody, DeliverBody, RequestBody, TerminalStatus};
+use famp_envelope::body::{
+    AckBody, AckDisposition, CommitBody, ControlBody, DeliverBody, RequestBody, TerminalStatus,
+};
 use famp_envelope::EnvelopeDecodeError;
 
 fn load(name: &str) -> String {
@@ -149,4 +151,84 @@ fn unknown_body_field_nested_rejected() {
     );
 }
 
-// Task 3 (Ack/Control) tests appended below in the same file.
+// -------------------------------------------------------------------------
+// AckBody — matches vector 0 body exactly
+// -------------------------------------------------------------------------
+
+#[test]
+fn ack_body_matches_vector_0_body() {
+    let body = AckBody {
+        disposition: AckDisposition::Accepted,
+        reason: None,
+    };
+    let s = serde_json::to_string(&body).unwrap();
+    assert_eq!(s, r#"{"disposition":"accepted"}"#);
+}
+
+#[test]
+fn ack_body_all_dispositions_roundtrip_and_reject_unknown() {
+    for (wire, variant) in [
+        ("accepted", AckDisposition::Accepted),
+        ("rejected", AckDisposition::Rejected),
+        ("received", AckDisposition::Received),
+        ("completed", AckDisposition::Completed),
+        ("failed", AckDisposition::Failed),
+        ("cancelled", AckDisposition::Cancelled),
+    ] {
+        let json = format!(r#"{{"disposition":"{wire}"}}"#);
+        let decoded: AckBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.disposition, variant);
+    }
+    let bad = r#"{"disposition":"bogus"}"#;
+    let result: Result<AckBody, _> = serde_json::from_str(bad);
+    assert!(result.is_err());
+}
+
+#[test]
+fn ack_body_roundtrip_fixture() {
+    let json = load("roundtrip/ack.json");
+    roundtrip_value::<AckBody>(&json);
+}
+
+// -------------------------------------------------------------------------
+// ControlBody — ENV-12 cancel-only narrowing
+// -------------------------------------------------------------------------
+
+#[test]
+fn control_cancel_roundtrip() {
+    let json = load("roundtrip/control_cancel.json");
+    roundtrip_value::<ControlBody>(&json);
+}
+
+#[test]
+fn control_supersede_rejected() {
+    let json = load("adversarial/control_supersede.json");
+    let result: Result<ControlBody, _> = serde_json::from_str(&json);
+    let err = result.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("supersede") || msg.contains("unknown variant"),
+        "expected ENV-12 narrowing to reject `supersede`, got: {msg}"
+    );
+}
+
+#[test]
+fn control_close_rejected() {
+    let bad = r#"{"target":"task","action":"close"}"#;
+    let result: Result<ControlBody, _> = serde_json::from_str(bad);
+    assert!(result.is_err());
+}
+
+#[test]
+fn control_cancel_if_not_started_rejected() {
+    let bad = r#"{"target":"task","action":"cancel_if_not_started"}"#;
+    let result: Result<ControlBody, _> = serde_json::from_str(bad);
+    assert!(result.is_err());
+}
+
+#[test]
+fn control_revert_transfer_rejected() {
+    let bad = r#"{"target":"task","action":"revert_transfer"}"#;
+    let result: Result<ControlBody, _> = serde_json::from_str(bad);
+    assert!(result.is_err());
+}
