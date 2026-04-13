@@ -7,18 +7,17 @@
 use rustls_platform_verifier as _;
 use rustls_pemfile as _;
 use rustls as _;
-use tower_http as _;
 use axum_server as _;
-use famp_transport as _;
 use famp_crypto as _;
-use tokio as _;
 use serde_json as _;
 
 pub mod error;
 pub mod middleware;
+pub mod server;
 
 pub use error::{HttpTransportError, MiddlewareError};
 pub use middleware::FampSigVerifyLayer;
+pub use server::{build_router, InboxRegistry, ServerState, INBOX_ROUTE};
 
 #[cfg(test)]
 mod tests {
