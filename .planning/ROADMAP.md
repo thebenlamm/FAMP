@@ -43,7 +43,10 @@
   6. Documented from-scratch fallback plan (~500 LoC, RFC 8785 §3 key sort + number formatter + UTF-8 pass-through) lives in-repo under `famp-canonical/docs/fallback.md`, not just in conversation
   7. `sha256:<hex>` artifact identifier scheme (SPEC-18) is locked in `famp-canonical`'s artifact-ID helper, consistent with the v0.5.1 spec text
 
-**Plans**: TBD
+**Plans:** 3 plans
+- [x] 01-01-PLAN.md — Wave 0 scaffolding: workspace dep fix, fallback.md (BEFORE gate), test harness skeletons + cyberphone fixtures
+- [ ] 01-02-PLAN.md — Implement canonicalize/strict_parse/artifact_id sources + author supplementary fixtures + sampled float corpus
+- [ ] 01-03-PLAN.md — Run RFC 8785 gate, record SEED-001 decision with cited evidence, wire CI + nightly full-corpus workflows
 
 > **HIGHEST-RISK PHASE OF THE PROJECT.** Research flag: `/gsd:research-phase` mandatory. Canonical-JSON correctness is the interop contract — a bug here invalidates every downstream phase. Front-load external vectors. Be prepared to drop `serde_jcs` for the fallback if it fails conformance; the fallback plan must exist *before* the decision.
 
@@ -122,9 +125,46 @@ Phases requiring `/gsd:research-phase` before `/gsd:plan-phase`:
 Phases safe to plan directly:
 - **Phase 3** — shared-type patterns are well understood; INV constants are documentation work
 
-## Downstream (deferred to v0.7+)
+## Next Milestone: v0.7 Personal Runtime (preview)
 
-Everything else from REQUIREMENTS.md v1 list (ENV-*, ID-*, CAUS-*, FSM-*, NEGO-*, DEL-*, PROV-*, EXT-*, TRANS-*, CONF-*, CLI-*, SPEC-04..08) is deferred to future milestones. Tracked in REQUIREMENTS.md but not in this roadmap.
+**Direction change (2026-04-12):** the v1 scope is now split into a **Personal Profile** (v0.6 + v0.7) and a **Federation Profile** (v0.8+). v0.7 is the finish line for "something a single developer can personally use"; federation-grade semantics (Agent Cards, negotiation, delegation, provenance, extensions, HTTP transport, adversarial matrix, Level 2/3 badges) all defer to v0.8+.
+
+**Goal:** A single developer can run the same signed `request → commit → deliver` cycle two ways — in one binary via `MemoryTransport`, and across two machines via a minimal HTTP binding with trust bootstrapped from a local keyring file.
+
+**Preview phases** (detailed in `/gsd:new-milestone v0.7` after v0.6 ships):
+
+- **v0.7 Phase 1: Minimal Signed Envelope** — `famp-envelope` with encode/decode/validate, INV-10 mandatory-signature enforcement, body schemas for **only** `request`, `commit`, `deliver`, `ack`, `control/cancel`. Covers ENV-01, ENV-02, ENV-03, ENV-06, ENV-07, ENV-09 (narrowed — no capability snapshot binding), ENV-10, ENV-12 (cancel variant only), ENV-14, ENV-15.
+- **v0.7 Phase 2: Minimal Task Lifecycle** — 4-state task FSM (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`), compile-time terminal enforcement via exhaustive enum `match`, proptest transition-legality tests. No conversation FSM, no stateright, no timeouts. Covers FSM-02 (narrowed), FSM-03, FSM-04, FSM-05, FSM-08.
+- **v0.7 Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example** — `famp-transport` trait + `MemoryTransport` (~50 LoC), local `HashMap<Principal, VerifyingKey>` keyring (principal = raw Ed25519 pubkey, no Agent Card), `famp/examples/personal_two_agents.rs` happy path, three negative tests (unsigned / wrong-key / canonical divergence). Covers TRANS-01, TRANS-02, CONF-03, CONF-05, CONF-06, CONF-07.
+- **v0.7 Phase 4: Minimal HTTP Transport + Cross-Machine Example** — `famp-transport-http` axum `POST /famp/v0.5.1/inbox` endpoint, reqwest client send, rustls TLS, 1 MB body-size limit, signature-verification middleware running **before** routing. TOFU keyring loads peer pubkeys from a local file / CLI flags. `famp/examples/cross_machine_two_agents.rs` runs server in one shell and client in another and completes the full signed cycle. Phase 3's three negative tests are re-run against the HTTP transport. Covers TRANS-03, TRANS-04, TRANS-06, TRANS-07, TRANS-09, CONF-04. **Deferred** inside TRANS-* even for Phase 4: TRANS-05 (`.well-known` Agent Card distribution — no cards), TRANS-08 (cancellation-safe spawn-channel send — best-effort is acceptable).
+
+**Explicitly deferred to Federation Profile (v0.8+)** — not in v0.7:
+
+- `famp-identity` — Agent Card, federation credential, capability declaration, trust store trait (ID-01..07)
+- `famp-causality` full — freshness windows, replay cache, supersession, idempotency-key scoping (CAUS-01..07)
+- `famp-protocol` / negotiation — propose, counter-propose, round limits, capability snapshot binding (NEGO-01..12)
+- `famp-delegate` — assist / subtask / transfer forms, transfer timeout, delegation ceiling, silent-subcontract detection (DEL-01..09)
+- `famp-provenance` — graph construction, canonicalization, redaction, signed terminal reports (PROV-01..07)
+- `famp-extensions` — critical/non-critical registry, INV-9 fail-closed (EXT-01..05)
+- HTTP transport Agent-Card-dependent pieces — TRANS-05 (`.well-known` card distribution) and TRANS-08 (cancellation-safe spawn-channel send). The minimal HTTP binding itself ships in v0.7 Phase 4.
+- Adversarial conformance matrix + Level 2/3 badges (CONF-01, CONF-02, CONF-08..18)
+- `famp` CLI commands (CLI-01..08)
+- `stateright` model checking (FSM-07)
+- Conversation FSM + terminal-precedence rule (FSM-01, FSM-06)
+- SPEC-04..08 (recipient binding, Agent Card format, card versioning, clock skew, idempotency key format) — matter more across orgs than within one developer's two-machine setup
+
+## Future Milestone Sketch (Federation Profile)
+
+Rough ordering, not committed:
+
+- **v0.8 Identity & Cards** — Agent Card format, federation credential, capability declaration, pluggable trust store, `.well-known` card distribution (TRANS-05), SPEC-04..06
+- **v0.9 Causality & Replay Defense** — freshness windows, bounded replay cache, idempotency-key scoping, supersession, cancellation-safe send path (TRANS-08), SPEC-07/08
+- **v0.10 Negotiation & Commitment** — propose, counter-propose, round limits, capability snapshot binding, conversation FSM
+- **v0.11 Delegation** — assist / subtask / transfer forms, transfer timeout, delegation ceiling
+- **v0.12 Provenance** — graph, canonicalization, redaction, signed terminal reports
+- **v0.13 Extensions** — critical/non-critical registry, INV-9 fail-closed
+- **v0.14 Adversarial Conformance + Level 2/3 Badges** — full CONF matrix, stateright model checking, conformance-badge automation, `famp` CLI
 
 ---
 *Roadmap created: 2026-04-12 — v0.6 Foundation Crates*
+*Restructured: 2026-04-12 — Personal Profile / Federation Profile split; v0.7 Personal Runtime added as next milestone*

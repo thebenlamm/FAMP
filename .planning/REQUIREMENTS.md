@@ -1,9 +1,19 @@
-# Requirements: FAMP v0.5 Rust Reference Implementation
+# Requirements: FAMP v0.5.1 Rust Reference Implementation
 
 **Defined:** 2026-04-12
-**Core Value:** A byte-exact, signature-verifiable implementation of FAMP that two independent parties can interop against from day one.
+**Restructured:** 2026-04-12 — split into Personal Profile (v0.6 + v0.7) and Federation Profile (v0.8+) per direction change.
+**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-## Current Milestone: v0.6 Foundation Crates
+## Profile Structure
+
+Requirements are now partitioned across two profiles:
+
+- **Personal Profile (v0.6 + v0.7)** — everything needed to wire two locally-trusted agents in one binary with full signing discipline. ~35 REQ-IDs.
+- **Federation Profile (v0.8+)** — Agent Cards, negotiation, delegation, provenance, extensions, HTTP transport, adversarial conformance matrix, Level 2/3 badges. ~120 REQ-IDs. Tracked but not v1-blocking.
+
+Every REQ section below is tagged with its profile. The underlying REQ-IDs are unchanged so existing research, context notes, and cross-references stay valid.
+
+## Current Milestone: v0.6 Foundation Crates (Personal Profile — part 1)
 
 **Goal:** Ship byte-exact canonical JSON + Ed25519 signing/verification + core types — the substrate every downstream FAMP crate signs against.
 
@@ -14,13 +24,25 @@
 - **Core Types & Invariants:** CORE-01, CORE-02, CORE-03, CORE-04, CORE-05, CORE-06
 - **Spec prerequisites (carried from v0.5.1):** SPEC-02, SPEC-03, SPEC-18, SPEC-19
 
-Everything else in this document (ENV-*, ID-*, CAUS-*, FSM-*, NEGO-*, DEL-*, PROV-*, EXT-*, TRANS-*, CONF-*, CLI-*, and SPEC-04/05/06/07/08) is deferred to future milestones (v0.7+). The Traceability table below reflects v0.6 phase numbering only; downstream requirements remain tracked in the full v1 list above.
+## Next Milestone: v0.7 Personal Runtime (Personal Profile — part 2)
 
-## v1 Requirements
+**Goal:** A single developer runs a same-process two-agent example with a signed `request → commit → deliver` cycle end to end. Minimal envelope + minimal task FSM + `MemoryTransport` + trust-on-first-use keyring.
 
-Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap phase.
+**Target in-scope REQ-IDs (~10, final list pinned when v0.7 roadmap is drafted):**
 
-### Toolchain
+- **Envelope (minimal):** ENV-01, ENV-02, ENV-03, ENV-06 (ack), ENV-07 (request), ENV-09 (commit — without capability snapshot binding), ENV-10 (deliver), ENV-12 (control — cancel variant only), ENV-14 (scope enforcement), ENV-15 (signed round-trip for the 5 message classes shipped)
+- **Task FSM (minimal):** FSM-02 (limited to 4 states: REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}), FSM-03 (compile-time terminals), FSM-04, FSM-05, FSM-08 (proptest). **Deferred:** FSM-01 (conversation FSM), FSM-06 (terminal precedence — no competing terminals in personal profile), FSM-07 (stateright).
+- **Transport (minimal two-machine story):** TRANS-01 (trait), TRANS-02 (MemoryTransport), TRANS-03 (axum HTTP/1.1 + JSON + TLS binding), TRANS-04 (`POST /famp/v0.5.1/inbox` endpoint per principal), TRANS-06 (rustls-only), TRANS-07 (1 MB body-size limit as tower layer), TRANS-09 (signature verification as HTTP middleware before routing). **Deferred to Federation Profile:** TRANS-05 (`.well-known` Agent Card distribution — no cards in personal profile), TRANS-08 (cancellation-safe spawn-channel send path — best-effort is acceptable for personal use).
+- **Conformance (minimal, both transports):** CONF-03 (happy-path two-node MemoryTransport integration), CONF-04 (happy-path two-node HttpTransport integration), CONF-05 (unsigned rejection), CONF-06 (wrong-key rejection), CONF-07 (canonical divergence detection). Negative tests run against **both** transports. **Deferred:** CONF-01..02 (fixture publishing), CONF-08..18 (adversarial matrix, Level 2/3 badges).
+- **Causality (minimal):** `in_reply_to` cross-reference only (covered by ENV-13 narrowed to the 5 shipped classes). **Deferred:** CAUS-01..07 (freshness, replay cache, idempotency-key scoping, supersession).
+
+Explicitly **deferred to Federation Profile (v0.8+)**: all `ID-*`, all `CAUS-*`, `FSM-01/06/07`, all `NEGO-*`, all `DEL-*`, all `PROV-*`, all `EXT-*`, `TRANS-03..09`, all `TRANS2-*`, `CONF-01/02/04/08..18`, all `CLI-*`, `SPEC-04/05/06/07/08`, and the envelope message classes `announce` (ENV-04), `describe` (ENV-05), `propose` (ENV-08), `delegate` (ENV-11), plus `control` non-cancel variants.
+
+## All Tracked Requirements (v1 — both profiles)
+
+Requirements originally scoped for a Level 2 + Level 3 conformance release. Section tags (`[Personal V1]` or `[Federation Profile]`) indicate profile. Federation Profile items remain tracked here but are not roadmap-mapped until v0.8+.
+
+### Toolchain [Personal V1 — shipped]
 
 - [x] **TOOL-01**: Rust toolchain installed via `rustup` with pinned version in `rust-toolchain.toml`
 - [x] **TOOL-02**: Cargo workspace scaffolded with 12 library crates + 1 umbrella (or staged merge for Phase 2-3)
@@ -30,10 +52,10 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [x] **TOOL-06**: Workspace `[workspace.dependencies]` block pins every crate version in one place
 - [x] **TOOL-07**: Strict `clippy` config with `unsafe_code = "forbid"` at workspace root
 
-### Spec Fork
+### Spec Fork [Personal V1 — mostly shipped; SPEC-04..08 deferred to Federation Profile]
 
 - [x] **SPEC-01**: `FAMP-v0.5.1-spec.md` forked from v0.5 with documented changelog citing review findings
-- [ ] **SPEC-02**: Canonical JSON serialization locked to RFC 8785 JCS (explicit reference, not paraphrase)
+- [x] **SPEC-02**: Canonical JSON serialization locked to RFC 8785 JCS (explicit reference, not paraphrase)
 - [ ] **SPEC-03**: Signature domain-separation byte format specified with hex-dump worked example
 - [ ] **SPEC-04**: Signature covers `to` field (recipient binding) to prevent cross-recipient replay
 - [ ] **SPEC-05**: Agent Card includes federation credential field (resolves circular self-signature)
@@ -53,7 +75,7 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **SPEC-19**: Ed25519 key encoding locked (raw 32-byte pub, 64-byte sig, unpadded base64url)
 - [x] **SPEC-20**: Spec-version constant defined and referenced by implementations
 
-### Canonical JSON
+### Canonical JSON [Personal V1 — v0.6 Phase 1]
 
 - [ ] **CANON-01**: `famp-canonical` crate wraps `serde_jcs` behind a stable `Canonicalize` trait
 - [ ] **CANON-02**: RFC 8785 Appendix B test vectors pass as hard CI gate
@@ -61,9 +83,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **CANON-04**: UTF-16 key sort verified on supplementary-plane characters (emoji, CJK Ext B)
 - [ ] **CANON-05**: ECMAScript number formatting verified against cyberphone reference
 - [ ] **CANON-06**: Duplicate-key rejection on parse
-- [ ] **CANON-07**: Documented from-scratch fallback plan (~500 LoC) if `serde_jcs` fails conformance
+- [x] **CANON-07**: Documented from-scratch fallback plan (~500 LoC) if `serde_jcs` fails conformance
 
-### Crypto
+### Crypto [Personal V1 — v0.6 Phase 2]
 
 - [ ] **CRYPTO-01**: `famp-crypto` crate exposes `Signer` and `Verifier` traits over Ed25519
 - [ ] **CRYPTO-02**: Only `verify_strict` exposed; raw `verify` hidden (rejects small-subgroup/weak keys)
@@ -74,7 +96,7 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **CRYPTO-07**: SHA-256 content-addressing for artifacts via `sha2` crate
 - [ ] **CRYPTO-08**: Constant-time signature verification path (no early-return timing leaks)
 
-### Core Types & Invariants
+### Core Types & Invariants [Personal V1 — v0.6 Phase 3]
 
 - [ ] **CORE-01**: `Principal` and `Instance` identity types with parse/display round-trip
 - [ ] **CORE-02**: `MessageId` (UUIDv7) and `ConversationId` / `TaskId` / `CommitmentId` types
@@ -83,7 +105,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **CORE-05**: Invariant constants INV-1 through INV-11 documented in code
 - [ ] **CORE-06**: Authority scope enum (advisory, negotiate, commit_local, commit_delegate, transfer)
 
-### Envelope & Messages
+### Envelope & Messages [MIXED — minimal subset is Personal V1 (v0.7); full set is Federation Profile]
+
+> Personal V1 ships only: ENV-01, ENV-02, ENV-03, ENV-06 (ack), ENV-07 (request), ENV-09 (commit, simplified), ENV-10 (deliver), ENV-12 (control/cancel only), ENV-14 (scope), ENV-15 (round-trip for the 5 classes shipped). Everything else in this section is deferred.
 
 - [ ] **ENV-01**: `famp-envelope` crate with typed Envelope struct matching spec §7.1
 - [ ] **ENV-02**: Envelope encode/decode with `deny_unknown_fields` everywhere
@@ -101,7 +125,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **ENV-14**: Scope enforcement (standalone / conversation / task)
 - [ ] **ENV-15**: Envelope signed-message round-trip test for every message class
 
-### Identity & Agent Card
+### Identity & Agent Card [Federation Profile — deferred]
+
+> Personal V1 uses trust-on-first-use: local `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey. No Agent Card, no federation credential, no capability declaration. All `ID-*` requirements are Federation Profile.
 
 - [ ] **ID-01**: `famp-identity` crate with Agent Card struct matching spec §6.1
 - [ ] **ID-02**: Agent Card parse/validate including federation credential
@@ -111,7 +137,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **ID-06**: Agent Card expiry enforcement on fresh requests; grandfather in-flight commits
 - [ ] **ID-07**: `AgentCardStore` trait for pluggable card lookup
 
-### Causality
+### Causality [Federation Profile — deferred]
+
+> Personal V1 uses `in_reply_to` cross-reference only (part of narrowed ENV-13). Freshness windows, replay cache, supersession, idempotency-key scoping are all Federation Profile.
 
 - [ ] **CAUS-01**: `famp-causality` crate with causal relation validation
 - [ ] **CAUS-02**: Semantic `ack` processing with 6 disposition values
@@ -121,7 +149,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **CAUS-06**: Supersession handling (original sender only, void prior message)
 - [ ] **CAUS-07**: UUIDv7 timestamp vs `ts` field cross-validation
 
-### State Machines
+### State Machines [MIXED — minimal task FSM is Personal V1 (v0.7); conversation FSM + stateright deferred]
+
+> Personal V1 ships a 4-state task FSM (REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}) — FSM-02 (narrowed), FSM-03, FSM-04, FSM-05, FSM-08 only. Deferred: FSM-01 (conversation FSM — no multi-turn flows in personal profile), FSM-06 (terminal precedence — no competing terminals), FSM-07 (stateright model check).
 
 - [ ] **FSM-01**: `famp-fsm` crate with `ConversationFsm` (OPEN → CLOSED)
 - [ ] **FSM-02**: `TaskFsm` with all 6 states (REQUESTED, COMMITTED, COMPLETED, FAILED, CANCELLED, REJECTED, EXPIRED)
@@ -132,7 +162,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **FSM-07**: `stateright` exhaustive model check under `#[cfg(test)]`
 - [ ] **FSM-08**: `proptest` property tests for transition legality
 
-### Negotiation & Commitment
+### Negotiation & Commitment [Federation Profile — deferred]
+
+> Personal V1 uses direct `request → commit`; no `propose` body, no counter-proposal, no round limits, no capability snapshot binding at commit time. All `NEGO-*` are Federation Profile.
 
 - [ ] **NEGO-01**: Proposal struct matching spec §10.2 requirements
 - [ ] **NEGO-02**: Counter-proposal via `proposes_against` (full proposal, not diff)
@@ -147,7 +179,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **NEGO-11**: Supersession renegotiation path (no return to REQUESTED)
 - [ ] **NEGO-12**: Competing-commit resolution per SPEC-14
 
-### Delegation
+### Delegation [Federation Profile — deferred]
+
+> All three delegation forms, transfer timeout, delegation ceiling, silent subcontracting detection — Federation Profile. Personal V1 has no `famp-delegate` crate work.
 
 - [ ] **DEL-01**: `assist` delegation form (delegator stays accountable)
 - [ ] **DEL-02**: `subtask` delegation form (delegator retains parent, downstream owns subtask)
@@ -159,7 +193,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **DEL-08**: Recursion depth bound enforcement
 - [ ] **DEL-09**: Silent subcontracting prohibition check (`provenance_incomplete` error)
 
-### Provenance
+### Provenance [Federation Profile — deferred]
+
+> Provenance graph construction, redaction, signed terminal reports — all Federation Profile. Personal V1 ships no `famp-provenance` work.
 
 - [ ] **PROV-01**: Provenance graph construction (commits, delegations, artifacts, policies)
 - [ ] **PROV-02**: Canonical serialization of provenance via RFC 8785 JCS
@@ -169,7 +205,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **PROV-06**: Provenance verification against conversation graph
 - [ ] **PROV-07**: `ProvenanceStore` trait for pluggable backends
 
-### Extensions
+### Extensions [Federation Profile — deferred]
+
+> Critical/non-critical registry, INV-9 fail-closed, INV-8 containment — all Federation Profile. Personal V1 has no extensions framework; new message classes are added by changing the core enum.
 
 - [ ] **EXT-01**: `famp-extensions` crate with `Extension` trait
 - [ ] **EXT-02**: Critical vs non-critical extension registry
@@ -177,7 +215,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **EXT-04**: INV-8 extension containment enforcement (no core semantic redefinition)
 - [ ] **EXT-05**: At least one critical and one non-critical reference extension shipped and tested
 
-### Transport
+### Transport [MIXED — Personal V1 (v0.7) ships trait + MemoryTransport + minimal HTTP binding; Agent-Card-dependent pieces defer to Federation Profile]
+
+> Personal V1 (v0.7) ships: TRANS-01 (trait), TRANS-02 (MemoryTransport), TRANS-03 (axum binding), TRANS-04 (inbox endpoint), TRANS-06 (rustls-only), TRANS-07 (body-size limit), TRANS-09 (sig-verification middleware). Deferred to Federation Profile: TRANS-05 (`.well-known` Agent Card distribution — no cards in personal profile), TRANS-08 (cancellation-safe spawn-channel send).
 
 - [ ] **TRANS-01**: `famp-transport` crate with `Transport` trait (async send + incoming stream)
 - [ ] **TRANS-02**: `MemoryTransport` in-process impl (~50 LoC, dev dep for all crates)
@@ -189,7 +229,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **TRANS-08**: Cancellation-safe send path via spawned task + channel
 - [ ] **TRANS-09**: Signature verification runs as HTTP middleware before routing
 
-### Conformance
+### Conformance [MIXED — 5-case minimum run on both transports is Personal V1 (v0.7); full adversarial matrix + Level 2/3 badges are Federation Profile]
+
+> Personal V1 ships: CONF-03 (happy-path MemoryTransport), CONF-04 (happy-path HttpTransport), CONF-05 (unsigned rejection), CONF-06 (wrong-key rejection), CONF-07 (canonical divergence detection). Negative tests (CONF-05..07) run against **both** transports. Deferred: fixture-vector publishing (CONF-01/02), the 11-case adversarial matrix (CONF-08..16), and Level 2/3 badges (CONF-17/18).
 
 - [ ] **CONF-01**: `famp-conformance` crate with language-neutral JSON fixture vectors
 - [ ] **CONF-02**: Fixture vectors sourced externally (RFC 8785 Appendix B, RFC 8032, second-impl generation)
@@ -210,7 +252,9 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **CONF-17**: Level 2 conformance badge script (automated check)
 - [ ] **CONF-18**: Level 3 conformance badge script (automated check)
 
-### CLI & Umbrella
+### CLI & Umbrella [Federation Profile — deferred]
+
+> Personal V1 is library-first and ships a single example binary (`examples/personal_two_agents.rs`). The `famp` CLI (keygen, card, envelope sign/verify, serve, fixture run) lands with Federation Profile.
 
 - [ ] **CLI-01**: `famp` umbrella crate re-exports public API with feature flags (`memory`, `http`)
 - [ ] **CLI-02**: `famp keygen` command
@@ -287,8 +331,8 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | CANON-04 | Phase 1 | Pending |
 | CANON-05 | Phase 1 | Pending |
 | CANON-06 | Phase 1 | Pending |
-| CANON-07 | Phase 1 | Pending |
-| SPEC-02  | Phase 1 | Pending |
+| CANON-07 | Phase 1 | Complete |
+| SPEC-02  | Phase 1 | Complete |
 | SPEC-18  | Phase 1 | Pending |
 | CRYPTO-01 | Phase 2 | Pending |
 | CRYPTO-02 | Phase 2 | Pending |
