@@ -1,0 +1,1 @@
+//! Identity types: Principal, Instance.

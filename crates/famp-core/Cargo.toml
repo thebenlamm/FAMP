@@ -12,3 +12,9 @@ description = "FAMP v0.5.1 — famp-core crate (stub)"
 workspace = true
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }

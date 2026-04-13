@@ -1,0 +1,1 @@
+//! Artifact identifier: ArtifactId.
