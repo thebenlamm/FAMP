@@ -22,11 +22,11 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 - [x] Fork spec to `FAMP-v0.5.1-spec.md` and resolve identified ambiguities/bugs (canonical JSON, body schemas, state-machine holes) — *Validated in v0.5.1 milestone (Phase 01: spec-fork). 1038-line spec, 28 changelog entries, 21/21 spec-lint anchors green, worked Ed25519 example byte-exact from external reference per PITFALLS P10.*
 - [x] `famp-canonical` — RFC 8785 JCS canonicalization with external-vector conformance gate — *Validated in Phase 01: canonical-json-foundations. 12/12 conformance tests green (Appendix B/C/E byte-exact, 100K cyberphone float corpus, UTF-16 supplementary, duplicate-key rejection). SEED-001 resolved: keep `serde_jcs 0.2.0`. CI gate + nightly 100M full-corpus workflow live; fallback plan on disk as insurance.*
 - [x] `famp-crypto` — Ed25519 sign/verify with domain-separation prefix, `verify_strict`-only — *Validated in Phase 02: crypto-foundations. 7/7 truths verified. Ed25519 sign/verify with SPEC-03 domain-separation prefix, `verify_strict`-only (raw `verify` unreachable), weak-key rejection at ingress, base64url-unpadded strict codec, RFC 8032 KAT gate, §7.1c worked-example byte-exact interop gate, SHA-256 content-addressing via `sha2 0.11` (CRYPTO-07), constant-time verify via `subtle`. 24/24 nextest + clippy clean.*
+- [x] `famp-core` — shared types, typed error enum, INV-1..11 scaffolding — *Validated in Phase 03: core-types-invariants. 10/10 must-haves verified. Principal/Instance identity, UUIDv7 ID newtypes, ArtifactId with `sha256:<hex>` invariant (CORE-01..03); 15-variant flat `ProtocolErrorKind` with wire-string round-trip and ProtocolError wrapper (CORE-04); `invariants::INV_1..INV_11` namespaced doc anchors (CORE-05); `AuthorityScope` 5-variant enum with hand-written 5×5 `satisfies()` truth table, no `Ord` derive (CORE-06); exhaustive consumer stub under `#![deny(unreachable_patterns)]` making new variants a hard compile error (SC #3/#5). 66/66 famp-core + 112/112 workspace nextest green.*
 
 ### Active — Personal Profile (v0.6 + v0.7)
 
-**v0.6 Foundation Crates — substrate (in progress):**
-- [ ] `famp-core` — shared types, typed error enum, INV-1..11 scaffolding
+**v0.6 Foundation Crates — substrate: COMPLETE ✓**
 
 **v0.7 Personal Runtime — minimal usable library (next):**
 - [ ] `famp-envelope` — signed envelope with INV-10 enforcement; body schemas for `request`, `commit`, `deliver`, `ack`, `control/cancel` only
@@ -170,4 +170,4 @@ This document evolves at phase transitions and milestone boundaries.
 **In progress:** v0.6 Foundation Crates — Phases 01–02 complete (`famp-canonical` + `famp-crypto` shipped). Phase 03 (core-types-&-invariants) ready to start.
 
 ---
-*Last updated: 2026-04-13 — Phase 02 crypto-foundations complete*
+*Last updated: 2026-04-13 — Phase 03 core-types-invariants complete; v0.6 Foundation Crates substrate fully shipped*
