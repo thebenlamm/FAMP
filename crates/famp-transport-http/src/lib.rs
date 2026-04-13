@@ -2,26 +2,23 @@
 
 #![forbid(unsafe_code)]
 
-// Silencers for dependencies consumed in later Plan 04-02/03 tasks but not
-// yet wired at this Wave 1 point. Remove from lib.rs as each Task lands.
+// Silencers for dependencies consumed in later Plan 04-03 tasks but not
+// yet wired at this Wave 2 point. Remove from lib.rs as each Task lands.
 use rustls_platform_verifier as _;
 use rustls_pemfile as _;
 use rustls as _;
-use tower as _;
 use tower_http as _;
 use axum_server as _;
-use futures_util as _;
-use famp_canonical as _;
 use famp_transport as _;
-use famp_keyring as _;
 use famp_crypto as _;
-use famp_envelope as _;
 use tokio as _;
 use serde_json as _;
 
 pub mod error;
+pub mod middleware;
 
 pub use error::{HttpTransportError, MiddlewareError};
+pub use middleware::FampSigVerifyLayer;
 
 #[cfg(test)]
 mod tests {
