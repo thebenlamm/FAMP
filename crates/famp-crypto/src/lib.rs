@@ -1,5 +1,22 @@
 #![forbid(unsafe_code)]
-#![doc = "FAMP v0.5.1 famp-crypto: Ed25519 sign/verify with domain separation."]
+//! FAMP v0.5.1 — `famp-crypto`: Ed25519 sign/verify with domain separation.
+//!
+//! See `README.md` for the worked §7.1c example, constant-time rationale,
+//! and wrapper audit (CRYPTO-08).
+//!
+//! # Quick start
+//!
+//! ```
+//! use famp_crypto::{sign_value, verify_value, FampSigningKey};
+//! use serde_json::json;
+//!
+//! // NOTE: [0u8; 32] is a test seed only — never use in production.
+//! let sk = FampSigningKey::from_bytes([0u8; 32]);
+//! let vk = sk.verifying_key();
+//! let v = json!({"hello": "world"});
+//! let sig = sign_value(&sk, &v).unwrap();
+//! verify_value(&vk, &v, &sig).unwrap();
+//! ```
 
 // `zeroize` is pulled in transitively via the `ed25519-dalek` `zeroize`
 // feature (drop-time secret wipe), but the workspace dep is listed directly
