@@ -32,8 +32,12 @@ fmt-check:
 audit:
     cargo audit
 
+# Run the FAMP v0.5.1 spec anchor lint (ripgrep-based; see scripts/spec-lint.sh).
+spec-lint:
+    bash scripts/spec-lint.sh
+
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test test-doc
+ci: fmt-check lint build test test-doc spec-lint
     @echo "✓ local CI-parity checks passed"
 
 # Clean build artifacts
