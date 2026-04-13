@@ -102,7 +102,12 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
   3. Running `cross_machine_two_agents` as a server in one shell and a client in another completes a signed `request → commit → deliver → ack` cycle over real HTTPS, with both ends loading the other's pubkey from a local keyring file or `--peer` flag (CONF-04, EX-02). Exit code `0`.
   4. **The existing Phase 3 adversarial matrix is extended to `HttpTransport`.** The same three cases (unsigned / wrong-key / canonical divergence) that passed on `MemoryTransport` now also fail closed on HTTP with the same typed errors — six test rows total across the two transports, derivative of CONF-05/06/07, no new CONF-0x requirements introduced in this phase.
   5. `.well-known` Agent Card distribution (TRANS-05) and the cancellation-safe spawn-channel send path (TRANS-08) are explicitly absent; the crate compiles and the examples run without them, and their omission is documented inline with a pointer to v0.8+.
-**Plans:** TBD
+**Plans:** 5 plans
+- [ ] 04-01-PLAN.md — famp-transport-http skeleton: deps + error enums (MiddlewareError, HttpTransportError) + lift peek_sender into famp-envelope
+- [ ] 04-02-PLAN.md — Server side: build_router + FampSigVerifyLayer (two-phase decode) + RequestBodyLimitLayer + sentinel layering tests (TRANS-04, TRANS-07, TRANS-09 partial)
+- [ ] 04-03-PLAN.md — Client side: HttpTransport (native AFIT) + tls.rs PEM/rustls helpers + CI no-openssl gate (TRANS-03, TRANS-06)
+- [ ] 04-04-PLAN.md — cross_machine_two_agents example + fixture certs + subprocess CONF-04 test + same-process safety net (EX-02, CONF-04)
+- [ ] 04-05-PLAN.md — Promote tests/adversarial.rs to directory module + HTTP adapter + 3 sentinel-checked HTTP rows reusing CONF-07 fixture byte-identically (TRANS-09 complete; CONF-05/06/07 HTTP rows)
 
 ## Future Milestone Sketch (Federation Profile)
 
@@ -126,7 +131,7 @@ Rough ordering, not committed:
 | 1. Minimal Signed Envelope | v0.7 | 0/? | Not started | - |
 | 2. Minimal Task Lifecycle | v0.7 | 0/3 | Not started | - |
 | 3. MemoryTransport + TOFU Keyring + Same-Process Example | v0.7 | 0/4 | Not started | - |
-| 4. Minimal HTTP Transport + Cross-Machine Example | v0.7 | 0/? | Not started | - |
+| 4. Minimal HTTP Transport + Cross-Machine Example | v0.7 | 0/5 | Not started | - |
 
 ---
 *Roadmap updated: 2026-04-13 — v0.7 Personal Runtime roadmap canonicalized (4 phases, 32 requirements, 100% coverage)*
