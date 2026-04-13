@@ -5,7 +5,15 @@
 
 #![allow(clippy::unwrap_used)]
 
+use famp_canonical as _;
+use famp_core as _;
+use famp_crypto as _;
 use famp_envelope::{EnvelopeScope, FampVersion, MessageClass, Timestamp};
+use hex as _;
+use insta as _;
+use proptest as _;
+use serde as _;
+use thiserror as _;
 
 #[test]
 fn version_literal_roundtrip() {

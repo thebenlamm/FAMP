@@ -23,7 +23,7 @@ impl serde::Serialize for FampVersion {
 
 struct FampVersionVisitor;
 
-impl<'de> Visitor<'de> for FampVersionVisitor {
+impl Visitor<'_> for FampVersionVisitor {
     type Value = FampVersion;
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

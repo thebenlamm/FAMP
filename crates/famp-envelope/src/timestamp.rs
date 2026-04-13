@@ -54,7 +54,7 @@ impl serde::Serialize for Timestamp {
 
 struct TimestampVisitor;
 
-impl<'de> Visitor<'de> for TimestampVisitor {
+impl Visitor<'_> for TimestampVisitor {
     type Value = Timestamp;
 
     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

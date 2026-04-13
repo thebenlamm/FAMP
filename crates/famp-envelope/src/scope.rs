@@ -1,6 +1,6 @@
 //! `EnvelopeScope` — the three §7.1 scope values.
 //!
-//! Wire form is snake_case per §7.1c.2. Per CONTEXT.md D-C3, `request` is
+//! Wire form is `snake_case` per §7.1c.2. Per CONTEXT.md D-C3, `request` is
 //! locked to `Standalone` in v0.7 Personal Runtime.
 
 use std::fmt;

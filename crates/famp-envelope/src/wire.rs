@@ -4,5 +4,5 @@
 //! Task 1 / Plan 01-01 only needs the signature-field name constant so
 //! later plans can reference it without touching wire.rs again.
 
-#[allow(dead_code)] // wired in Plan 03
+#[allow(dead_code, clippy::redundant_pub_crate)] // wired in Plan 03
 pub(crate) const SIGNATURE_FIELD: &str = "signature";

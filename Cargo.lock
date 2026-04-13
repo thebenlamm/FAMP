@@ -295,6 +295,17 @@ dependencies = [
 [[package]]
 name = "famp-envelope"
 version = "0.1.0"
+dependencies = [
+ "famp-canonical",
+ "famp-core",
+ "famp-crypto",
+ "hex",
+ "insta",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "famp-extensions"
@@ -452,6 +463,7 @@ checksum = "7b4a6248eb93a4401ed2f37dfe8ea592d3cf05b7cf4f8efa867b6895af7e094e"
 dependencies = [
  "console",
  "once_cell",
+ "serde",
  "similar",
  "tempfile",
 ]

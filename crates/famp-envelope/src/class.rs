@@ -1,6 +1,6 @@
 //! `MessageClass` — the five v0.7 Personal Runtime message classes.
 //!
-//! Wire form is snake_case per §7.1c.2. Narrowed per CONTEXT.md D-B2:
+//! Wire form is `snake_case` per §7.1c.2. Narrowed per CONTEXT.md D-B2:
 //! `announce`, `describe`, `propose`, `delegate`, `supersede`, `close` are
 //! NOT variants in v0.7 — they defer to Federation Profile (v0.8+).
 
