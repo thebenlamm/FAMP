@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
 status: unknown
-last_updated: "2026-04-13T17:38:36.231Z"
+last_updated: "2026-04-13T17:44:29.955Z"
 progress:
   total_phases: 4
   completed_phases: 1
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 
 ## Current Position
 
-Phase: 01 (minimal-signed-envelope) — EXECUTING
-Plan: 3 of 3
+Phase: 2
+Plan: Not started
 
 ## Last Shipped
 
