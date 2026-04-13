@@ -38,7 +38,7 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **SPEC-17**: Body schemas defined for `commit`, `propose`, `deliver`, `control`, `delegate`
 - [ ] **SPEC-18**: Artifact identifier scheme locked (`sha256:<hex>`)
 - [ ] **SPEC-19**: Ed25519 key encoding locked (raw 32-byte pub, 64-byte sig, unpadded base64url)
-- [ ] **SPEC-20**: Spec-version constant defined and referenced by implementations
+- [x] **SPEC-20**: Spec-version constant defined and referenced by implementations
 
 ### Canonical JSON
 
@@ -292,7 +292,7 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SPEC-17 | Phase 1 | Pending |
 | SPEC-18 | Phase 1 | Pending |
 | SPEC-19 | Phase 1 | Pending |
-| SPEC-20 | Phase 1 | Pending |
+| SPEC-20 | Phase 1 | Complete |
 | CANON-01 | Phase 2 | Pending |
 | CANON-02 | Phase 2 | Pending |
 | CANON-03 | Phase 2 | Pending |

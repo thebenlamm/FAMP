@@ -58,7 +58,7 @@
   6. Concrete numeric defaults committed: clock skew tolerance (±60s), validity windows, idempotency key format (128-bit random, `(sender, recipient)` scope), artifact ID scheme (`sha256:<hex>`), Ed25519 encoding (raw bytes, unpadded base64url), and a spec-version constant string
 
 **Plans**: 6 plans
-  - [ ] 01-01-PLAN.md — Wave 0 scaffold (stub spec file, spec-lint recipe, just ci wiring)
+  - [x] 01-01-PLAN.md — Wave 0 scaffold (stub spec file, spec-lint recipe, just ci wiring)
   - [ ] 01-02-PLAN.md — Wave 1 foundations (canonical JSON, Ed25519 domain separation, encoding, numeric defaults, idempotency, artifact IDs) [parallel with 01-03]
   - [ ] 01-03-PLAN.md — Wave 1 identity (Agent Card federation_credential, card versioning) [parallel with 01-02]
   - [ ] 01-04-PLAN.md — Wave 2 state-machine hole resolutions (SPEC-09..16 with D-19 δ guard-band adjustment) [parallel with 01-05]
@@ -218,7 +218,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 0. Toolchain & Workspace Scaffold | 3/3 | Complete   | 2026-04-13 |
-| 1. Spec Fork v0.5.1 | 0/0 | Not started | - |
+| 1. Spec Fork v0.5.1 | 1/6 | In Progress|  |
 | 2. Canonical + Crypto Foundations | 0/0 | Not started | - |
 | 3. Envelope + Message Schemas | 0/0 | Not started | - |
 | 4. Identity + Causality | 0/0 | Not started | - |
