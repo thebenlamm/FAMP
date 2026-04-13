@@ -15,15 +15,7 @@
 /// Serde wire form is `snake_case` per-variant — asserted by the
 /// `error_wire_strings` fixture.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    serde::Serialize,
-    serde::Deserialize,
-    thiserror::Error,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, thiserror::Error,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ProtocolErrorKind {

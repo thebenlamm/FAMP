@@ -29,6 +29,11 @@ test-crypto:
     cargo nextest run -p famp-crypto
     cargo test -p famp-crypto --doc
 
+# Run famp-core test suite as a blocking gate (wire-string fixtures + exhaustive-match gate)
+test-core:
+    cargo nextest run -p famp-core
+    cargo test -p famp-core --doc
+
 # Run doc tests (nextest does not run doctests)
 test-doc:
     cargo test --workspace --doc

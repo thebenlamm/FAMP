@@ -17,8 +17,14 @@ const FIXTURE: &[(ProtocolErrorKind, &str)] = &[
     (ProtocolErrorKind::CapacityExceeded, "capacity_exceeded"),
     (ProtocolErrorKind::PolicyBlocked, "policy_blocked"),
     (ProtocolErrorKind::CommitmentMissing, "commitment_missing"),
-    (ProtocolErrorKind::DelegationForbidden, "delegation_forbidden"),
-    (ProtocolErrorKind::ProvenanceIncomplete, "provenance_incomplete"),
+    (
+        ProtocolErrorKind::DelegationForbidden,
+        "delegation_forbidden",
+    ),
+    (
+        ProtocolErrorKind::ProvenanceIncomplete,
+        "provenance_incomplete",
+    ),
     (ProtocolErrorKind::Conflict, "conflict"),
     (ProtocolErrorKind::ConditionFailed, "condition_failed"),
     (ProtocolErrorKind::Expired, "expired"),
@@ -55,8 +61,7 @@ fn display_matches_wire_string() {
 
 #[test]
 fn unknown_variant_rejected() {
-    let result: Result<ProtocolErrorKind, _> =
-        serde_json::from_str(r#""invented_kind""#);
+    let result: Result<ProtocolErrorKind, _> = serde_json::from_str(r#""invented_kind""#);
     assert!(result.is_err());
 }
 
@@ -64,10 +69,8 @@ fn unknown_variant_rejected() {
 fn protocol_error_wrapper_impls_error_trait() {
     let err = ProtocolError::new(ProtocolErrorKind::Unauthorized);
     // Sanity: source() is callable; wrapper is a std::error::Error.
-    let _source: Option<&(dyn std::error::Error + 'static)> =
-        std::error::Error::source(&err);
-    let with_detail =
-        ProtocolError::with_detail(ProtocolErrorKind::Malformed, "bad envelope");
+    let _source: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(&err);
+    let with_detail = ProtocolError::with_detail(ProtocolErrorKind::Malformed, "bad envelope");
     assert_eq!(with_detail.kind, ProtocolErrorKind::Malformed);
     assert_eq!(with_detail.detail.as_deref(), Some("bad envelope"));
 }

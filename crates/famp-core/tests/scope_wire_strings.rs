@@ -28,8 +28,7 @@ fn serialize_each_variant() {
 #[test]
 fn deserialize_each_wire_string() {
     for (scope, wire) in FIXTURE {
-        let parsed: AuthorityScope =
-            serde_json::from_value(serde_json::json!(wire)).unwrap();
+        let parsed: AuthorityScope = serde_json::from_value(serde_json::json!(wire)).unwrap();
         assert_eq!(parsed, *scope);
     }
 }

@@ -1,9 +1,5 @@
 //! Guards against silent deletion of the INV-1..INV-11 documentation anchors.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 const SRC: &str = include_str!("../src/invariants.rs");
 

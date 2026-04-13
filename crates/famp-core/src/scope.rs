@@ -12,16 +12,7 @@ use std::str::FromStr;
 /// The five authority scopes defined by FAMP v0.5.1 §5.3.
 ///
 /// Wire form is `snake_case` — asserted by the `scope_wire_strings` fixture test.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthorityScope {
     Advisory,

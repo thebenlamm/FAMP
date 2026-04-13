@@ -9,9 +9,7 @@
     unused_crate_dependencies
 )]
 
-use famp_core::AuthorityScope::{
-    self, Advisory, CommitDelegate, CommitLocal, Negotiate, Transfer,
-};
+use famp_core::AuthorityScope::{self, Advisory, CommitDelegate, CommitLocal, Negotiate, Transfer};
 
 // provided, required, expected — 25 entries, hand-written per D-32.
 const TABLE: &[(AuthorityScope, AuthorityScope, bool); 25] = &[
