@@ -1,14 +1,45 @@
-//! `famp-transport-http` — FAMP v0.5.1 reference implementation.
-//!
-//! Phase 0 stub. Bodies land in later phases.
+//! `famp-transport-http` — FAMP v0.5.1 HTTP transport binding.
 
 #![forbid(unsafe_code)]
 
+// Silencers for dependencies consumed in later Plan 04-02/03 tasks but not
+// yet wired at this Wave 1 point. Remove from lib.rs as each Task lands.
+use rustls_platform_verifier as _;
+use rustls_pemfile as _;
+use rustls as _;
+use tower as _;
+use tower_http as _;
+use axum_server as _;
+use futures_util as _;
+use famp_canonical as _;
+use famp_transport as _;
+use famp_keyring as _;
+use famp_crypto as _;
+use famp_envelope as _;
+use tokio as _;
+use serde_json as _;
+
+pub mod error;
+
+pub use error::{HttpTransportError, MiddlewareError};
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
     #[test]
-    fn crate_compiles_and_links() {
-        // Smoke test per D-25: ensures nextest reports >0 tests per crate
-        // so a broken runner fails loudly instead of silently passing.
+    fn middleware_error_status_mapping_is_load_bearing() {
+        // D-C6 status mapping is the load-bearing distinguishability test for
+        // CONF-05/06/07 at the HTTP layer. If this regresses, the adversarial
+        // matrix collapses.
+        assert_eq!(MiddlewareError::BodyTooLarge.into_response().status().as_u16(), 413);
+        assert_eq!(MiddlewareError::BadPrincipal.into_response().status().as_u16(), 400);
+        assert_eq!(MiddlewareError::BadEnvelope.into_response().status().as_u16(), 400);
+        assert_eq!(MiddlewareError::CanonicalDivergence.into_response().status().as_u16(), 400);
+        assert_eq!(MiddlewareError::UnknownSender.into_response().status().as_u16(), 401);
+        assert_eq!(MiddlewareError::SignatureInvalid.into_response().status().as_u16(), 401);
+        assert_eq!(MiddlewareError::UnknownRecipient.into_response().status().as_u16(), 404);
+        assert_eq!(MiddlewareError::Internal.into_response().status().as_u16(), 500);
     }
 }
