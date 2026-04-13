@@ -1,14 +1,21 @@
-//! `famp-envelope` — FAMP v0.5.1 reference implementation.
-//!
-//! Phase 0 stub. Bodies land in later phases.
-
 #![forbid(unsafe_code)]
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles_and_links() {
-        // Smoke test per D-25: ensures nextest reports >0 tests per crate
-        // so a broken runner fails loudly instead of silently passing.
-    }
-}
+//! `famp-envelope` — FAMP v0.5.1 signed envelope reference implementation.
+//!
+//! CRITICAL: do NOT refactor the envelope to use `#[serde(flatten)]` or
+//! `#[serde(tag = ...)]` on a Body enum. See RESEARCH.md Pitfalls 1 and 2.
+//! This composition is the only pattern that actually enforces
+//! `deny_unknown_fields` on both envelope and body in serde 1.0.228.
+
+pub mod class;
+pub mod error;
+pub mod scope;
+pub mod timestamp;
+pub mod version;
+pub(crate) mod wire;
+
+pub use class::MessageClass;
+pub use error::EnvelopeDecodeError;
+pub use scope::EnvelopeScope;
+pub use timestamp::Timestamp;
+pub use version::{FampVersion, FAMP_SPEC_VERSION};
