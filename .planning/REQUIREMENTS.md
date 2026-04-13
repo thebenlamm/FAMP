@@ -27,14 +27,14 @@ Requirements for Level 2 + Level 3 conformance release. Each maps to a roadmap p
 - [ ] **SPEC-06**: Agent Card versioning rules pinned for key rotation without breaking in-flight commits
 - [ ] **SPEC-07**: Clock skew tolerance and validity window concrete defaults (±60s / 5min recommended)
 - [ ] **SPEC-08**: Idempotency key format fixed (128-bit random bytes, scope `(sender, recipient)`)
-- [ ] **SPEC-09**: §9.6 terminal precedence clarified — ack-disposition vs terminal-state-crystallization distinguished
-- [ ] **SPEC-10**: §7.3 "no body inspection" claim reconciled — explicit list of envelope-level fields for FSM transitions
-- [ ] **SPEC-11**: Transfer-timeout reversion race resolved (tiebreak rule for in-flight delegate commit)
-- [ ] **SPEC-12**: EXPIRED vs in-flight deliver race resolved
-- [ ] **SPEC-13**: Conditional-lapse precedence over delivery-wins (committer-side cancellation wins)
-- [ ] **SPEC-14**: Competing-instance commit intermediate state defined (INV-5 hole closed)
-- [ ] **SPEC-15**: Negotiation round counting under supersession pinned
-- [ ] **SPEC-16**: Capability snapshot binding vs card version drift contradiction resolved
+- [x] **SPEC-09**: §9.6 terminal precedence clarified — ack-disposition vs terminal-state-crystallization distinguished
+- [x] **SPEC-10**: §7.3 "no body inspection" claim reconciled — explicit list of envelope-level fields for FSM transitions
+- [x] **SPEC-11**: Transfer-timeout reversion race resolved (tiebreak rule for in-flight delegate commit)
+- [x] **SPEC-12**: EXPIRED vs in-flight deliver race resolved
+- [x] **SPEC-13**: Conditional-lapse precedence over delivery-wins (committer-side cancellation wins)
+- [x] **SPEC-14**: Competing-instance commit intermediate state defined (INV-5 hole closed)
+- [x] **SPEC-15**: Negotiation round counting under supersession pinned
+- [x] **SPEC-16**: Capability snapshot binding vs card version drift contradiction resolved
 - [ ] **SPEC-17**: Body schemas defined for `commit`, `propose`, `deliver`, `control`, `delegate`
 - [ ] **SPEC-18**: Artifact identifier scheme locked (`sha256:<hex>`)
 - [ ] **SPEC-19**: Ed25519 key encoding locked (raw 32-byte pub, 64-byte sig, unpadded base64url)
@@ -281,14 +281,14 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SPEC-06 | Phase 1 | Pending |
 | SPEC-07 | Phase 1 | Pending |
 | SPEC-08 | Phase 1 | Pending |
-| SPEC-09 | Phase 1 | Pending |
-| SPEC-10 | Phase 1 | Pending |
-| SPEC-11 | Phase 1 | Pending |
-| SPEC-12 | Phase 1 | Pending |
-| SPEC-13 | Phase 1 | Pending |
-| SPEC-14 | Phase 1 | Pending |
-| SPEC-15 | Phase 1 | Pending |
-| SPEC-16 | Phase 1 | Pending |
+| SPEC-09 | Phase 1 | Complete |
+| SPEC-10 | Phase 1 | Complete |
+| SPEC-11 | Phase 1 | Complete |
+| SPEC-12 | Phase 1 | Complete |
+| SPEC-13 | Phase 1 | Complete |
+| SPEC-14 | Phase 1 | Complete |
+| SPEC-15 | Phase 1 | Complete |
+| SPEC-16 | Phase 1 | Complete |
 | SPEC-17 | Phase 1 | Pending |
 | SPEC-18 | Phase 1 | Pending |
 | SPEC-19 | Phase 1 | Pending |

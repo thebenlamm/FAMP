@@ -59,9 +59,9 @@
 
 **Plans**: 6 plans
   - [x] 01-01-PLAN.md — Wave 0 scaffold (stub spec file, spec-lint recipe, just ci wiring)
-  - [ ] 01-02-PLAN.md — Wave 1 foundations (canonical JSON, Ed25519 domain separation, encoding, numeric defaults, idempotency, artifact IDs) [parallel with 01-03]
-  - [ ] 01-03-PLAN.md — Wave 1 identity (Agent Card federation_credential, card versioning) [parallel with 01-02]
-  - [ ] 01-04-PLAN.md — Wave 2 state-machine hole resolutions (SPEC-09..16 with D-19 δ guard-band adjustment) [parallel with 01-05]
+  - [x] 01-02-PLAN.md — Wave 1 foundations (canonical JSON, Ed25519 domain separation, encoding, numeric defaults, idempotency, artifact IDs) [parallel with 01-03]
+  - [x] 01-03-PLAN.md — Wave 1 identity (Agent Card federation_credential, card versioning) [parallel with 01-02]
+  - [x] 01-04-PLAN.md — Wave 2 state-machine hole resolutions (SPEC-09..16 with D-19 δ guard-band adjustment) [parallel with 01-05]
   - [ ] 01-05-PLAN.md — Wave 2 body schemas (§8a inline tables for commit/propose/deliver/control/delegate) [parallel with 01-04]
   - [ ] 01-06-PLAN.md — Wave 3 worked Ed25519 example (externally-sourced bytes per PITFALLS P10) + changelog finalization
 
