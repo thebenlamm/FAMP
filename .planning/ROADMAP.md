@@ -69,7 +69,10 @@
   6. Base64url unpadded encoding used for keys (32 bytes) and signatures (64 bytes) per SPEC-19; round-trip property test green
   7. SHA-256 content-addressing available via `sha2` crate; signature verification path is constant-time (no early-return timing leaks), documented and tested
 
-**Plans**: TBD
+**Plans:** 3 plans
+- [ ] 02-01-PLAN.md — Crate scaffold, newtypes, base64url codec, weak-key ingress fixtures (CRYPTO-02/03/06, SPEC-19)
+- [ ] 02-02-PLAN.md — sign/verify free functions, Signer/Verifier traits, canonicalize_for_signature, RFC 8032 gate (CRYPTO-01/04/05/07/08)
+- [ ] 02-03-PLAN.md — §7.1c worked-example fixture, byte-exact gate, README + wrapper audit, CI wiring (CRYPTO-04/08, SPEC-03)
 
 > **Research flag**: `/gsd:research-phase` recommended. Ed25519 strictness semantics, small-subgroup attack fixtures, and domain-separation byte layout all warrant upfront scoping.
 
@@ -99,7 +102,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Canonical JSON Foundations | 3/3 | Complete | 2026-04-13 |
-| 2. Crypto Foundations | 0/0 | Not started | - |
+| 2. Crypto Foundations | 0/3 | Planning | - |
 | 3. Core Types & Invariants | 0/0 | Not started | - |
 
 ## Coverage Summary

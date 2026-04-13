@@ -2,8 +2,8 @@
 phase: 2
 slug: crypto-foundations
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-04-13
 ---
 
@@ -38,7 +38,15 @@ created: 2026-04-13
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | TBD | TBD | TBD | TBD | ⬜ pending |
+| 02-01-T1 | 02-01 | 1 | SPEC-19 | unit | `cargo nextest run -p famp-crypto --lib prefix::tests::prefix_bytes_match_spec` | yes | ⬜ pending |
+| 02-01-T2 | 02-01 | 1 | CRYPTO-02, CRYPTO-03, CRYPTO-06 | unit | `cargo nextest run -p famp-crypto --lib keys` | yes | ⬜ pending |
+| 02-01-T3 | 02-01 | 1 | CRYPTO-03, SPEC-19 | integration + proptest | `cargo nextest run -p famp-crypto --test weak_key_rejection --test base64_roundtrip` | yes | ⬜ pending |
+| 02-02-T1 | 02-02 | 2 | CRYPTO-04, CRYPTO-08 | unit | `cargo nextest run -p famp-crypto --lib verify::tests` | yes | ⬜ pending |
+| 02-02-T2 | 02-02 | 2 | CRYPTO-01 | unit | `cargo nextest run -p famp-crypto --lib traits::tests` | yes | ⬜ pending |
+| 02-02-T3 | 02-02 | 2 | CRYPTO-05 | integration | `cargo nextest run -p famp-crypto --test rfc8032_vectors` | yes | ⬜ pending |
+| 02-03-T1 | 02-03 | 3 | SPEC-03 | fixture | `jq -e '.signature_b64url' crates/famp-crypto/tests/vectors/famp-sig-v1/worked-example.json` | yes | ⬜ pending |
+| 02-03-T2 | 02-03 | 3 | SPEC-03, CRYPTO-04 | integration | `cargo nextest run -p famp-crypto --test worked_example && just test-crypto` | yes | ⬜ pending |
+| 02-03-T3 | 02-03 | 3 | CRYPTO-08 | doc | `cargo test -p famp-crypto --doc` | yes | ⬜ pending |
 
 *Populated by planner. Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -71,4 +79,4 @@ created: 2026-04-13
 - [ ] Feedback latency < 30s
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved by planner
