@@ -2,10 +2,12 @@
 #![forbid(unsafe_code)]
 
 pub mod artifact;
+pub mod error;
 pub mod identity;
 pub mod ids;
 
 pub use artifact::{ArtifactId, ParseArtifactIdError};
+pub use error::{ProtocolError, ProtocolErrorKind};
 pub use identity::{Instance, ParseInstanceError, ParsePrincipalError, Principal};
 pub use ids::{CommitmentId, ConversationId, MessageId, TaskId};
 
