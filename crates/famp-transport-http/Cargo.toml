@@ -6,9 +6,30 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — famp-transport-http crate (stub)"
+description = "FAMP v0.5.1 — famp-transport-http crate"
 
 [lints]
 workspace = true
 
 [dependencies]
+famp-core      = { path = "../famp-core" }
+famp-envelope  = { path = "../famp-envelope" }
+famp-crypto    = { path = "../famp-crypto" }
+famp-keyring   = { path = "../famp-keyring" }
+famp-transport = { path = "../famp-transport" }
+famp-canonical = { path = "../famp-canonical" }
+
+axum                     = "0.8"
+axum-server              = { version = "0.8", features = ["tls-rustls-no-provider"] }
+tower                    = "0.5"
+tower-http               = { version = "0.6", features = ["limit"] }
+reqwest                  = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls                   = "0.23"
+rustls-platform-verifier = "0.5"
+rustls-pemfile           = "2"
+tokio                    = { workspace = true, features = ["rt", "sync", "macros", "net"] }
+thiserror                = { workspace = true }
+serde                    = { workspace = true, features = ["derive"] }
+serde_json               = { workspace = true }
+url                      = "2"
+futures-util             = "0.3"
