@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
 status: unknown
-last_updated: "2026-04-13T12:12:15.047Z"
+last_updated: "2026-04-13T13:11:29.873Z"
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 6
+  completed_plans: 4
 ---
 
 # STATE: FAMP v0.6 Foundation Crates
@@ -21,12 +21,12 @@ See: .planning/PROJECT.md (updated 2026-04-12)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 01 — canonical-json-foundations
+**Current focus:** Phase 02 — crypto-foundations
 
 ## Current Position
 
-Phase: 2
-Next: Phase 02 (crypto-foundations) — ready to start
+Phase: 02 (crypto-foundations) — EXECUTING
+Plan: 2 of 3
 
 ## Milestone Roadmap Snapshot
 

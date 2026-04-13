@@ -72,7 +72,7 @@ Requirements originally scoped for a Level 2 + Level 3 conformance release. Sect
 - [x] **SPEC-16**: Capability snapshot binding vs card version drift contradiction resolved
 - [x] **SPEC-17**: Body schemas defined for `commit`, `propose`, `deliver`, `control`, `delegate`
 - [x] **SPEC-18**: Artifact identifier scheme locked (`sha256:<hex>`)
-- [ ] **SPEC-19**: Ed25519 key encoding locked (raw 32-byte pub, 64-byte sig, unpadded base64url)
+- [x] **SPEC-19**: Ed25519 key encoding locked (raw 32-byte pub, 64-byte sig, unpadded base64url)
 - [x] **SPEC-20**: Spec-version constant defined and referenced by implementations
 
 ### Canonical JSON [Personal V1 — v0.6 Phase 1]
@@ -88,11 +88,11 @@ Requirements originally scoped for a Level 2 + Level 3 conformance release. Sect
 ### Crypto [Personal V1 — v0.6 Phase 2]
 
 - [ ] **CRYPTO-01**: `famp-crypto` crate exposes `Signer` and `Verifier` traits over Ed25519
-- [ ] **CRYPTO-02**: Only `verify_strict` exposed; raw `verify` hidden (rejects small-subgroup/weak keys)
-- [ ] **CRYPTO-03**: Weak-public-key rejection at trust store / Agent Card ingress
+- [x] **CRYPTO-02**: Only `verify_strict` exposed; raw `verify` hidden (rejects small-subgroup/weak keys)
+- [x] **CRYPTO-03**: Weak-public-key rejection at trust store / Agent Card ingress
 - [ ] **CRYPTO-04**: Domain-separation prefix applied before signing per SPEC-03
 - [ ] **CRYPTO-05**: RFC 8032 Ed25519 test vectors green in CI
-- [ ] **CRYPTO-06**: Base64url unpadded encoding for keys and signatures
+- [x] **CRYPTO-06**: Base64url unpadded encoding for keys and signatures
 - [ ] **CRYPTO-07**: SHA-256 content-addressing for artifacts via `sha2` crate
 - [ ] **CRYPTO-08**: Constant-time signature verification path (no early-return timing leaks)
 
@@ -335,15 +335,15 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SPEC-02  | Phase 1 | Complete |
 | SPEC-18  | Phase 1 | Complete |
 | CRYPTO-01 | Phase 2 | Pending |
-| CRYPTO-02 | Phase 2 | Pending |
-| CRYPTO-03 | Phase 2 | Pending |
+| CRYPTO-02 | Phase 2 | Complete |
+| CRYPTO-03 | Phase 2 | Complete |
 | CRYPTO-04 | Phase 2 | Pending |
 | CRYPTO-05 | Phase 2 | Pending |
-| CRYPTO-06 | Phase 2 | Pending |
+| CRYPTO-06 | Phase 2 | Complete |
 | CRYPTO-07 | Phase 2 | Pending |
 | CRYPTO-08 | Phase 2 | Pending |
 | SPEC-03  | Phase 2 | Pending |
-| SPEC-19  | Phase 2 | Pending |
+| SPEC-19  | Phase 2 | Complete |
 | CORE-01  | Phase 3 | Pending |
 | CORE-02  | Phase 3 | Pending |
 | CORE-03  | Phase 3 | Pending |

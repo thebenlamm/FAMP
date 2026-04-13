@@ -70,7 +70,7 @@
   7. SHA-256 content-addressing available via `sha2` crate; signature verification path is constant-time (no early-return timing leaks), documented and tested
 
 **Plans:** 3 plans
-- [ ] 02-01-PLAN.md — Crate scaffold, newtypes, base64url codec, weak-key ingress fixtures (CRYPTO-02/03/06, SPEC-19)
+- [x] 02-01-PLAN.md — Crate scaffold, newtypes, base64url codec, weak-key ingress fixtures (CRYPTO-02/03/06, SPEC-19)
 - [ ] 02-02-PLAN.md — sign/verify free functions, Signer/Verifier traits, canonicalize_for_signature, RFC 8032 gate (CRYPTO-01/04/05/07/08)
 - [ ] 02-03-PLAN.md — §7.1c worked-example fixture, byte-exact gate, README + wrapper audit, CI wiring (CRYPTO-04/08, SPEC-03)
 
