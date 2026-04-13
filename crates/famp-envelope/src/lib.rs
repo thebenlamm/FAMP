@@ -15,9 +15,7 @@ use hex as _;
 use insta as _;
 #[cfg(test)]
 use proptest as _;
-// `serde_json` is consumed by tests; silence the lib-compile-unit warning.
-use serde_json as _;
-
+pub mod body;
 pub mod class;
 pub mod error;
 pub mod scope;
@@ -25,6 +23,7 @@ pub mod timestamp;
 pub mod version;
 pub(crate) mod wire;
 
+pub use body::BodySchema;
 pub use class::MessageClass;
 pub use error::EnvelopeDecodeError;
 pub use scope::EnvelopeScope;
