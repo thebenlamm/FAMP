@@ -13,10 +13,9 @@ A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.
 ### Validated
 
 - [x] Rust toolchain bootstrap (install rustup, pin toolchain, workspace scaffold) — *Validated in Phase 00: toolchain-workspace-scaffold*
+- [x] Fork spec to `FAMP-v0.5.1-spec.md` and resolve identified ambiguities/bugs (canonical JSON, body schemas, state-machine holes) — *Validated in v0.5.1 milestone (Phase 01: spec-fork). 1038-line spec, 28 changelog entries, 21/21 spec-lint anchors green, worked Ed25519 example byte-exact from external reference per PITFALLS P10.*
 
 ### Active
-
-- [ ] Fork spec to `FAMP-v0.5.1-spec.md` and resolve identified ambiguities/bugs (canonical JSON, body schemas, state-machine holes)
 - [ ] `famp-canonical` crate implementing RFC 8785 JCS canonical JSON
 - [ ] `famp-crypto` crate wrapping Ed25519 sign/verify with domain separation
 - [ ] `famp-core` types, errors, invariants (INV-1 through INV-11)
@@ -114,5 +113,11 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
+## Current State
+
+**Shipped:** v0.5.1 Spec Fork (2026-04-13). The interop contract is locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries citing reviewer findings, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`. No Rust code yet — that's next milestone.
+
+**Next milestone (proposed):** v0.5.2 Foundations — Phase 2 only (Canonical + Crypto). Highest-risk phase in the project. RFC 8785 JCS + Ed25519 byte-exact against externally-sourced vectors. Fallback plan: ~500 LoC hand-written JCS if `serde_jcs` fails conformance.
+
 ---
-*Last updated: 2026-04-13 after Phase 00 (toolchain-workspace-scaffold) complete*
+*Last updated: 2026-04-13 after v0.5.1 Spec Fork milestone shipped*
