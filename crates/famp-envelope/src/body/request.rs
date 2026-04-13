@@ -17,7 +17,6 @@ pub struct RequestBody {
 }
 
 impl RequestBody {
-    #[allow(dead_code)] // wired by Plan 03 decode pipeline
     pub(crate) fn validate(&self) -> Result<(), EnvelopeDecodeError> {
         self.bounds.validate()
     }
@@ -27,4 +26,11 @@ impl BodySchema for RequestBody {
     const CLASS: MessageClass = MessageClass::Request;
     // D-C3: v0.7 locks request to Standalone. v0.8+ negotiation/causality may re-scope.
     const SCOPE: EnvelopeScope = EnvelopeScope::Standalone;
+
+    fn post_decode_validate(
+        &self,
+        _ts: Option<&crate::body::deliver::TerminalStatus>,
+    ) -> Result<(), EnvelopeDecodeError> {
+        self.validate()
+    }
 }

@@ -33,7 +33,6 @@ pub struct CommitBody {
 }
 
 impl CommitBody {
-    #[allow(dead_code)] // wired by Plan 03 decode pipeline
     pub(crate) fn validate(&self) -> Result<(), EnvelopeDecodeError> {
         self.bounds.validate()
     }
@@ -42,4 +41,11 @@ impl CommitBody {
 impl BodySchema for CommitBody {
     const CLASS: MessageClass = MessageClass::Commit;
     const SCOPE: EnvelopeScope = EnvelopeScope::Task;
+
+    fn post_decode_validate(
+        &self,
+        _ts: Option<&crate::body::deliver::TerminalStatus>,
+    ) -> Result<(), EnvelopeDecodeError> {
+        self.validate()
+    }
 }

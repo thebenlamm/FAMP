@@ -88,4 +88,11 @@ impl DeliverBody {
 impl BodySchema for DeliverBody {
     const CLASS: MessageClass = MessageClass::Deliver;
     const SCOPE: EnvelopeScope = EnvelopeScope::Task;
+
+    fn post_decode_validate(
+        &self,
+        envelope_terminal_status: Option<&TerminalStatus>,
+    ) -> Result<(), EnvelopeDecodeError> {
+        self.validate_against_terminal_status(envelope_terminal_status)
+    }
 }
