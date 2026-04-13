@@ -17,10 +17,12 @@ pub mod error;
 pub mod keys;
 pub mod prefix;
 pub mod sign;
+pub mod traits;
 pub mod verify;
 
 pub use error::CryptoError;
 pub use keys::{FampSignature, FampSigningKey, TrustedVerifyingKey};
 pub use prefix::{canonicalize_for_signature, DOMAIN_PREFIX};
 pub use sign::{sign_canonical_bytes, sign_value};
+pub use traits::{Signer, Verifier};
 pub use verify::{verify_canonical_bytes, verify_value};
