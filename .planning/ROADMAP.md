@@ -71,9 +71,9 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
   2. `FSM-02 (narrowed)` is enforced: no `REJECTED`, no `EXPIRED`, no timeout-driven transitions exist in the public API. The wider v0.6-catalog form is gated out for v0.7.
   3. `proptest` transition-legality tests enumerate the full `(class, relation, terminal_status, current_state)` tuple space and assert: every legal tuple is accepted, every illegal tuple is rejected with a typed error, zero panics.
   4. FSM state types are fully owned (no lifetimes, no `&str`/`&[u8]` in the public enum), so state can be moved across threads and stored without borrow gymnastics.
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 - [x] 02-01-PLAN.md — Lift MessageClass + TerminalStatus into famp-core (layering prerequisite for famp-fsm)
-- [ ] 02-02-PLAN.md — famp-fsm TaskState/TaskFsm engine + deterministic fixture tests (FSM-02, FSM-04, FSM-05)
+- [x] 02-02-PLAN.md — famp-fsm TaskState/TaskFsm engine + deterministic fixture tests (FSM-02, FSM-04, FSM-05)
 - [ ] 02-03-PLAN.md — FSM-03 consumer stub + FSM-08 proptest Cartesian legality matrix
 
 ### Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example
@@ -117,7 +117,7 @@ Rough ordering, not committed:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Canonical JSON Foundations | v0.6 | 3/3 | Complete   | 2026-04-13 |
-| 2. Crypto Foundations | v0.6 | 1/3 | In Progress|  |
+| 2. Crypto Foundations | v0.6 | 2/3 | In Progress|  |
 | 3. Core Types & Invariants | v0.6 | 2/2 | Complete | 2026-04-13 |
 | 1. Minimal Signed Envelope | v0.7 | 0/? | Not started | - |
 | 2. Minimal Task Lifecycle | v0.7 | 0/3 | Not started | - |

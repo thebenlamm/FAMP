@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
 status: unknown
-last_updated: "2026-04-13T18:50:36.505Z"
+last_updated: "2026-04-13T18:58:09.457Z"
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # STATE: FAMP — v0.7 Personal Runtime
@@ -26,10 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 ## Current Position
 
 Phase: 02 (minimal-task-lifecycle) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Last Shipped
 
+- **Phase 02 Plan 02** (2026-04-13) — `famp-fsm` crate: 5-state `TaskFsm` engine with single-function transition table (5 legal arrows), terminal immutability, 12 deterministic fixture tests. FSM-02, FSM-04, FSM-05 satisfied. 195/195 workspace tests. Commits: `26f7f13`, `7b79019`.
 - **Phase 02 Plan 01** (2026-04-13) — Type lift: `MessageClass` and `TerminalStatus` moved to `famp-core`. Backward-compatible re-exports in `famp-envelope`. 184/184 workspace tests green. `famp-fsm` crate layering constraint (D-D1) now satisfiable.
 - **v0.6 Foundation Crates** (2026-04-13) — `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests, `just ci` green. Archived to `.planning/milestones/v0.6-*.md` and `.planning/milestones/v0.6-phases/`. Git tag: `v0.6`.
 
@@ -50,6 +51,9 @@ Plan: 2 of 3
 - **v0.7 adversarial matrix = 3 cases × 2 transports, not 18** — CONF-05/06/07 own the three cases on `MemoryTransport`; Phase 4 extends the same matrix to HTTP without introducing new CONF-0x requirements.
 - **ENV-09 and ENV-12 are intentionally narrowed for v0.7** — ENV-09 ships with no capability-snapshot binding; ENV-12 ships cancel-only (no supersede, no close). The wider v0.6-catalog forms defer to Federation Profile.
 - **D-B5 + D-D1 resolved (2026-04-13, Phase 02 Plan 01):** `TerminalStatus` lifted to `famp-core` alongside `MessageClass`; `famp-fsm` depends only on `famp-core`, never on `famp-envelope`. Backward-compatible re-export pattern established: define in lower crate, `pub use` in former home.
+- **relation field dropped from TaskTransitionInput (2026-04-13, Phase 02 Plan 02):** D-B3 resolved — no v0.7 legal arrow needs relation inspection. `TaskTransitionInput` carries only `class` and `terminal_status`.
+- **FSM step() and accessors are const fn (2026-04-13, Phase 02 Plan 02):** All transition arms operate on Copy enums; clippy `missing_const_for_fn` (pedantic) required this. Correct and free.
+- **Clippy pedantic test file pattern (2026-04-13, Phase 02 Plan 02):** Test integration files use `#![allow(clippy::unwrap_used, unused_crate_dependencies)]` per famp-envelope precedent. Consistent pattern across all famp-* test files.
 
 ### Open TODOs
 
@@ -63,6 +67,7 @@ Plan: 2 of 3
 
 ### Recent Activity
 
+- **2026-04-13:** **Phase 02 Plan 02 complete.** `famp-fsm` 5-state TaskFsm engine. 5-arrow transition table, terminal immutability, 12 fixture tests, clippy pedantic clean. 195/195 workspace tests. Commits: `26f7f13`, `7b79019`.
 - **2026-04-13:** **Phase 02 Plan 01 complete.** Type lift: `MessageClass` and `TerminalStatus` to `famp-core`. D-D1 crate layering blocker resolved. 184/184 workspace tests. Commits: `65c8ac1`, `012b807`.
 - **2026-04-13:** **v0.7 roadmap canonicalized.** 4 phases, 32 requirements, 100% coverage. Phase 1 (Minimal Signed Envelope) queued for `/gsd:plan-phase 1`.
 - **2026-04-13:** **v0.6 Foundation Crates milestone shipped and archived.** 3 phases, 9 plans, 16 tasks, 25/25 requirements satisfied. ROADMAP.md and REQUIREMENTS.md archived to `.planning/milestones/v0.6-*.md`; phase directories moved to `.planning/milestones/v0.6-phases/`. PROJECT.md evolved: all v0.6 requirements moved to Validated, Key Decisions annotated with outcomes.
@@ -71,4 +76,4 @@ Plan: 2 of 3
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*State updated: 2026-04-13 — Phase 02 Plan 01 complete; Phase 02 Plan 02 (famp-fsm TaskFsm) queued*
+*State updated: 2026-04-13 — Phase 02 Plan 02 complete; Phase 02 Plan 03 (FSM consumer stub + proptest matrix) queued*

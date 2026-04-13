@@ -24,10 +24,10 @@
 
 ### Task FSM — minimal 5-state lifecycle
 
-- [ ] **FSM-02 (narrowed)**: `TaskFsm` with 5 states — `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`. 1 initial + 1 intermediate + 3 terminals. No `REJECTED`, no `EXPIRED`.
+- [x] **FSM-02 (narrowed)**: `TaskFsm` with 5 states — `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`. 1 initial + 1 intermediate + 3 terminals. No `REJECTED`, no `EXPIRED`.
 - [ ] **FSM-03**: Compile-time terminal-state enforcement via exhaustive enum `match` (INV-5), under `#![deny(unreachable_patterns)]` in a downstream consumer stub
-- [ ] **FSM-04**: Transitions driven by `(class, relation, terminal_status, current_state)` tuple, rejected when illegal
-- [ ] **FSM-05**: Owned state types only — no lifetimes in FSM state enums
+- [x] **FSM-04**: Transitions driven by `(class, relation, terminal_status, current_state)` tuple, rejected when illegal
+- [x] **FSM-05**: Owned state types only — no lifetimes in FSM state enums
 - [ ] **FSM-08**: `proptest` property tests for transition legality (every illegal tuple rejected, every legal tuple accepted)
 
 ### Transport — trait + `MemoryTransport`
@@ -113,10 +113,10 @@ These items exist in the broader REQ catalog and are explicitly **not v0.7 scope
 | ENV-12 (cancel-only) | Phase 1: Minimal Signed Envelope | Pending |
 | ENV-14 | Phase 1: Minimal Signed Envelope | Complete |
 | ENV-15 | Phase 1: Minimal Signed Envelope | Complete |
-| FSM-02 (narrowed) | Phase 2: Minimal Task Lifecycle | Pending |
+| FSM-02 (narrowed) | Phase 2: Minimal Task Lifecycle | Complete |
 | FSM-03 | Phase 2: Minimal Task Lifecycle | Pending |
-| FSM-04 | Phase 2: Minimal Task Lifecycle | Pending |
-| FSM-05 | Phase 2: Minimal Task Lifecycle | Pending |
+| FSM-04 | Phase 2: Minimal Task Lifecycle | Complete |
+| FSM-05 | Phase 2: Minimal Task Lifecycle | Complete |
 | FSM-08 | Phase 2: Minimal Task Lifecycle | Pending |
 | TRANS-01 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
 | TRANS-02 | Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example | Pending |
