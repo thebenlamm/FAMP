@@ -5,6 +5,7 @@ pub mod artifact;
 pub mod error;
 pub mod identity;
 pub mod ids;
+pub mod invariants;
 pub mod scope;
 
 pub use artifact::{ArtifactId, ParseArtifactIdError};
