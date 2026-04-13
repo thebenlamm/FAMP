@@ -29,7 +29,7 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 **v0.6 Foundation Crates — substrate: COMPLETE ✓**
 
 **v0.7 Personal Runtime — minimal usable library (next):**
-- [ ] `famp-envelope` — signed envelope with INV-10 enforcement; body schemas for `request`, `commit`, `deliver`, `ack`, `control/cancel` only
+- [x] `famp-envelope` — signed envelope with INV-10 enforcement; body schemas for `request`, `commit`, `deliver`, `ack`, `control/cancel` only — *Validated in Phase 01: minimal-signed-envelope. 5/5 must-haves verified, 73/73 nextest green, §7.1c vector-0 byte-exact on both canonical JSON (324 B) and Ed25519 signature (64 B). Sealed `BodySchema` trait + 5 body types, `UnsignedEnvelope`/`SignedEnvelope` type-state (INV-10 at the type level via compile_fail doctests), `deny_unknown_fields` at depth, ENV-12 cancel-only enforced as single-variant enum, ENV-09 narrowed (no `capability_snapshot`).*
 - [ ] Minimal task lifecycle FSM: `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}` (5 states: 1 initial + 1 intermediate + 3 terminals, compiler-checked terminals). No `REJECTED`, no `EXPIRED`, no timeouts.
 - [ ] `famp-transport` trait + `MemoryTransport` (in-process, ~50 LoC)
 - [ ] Trust-on-first-use keyring — local `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey. No Agent Card.
@@ -163,7 +163,7 @@ This document evolves at phase transitions and milestone boundaries.
 - **v0.5.1 Spec Fork** (2026-04-13) — interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
 - **v0.6 Foundation Crates** (2026-04-13) — substrate fully shipped. `famp-canonical` (RFC 8785 JCS, SEED-001 resolved `serde_jcs`, 12/12 conformance gate, nightly 100M float corpus), `famp-crypto` (Ed25519 `verify_strict`-only, SPEC-03 domain separation, PITFALLS §7.1c worked example byte-exact, NIST KATs, `sha256_artifact_id`), `famp-core` (Principal/Instance, UUIDv7 ID newtypes, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, exhaustive consumer stub under `#![deny(unreachable_patterns)]`). 25/25 requirements satisfied. 112/112 workspace tests green. `just ci` clean end-to-end.
 
-**Next:** v0.7 Personal Runtime — `famp-envelope`, 5-state task FSM, `MemoryTransport`, minimal HTTP transport, TOFU keyring, both two-agent examples.
+**Next:** v0.7 Personal Runtime — Phase 1 (`famp-envelope`) complete. Remaining: 5-state task FSM, `MemoryTransport`, minimal HTTP transport, TOFU keyring, both two-agent examples.
 
 ---
-*Last updated: 2026-04-13 — v0.7 Personal Runtime milestone initialized*
+*Last updated: 2026-04-13 — Phase 01 minimal-signed-envelope complete (byte-exact vector-0 reproduction, INV-10 enforced at type level)*
