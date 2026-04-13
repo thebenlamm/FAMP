@@ -679,6 +679,28 @@ The `transfer_commit_race` target value is introduced by §12.3a
 (transfer-timeout tiebreak). The `condition_failed` disposition is used by
 §9.6b (conditional-lapse precedence).
 
+### §8a.5 `delegate` body
+
+**`delegate` body** (additionalProperties: false)
+
+| Field | JSON type | Req/Opt | Constraint notes |
+|---|---|---|---|
+| `form` | string (enum) | REQUIRED | One of `assist`, `subtask`, `transfer`. Per §12.3. Not FSM-inspected directly (form governs downstream obligations, not state transitions of the parent task — except `transfer` which triggers §12.3a tiebreak evaluation). |
+| `commitment_ref` | string | REQUIRED | Commitment ID (not message ID) under which delegation is authorized. |
+| `downstream` | string | REQUIRED | Principal identity of delegate (format `agent:<authority>/<name>`, per §5.1). |
+| `scope` | object | REQUIRED | What portion is delegated. |
+| `bounds` | object | REQUIRED | Same shape as `commit.bounds`. MUST be within parent commitment bounds. |
+| `delegation_ceiling` | object | OPTIONAL | `{max_hops: integer, max_fanout: integer?, allowed_delegates: [string]?, forbidden_delegates: [string]?, policy_inheritance: boolean}`. Per §12.5. |
+| `transfer_deadline` | string (RFC 3339) | REQUIRED iff `form = transfer` | Default 5 minutes from envelope `ts`. Per §12.3 item 5 and §12.3a tiebreak. |
+| `natural_language_summary` | string | SHOULD | Human-readable. |
+
+**Closing note.** Validation note: implementations MUST use
+`deny_unknown_fields` (or language-equivalent strict decoding) for every
+body schema. A body field not listed in the schema above is rejected at
+decode with error `malformed`. Extensions that need additional data MUST
+use the envelope-level `extensions` map per §7.1 and MUST NOT reuse any
+field name appearing in these schemas or in the §7.3a FSM whitelist.
+
 ## §3.6a Artifact identifiers
 
 Artifact identifiers use the scheme `sha256:<hex>` — the literal prefix
@@ -722,4 +744,5 @@ are stable references of the form `v0.5.1-Δnn`.
 - `v0.5.1-Δ21 — §11.5a — PITFALLS INV-5 hole, competing-instance commits / CONTEXT D-22 — Introduce COMMITTED_PENDING_RESOLUTION internal state; lex-smaller UUIDv7 id wins; loser gets conflict:competing_instance; internal state MUST NOT leak to wire.`
 - `v0.5.1-Δ23 — §11.2a — PITFALLS capability snapshot / card version drift / CONTEXT D-24 — Snapshot bound at commit-time to committing card's card_version; §6.3 continuity rule applies for rotations.`
 - `v0.5.1-Δ22 — §10.3a — PITFALLS supersession round-limit circumvention / CONTEXT D-23 — Round counter includes superseded messages; supersession does NOT reset counter.`
+- `v0.5.1-Δ24 — §8a Body schemas — PITFALLS P6 (deny_unknown_fields discipline) / CONTEXT D-25/D-26/D-27 — Add inline body schemas for propose, commit, deliver, control, delegate. Every schema declares additionalProperties: false. New control target transfer_commit_race introduced by §12.3a. Numeric values > 2^53 represented as strings per P2. Extensions MUST NOT appear inside body — envelope-level extensions map only.`
 - `v0.5.1-Δ25 — §3.6a — CONTEXT D-28 — Artifact IDs locked to sha256:<hex> lowercase 64 chars over canonical JSON of artifact body; sha<N>: reserved.`
