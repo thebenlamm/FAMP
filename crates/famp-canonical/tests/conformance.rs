@@ -12,7 +12,7 @@
 #![cfg(feature = "wave2_impl")]
 
 #[test]
-fn appendix_b_float_vectors() {
+fn rfc8785_appendix_b_all() {
     // (ieee_bits, expected_str) — 27 cases from RFC 8785 Appendix B
     let vectors: &[(u64, &str)] = &[
         (0x0000_0000_0000_0000, "0"),
@@ -49,6 +49,59 @@ fn appendix_b_float_vectors() {
             "Failed for IEEE bits 0x{bits:016x}"
         );
     }
+}
+
+/// RFC 8785 Appendix C — structured object example.
+///
+/// Input/expected transcribed verbatim from
+/// <https://datatracker.ietf.org/doc/html/rfc8785#appendix-C>.
+/// Verified byte-exact against `serde_jcs 0.2.0` during Plan 03.
+#[test]
+fn rfc8785_appendix_c_structured() {
+    let input = r#"{
+        "numbers": [333333333.33333329, 1E30, 4.50, 2e-3, 0.000000000000000000000000001],
+        "string": "\u20ac$\u000F\nA'\u0042\u0022\u005c\\\"\/",
+        "literals": [null, true, false]
+    }"#;
+    let value: serde_json::Value =
+        serde_json::from_str(input).expect("Appendix C input parses as JSON");
+    let got = famp_canonical::canonicalize(&value).expect("Appendix C canonicalizes");
+    let expected: &[u8] =
+        b"{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"\xe2\x82\xac$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}";
+    assert_eq!(
+        got.as_slice(),
+        expected,
+        "RFC 8785 Appendix C structured object must canonicalize byte-exact"
+    );
+}
+
+/// RFC 8785 Appendix E — complex nested object example.
+///
+/// Input/expected from <https://datatracker.ietf.org/doc/html/rfc8785#appendix-E>.
+/// Exercises lexicographic key sort across mixed-type values, empty objects,
+/// nested objects, arrays of objects, an empty key, control-character keys,
+/// and case-sensitive ordering (uppercase before lowercase per UTF-16 code
+/// unit comparison).
+#[test]
+fn rfc8785_appendix_e_complex() {
+    let input = r#"{
+  "1": {"f": {"f": "hi","F": 5} ,"\n": 56.0},
+  "10": { },
+  "":  "empty",
+  "a": { },
+  "111": [ {"e": "yes","E": "no" } ],
+  "A": { }
+}"#;
+    let value: serde_json::Value =
+        serde_json::from_str(input).expect("Appendix E input parses as JSON");
+    let got = famp_canonical::canonicalize(&value).expect("Appendix E canonicalizes");
+    let expected: &[u8] =
+        b"{\"\":\"empty\",\"1\":{\"\\n\":56,\"f\":{\"F\":5,\"f\":\"hi\"}},\"10\":{},\"111\":[{\"E\":\"no\",\"e\":\"yes\"}],\"A\":{},\"a\":{}}";
+    assert_eq!(
+        got.as_slice(),
+        expected,
+        "RFC 8785 Appendix E complex object must canonicalize byte-exact"
+    );
 }
 
 #[test]
