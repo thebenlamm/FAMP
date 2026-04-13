@@ -1,0 +1,23 @@
+{
+  "authority": "advisory",
+  "body": {
+    "bounds": {
+      "budget": {
+        "amount": "100",
+        "unit": "usd"
+      },
+      "deadline": "2026-05-01T00:00:00Z"
+    },
+    "scope": {
+      "task": "translate"
+    }
+  },
+  "class": "request",
+  "famp": "0.5.1",
+  "from": "agent:local/alice",
+  "id": "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a6b",
+  "scope": "standalone",
+  "signature": "tiJZjPbDTrnsS5EUBAD4VBRErm20-RtkpIeqiuSCiA5AsM-mbN2_BVDhxABOkqtlk9jn8lt3vp7dJf9kZyxkCQ",
+  "to": "agent:local/bob",
+  "ts": "2026-04-13T00:00:00Z"
+}
