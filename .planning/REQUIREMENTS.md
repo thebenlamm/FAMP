@@ -14,7 +14,7 @@
 - **Core Types & Invariants:** CORE-01, CORE-02, CORE-03, CORE-04, CORE-05, CORE-06
 - **Spec prerequisites (carried from v0.5.1):** SPEC-02, SPEC-03, SPEC-18, SPEC-19
 
-Everything else in this document (ENV-*, ID-*, CAUS-*, FSM-*, NEGO-*, DEL-*, PROV-*, EXT-*, TRANS-*, CONF-*, CLI-*, and SPEC-04/05/06/07/08) is deferred to future milestones (v0.7+). Traceability table below will be rewritten by the roadmapper to reflect v0.6 phase numbering only; downstream requirements are tracked in the full v1 list above.
+Everything else in this document (ENV-*, ID-*, CAUS-*, FSM-*, NEGO-*, DEL-*, PROV-*, EXT-*, TRANS-*, CONF-*, CLI-*, and SPEC-04/05/06/07/08) is deferred to future milestones (v0.7+). The Traceability table below reflects v0.6 phase numbering only; downstream requirements remain tracked in the full v1 list above.
 
 ## v1 Requirements
 
@@ -275,44 +275,21 @@ Deferred to future milestone. Tracked but not in current roadmap.
 
 ## Traceability
 
-**Coverage:** 153/153 v1 requirements mapped to exactly one phase (100%).
+**Scope:** v0.6 Foundation Crates milestone only. 25/25 in-scope requirements mapped to exactly one phase (100%). All other REQ-IDs above are deferred to v0.7+ and will receive phase mappings when those milestones are roadmapped.
+
+**Phase numbering:** Reset to Phase 1 for v0.6 (v0.5.1 was a docs-only milestone).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TOOL-01 | Phase 0 | Complete |
-| TOOL-02 | Phase 0 | Complete |
-| TOOL-03 | Phase 0 | Complete |
-| TOOL-04 | Phase 0 | Complete |
-| TOOL-05 | Phase 0 | Complete |
-| TOOL-06 | Phase 0 | Complete |
-| TOOL-07 | Phase 0 | Complete |
-| SPEC-01 | Phase 1 | Complete |
-| SPEC-02 | Phase 1 | Pending |
-| SPEC-03 | Phase 1 | Pending |
-| SPEC-04 | Phase 1 | Pending |
-| SPEC-05 | Phase 1 | Pending |
-| SPEC-06 | Phase 1 | Pending |
-| SPEC-07 | Phase 1 | Pending |
-| SPEC-08 | Phase 1 | Pending |
-| SPEC-09 | Phase 1 | Complete |
-| SPEC-10 | Phase 1 | Complete |
-| SPEC-11 | Phase 1 | Complete |
-| SPEC-12 | Phase 1 | Complete |
-| SPEC-13 | Phase 1 | Complete |
-| SPEC-14 | Phase 1 | Complete |
-| SPEC-15 | Phase 1 | Complete |
-| SPEC-16 | Phase 1 | Complete |
-| SPEC-17 | Phase 1 | Complete |
-| SPEC-18 | Phase 1 | Pending |
-| SPEC-19 | Phase 1 | Pending |
-| SPEC-20 | Phase 1 | Complete |
-| CANON-01 | Phase 2 | Pending |
-| CANON-02 | Phase 2 | Pending |
-| CANON-03 | Phase 2 | Pending |
-| CANON-04 | Phase 2 | Pending |
-| CANON-05 | Phase 2 | Pending |
-| CANON-06 | Phase 2 | Pending |
-| CANON-07 | Phase 2 | Pending |
+| CANON-01 | Phase 1 | Pending |
+| CANON-02 | Phase 1 | Pending |
+| CANON-03 | Phase 1 | Pending |
+| CANON-04 | Phase 1 | Pending |
+| CANON-05 | Phase 1 | Pending |
+| CANON-06 | Phase 1 | Pending |
+| CANON-07 | Phase 1 | Pending |
+| SPEC-02  | Phase 1 | Pending |
+| SPEC-18  | Phase 1 | Pending |
 | CRYPTO-01 | Phase 2 | Pending |
 | CRYPTO-02 | Phase 2 | Pending |
 | CRYPTO-03 | Phase 2 | Pending |
@@ -321,118 +298,15 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | CRYPTO-06 | Phase 2 | Pending |
 | CRYPTO-07 | Phase 2 | Pending |
 | CRYPTO-08 | Phase 2 | Pending |
-| CORE-01 | Phase 2 | Pending |
-| CORE-02 | Phase 2 | Pending |
-| CORE-03 | Phase 2 | Pending |
-| CORE-04 | Phase 2 | Pending |
-| CORE-05 | Phase 2 | Pending |
-| CORE-06 | Phase 2 | Pending |
-| ENV-01 | Phase 3 | Pending |
-| ENV-02 | Phase 3 | Pending |
-| ENV-03 | Phase 3 | Pending |
-| ENV-04 | Phase 3 | Pending |
-| ENV-05 | Phase 3 | Pending |
-| ENV-06 | Phase 3 | Pending |
-| ENV-07 | Phase 3 | Pending |
-| ENV-08 | Phase 3 | Pending |
-| ENV-09 | Phase 3 | Pending |
-| ENV-10 | Phase 3 | Pending |
-| ENV-11 | Phase 3 | Pending |
-| ENV-12 | Phase 3 | Pending |
-| ENV-13 | Phase 3 | Pending |
-| ENV-14 | Phase 3 | Pending |
-| ENV-15 | Phase 3 | Pending |
-| ID-01 | Phase 4 | Pending |
-| ID-02 | Phase 4 | Pending |
-| ID-03 | Phase 4 | Pending |
-| ID-04 | Phase 4 | Pending |
-| ID-05 | Phase 4 | Pending |
-| ID-06 | Phase 4 | Pending |
-| ID-07 | Phase 4 | Pending |
-| CAUS-01 | Phase 4 | Pending |
-| CAUS-02 | Phase 4 | Pending |
-| CAUS-03 | Phase 4 | Pending |
-| CAUS-04 | Phase 4 | Pending |
-| CAUS-05 | Phase 4 | Pending |
-| CAUS-06 | Phase 4 | Pending |
-| CAUS-07 | Phase 4 | Pending |
-| FSM-01 | Phase 5 | Pending |
-| FSM-02 | Phase 5 | Pending |
-| FSM-03 | Phase 5 | Pending |
-| FSM-04 | Phase 5 | Pending |
-| FSM-05 | Phase 5 | Pending |
-| FSM-06 | Phase 5 | Pending |
-| FSM-07 | Phase 5 | Pending |
-| FSM-08 | Phase 5 | Pending |
-| NEGO-01 | Phase 6 | Pending |
-| NEGO-02 | Phase 6 | Pending |
-| NEGO-03 | Phase 6 | Pending |
-| NEGO-04 | Phase 6 | Pending |
-| NEGO-05 | Phase 6 | Pending |
-| NEGO-06 | Phase 6 | Pending |
-| NEGO-07 | Phase 6 | Pending |
-| NEGO-08 | Phase 6 | Pending |
-| NEGO-09 | Phase 6 | Pending |
-| NEGO-10 | Phase 6 | Pending |
-| NEGO-11 | Phase 6 | Pending |
-| NEGO-12 | Phase 6 | Pending |
-| DEL-01 | Phase 6 | Pending |
-| DEL-02 | Phase 6 | Pending |
-| DEL-03 | Phase 6 | Pending |
-| DEL-04 | Phase 6 | Pending |
-| DEL-05 | Phase 6 | Pending |
-| DEL-06 | Phase 6 | Pending |
-| DEL-07 | Phase 6 | Pending |
-| DEL-08 | Phase 6 | Pending |
-| DEL-09 | Phase 6 | Pending |
-| PROV-01 | Phase 6 | Pending |
-| PROV-02 | Phase 6 | Pending |
-| PROV-03 | Phase 6 | Pending |
-| PROV-04 | Phase 6 | Pending |
-| PROV-05 | Phase 6 | Pending |
-| PROV-06 | Phase 6 | Pending |
-| PROV-07 | Phase 6 | Pending |
-| EXT-01 | Phase 6 | Pending |
-| EXT-02 | Phase 6 | Pending |
-| EXT-03 | Phase 6 | Pending |
-| EXT-04 | Phase 6 | Pending |
-| EXT-05 | Phase 6 | Pending |
-| TRANS-01 | Phase 7 | Pending |
-| TRANS-02 | Phase 7 | Pending |
-| TRANS-03 | Phase 7 | Pending |
-| TRANS-04 | Phase 7 | Pending |
-| TRANS-05 | Phase 7 | Pending |
-| TRANS-06 | Phase 7 | Pending |
-| TRANS-07 | Phase 7 | Pending |
-| TRANS-08 | Phase 7 | Pending |
-| TRANS-09 | Phase 7 | Pending |
-| CONF-01 | Phase 8 | Pending |
-| CONF-02 | Phase 8 | Pending |
-| CONF-03 | Phase 8 | Pending |
-| CONF-04 | Phase 8 | Pending |
-| CONF-05 | Phase 8 | Pending |
-| CONF-06 | Phase 8 | Pending |
-| CONF-07 | Phase 8 | Pending |
-| CONF-08 | Phase 8 | Pending |
-| CONF-09 | Phase 8 | Pending |
-| CONF-10 | Phase 8 | Pending |
-| CONF-11 | Phase 8 | Pending |
-| CONF-12 | Phase 8 | Pending |
-| CONF-13 | Phase 8 | Pending |
-| CONF-14 | Phase 8 | Pending |
-| CONF-15 | Phase 8 | Pending |
-| CONF-16 | Phase 8 | Pending |
-| CONF-17 | Phase 8 | Pending |
-| CONF-18 | Phase 8 | Pending |
-| CLI-01 | Phase 8 | Pending |
-| CLI-02 | Phase 8 | Pending |
-| CLI-03 | Phase 8 | Pending |
-| CLI-04 | Phase 8 | Pending |
-| CLI-05 | Phase 8 | Pending |
-| CLI-06 | Phase 8 | Pending |
-| CLI-07 | Phase 8 | Pending |
-| CLI-08 | Phase 8 | Pending |
+| SPEC-03  | Phase 2 | Pending |
+| SPEC-19  | Phase 2 | Pending |
+| CORE-01  | Phase 3 | Pending |
+| CORE-02  | Phase 3 | Pending |
+| CORE-03  | Phase 3 | Pending |
+| CORE-04  | Phase 3 | Pending |
+| CORE-05  | Phase 3 | Pending |
+| CORE-06  | Phase 3 | Pending |
 
 ---
 *Requirements defined: 2026-04-12*
-*Last updated: 2026-04-12 — traceability filled during roadmap creation*
+*Last updated: 2026-04-12 — traceability rewritten for v0.6 Foundation Crates milestone (Phase numbering reset to 1)*
