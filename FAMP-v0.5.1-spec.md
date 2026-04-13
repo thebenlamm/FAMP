@@ -649,6 +649,36 @@ The `capability_snapshot` field is bound to the committing card's
 `card_version` per §11.2a and §6.3. The `scope_subset` field is
 FSM-inspected per §7.3a.
 
+### §8a.3 `deliver` body
+
+**`deliver` body** (additionalProperties: false)
+
+| Field | JSON type | Req/Opt | Constraint notes |
+|---|---|---|---|
+| `interim` | boolean | REQUIRED | FSM-inspected (§7.3a). `false` = terminal delivery (requires envelope-level `terminal_status`); `true` = progress update (MUST NOT carry `terminal_status`). |
+| `artifacts` | array of object | OPTIONAL | Each: `{id: "sha256:<hex>", media_type: string, size: integer}`. Per §3.6a. |
+| `result` | object | OPTIONAL | Domain payload; opaque to FSM. |
+| `usage_metrics` | object | OPTIONAL | `{tokens_used: integer, compute_ms: integer, cost: {amount: string, unit: string}}`. Numbers bounded by 2^53; larger values as strings. |
+| `error_detail` | object | OPTIONAL | REQUIRED iff envelope `terminal_status = failed`. `{category: ErrorCategory, message: string, diagnostic: object?}`. |
+| `provenance` | object | REQUIRED on terminal deliveries (optional on interim) | §14.2: `{originating_task, commitment_lineage, delegation_lineage?, artifact_lineage?, policy_context}`. Canonicalized per §4a. |
+| `natural_language_summary` | string | SHOULD | Human/LLM readable. |
+
+### §8a.4 `control` body
+
+**`control` body** (additionalProperties: false)
+
+| Field | JSON type | Req/Opt | Constraint notes |
+|---|---|---|---|
+| `target` | string (enum) | REQUIRED | FSM-inspected (§7.3a). One of: `task`, `conversation`, `commitment`, `delegation`, `proposal`, `transfer_commit_race`. Defines what the control action operates on. `transfer_commit_race` is introduced by §12.3a for delegates that self-check inside the transfer-timeout δ guard band. |
+| `action` | string (enum) | REQUIRED | One of: `cancel`, `supersede`, `close`, `cancel_if_not_started`, `revert_transfer`. Combined with envelope `relation` per §7.3a whitelist. |
+| `disposition` | string (enum) | OPTIONAL | One of §15.1 error categories where relevant: `condition_failed`, `capacity_exceeded`, `policy_blocked`, `unauthorized`, `conflict`. For conditional lapse (§11.4, §9.6b), MUST be `condition_failed`. |
+| `reason` | string | SHOULD | Human-readable justification. |
+| `affected_ids` | array of string | OPTIONAL | Extra targets (e.g., list of commitment IDs closed by a conversation close). |
+
+The `transfer_commit_race` target value is introduced by §12.3a
+(transfer-timeout tiebreak). The `condition_failed` disposition is used by
+§9.6b (conditional-lapse precedence).
+
 ## §3.6a Artifact identifiers
 
 Artifact identifiers use the scheme `sha256:<hex>` — the literal prefix
