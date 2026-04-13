@@ -110,6 +110,16 @@ None — no external service configuration required. Branch protection on `main`
 - First push to GitHub will exercise the full green CI loop
 - Phase 01 can begin: spec fork, resolving canonical JSON + state machine ambiguities
 
+## Self-Check: PASSED
+
+- FOUND: /Users/benlamm/Workspace/FAMP/Justfile
+- FOUND: /Users/benlamm/Workspace/FAMP/.config/nextest.toml
+- FOUND: /Users/benlamm/Workspace/FAMP/.github/workflows/ci.yml
+- FOUND: 0-03-SUMMARY.md
+- FOUND: d047814 (Task 1 commit)
+- FOUND: 8a60403 (Task 2 commit)
+- FOUND: 2ddfb7a (metadata commit)
+
 ---
 *Phase: 00-toolchain-workspace-scaffold*
 *Completed: 2026-04-12*

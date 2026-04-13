@@ -12,12 +12,11 @@ A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] Rust toolchain bootstrap (install rustup, pin toolchain, workspace scaffold) — *Validated in Phase 00: toolchain-workspace-scaffold*
 
 ### Active
 
 - [ ] Fork spec to `FAMP-v0.5.1-spec.md` and resolve identified ambiguities/bugs (canonical JSON, body schemas, state-machine holes)
-- [ ] Rust toolchain bootstrap (install rustup, pin toolchain, workspace scaffold)
 - [ ] `famp-canonical` crate implementing RFC 8785 JCS canonical JSON
 - [ ] `famp-crypto` crate wrapping Ed25519 sign/verify with domain separation
 - [ ] `famp-core` types, errors, invariants (INV-1 through INV-11)
@@ -116,4 +115,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-12 after initialization*
+*Last updated: 2026-04-13 after Phase 00 (toolchain-workspace-scaffold) complete*
