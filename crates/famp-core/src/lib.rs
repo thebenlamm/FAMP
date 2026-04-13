@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod artifact;
+pub mod class;
 pub mod error;
 pub mod identity;
 pub mod ids;
@@ -9,6 +10,7 @@ pub mod invariants;
 pub mod scope;
 
 pub use artifact::{ArtifactId, ParseArtifactIdError};
+pub use class::MessageClass;
 pub use error::{ProtocolError, ProtocolErrorKind};
 pub use identity::{Instance, ParseInstanceError, ParsePrincipalError, Principal};
 pub use ids::{CommitmentId, ConversationId, MessageId, TaskId};
