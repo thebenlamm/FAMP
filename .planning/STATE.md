@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
 status: unknown
-last_updated: "2026-04-13T15:01:33.195Z"
+last_updated: "2026-04-13T15:04:49.918Z"
 progress:
   total_phases: 3
   completed_phases: 3
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-12)
 
 ## Current Position
 
-Phase: 03 (core-types-invariants) — EXECUTING
-Plan: 2 of 2
+Phase: 03
+Plan: Not started
 
 ## Milestone Roadmap Snapshot
 
