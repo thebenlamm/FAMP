@@ -37,6 +37,7 @@ serde_jcs = "0.2.0"
 # Identifiers
 uuid = { version = "1.23.0", features = ["v7", "serde"] }
 base64 = "0.22.1"
+hex = "0.4"
 
 # HTTP / async
 axum = "0.8.8"

@@ -1,0 +1,13 @@
+{
+  "famp": "0.5.1",
+  "id": "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a6b",
+  "from": "agent:example.test/alice",
+  "to": "agent:example.test/bob",
+  "scope": "standalone",
+  "class": "ack",
+  "causality": { "rel": "acknowledges", "ref": "01890a3b-1111-7222-8333-444444444444" },
+  "authority": "advisory",
+  "ts": "2026-04-13T00:00:00Z",
+  "body": { "disposition": "accepted" },
+  "signature": "k2aqzthUx4mHNZCNLi2XMgiQX9gOL5P-UFcQ9Y8O0fyS47nXoZswss8YT3A1Utr8-RyoEyH1f6aJ0aloZdC2CA"
+}

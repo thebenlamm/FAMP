@@ -12,3 +12,14 @@ description = "FAMP v0.5.1 — famp-envelope crate (stub)"
 workspace = true
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+famp-canonical = { path = "../famp-canonical" }
+famp-crypto = { path = "../famp-crypto" }
+famp-core = { path = "../famp-core" }
+
+[dev-dependencies]
+proptest = { workspace = true }
+insta = { workspace = true, features = ["json"] }
+hex = { workspace = true }
