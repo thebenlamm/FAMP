@@ -346,7 +346,77 @@ entry `v0.5.1-Δ11`.
 
 ## §6.3 Card versioning
 
-*Placeholder — populated by Plan 03.*
+This section supersedes v0.5 §6.3. Card versioning governs the lifecycle of
+Agent Cards under key rotation and in-flight commitment survival.
+
+### §6.3.1 Required fields
+
+Every Agent Card MUST declare two integer version fields:
+
+- `card_version` — a **monotonic non-negative integer** incremented on every
+  card publication by the issuing agent. The first published card for a
+  principal MAY use any non-negative starting value (`0` is RECOMMENDED), but
+  every subsequent publication MUST strictly increase `card_version`.
+- `min_compatible_version` — a **non-negative integer** declaring the oldest
+  card version whose bound commitments this card continues to honor. It MUST
+  satisfy `min_compatible_version ≤ card_version`. An Agent Card with
+  `min_compatible_version > card_version` is **malformed** and MUST be
+  rejected at parse with error class `malformed`.
+
+### §6.3.2 Rotation semantics
+
+When an agent rotates its card from `card_version = N` to `card_version = N+1`,
+in-flight commitments that were bound to card version `N` **remain valid**
+through resolution, provided the new card's `min_compatible_version ≤ N`. This
+is the **survival clause**: it is the property that allows a commit taken
+against card `N` to still resolve deterministically after the issuing agent
+rotates to `N+1`.
+
+An agent that wishes to **repudiate all outstanding commitments** during
+rotation (for example, after a key compromise or a unilateral scope
+withdrawal) MAY set `min_compatible_version = N+1` on the new card. In that
+case, receivers MUST reject any in-flight operation bound to a card version
+`≤ N` with error `unauthorized` and the error cause
+`card_rotation_repudiated`. The repudiation is observable to counterparties
+as soon as the new card is published and verifiable.
+
+### §6.3.3 Fresh vs bound requests
+
+- **Fresh requests** — requests initiated AFTER the rotation becomes visible
+  to the initiator — MUST use the latest card version known to the initiator.
+  A fresh request that references an outdated card MAY be rejected by the
+  recipient with `stale:card_version`.
+- **Bound operations** — operations initiated BEFORE the rotation — use the
+  card version referenced in the original commit's capability snapshot per
+  §11.2a. The binding is cryptographic (via the commit's signed reference to
+  that card version) and does not change when the issuer rotates.
+
+A receiver that is unable to determine whether a request is fresh or bound
+MUST treat it as fresh and validate against the latest known card.
+
+### §6.3.4 Cross-reference to §11.2a
+
+The commit-time binding rule is defined normatively in §11.2a (Capability
+snapshot). §11.2a specifies that a `commit` captures the issuing card's
+`card_version` at commit time; this section specifies the survival behavior
+of that binding across rotation. The two sections together resolve the v0.5
+contradiction between "capability snapshot is bound at commit" and "a rotated
+card invalidates prior commitments" in favor of commit-time binding (D-24).
+
+### §6.3.5 Example rotation timeline
+
+```
+ t0: Alice publishes card_version=5, min_compatible_version=3
+ t1: Bob's commit references Alice's card_version=5
+ t2: Alice rotates to card_version=6, min_compatible_version=5
+     → Bob's in-flight commit (bound to 5) remains valid, since 5 ≥ 5.
+ t3: Alice rotates to card_version=7, min_compatible_version=6
+     → Bob's commit (still bound to 5) is now REJECTED on resolution with
+       unauthorized / card_rotation_repudiated, since 5 < 6.
+```
+
+Fresh requests initiated by Bob at `t2` or later MUST use `card_version=6`
+(then `7`), not `5`.
 
 ## §13.1 Freshness and clock skew
 
@@ -461,6 +531,7 @@ are stable references of the form `v0.5.1-Δnn`.
 - `v0.5.1-Δ09 — §7.1 — v0.5 reviewer finding (cross-recipient replay) — signature binds the to field; recipient anti-replay made normative.`
 - `v0.5.1-Δ10 — §7.1b Ed25519 encoding — PITFALLS P4 — Raw 32/64-byte, unpadded base64url (RFC 4648 §5); verify_strict semantics normative; decoder rejection list specified.`
 - `v0.5.1-Δ11 — §6.1 Agent Card — v0.5 reviewer finding (circular self-signature) — Remove self-signature field; add required federation_credential (identifier) and federation_signature (Ed25519 sig via federation trust list). BREAKING change from v0.5.`
+- `v0.5.1-Δ12 — §6.3 Card versioning — CONTEXT D-14 — Pin card_version (monotonic int) and min_compatible_version (int); in-flight commits bound to card N survive rotation iff new card's min_compatible_version ≤ N; cross-linked to §11.2a.`
 - `v0.5.1-Δ14 — §13.1 — CONTEXT D-15 (PITFALLS freshness-window finding) — Clock skew tolerance bumped from ±30s to ±60s RECOMMENDED; validity window 300s RECOMMENDED; federation caps ±300s/1800s MUST NOT exceed.`
 - `v0.5.1-Δ15 — §13.2 — CONTEXT D-16 — Idempotency key locked to 128-bit random, 22-char unpadded base64url; scope (sender, recipient); replay cache tuple (id, idempotency_key, content_hash).`
 - `v0.5.1-Δ25 — §3.6a — CONTEXT D-28 — Artifact IDs locked to sha256:<hex> lowercase 64 chars over canonical JSON of artifact body; sha<N>: reserved.`
