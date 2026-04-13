@@ -30,9 +30,25 @@ mod private {
 ///     const SCOPE: famp_envelope::EnvelopeScope = famp_envelope::EnvelopeScope::Standalone;
 /// }
 /// ```
-pub trait BodySchema: Serialize + DeserializeOwned + private::Sealed + Sized + 'static {
+pub trait BodySchema:
+    Serialize + DeserializeOwned + Clone + private::Sealed + Sized + 'static
+{
     const CLASS: MessageClass;
     const SCOPE: EnvelopeScope;
+
+    /// Post-deserialization cross-field validation hook.
+    ///
+    /// Called by `SignedEnvelope::decode_value` after the typed deserialize
+    /// plus class/scope cross-check. Default = no-op. Override for bodies
+    /// that need to inspect envelope-level fields such as `terminal_status`,
+    /// or run internal rules such as `Bounds::validate`.
+    #[allow(unused_variables)]
+    fn post_decode_validate(
+        &self,
+        envelope_terminal_status: Option<&deliver::TerminalStatus>,
+    ) -> Result<(), crate::EnvelopeDecodeError> {
+        Ok(())
+    }
 }
 
 pub mod ack;
