@@ -24,6 +24,11 @@ test-canonical-strict:
 test-canonical-full:
     cargo nextest run -p famp-canonical --features full-corpus --no-fail-fast
 
+# Run famp-crypto test suite as a blocking gate (RFC 8032 + §7.1c worked example)
+test-crypto:
+    cargo nextest run -p famp-crypto
+    cargo test -p famp-crypto --doc
+
 # Run doc tests (nextest does not run doctests)
 test-doc:
     cargo test --workspace --doc
@@ -49,7 +54,7 @@ spec-lint:
     bash scripts/spec-lint.sh
 
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test test-doc spec-lint
+ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint
     @echo "✓ local CI-parity checks passed"
 
 # Clean build artifacts
