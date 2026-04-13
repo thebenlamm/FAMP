@@ -195,11 +195,48 @@ small-order public key is itself malformed.
 
 ## §13.1 Freshness and clock skew
 
-*Placeholder — populated by Plan 03.*
+Clock skew tolerance is RECOMMENDED to be **±60 seconds**. (v0.5 specified
+±30 seconds; this is a reviewer-driven adjustment.)
+
+Default envelope validity window is RECOMMENDED to be **300 seconds**
+(5 minutes).
+
+Federations MAY tighten these defaults but MUST NOT loosen beyond the
+documented caps:
+
+- Clock skew MUST NOT exceed **±300 seconds**.
+- Validity window MUST NOT exceed **1800 seconds** (30 minutes).
+
+These defaults are referenced by §12.3a (transfer-timeout tiebreak) and
+§9.5a (EXPIRED vs deliver) as the δ guard band: `δ = 60 seconds` matches
+the clock skew tolerance so FSM tiebreak outcomes are deterministic across
+conformant implementations despite clock drift within the allowed window.
 
 ## §13.2 Idempotency
 
-*Placeholder — populated by Plan 03.*
+The envelope `idempotency_key` field, when present, MUST be **128 bits of
+cryptographic randomness**, encoded as unpadded base64url (22 characters,
+per §7.1b encoding rules).
+
+**Scope.** Idempotency scope is the tuple `(sender_principal,
+recipient_principal)`. A receiver MUST deduplicate incoming messages using
+the tuple
+
+```
+(envelope.id, envelope.idempotency_key, content_hash)
+```
+
+where `content_hash` is SHA-256 over the canonical JSON (§4a) of the
+envelope body.
+
+**Replay cache.** The replay cache MUST be bounded (implementation-defined
+capacity). Eviction policy MUST NOT be key-dependent in a way that allows an
+attacker to force eviction of targeted entries (e.g., strict LRU by key is
+forbidden; time-based or randomized eviction is acceptable).
+
+**Format enforcement.** An idempotency key that does not match the 128-bit /
+22-char unpadded-base64url format is rejected at ingress with the error
+class `malformed`.
 
 ## §9.5a EXPIRED vs deliver tiebreak
 
@@ -239,7 +276,20 @@ small-order public key is itself malformed.
 
 ## §3.6a Artifact identifiers
 
-*Placeholder — populated by Plan 05.*
+Artifact identifiers use the scheme `sha256:<hex>` — the literal prefix
+`sha256:` followed by exactly **64 lowercase hexadecimal characters**.
+
+The hash is SHA-256 computed over the **canonical JSON** of the artifact
+body (per §4a), **NOT** over the raw input bytes. This ensures two
+implementations that canonicalize differently are detected as non-conformant
+(their artifact IDs diverge) rather than silently producing different IDs
+for "the same" artifact.
+
+**Reserved alternative algorithms.** Alternative hash algorithms are
+reserved via the `sha<N>:` prefix scheme (e.g., `sha512:`) but **no**
+alternative algorithm is defined in v0.5.1. Implementations MUST reject
+artifact IDs with any prefix other than `sha256:` (error class:
+`unsupported_hash`).
 
 ---
 
@@ -253,3 +303,6 @@ are stable references of the form `v0.5.1-Δnn`.
 - `v0.5.1-Δ08 — §7.1a Domain separation — PITFALLS P5 — Fixed prefix b"FAMP-sig-v1\x00" (12 bytes); prepended to canonical JSON before Ed25519 sign/verify.`
 - `v0.5.1-Δ09 — §7.1 — v0.5 reviewer finding (cross-recipient replay) — signature binds the to field; recipient anti-replay made normative.`
 - `v0.5.1-Δ10 — §7.1b Ed25519 encoding — PITFALLS P4 — Raw 32/64-byte, unpadded base64url (RFC 4648 §5); verify_strict semantics normative; decoder rejection list specified.`
+- `v0.5.1-Δ14 — §13.1 — CONTEXT D-15 (PITFALLS freshness-window finding) — Clock skew tolerance bumped from ±30s to ±60s RECOMMENDED; validity window 300s RECOMMENDED; federation caps ±300s/1800s MUST NOT exceed.`
+- `v0.5.1-Δ15 — §13.2 — CONTEXT D-16 — Idempotency key locked to 128-bit random, 22-char unpadded base64url; scope (sender, recipient); replay cache tuple (id, idempotency_key, content_hash).`
+- `v0.5.1-Δ25 — §3.6a — CONTEXT D-28 — Artifact IDs locked to sha256:<hex> lowercase 64 chars over canonical JSON of artifact body; sha<N>: reserved.`
