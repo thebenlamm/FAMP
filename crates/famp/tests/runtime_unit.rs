@@ -7,6 +7,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use ed25519_dalek as _;
+use rand as _;
 use thiserror as _;
 use tokio as _;
 

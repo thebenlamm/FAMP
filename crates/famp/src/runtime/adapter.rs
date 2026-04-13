@@ -8,16 +8,19 @@ use famp_fsm::TaskTransitionInput;
 
 /// Derive the FSM transition input from a decoded envelope.
 ///
-/// Returns `None` when the envelope is `ack` (wire-only). Returns
-/// `Some(input)` for `request`, `commit`, `deliver`, and `control`.
+/// Returns `None` when the envelope is `ack` (D-D4 — ack is wire-only) OR
+/// `request` (Plan 03-04 Rule-1 fix — the 5-state FSM starts in `Requested`
+/// and has no transition consuming a `request` input; the initial state IS
+/// the creation event, so receiving the request message is a no-op at the
+/// FSM layer and only commit/deliver/control actually drive transitions).
+/// Returns `Some(input)` for `commit`, `deliver`, and `control`.
 #[must_use]
 pub fn fsm_input_from_envelope(env: &AnySignedEnvelope) -> Option<TaskTransitionInput> {
     let (class, terminal_status): (MessageClass, Option<TerminalStatus>) = match env {
-        AnySignedEnvelope::Request(e) => (e.class(), e.terminal_status().copied()),
         AnySignedEnvelope::Commit(e) => (e.class(), e.terminal_status().copied()),
         AnySignedEnvelope::Deliver(e) => (e.class(), e.terminal_status().copied()),
         AnySignedEnvelope::Control(e) => (e.class(), e.terminal_status().copied()),
-        AnySignedEnvelope::Ack(_) => return None, // D-D4
+        AnySignedEnvelope::Request(_) | AnySignedEnvelope::Ack(_) => return None,
     };
     Some(TaskTransitionInput {
         class,

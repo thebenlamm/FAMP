@@ -45,7 +45,7 @@
 
 ### Trust-on-first-use Keyring
 
-- [ ] **KEY-01**: `HashMap<Principal, VerifyingKey>` keyring type, principal = raw Ed25519 pubkey (no Agent Card, no federation credential, no pluggable trust store)
+- [ ] **KEY-01**: `HashMap<Principal, TrustedVerifyingKey>` keyring type. Each principal (parsed `agent:<authority>/<name>` identity from `famp_core`) is authenticated by exactly one pinned Ed25519 public key in Personal Profile v0.7. The binding is the keyring itself, not a type-equality claim. No Agent Card, no federation credential, no pluggable trust store — defers with Agent Cards to v0.8.
 - [ ] **KEY-02**: Keyring load/save from a local file format (one-line-per-principal, base64url-unpadded pubkey); format committed and round-trip tested
 - [ ] **KEY-03**: CLI-flag bootstrap path alongside the file path (`--peer <principal>:<pubkey>`), for example binaries
 

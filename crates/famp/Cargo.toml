@@ -22,6 +22,8 @@ famp-keyring = { path = "../famp-keyring" }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
 thiserror = { workspace = true }
 serde_json = { workspace = true }
+ed25519-dalek = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so

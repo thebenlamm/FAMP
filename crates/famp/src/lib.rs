@@ -4,10 +4,13 @@
 
 #![forbid(unsafe_code)]
 
-// These crates are used by Task 2 (loop_fn) and integration tests. Silence
-// the workspace `unused_crate_dependencies` lint until then.
+// These crates are used by Task 2 (loop_fn), examples, and integration tests.
+// Silence the workspace `unused_crate_dependencies` lint for the lib compile
+// unit (examples and tests are separate compile units).
+use ed25519_dalek as _;
 use famp_crypto as _;
 use famp_transport as _;
+use rand as _;
 use tokio as _;
 
 pub mod runtime;
