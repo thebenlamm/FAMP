@@ -514,11 +514,47 @@ specified in INV-11.
 
 ## §11.2a Capability snapshot
 
-*Placeholder — populated by Plan 04.*
+The capability snapshot is taken at **commit-time** and bound to the
+committing card's `card_version`.
+
+**Capability snapshot binding — card version clarification.** The
+capability snapshot is captured at the moment the committing agent sends
+the `commit` message, not at the moment the underlying proposal was issued.
+The snapshot is bound to the committing card's `card_version` at commit
+time. If the committing agent's card rotates after commit, Section 6.3's
+continuity rule applies: the commit remains valid provided the new card's
+`min_compatible_version ≤ card_version_at_commit`. If the counter-party's
+card rotated between proposal and commit, the committing agent MAY choose
+to re-validate the counter-party's latest card before committing, but is
+not required to; a commit sent after a counter-party rotation is valid
+against the counter-party's card version current at commit receipt time,
+subject to the same `min_compatible_version` rule.
+
+See §6.3 for card rotation semantics and the `min_compatible_version` field.
 
 ## §11.5a Competing-instance resolution
 
-*Placeholder — populated by Plan 04.*
+**Competing-instance resolution.** When two instances of the same principal
+issue `commit` messages for the same task within the same freshness window
+and neither explicitly supersedes the other, the task enters the internal
+state `COMMITTED_PENDING_RESOLUTION`. The FSM MUST deterministically resolve
+this state within one transition by selecting the commit with the
+**lexicographically smaller envelope `id`** (which, for UUIDv7, corresponds
+to the earlier-created message). The winning commit crystallizes the task
+into COMMITTED. The losing commit is rejected with
+`conflict:competing_instance`; the losing instance MUST be notified via
+`ack` with disposition `refused`. If two commits have identical `id` values
+(UUIDv7 collision), both are rejected as `conflict:competing_instance` and
+the task remains REQUESTED. The `COMMITTED_PENDING_RESOLUTION` state is
+internal; it MUST NOT appear in public protocol messages or provenance
+records. INV-5 holds because the public observable state is always one of
+the five terminal states plus REQUESTED/COMMITTED.
+
+**Internal state note:** `COMMITTED_PENDING_RESOLUTION` is an internal FSM
+state. It MUST NOT appear in serialized provenance records, in the FSM's
+public `state()` accessor (if any), or in any protocol message.
+Implementations SHOULD use a separate enum for internal vs public states to
+make this a compile-time property.
 
 ## §12.3a Transfer-timeout tiebreak
 
@@ -599,5 +635,7 @@ are stable references of the form `v0.5.1-Δnn`.
 - `v0.5.1-Δ18 — §12.3a — PITFALLS transfer-timeout race / CONTEXT D-19 + D-19.1 (LOCKED 2026-04-13) — Tiebreak rule uses transferring agent's clock with δ=60s guard band from §13.1; on-time iff delegate_commit.ts ≤ ts_deadline − δ; loser gets conflict:transfer_timeout; new control target value transfer_commit_race introduced.`
 - `v0.5.1-Δ19 — §9.5a — PITFALLS EXPIRED vs deliver race / CONTEXT D-20 — Same δ guard band applied: deliver accepted iff ts ≤ ts_expire − δ; else stale:expired.`
 - `v0.5.1-Δ20 — §9.6b — PITFALLS conditional-lapse vs delivery-wins conflict / CONTEXT D-21 — Committer-side control:condition_failed overrides delivery-wins default; late deliver gets ack:orphaned.`
+- `v0.5.1-Δ21 — §11.5a — PITFALLS INV-5 hole, competing-instance commits / CONTEXT D-22 — Introduce COMMITTED_PENDING_RESOLUTION internal state; lex-smaller UUIDv7 id wins; loser gets conflict:competing_instance; internal state MUST NOT leak to wire.`
+- `v0.5.1-Δ23 — §11.2a — PITFALLS capability snapshot / card version drift / CONTEXT D-24 — Snapshot bound at commit-time to committing card's card_version; §6.3 continuity rule applies for rotations.`
 - `v0.5.1-Δ22 — §10.3a — PITFALLS supersession round-limit circumvention / CONTEXT D-23 — Round counter includes superseded messages; supersession does NOT reset counter.`
 - `v0.5.1-Δ25 — §3.6a — CONTEXT D-28 — Artifact IDs locked to sha256:<hex> lowercase 64 chars over canonical JSON of artifact body; sha<N>: reserved.`
