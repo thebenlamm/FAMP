@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
-status: unknown
-last_updated: "2026-04-13T18:58:09.457Z"
+status: ready_for_verification
+last_updated: "2026-04-13T19:04:02.000Z"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # STATE: FAMP — v0.7 Personal Runtime
@@ -21,15 +21,16 @@ See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 02 — minimal-task-lifecycle
+**Current focus:** Phase 02 — minimal-task-lifecycle COMPLETE; Phase 03 queued
 
 ## Current Position
 
-Phase: 02 (minimal-task-lifecycle) — EXECUTING
-Plan: 3 of 3
+Phase: 02 (minimal-task-lifecycle) — COMPLETE (all 3 plans done, awaiting verifier)
+Plan: 3 of 3 (all complete)
 
 ## Last Shipped
 
+- **Phase 02 Plan 03** (2026-04-13) — FSM-03 consumer stub under `#![deny(unreachable_patterns)]` + FSM-08 proptest 100-tuple legality matrix. 5 FSM requirements all satisfied. 200/200 workspace tests. Commits: `4460297`, `507c565`.
 - **Phase 02 Plan 02** (2026-04-13) — `famp-fsm` crate: 5-state `TaskFsm` engine with single-function transition table (5 legal arrows), terminal immutability, 12 deterministic fixture tests. FSM-02, FSM-04, FSM-05 satisfied. 195/195 workspace tests. Commits: `26f7f13`, `7b79019`.
 - **Phase 02 Plan 01** (2026-04-13) — Type lift: `MessageClass` and `TerminalStatus` moved to `famp-core`. Backward-compatible re-exports in `famp-envelope`. 184/184 workspace tests green. `famp-fsm` crate layering constraint (D-D1) now satisfiable.
 - **v0.6 Foundation Crates** (2026-04-13) — `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests, `just ci` green. Archived to `.planning/milestones/v0.6-*.md` and `.planning/milestones/v0.6-phases/`. Git tag: `v0.6`.
@@ -54,6 +55,8 @@ Plan: 3 of 3
 - **relation field dropped from TaskTransitionInput (2026-04-13, Phase 02 Plan 02):** D-B3 resolved — no v0.7 legal arrow needs relation inspection. `TaskTransitionInput` carries only `class` and `terminal_status`.
 - **FSM step() and accessors are const fn (2026-04-13, Phase 02 Plan 02):** All transition arms operate on Copy enums; clippy `missing_const_for_fn` (pedantic) required this. Correct and free.
 - **Clippy pedantic test file pattern (2026-04-13, Phase 02 Plan 02):** Test integration files use `#![allow(clippy::unwrap_used, unused_crate_dependencies)]` per famp-envelope precedent. Consistent pattern across all famp-* test files.
+- **match_same_arms allowed in FSM-03 consumer stub (2026-04-13, Phase 02 Plan 03):** Intentionally separate arms in is_terminal (Requested=>false, Committed=>false) document each variant explicitly — the purpose of the exhaustiveness gate. Merging to or-pattern defeats FSM-03's compile-time documentation intent.
+- **#[cfg(test)] use X as _; pattern for lib.rs (2026-04-13, Phase 02 Plan 03):** When a dev-dep is used only by integration tests, add `#[cfg(test)] use X as _;` after module-level `//!` doc comments in lib.rs to silence `unused_crate_dependencies` on the lib target. Pattern from famp-envelope, now extended to famp-fsm.
 
 ### Open TODOs
 
@@ -67,6 +70,7 @@ Plan: 3 of 3
 
 ### Recent Activity
 
+- **2026-04-13:** **Phase 02 Plan 03 complete.** FSM-03 compile-time consumer stub + FSM-08 proptest 100-tuple legality matrix. All 5 Phase 2 FSM requirements satisfied. 200/200 workspace tests. Commits: `4460297`, `507c565`.
 - **2026-04-13:** **Phase 02 Plan 02 complete.** `famp-fsm` 5-state TaskFsm engine. 5-arrow transition table, terminal immutability, 12 fixture tests, clippy pedantic clean. 195/195 workspace tests. Commits: `26f7f13`, `7b79019`.
 - **2026-04-13:** **Phase 02 Plan 01 complete.** Type lift: `MessageClass` and `TerminalStatus` to `famp-core`. D-D1 crate layering blocker resolved. 184/184 workspace tests. Commits: `65c8ac1`, `012b807`.
 - **2026-04-13:** **v0.7 roadmap canonicalized.** 4 phases, 32 requirements, 100% coverage. Phase 1 (Minimal Signed Envelope) queued for `/gsd:plan-phase 1`.
@@ -76,4 +80,4 @@ Plan: 3 of 3
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*State updated: 2026-04-13 — Phase 02 Plan 02 complete; Phase 02 Plan 03 (FSM consumer stub + proptest matrix) queued*
+*State updated: 2026-04-13 — Phase 02 Plan 03 complete; Phase 02 all plans done (FSM-02, FSM-03, FSM-04, FSM-05, FSM-08 satisfied); awaiting verifier*

@@ -41,7 +41,7 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
 **Phase numbering:** milestone-local, reset to Phase 1. v0.6 ended at Phase 3 but phase numbers are not continuous across milestones.
 
 - [x] **Phase 1: Minimal Signed Envelope** — `famp-envelope` with INV-10 mandatory-signature enforcement and body schemas for the five shipped message classes (`request`, `commit`, `deliver`, `ack`, `control/cancel` only) (completed 2026-04-13)
-- [ ] **Phase 2: Minimal Task Lifecycle** — 5-state task FSM (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`), compiler-checked terminals, proptest transition legality
+- [x] **Phase 2: Minimal Task Lifecycle** — 5-state task FSM (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`), compiler-checked terminals, proptest transition legality (completed 2026-04-13)
 - [ ] **Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example** — `Transport` trait, in-process `MemoryTransport`, local-file TOFU keyring, `personal_two_agents` example, three adversarial cases green on `MemoryTransport`
 - [ ] **Phase 4: Minimal HTTP Transport + Cross-Machine Example** — `famp-transport-http` (axum inbox + reqwest client + rustls + 1 MB body limit + pre-routing sig-verification middleware), `cross_machine_two_agents` example, the Phase 3 adversarial matrix extended to HTTP
 
@@ -71,10 +71,10 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
   2. `FSM-02 (narrowed)` is enforced: no `REJECTED`, no `EXPIRED`, no timeout-driven transitions exist in the public API. The wider v0.6-catalog form is gated out for v0.7.
   3. `proptest` transition-legality tests enumerate the full `(class, relation, terminal_status, current_state)` tuple space and assert: every legal tuple is accepted, every illegal tuple is rejected with a typed error, zero panics.
   4. FSM state types are fully owned (no lifetimes, no `&str`/`&[u8]` in the public enum), so state can be moved across threads and stored without borrow gymnastics.
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 - [x] 02-01-PLAN.md — Lift MessageClass + TerminalStatus into famp-core (layering prerequisite for famp-fsm)
 - [x] 02-02-PLAN.md — famp-fsm TaskState/TaskFsm engine + deterministic fixture tests (FSM-02, FSM-04, FSM-05)
-- [ ] 02-03-PLAN.md — FSM-03 consumer stub + FSM-08 proptest Cartesian legality matrix
+- [x] 02-03-PLAN.md — FSM-03 consumer stub + FSM-08 proptest Cartesian legality matrix
 
 ### Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example
 **Goal:** A single developer runs `request → commit → deliver → ack` end-to-end in one binary, signatures verified against a local-file TOFU keyring, and the three adversarial cases fail closed on `MemoryTransport`.
@@ -117,7 +117,7 @@ Rough ordering, not committed:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Canonical JSON Foundations | v0.6 | 3/3 | Complete   | 2026-04-13 |
-| 2. Crypto Foundations | v0.6 | 2/3 | In Progress|  |
+| 2. Crypto Foundations | v0.6 | 3/3 | Complete   | 2026-04-13 |
 | 3. Core Types & Invariants | v0.6 | 2/2 | Complete | 2026-04-13 |
 | 1. Minimal Signed Envelope | v0.7 | 0/? | Not started | - |
 | 2. Minimal Task Lifecycle | v0.7 | 0/3 | Not started | - |
