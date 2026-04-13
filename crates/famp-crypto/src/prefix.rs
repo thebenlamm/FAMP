@@ -3,8 +3,26 @@
 
 /// Public constant — exposed for test/fixture use only.
 /// Callers MUST NOT assemble signing input manually; use
-/// `canonicalize_for_signature` (added in Plan 02).
+/// `canonicalize_for_signature`.
 pub const DOMAIN_PREFIX: &[u8; 12] = b"FAMP-sig-v1\0";
+
+use crate::error::CryptoError;
+
+/// Returns `DOMAIN_PREFIX || famp_canonical::canonicalize(value)`.
+///
+/// This is the exact byte sequence passed to Ed25519 sign/verify for FAMP
+/// signatures per spec §7.1a. Callers MUST provide the envelope with the
+/// `signature` field already removed (envelope field-strip policy lives in
+/// `famp-envelope`, not here).
+pub fn canonicalize_for_signature(
+    unsigned_value: &serde_json::Value,
+) -> Result<Vec<u8>, CryptoError> {
+    let canonical = famp_canonical::canonicalize(unsigned_value)?;
+    let mut buf = Vec::with_capacity(DOMAIN_PREFIX.len() + canonical.len());
+    buf.extend_from_slice(DOMAIN_PREFIX);
+    buf.extend_from_slice(&canonical);
+    Ok(buf)
+}
 
 #[cfg(test)]
 mod tests {
