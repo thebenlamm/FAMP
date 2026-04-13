@@ -593,7 +593,61 @@ required' is retracted; the whitelist is the normative replacement.
 
 ## §8a Body schemas
 
-*Placeholder — populated by Plan 05.*
+Body schemas are defined inline in this specification as field-per-line
+tables. Every schema declares `additionalProperties: false` semantics:
+unknown body fields MUST be rejected at decode. Extensions MUST live under
+the envelope-level `extensions` map (§7.1); they MUST NOT appear inside any
+body. Numeric fields bounded by 2^53 MUST be represented as JSON numbers;
+values with absolute magnitude > 2^53 MUST be represented as JSON strings
+per §4a (RFC 8785 §6 guidance). The `ack`, `announce`, `describe`, and
+`request` body definitions from v0.5 are retained unchanged (see §7.4 and
+§8.1–8.4). Five new normative schemas follow: `propose`, `commit`,
+`deliver`, `control`, `delegate`.
+
+### §8a.1 `propose` body
+
+**`propose` body** (additionalProperties: false)
+
+| Field | JSON type | Req/Opt | Constraint notes |
+|---|---|---|---|
+| `scope` | object | REQUIRED | Opaque to FSM; domain-specific work description. MUST be present (INV-4 precursor). |
+| `bounds` | object | REQUIRED | MUST include ≥2 keys from {`deadline`, `budget`, `hop_limit`, `policy_domain`, `authority_scope`, `max_artifact_size`, `confidence_floor`, `recursion_depth`} per §9.3 / INV-4. |
+| `bounds.deadline` | string (RFC 3339) | OPTIONAL | Absolute time. |
+| `bounds.budget` | object | OPTIONAL | `{amount: string, unit: string}` — `amount` is a string to avoid 2^53 precision loss (PITFALLS P2). |
+| `bounds.hop_limit` | integer | OPTIONAL | ≥ 0 ≤ 2^53. |
+| `bounds.policy_domain` | string | OPTIONAL | Opaque identifier. |
+| `bounds.authority_scope` | string (enum) | OPTIONAL | One of §5.3 levels. |
+| `bounds.max_artifact_size` | integer | OPTIONAL | Bytes, ≤ 2^53. |
+| `bounds.confidence_floor` | number | OPTIONAL | 0.0–1.0. |
+| `bounds.recursion_depth` | integer | OPTIONAL | ≥ 0 ≤ 255. |
+| `terms` | object | OPTIONAL | §10.2 SHOULD-contain; opaque. |
+| `delegation_permissions` | object | OPTIONAL | `{form_allowed: [assist\|subtask\|transfer], ceiling: {...}}`; if absent, delegation forbidden per INV-3. |
+| `artifact_expectations` | object | OPTIONAL | Opaque; input/output format hints. |
+| `policy_references` | array of string | OPTIONAL | Policy IDs. |
+| `natural_language_summary` | string | SHOULD | Human/LLM-readable, no length cap; canonicalized per §4a (no Unicode normalization per PITFALLS P3). |
+| `modifications` | array of string | OPTIONAL | Courtesy field per §10.3 Rule 3 — MUST NOT be used as normative source of truth. |
+| `conditions` | array of object | OPTIONAL | For conditional proposals; §11.4. Each: `{expression: string, evaluator: string, deadline: string}`. |
+
+### §8a.2 `commit` body
+
+**`commit` body** (additionalProperties: false)
+
+| Field | JSON type | Req/Opt | Constraint notes |
+|---|---|---|---|
+| `scope` | object | REQUIRED | MUST be present. MAY be narrower than the referenced proposal's scope iff `scope_subset = true`. |
+| `scope_subset` | boolean | OPTIONAL (default `false`) | Partial acceptance flag per §10.4. If `true`, `scope` MUST be interpretable as a proper subset of the referenced proposal's scope. FSM-inspected per §7.3a. |
+| `bounds` | object | REQUIRED | Same shape as `propose.bounds`. MUST be within referenced proposal's bounds. |
+| `accepted_policies` | array of string | REQUIRED | Policy IDs the committer accepts. |
+| `delegation_permissions` | object | OPTIONAL | Frozen at commit per §11.2a. |
+| `reporting_obligations` | object | OPTIONAL | `{progress_frequency: string, interim_required: boolean, final_report_format: string}`. |
+| `terminal_condition` | object | REQUIRED | Machine-evaluable description of what constitutes completion; may be opaque. |
+| `capability_snapshot` | object | REQUIRED | Frozen snapshot of committer's capability posture at commit time: `{card_version: integer, capabilities: [...]}`. Bound to the committing card's `card_version` per §11.2a. |
+| `conditions` | array of object | OPTIONAL | §11.4 conditional commitment. Each: `{expression: string, evaluator: string, deadline: string}`. |
+| `natural_language_summary` | string | SHOULD | Same rules as `propose.natural_language_summary`. |
+
+The `capability_snapshot` field is bound to the committing card's
+`card_version` per §11.2a and §6.3. The `scope_subset` field is
+FSM-inspected per §7.3a.
 
 ## §3.6a Artifact identifiers
 
