@@ -90,7 +90,7 @@ check SPEC-19 "unpadded base64url"               rg -q 'unpadded base64url'     
 check SPEC-20 "FAMP_SPEC_VERSION constant"       rg -q 'FAMP_SPEC_VERSION\s*=\s*"0\.5\.1"' "$SPEC"
 
 # SPEC-01-FULL — strict count of Δnn changelog entries. Populated by Plan 06.
-CHG_COUNT=$(rg -c '^v0\.5\.1-Δ' "$SPEC" 2>/dev/null || echo 0)
+CHG_COUNT=$(rg -o 'v0\.5\.1-Δ[0-9]{2}' "$SPEC" 2>/dev/null | sort -u | wc -l | tr -d ' ')
 if [[ "$CHG_COUNT" -ge 20 ]]; then
   echo "[PASS] SPEC-01-FULL ($CHG_COUNT entries)" >&2
   PASSED=$((PASSED + 1))
