@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
-status: verifying
-last_updated: "2026-04-14T19:59:19.842Z"
+status: executing
+last_updated: "2026-04-14T20:34:40.055Z"
 last_activity: 2026-04-14
 ---
 
@@ -17,14 +17,14 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 01 — identity-cli-foundation
+**Current focus:** Phase 02 — daemon-inbox
 
 ## Current Position
 
-Phase: 01 (identity-cli-foundation) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-04-14
+Phase: 02 (daemon-inbox) — EXECUTING
+Plan: 2 of 3 (Plan 01 shipped: famp-inbox library)
+Status: Executing Phase 02
+Last activity: 2026-04-14 -- Plan 02-01 shipped: famp-inbox (8/8 crate, 292/292 workspace)
 
 ```
 v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
@@ -54,6 +54,7 @@ v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 - **relation field dropped from TaskTransitionInput (2026-04-13):** D-B3 resolved — no v0.7 legal arrow needs relation inspection.
 - **FSM step() and accessors are const fn** — All transition arms operate on Copy enums.
 - **v0.8 phase shape:** 4 phases derived from the requirement dependency graph — Phase 1 (identity + CLI scaffold), Phase 2 (daemon + inbox), Phase 3 (conversation CLI + task records), Phase 4 (MCP + E2E). Dependency chain: v0.7 → P1 → P2 → P3 → P4.
+- **Plan 02-01 (2026-04-14):** `famp-inbox` takes raw `&[u8]`, not a typed `SignedEnvelope`, to preserve byte-exactness (P3) and keep the crate decoupled from `famp-envelope`. Append path is fsync-sealed via `tokio::fs::File::sync_data` under `Arc<Mutex<File>>`; 16-task concurrent test locks the serialization contract; `read_all` tail-tolerance swallows the final truncated line but surfaces mid-file corruption as a hard `CorruptLine { line_no }` error. Covers INBOX-01/02/04/05.
 
 ### Open TODOs
 
@@ -78,6 +79,7 @@ v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
 ### Recent Activity
 
+- **2026-04-14:** **Plan 02-01 shipped** — `famp-inbox` library crate with durable append (fsync-before-return) + tail-tolerant read. 8/8 crate tests, 292/292 workspace tests, `cargo tree -i openssl` empty. Commits `b7ca9bb` (feat) + `071b781` (test). INBOX-01/02/04/05 complete.
 - **2026-04-14:** **v0.8 roadmap created.** 4 phases, 37 requirements, 100% coverage. Phase 1 (Identity & CLI Foundation) queued for `/gsd:plan-phase 1`.
 - **2026-04-14:** **v0.7 Personal Runtime shipped.** 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests. Archived to `.planning/milestones/v0.7-*.md`.
 - **2026-04-14:** Completed quick task 260414-g32: PR #4.1 adversarial review followups. `just ci` green. 261/261 workspace tests.

@@ -41,11 +41,11 @@
 
 ### INBOX — File-based inbox (5)
 
-- [ ] **INBOX-01**: Inbox format is **JSONL**, append-only. One line per received envelope. Each line contains: `received_at` (RFC 3339), `task_id`, `from_principal`, `message_class`, `envelope_bytes_b64`, `body_json`. The raw envelope bytes are preserved so signature re-verification is possible.
-- [ ] **INBOX-02**: A sidecar **read cursor** file (`inbox.cursor`) tracks the byte offset of the last entry returned as "read" to a CLI / MCP call. `famp await` and `famp inbox --unread --mark-read` advance the cursor; `famp inbox` (plain) does not.
+- [x] **INBOX-01**: Inbox format is **JSONL**, append-only. One line per received envelope. Each line contains: `received_at` (RFC 3339), `task_id`, `from_principal`, `message_class`, `envelope_bytes_b64`, `body_json`. The raw envelope bytes are preserved so signature re-verification is possible.
+- [x] **INBOX-02**: A sidecar **read cursor** file (`inbox.cursor`) tracks the byte offset of the last entry returned as "read" to a CLI / MCP call. `famp await` and `famp inbox --unread --mark-read` advance the cursor; `famp inbox` (plain) does not.
 - [ ] **INBOX-03**: `famp await` blocks with timeout by polling the inbox file at a configurable interval (default 250 ms). Returns the next unread entry and advances the cursor atomically, or returns a typed timeout error.
-- [ ] **INBOX-04**: Truncated / malformed lines in the inbox are logged and skipped without stopping the reader — a partial write from a crashed daemon cannot wedge the inbox.
-- [ ] **INBOX-05**: An `inbox.lock` file prevents two concurrent readers from double-consuming entries. Best-effort advisory lock, released on process exit.
+- [x] **INBOX-04**: Truncated / malformed lines in the inbox are logged and skipped without stopping the reader — a partial write from a crashed daemon cannot wedge the inbox.
+- [x] **INBOX-05**: An `inbox.lock` file prevents two concurrent readers from double-consuming entries. Best-effort advisory lock, released on process exit.
 
 ### CONV — One-long-task conversation shape (5)
 
