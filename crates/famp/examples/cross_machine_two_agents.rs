@@ -225,6 +225,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .listen
         .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], role.default_port())));
     let std_listener = std::net::TcpListener::bind(listen_addr)?;
+    std_listener.set_nonblocking(true)?;
     let bound = std_listener.local_addr()?;
     eprintln!("LISTENING https://{bound}");
 

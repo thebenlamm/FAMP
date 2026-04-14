@@ -131,10 +131,20 @@ impl Transport for HttpTransport {
             // segment to be appended rather than replacing the last segment;
             // construct the full URL by string concatenation to keep the
             // semantics simple and predictable.
+            // Percent-encode the recipient so that `agent:local/bob` survives
+            // axum's single-segment `{principal}` route matcher. Without this
+            // the `/` in the principal name would split into two URL segments
+            // and the route would 404. Space/control chars already excluded
+            // by Principal's parser; we only need to escape `:` and `/`.
+            let recipient_encoded = msg
+                .recipient
+                .to_string()
+                .replace(':', "%3A")
+                .replace('/', "%2F");
             let inbox_url_str = format!(
                 "{}/famp/v0.5.1/inbox/{}",
                 base.as_str().trim_end_matches('/'),
-                msg.recipient
+                recipient_encoded
             );
             let inbox_url = Url::parse(&inbox_url_str).map_err(HttpTransportError::InvalidUrl)?;
 
