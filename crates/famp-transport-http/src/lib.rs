@@ -12,11 +12,13 @@ pub mod middleware;
 pub mod server;
 pub mod tls;
 pub mod tls_server;
+pub mod transport;
 
 pub use error::{HttpTransportError, MiddlewareError};
 pub use middleware::FampSigVerifyLayer;
 pub use server::{build_router, InboxRegistry, ServerState, INBOX_ROUTE};
 pub use tls::{build_client_config, build_server_config, load_pem_cert, load_pem_key, TlsError};
+pub use transport::HttpTransport;
 
 #[cfg(test)]
 mod tests {
