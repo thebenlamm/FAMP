@@ -114,7 +114,10 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
   3. The automated integration test (`E2E-01`) — two `famp` daemons on different loopback ports, each with the other as a peer — runs the full `request → commit → deliver × N → terminal deliver → ack` lifecycle through the CLI under `cargo nextest` and exits 0.
   4. The manual witnessed smoke test (`E2E-02`) is completed: two live Claude Code sessions on the same laptop exchange ≥4 `deliver` messages driven by actual LLM conversation and close the task; the outcome is recorded in the phase verification document.
   5. `just ci` passes green with all 253 v0.7 tests still passing and `cargo tree -i openssl` returning empty (no new OpenSSL or native-tls dependencies introduced).
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 04-01-PLAN.md — Multi-entry keyring from peers.toml + commit-reply handshake + delete Phase 3 FSM shortcut (wave 1)
+- [ ] 04-02-PLAN.md — famp mcp stdio server + four tools + CliError::mcp_error_kind() exhaustive gate (wave 2)
+- [ ] 04-03-PLAN.md — two-daemon E2E-01 automated test + E2E-02 manual smoke checklist + just e2e-smoke recipe (wave 3)
 **UI hint**: yes
 
 ---
