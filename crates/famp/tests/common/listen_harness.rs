@@ -23,6 +23,16 @@
 //! Cleanup contract: every spawned child is wrapped in [`ChildGuard`] so a
 //! panicking test still kills its daemon on unwind (T-02-31 mitigation).
 
+#![allow(
+    dead_code,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::missing_const_for_fn,
+    clippy::single_match_else
+)]
+
 use std::{
     io::{BufRead, BufReader},
     net::SocketAddr,
@@ -113,30 +123,44 @@ pub fn read_stderr_bound_addr(
         .ok_or_else(|| "child stderr not piped".to_string())?;
 
     // Read on a dedicated thread so we can enforce a wall-clock timeout
-    // without blocking the test forever on a hung child.
+    // without blocking the test forever on a hung child. The thread
+    // continues draining stderr to EOF AFTER finding the beacon so the
+    // child's stderr pipe never fills up (a full stderr pipe would
+    // eventually block the daemon on its next eprintln!). The drainer
+    // thread is deliberately leaked — it exits on its own when the
+    // child closes stderr.
     let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
     std::thread::spawn(move || {
         let mut reader = BufReader::new(stderr);
         let mut collected = String::new();
+        let mut beacon_sent = false;
         loop {
             let mut line = String::new();
             match reader.read_line(&mut line) {
                 Ok(0) => {
-                    // EOF before beacon.
-                    let _ = tx.send(Err(format!(
-                        "child stderr closed before printing beacon; collected: {collected}"
-                    )));
+                    if !beacon_sent {
+                        let _ = tx.send(Err(format!(
+                            "child stderr closed before printing beacon; collected: {collected}"
+                        )));
+                    }
                     return;
                 }
                 Ok(_) => {
                     collected.push_str(&line);
-                    if let Some(addr) = parse_listening_line(&line) {
-                        let _ = tx.send(Ok(addr));
-                        return;
+                    if !beacon_sent {
+                        if let Some(addr) = parse_listening_line(&line) {
+                            let _ = tx.send(Ok(addr));
+                            beacon_sent = true;
+                        }
                     }
+                    // Keep looping so the pipe drains; discard further lines.
                 }
                 Err(e) => {
-                    let _ = tx.send(Err(format!("stderr read failed: {e}; collected: {collected}")));
+                    if !beacon_sent {
+                        let _ = tx.send(Err(format!(
+                            "stderr read failed: {e}; collected: {collected}"
+                        )));
+                    }
                     return;
                 }
             }
@@ -320,8 +344,7 @@ use toml as _;
 use tower as _;
 use tower_http as _;
 
-// `Arc` is used via `famp_crypto::FampSigningKey` path in some helpers; keep
-// the import here so unused-import lint stays quiet across test binaries.
-use std::marker::PhantomData as _PhantomData;
+// `Arc` is reachable via the `std::sync::Arc` import above but not
+// referenced inside this file; silence via a dead_code-allowed const.
 #[allow(dead_code)]
 const _UNUSED_ARC: Option<Arc<()>> = None;

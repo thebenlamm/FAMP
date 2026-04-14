@@ -21,16 +21,17 @@
 
 #![allow(
     dead_code,
+    unused_imports,
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    unused_crate_dependencies
+    clippy::missing_panics_doc
 )]
 
 pub mod listen_harness;
 
 pub use listen_harness::{
     build_signed_ack_bytes, build_trusting_reqwest_client, init_home_in_process, post_bytes,
-    read_inbox_lines, read_stderr_bound_addr, spawn_listen, wait_for_bind, ChildGuard,
+    read_inbox_lines, read_stderr_bound_addr, self_principal, spawn_listen, wait_for_bind,
+    ChildGuard,
 };
