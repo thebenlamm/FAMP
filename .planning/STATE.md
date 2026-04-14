@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
 status: executing
-last_updated: "2026-04-14T20:34:40.055Z"
+last_updated: "2026-04-14T20:46:43.986Z"
 last_activity: 2026-04-14
 ---
 
@@ -22,9 +22,9 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 ## Current Position
 
 Phase: 02 (daemon-inbox) — EXECUTING
-Plan: 2 of 3 (Plan 01 shipped: famp-inbox library)
-Status: Executing Phase 02
-Last activity: 2026-04-14 -- Plan 02-01 shipped: famp-inbox (8/8 crate, 292/292 workspace)
+Plan: 3 of 3 (Plans 01 + 02 shipped: famp-inbox library + famp listen daemon)
+Status: Ready to execute Plan 02-03
+Last activity: 2026-04-14
 
 ```
 v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
@@ -55,6 +55,7 @@ v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 - **FSM step() and accessors are const fn** — All transition arms operate on Copy enums.
 - **v0.8 phase shape:** 4 phases derived from the requirement dependency graph — Phase 1 (identity + CLI scaffold), Phase 2 (daemon + inbox), Phase 3 (conversation CLI + task records), Phase 4 (MCP + E2E). Dependency chain: v0.7 → P1 → P2 → P3 → P4.
 - **Plan 02-01 (2026-04-14):** `famp-inbox` takes raw `&[u8]`, not a typed `SignedEnvelope`, to preserve byte-exactness (P3) and keep the crate decoupled from `famp-envelope`. Append path is fsync-sealed via `tokio::fs::File::sync_data` under `Arc<Mutex<File>>`; 16-task concurrent test locks the serialization contract; `read_all` tail-tolerance swallows the final truncated line but surfaces mid-file corruption as a hard `CorruptLine { line_no }` error. Covers INBOX-01/02/04/05.
+- **Plan 02-02 (2026-04-14):** `famp listen` wired end-to-end. Custom axum Router reuses `FampSigVerifyLayer` from `famp-transport-http` unmodified (byte-for-byte middleware stack), but owns its own handler that calls `inbox.append(&body).await` and returns **200 OK** (stricter than upstream's 202 — the 200 is a durability receipt because fsync ran before return). CliError gains `PortInUse { addr }`, `Inbox(#[from])`, `Tls(#[from])`. SIGINT/SIGTERM graceful shutdown via `tokio::signal::unix`. Self-keyring bootstrapped with single entry `agent:localhost/self` → own vk (peer keys defer to Phase 3). `set_nonblocking(true)` enforced in both `run` and `run_on_listener` because axum-server 0.8 panics on blocking sockets (tokio-rs/tokio#7172). Test-facing `run_on_listener(home, listener, shutdown_signal)` is Plan 02-03's ephemeral-port entry point. 293/293 workspace tests green. Covers CLI-02, DAEMON-01/02/03/04, INBOX-03.
 
 ### Open TODOs
 
@@ -79,6 +80,7 @@ v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
 ### Recent Activity
 
+- **2026-04-14:** **Plan 02-02 shipped** — `famp listen` daemon wired end-to-end. Custom Router reusing `FampSigVerifyLayer` + inbox-append handler returning 200 (durability receipt); SIGINT/SIGTERM shutdown; `PortInUse` mapping for `AddrInUse`. 293/293 workspace tests. Commits `f51b590` (feat) + `0dc56a7` (fix: non-blocking listener). CLI-02, DAEMON-01/02/03/04, INBOX-03 complete.
 - **2026-04-14:** **Plan 02-01 shipped** — `famp-inbox` library crate with durable append (fsync-before-return) + tail-tolerant read. 8/8 crate tests, 292/292 workspace tests, `cargo tree -i openssl` empty. Commits `b7ca9bb` (feat) + `071b781` (test). INBOX-01/02/04/05 complete.
 - **2026-04-14:** **v0.8 roadmap created.** 4 phases, 37 requirements, 100% coverage. Phase 1 (Identity & CLI Foundation) queued for `/gsd:plan-phase 1`.
 - **2026-04-14:** **v0.7 Personal Runtime shipped.** 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests. Archived to `.planning/milestones/v0.7-*.md`.

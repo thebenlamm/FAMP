@@ -85,7 +85,7 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
   5. A truncated or malformed JSONL line in the inbox (simulating a mid-write crash) does not prevent subsequent `famp await` or `famp inbox` calls from reading the lines that follow it.
 **Plans**: 3 plans
 - [x] 02-01-PLAN.md — famp-inbox crate: durable JSONL append with fsync, tail-tolerant reader (wave 1)
-- [ ] 02-02-PLAN.md — famp listen command: tokio daemon, FampSigVerifyLayer reuse, inbox-append handler, graceful shutdown (wave 2)
+- [x] 02-02-PLAN.md — famp listen command: tokio daemon, FampSigVerifyLayer reuse, inbox-append handler, graceful shutdown (wave 2)
 - [ ] 02-03-PLAN.md — Integration tests: smoke, SIGKILL durability, bind collision, SIGINT shutdown, truncated tail (wave 3)
 
 ### Phase 3: Conversation CLI

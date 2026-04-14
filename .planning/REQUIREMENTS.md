@@ -13,7 +13,7 @@
 ### CLI — `famp` command-line tool (7)
 
 - [x] **CLI-01**: `famp init` creates `~/.famp/` with a fresh Ed25519 keypair, a self-signed TLS cert + key, a default `config.toml`, and an empty `peers.toml`. Idempotent-safe: refuses to overwrite existing keys without `--force`.
-- [ ] **CLI-02**: `famp listen` runs the listener daemon on the address configured in `config.toml` (default `127.0.0.1:8443`). Foreground process; structured logs to stderr.
+- [x] **CLI-02**: `famp listen` runs the listener daemon on the address configured in `config.toml` (default `127.0.0.1:8443`). Foreground process; structured logs to stderr.
 - [ ] **CLI-03**: `famp send` sends a body to a named peer. Three modes: `--new-task <title>` (opens a new task with a `request`), `--task <id>` (sends a `deliver` within an existing task), `--task <id> --terminal` (sends the final `deliver`, transitions task to `COMPLETED`).
 - [ ] **CLI-04**: `famp await [--timeout <duration>]` blocks up to `<duration>` waiting for the next unread inbox entry; returns immediately if one is already waiting. Default timeout 60s. Returns structured output (task-id, peer, message class, body).
 - [ ] **CLI-05**: `famp inbox [--unread]` lists inbox entries without blocking. `--unread` filters to unread-only. Does not mark entries read.
@@ -33,17 +33,17 @@
 
 ### DAEMON — Listener process (5)
 
-- [ ] **DAEMON-01**: `famp listen` wraps the existing v0.7 `famp-transport-http` server (`POST /famp/v0.5.1/inbox/{principal}`) with the existing signature-verification middleware and the configured keyring. No protocol changes.
-- [ ] **DAEMON-02**: Inbound signed messages that pass verification are appended to the inbox file. Inbound messages that fail verification are logged and dropped (consistent with the v0.7 CONF-05/06/07 behavior).
-- [ ] **DAEMON-03**: Daemon shuts down cleanly on `SIGINT` / `SIGTERM`: stops accepting new connections, flushes the inbox write, exits 0.
-- [ ] **DAEMON-04**: Single-instance gate: if another process is already bound to `listen_addr`, refuse to start with a typed error. No silent port-stealing, no double-binding.
+- [x] **DAEMON-01**: `famp listen` wraps the existing v0.7 `famp-transport-http` server (`POST /famp/v0.5.1/inbox/{principal}`) with the existing signature-verification middleware and the configured keyring. No protocol changes.
+- [x] **DAEMON-02**: Inbound signed messages that pass verification are appended to the inbox file. Inbound messages that fail verification are logged and dropped (consistent with the v0.7 CONF-05/06/07 behavior).
+- [x] **DAEMON-03**: Daemon shuts down cleanly on `SIGINT` / `SIGTERM`: stops accepting new connections, flushes the inbox write, exits 0.
+- [x] **DAEMON-04**: Single-instance gate: if another process is already bound to `listen_addr`, refuse to start with a typed error. No silent port-stealing, no double-binding.
 - [ ] **DAEMON-05**: Inbox write is durable — each appended line is `fsync`'d before the HTTP response returns 200. Crash-consistency: either the sender sees a 200 and the line is on disk, or the sender sees an error and no line was written.
 
 ### INBOX — File-based inbox (5)
 
 - [x] **INBOX-01**: Inbox format is **JSONL**, append-only. One line per received envelope. Each line contains: `received_at` (RFC 3339), `task_id`, `from_principal`, `message_class`, `envelope_bytes_b64`, `body_json`. The raw envelope bytes are preserved so signature re-verification is possible.
 - [x] **INBOX-02**: A sidecar **read cursor** file (`inbox.cursor`) tracks the byte offset of the last entry returned as "read" to a CLI / MCP call. `famp await` and `famp inbox --unread --mark-read` advance the cursor; `famp inbox` (plain) does not.
-- [ ] **INBOX-03**: `famp await` blocks with timeout by polling the inbox file at a configurable interval (default 250 ms). Returns the next unread entry and advances the cursor atomically, or returns a typed timeout error.
+- [x] **INBOX-03**: `famp await` blocks with timeout by polling the inbox file at a configurable interval (default 250 ms). Returns the next unread entry and advances the cursor atomically, or returns a typed timeout error.
 - [x] **INBOX-04**: Truncated / malformed lines in the inbox are logged and skipped without stopping the reader — a partial write from a crashed daemon cannot wedge the inbox.
 - [x] **INBOX-05**: An `inbox.lock` file prevents two concurrent readers from double-consuming entries. Best-effort advisory lock, released on process exit.
 
