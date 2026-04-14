@@ -127,26 +127,25 @@ impl Transport for HttpTransport {
                 })?
             };
             // D-A6: POST to `{base}/famp/v0.5.1/inbox/{recipient}`.
-            // `Url::join` requires the base URL to end with `/` for the path
-            // segment to be appended rather than replacing the last segment;
-            // construct the full URL by string concatenation to keep the
-            // semantics simple and predictable.
-            // Percent-encode the recipient so that `agent:local/bob` survives
-            // axum's single-segment `{principal}` route matcher. Without this
-            // the `/` in the principal name would split into two URL segments
-            // and the route would 404. Space/control chars already excluded
-            // by Principal's parser; we only need to escape `:` and `/`.
-            let recipient_encoded = msg
-                .recipient
-                .to_string()
-                .replace(':', "%3A")
-                .replace('/', "%2F");
-            let inbox_url_str = format!(
-                "{}/famp/v0.5.1/inbox/{}",
-                base.as_str().trim_end_matches('/'),
-                recipient_encoded
-            );
-            let inbox_url = Url::parse(&inbox_url_str).map_err(HttpTransportError::InvalidUrl)?;
+            //
+            // MED-03: use `Url::path_segments_mut().push(...)` so the url
+            // crate handles RFC 3986 path-segment percent-encoding. The
+            // previous hand-rolled `.replace(':', "%3A").replace('/', "%2F")`
+            // was correct for today's Principal grammar but silently
+            // coupled this call site to the parser's exclusion set. `push`
+            // encodes any reserved or non-ASCII byte, so any future
+            // Principal-grammar widening keeps working without revisiting
+            // this file.
+            let mut inbox_url = base.clone();
+            inbox_url.set_path("");
+            {
+                let mut segs = inbox_url.path_segments_mut().map_err(|()| {
+                    HttpTransportError::InvalidUrl(url::ParseError::RelativeUrlWithoutBase)
+                })?;
+                segs.pop_if_empty();
+                segs.extend(["famp", "v0.5.1", "inbox"]);
+                segs.push(&msg.recipient.to_string());
+            }
 
             let resp = client
                 .post(inbox_url)
