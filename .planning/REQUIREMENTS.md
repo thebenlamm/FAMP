@@ -127,10 +127,10 @@ These appear in future Federation Profile milestones. Listed here so they stay o
 | DAEMON-04 | Phase 2 | Single-instance gate |
 | DAEMON-05 | Phase 2 | fsync durability per inbox write |
 | INBOX-01 | Phase 2 | JSONL format with raw envelope bytes |
-| INBOX-02 | Phase 2 | Read cursor sidecar file |
-| INBOX-03 | Phase 2 | famp await poll-with-timeout semantics |
+| INBOX-02 | Phase 3 | Read cursor sidecar file (lives in famp-inbox; consumed by famp await) |
+| INBOX-03 | Phase 3 | famp await poll-with-timeout semantics |
 | INBOX-04 | Phase 2 | Malformed-line resilience |
-| INBOX-05 | Phase 2 | Advisory inbox.lock |
+| INBOX-05 | Phase 3 | Advisory inbox.lock |
 | CONV-01 | Phase 3 | New-task: request + task record creation |
 | CONV-02 | Phase 3 | Multi-deliver within one task (long-task shape) |
 | CONV-03 | Phase 3 | Terminal deliver + FSM COMPLETED transition |
@@ -150,3 +150,5 @@ These appear in future Federation Profile milestones. Listed here so they stay o
 
 *Requirements drafted: 2026-04-14 — v0.8 Usable from Claude Code. 37 requirements across 7 categories (CLI-01..07, IDENT-01..06, DAEMON-01..05, INBOX-01..05, CONV-01..05, MCP-01..06, E2E-01..03).*
 *Traceability filled: 2026-04-14 — 37/37 requirements mapped across 4 phases. 100% coverage.*
+
+*Traceability re-mapped: 2026-04-14 — INBOX-02 (cursor), INBOX-03 (famp await poll), INBOX-05 (advisory lock) moved from Phase 2 to Phase 3 per 02-VERIFICATION.md. The implementations land alongside `famp await` / `famp inbox` in the Phase 3 plans (03-01 cursor primitive, 03-03 await + inbox subcommands, 03-04 lock + integration tests). Phase 2's ROADMAP success criteria (5/5) are unchanged.*

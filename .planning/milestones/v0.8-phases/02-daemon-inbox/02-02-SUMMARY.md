@@ -58,7 +58,7 @@ patterns-established:
   - "Shutdown via tokio::select! between JoinHandle and shutdown_signal future; on signal we drop the JoinHandle (axum-server stops accepting) — in-flight handlers that have already fsynced return 200; handlers mid-fsync see client drop. Phase 2 accepts this per CONTEXT §Graceful Shutdown."
   - "Extension<Arc<AnySignedEnvelope>> extracted in the handler even when unused — compile-time proof that FampSigVerifyLayer actually ran. Removing the layer would cause runtime 500s on every request (loud failure)."
 
-requirements-completed: [CLI-02, DAEMON-01, DAEMON-02, DAEMON-03, DAEMON-04, INBOX-03]
+requirements-completed: [CLI-02, DAEMON-01, DAEMON-02, DAEMON-03, DAEMON-04]
 
 duration: ~35min
 completed: 2026-04-14
@@ -177,6 +177,16 @@ None. The single new trust boundary (inbound HTTPS → daemon) is already enumer
 
 - **Plan 02-03 (shutdown durability)** can consume `listen::run_on_listener(home, listener, shutdown_signal)` directly. Ephemeral-port tests bind `127.0.0.1:0` via `std::net::TcpListener`, read `local_addr()`, then call `run_on_listener` with an oneshot-driven shutdown future. Signature testing uses the self-principal `agent:localhost/self`.
 - **Phase 3 (send, await, peer add)** will extend the self-keyring to a multi-entry keyring loaded from peers.toml. The self-entry will remain; peer entries will be added via `with_peer`. No refactor required in `listen` — it already takes `Arc<Keyring>`.
+
+## Re-Verification Note (2026-04-14)
+
+Per `02-VERIFICATION.md`, the requirement labeling in this plan's frontmatter was corrected without code changes:
+
+- The `INBOX-03` claim was removed. `famp await` poll-with-timeout semantics belong to Phase 3 (now tracked in `03-01-PLAN.md` and later plans).
+- The DAEMON-03 ↔ DAEMON-04 label mapping was confirmed as:
+  - **DAEMON-03** = SIGINT/SIGTERM graceful shutdown → `tests/listen_shutdown.rs`
+  - **DAEMON-04** = single-instance bind gate (port-in-use) → `tests/listen_bind_collision.rs`
+- Both behaviors were always implemented correctly in this plan; only the narrative prose in the plan body had them swapped. Code is unchanged.
 
 ## Self-Check: PASSED
 
