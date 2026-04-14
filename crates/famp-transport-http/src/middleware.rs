@@ -147,11 +147,12 @@ where
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod canonical_pre_check_tests {
-    //! MED-02 parity pin: the Value-based canonicalize() path in `call()`
-    //! must be byte-identical to what a typed decode would re-canonicalize
-    //! to. We don't re-run the middleware here; we verify the underlying
-    //! primitive (`from_slice_strict::<Value>` -> `canonicalize`) handles
-    //! the same edge cases the typed path does, so a future refactor that
+    //! MED-02 parity pin: the `Value`-based `canonicalize()` path in
+    //! `call()` must be byte-identical to what a typed decode would
+    //! re-canonicalize to. We don't re-run the middleware here; we
+    //! verify the underlying primitive
+    //! (`from_slice_strict::<Value>` -> `canonicalize`) handles the same
+    //! edge cases the typed path does, so a future refactor that
     //! diverges the two will trip a unit test before it ships.
     use super::{canonicalize, from_slice_strict};
     use serde_json::Value;
