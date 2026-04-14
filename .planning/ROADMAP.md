@@ -69,7 +69,7 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
   4. Running any subcommand against a missing or incomplete `FAMP_HOME` (e.g., missing `key.ed25519`) produces a typed error identifying exactly which file is absent or malformed, and exits non-zero.
   5. Private key bytes never appear in stdout, stderr, logs, or any error message emitted by the CLI.
 **Plans**: 3 plans
-- [ ] 01-01-PLAN.md — CLI scaffold: deps, cli module tree, CliError, FAMP_HOME resolver, Config/Peers serde types, perms helpers (wave 1)
+- [x] 01-01-PLAN.md — CLI scaffold: deps, cli module tree, CliError, FAMP_HOME resolver, Config/Peers serde types, perms helpers (wave 1)
 - [ ] 01-02-PLAN.md — `famp init` impl: TLS generator, atomic --force replace, init::run_at, cli dispatcher, bin rewrite (wave 2)
 - [ ] 01-03-PLAN.md — Integration tests + load_identity + compile_fail doc-test on FampSigningKey (wave 3)
 

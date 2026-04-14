@@ -2,14 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
-status: Roadmap defined
-last_updated: "2026-04-14T20:00:00.000Z"
-progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+status: executing
+last_updated: "2026-04-14T19:42:18.552Z"
+last_activity: 2026-04-14
 ---
 
 # STATE: FAMP — v0.8 Usable from Claude Code
@@ -22,14 +17,14 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** v0.8 Usable from Claude Code — roadmap defined. Turn v0.7's proven substrate into a `famp` CLI + listener daemon + file inbox + MCP server so two Claude Code sessions can drive two local agents through one long task on the same laptop.
+**Current focus:** Phase 01 — identity-cli-foundation
 
 ## Current Position
 
-Phase: 1 (not started)
-Plan: —
-Status: Roadmap defined; awaiting `/gsd:plan-phase 1`
-Last activity: 2026-04-14 — v0.8 roadmap created (4 phases, 37 requirements)
+Phase: 01 (identity-cli-foundation) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-04-14
 
 ```
 v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
