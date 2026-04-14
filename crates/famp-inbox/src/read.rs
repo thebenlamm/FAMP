@@ -108,6 +108,11 @@ pub fn read_from(
     let path = path.as_ref();
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
+        // A missing file is not an error — the daemon creates
+        // `inbox.jsonl` lazily on first append, so a freshly-initialized
+        // home has no file yet. Callers (famp await / inbox list) treat
+        // this as "empty inbox, keep polling".
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(source) => {
             return Err(InboxError::Io {
                 path: path.to_path_buf(),

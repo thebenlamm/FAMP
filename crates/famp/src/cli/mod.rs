@@ -3,9 +3,11 @@
 
 use clap::{Parser, Subcommand};
 
+pub mod await_cmd;
 pub mod config;
 pub mod error;
 pub mod home;
+pub mod inbox;
 pub mod init;
 pub mod listen;
 pub mod paths;
@@ -35,6 +37,11 @@ pub enum Commands {
     Peer(peer::PeerArgs),
     /// Send an envelope to a peer — new task, deliver, or terminal.
     Send(send::SendArgs),
+    /// Block until a new inbox entry arrives past the cursor.
+    #[command(name = "await")]
+    Await(await_cmd::AwaitArgs),
+    /// Inspect the inbox (list + cursor ack).
+    Inbox(inbox::InboxArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -70,6 +77,26 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     source: e,
                 })?;
             rt.block_on(send::run(args))
+        }
+        Commands::Await(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(await_cmd::run(args))
+        }
+        Commands::Inbox(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(inbox::run(args))
         }
     }
 }
