@@ -27,6 +27,30 @@ use subtle::ConstantTimeEq;
 /// `FampSigningKey::from_bytes([0u8; 32])` and other all-constant seeds are
 /// test fixtures only. The crate-level quick-start doctest uses `[0u8; 32]`
 /// for illustration; production code must source 32 bytes from a CSPRNG.
+///
+/// # Security contract (FAMP D-17 mechanism #1)
+///
+/// `FampSigningKey` must never expose private-key bytes via `Debug` or
+/// `Display`. Phase 1 of v0.8 locks this contract with the tests below.
+/// The `Debug` impl returns a fixed redacted string (no seed bytes); there
+/// is no `Display` impl, and the `compile_fail` block below is the forcing
+/// function that keeps it that way.
+///
+/// ```
+/// use famp_crypto::FampSigningKey;
+/// let sk = FampSigningKey::from_bytes([7u8; 32]);
+/// let dbg = format!("{:?}", sk);
+/// assert!(dbg.contains("redacted"));
+/// // The raw seed byte 7 must not leak through Debug.
+/// assert!(!dbg.contains('7'));
+/// ```
+///
+/// ```compile_fail
+/// use famp_crypto::FampSigningKey;
+/// let sk = FampSigningKey::from_bytes([0u8; 32]);
+/// // There must be no Display impl — this must fail to compile.
+/// let _ = format!("{}", sk);
+/// ```
 pub struct FampSigningKey(pub(crate) SigningKey);
 
 /// The only verifying-key type reachable from public API.

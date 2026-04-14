@@ -215,6 +215,29 @@ fn materialize_identity(layout: &IdentityLayout) -> Result<InitOutcome, CliError
     })
 }
 
+/// Phase 1 slice of IDENT-05: verify all six identity files exist.
+///
+/// Phase 2+ subcommands call this before attempting any work. On the first
+/// missing file, returns [`CliError::IdentityIncomplete`] carrying that path.
+/// Permission-checking ("wrong perms") is deferred to the phase that reads
+/// the key material — Phase 1 only checks existence.
+pub fn load_identity(home: &Path) -> Result<IdentityLayout, CliError> {
+    if !home.is_absolute() {
+        return Err(CliError::HomeNotAbsolute {
+            path: home.to_path_buf(),
+        });
+    }
+    let layout = IdentityLayout::at(home.to_path_buf());
+    for (_label, path) in layout.entries() {
+        if !path.exists() {
+            return Err(CliError::IdentityIncomplete {
+                missing: path.to_path_buf(),
+            });
+        }
+    }
+    Ok(layout)
+}
+
 fn emit_output(
     out: &mut dyn Write,
     err: &mut dyn Write,
@@ -233,4 +256,48 @@ fn emit_output(
         }
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod load_identity_tests {
+    use super::{load_identity, run_at, CliError};
+
+    #[test]
+    fn load_identity_happy_after_init() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let home = tmp.path().join("famphome");
+        let mut out = Vec::<u8>::new();
+        let mut err = Vec::<u8>::new();
+        run_at(&home, false, &mut out, &mut err).expect("init");
+        let layout = load_identity(&home).expect("load_identity");
+        assert_eq!(layout.home, home);
+    }
+
+    #[test]
+    fn load_identity_reports_first_missing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let home = tmp.path().join("famphome");
+        let mut out = Vec::<u8>::new();
+        let mut err = Vec::<u8>::new();
+        run_at(&home, false, &mut out, &mut err).expect("init");
+
+        // Remove key.ed25519 (first entry) to simulate partial state.
+        std::fs::remove_file(home.join("key.ed25519")).unwrap();
+
+        match load_identity(&home) {
+            Err(CliError::IdentityIncomplete { missing }) => {
+                assert!(missing.ends_with("key.ed25519"));
+            }
+            other => panic!("expected IdentityIncomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_identity_rejects_relative_home() {
+        match load_identity(std::path::Path::new("relative/path")) {
+            Err(CliError::HomeNotAbsolute { .. }) => {}
+            other => panic!("expected HomeNotAbsolute, got {other:?}"),
+        }
+    }
 }
