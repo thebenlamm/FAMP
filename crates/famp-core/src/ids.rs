@@ -60,7 +60,7 @@ macro_rules! define_uuid_newtype {
     };
 }
 
-define_uuid_newtype!(MessageId, "Message identifier (UUIDv7).");
-define_uuid_newtype!(ConversationId, "Conversation identifier (UUIDv7).");
-define_uuid_newtype!(TaskId, "Task identifier (UUIDv7).");
-define_uuid_newtype!(CommitmentId, "Commitment identifier (UUIDv7).");
+define_uuid_newtype!(MessageId, "Message identifier (`UUIDv7`).");
+define_uuid_newtype!(ConversationId, "Conversation identifier (`UUIDv7`).");
+define_uuid_newtype!(TaskId, "Task identifier (`UUIDv7`).");
+define_uuid_newtype!(CommitmentId, "Commitment identifier (`UUIDv7`).");
