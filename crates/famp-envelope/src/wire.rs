@@ -10,7 +10,7 @@
 use crate::body::deliver::TerminalStatus;
 use crate::body::BodySchema;
 use crate::causality::Causality;
-use crate::{EnvelopeScope, FampVersion, MessageClass, Timestamp};
+use crate::{EnvelopeScope, MessageClass, Timestamp};
 use famp_core::{AuthorityScope, MessageId, Principal};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -36,7 +36,7 @@ pub(crate) const SIGNATURE_FIELD: &str = "signature";
 )]
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) struct WireEnvelope<B: BodySchema> {
-    pub famp: FampVersion,
+    pub famp: String,
     pub id: MessageId,
     pub from: Principal,
     pub to: Principal,

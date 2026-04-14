@@ -36,4 +36,4 @@ pub use error::EnvelopeDecodeError;
 pub use peek::peek_sender;
 pub use scope::EnvelopeScope;
 pub use timestamp::Timestamp;
-pub use version::{FampVersion, FAMP_SPEC_VERSION};
+pub use version::FAMP_SPEC_VERSION;

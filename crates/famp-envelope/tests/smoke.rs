@@ -1,34 +1,20 @@
 //! Smoke tests for Plan 01-01 Task 2 primitive types.
 //!
-//! Verifies byte-stable wire round-trip for `FampVersion`, `MessageClass`,
-//! `EnvelopeScope`, and `Timestamp`.
+//! Verifies byte-stable wire round-trip for `MessageClass`, `EnvelopeScope`,
+//! and `Timestamp`. Version-string handling is covered end-to-end by
+//! `tests/adversarial.rs::tampered_famp_version_rejected_*`.
 
 #![allow(clippy::unwrap_used)]
 
 use famp_canonical as _;
 use famp_core as _;
 use famp_crypto as _;
-use famp_envelope::{EnvelopeScope, FampVersion, MessageClass, Timestamp};
+use famp_envelope::{EnvelopeScope, MessageClass, Timestamp};
 use hex as _;
 use insta as _;
 use proptest as _;
 use serde as _;
 use thiserror as _;
-
-#[test]
-fn version_literal_roundtrip() {
-    let s = serde_json::to_string(&FampVersion).unwrap();
-    assert_eq!(s, "\"0.5.1\"");
-    let back: FampVersion = serde_json::from_str("\"0.5.1\"").unwrap();
-    assert_eq!(back, FampVersion);
-}
-
-#[test]
-fn version_rejects_wrong_literal() {
-    assert!(serde_json::from_str::<FampVersion>("\"0.5.2\"").is_err());
-    assert!(serde_json::from_str::<FampVersion>("\"V0_5_1\"").is_err());
-    assert!(serde_json::from_str::<FampVersion>("\"0.6.0\"").is_err());
-}
 
 #[test]
 fn message_class_snake_case_roundtrip() {

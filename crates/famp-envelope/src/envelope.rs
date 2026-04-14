@@ -27,7 +27,7 @@ use crate::body::deliver::TerminalStatus;
 use crate::body::BodySchema;
 use crate::causality::Causality;
 use crate::wire::{WireEnvelope, SIGNATURE_FIELD};
-use crate::{EnvelopeDecodeError, EnvelopeScope, FampVersion, MessageClass, Timestamp};
+use crate::{EnvelopeDecodeError, EnvelopeScope, MessageClass, Timestamp, FAMP_SPEC_VERSION};
 use famp_canonical::from_slice_strict;
 use famp_core::{AuthorityScope, MessageId, Principal};
 use famp_crypto::{sign_value, verify_value, FampSignature, FampSigningKey, TrustedVerifyingKey};
@@ -43,7 +43,7 @@ use std::collections::BTreeMap;
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnsignedEnvelope<B: BodySchema> {
-    pub famp: FampVersion,
+    pub famp: String,
     pub id: MessageId,
     pub from: Principal,
     pub to: Principal,
@@ -108,7 +108,7 @@ impl<B: BodySchema> UnsignedEnvelope<B> {
         body: B,
     ) -> Self {
         Self {
-            famp: FampVersion,
+            famp: FAMP_SPEC_VERSION.to_string(),
             id,
             from,
             to,
@@ -150,7 +150,7 @@ impl<B: BodySchema> UnsignedEnvelope<B> {
     pub fn sign(self, sk: &FampSigningKey) -> Result<SignedEnvelope<B>, EnvelopeDecodeError> {
         // Serialize via a borrowing view so we don't have to clone `body: B`.
         let view = WireEnvelopeRef::<'_, B> {
-            famp: self.famp,
+            famp: &self.famp,
             id: &self.id,
             from: &self.from,
             to: &self.to,
@@ -180,7 +180,7 @@ impl<B: BodySchema> UnsignedEnvelope<B> {
 #[derive(Serialize)]
 #[serde(deny_unknown_fields)]
 struct WireEnvelopeRef<'a, B: BodySchema> {
-    famp: FampVersion,
+    famp: &'a str,
     id: &'a MessageId,
     from: &'a Principal,
     to: &'a Principal,
@@ -242,11 +242,31 @@ impl<B: BodySchema> SignedEnvelope<B> {
         verify_value(verifier, &value, &signature)
             .map_err(|_| EnvelopeDecodeError::SignatureInvalid)?;
 
-        // Step 3: deserialize into the typed wire struct. `deny_unknown_fields`
+        // Step 3: reject wrong spec-version BEFORE typed decode so the error
+        // kind is `Unsupported` (spec §Δ01 / §19), not `Malformed` via a
+        // generic serde error. This is the SINGLE version-rejection site on
+        // the decode path — `WireEnvelope.famp` is a plain `String`.
+        let root_obj = value.as_object().ok_or_else(|| {
+            EnvelopeDecodeError::BodyValidation("envelope root is not a JSON object".into())
+        })?;
+        match root_obj.get("famp") {
+            None => return Err(EnvelopeDecodeError::MissingField { field: "famp" }),
+            Some(Value::String(s)) if s == FAMP_SPEC_VERSION => { /* ok */ }
+            Some(Value::String(s)) => {
+                return Err(EnvelopeDecodeError::UnsupportedVersion { found: s.clone() });
+            }
+            Some(_) => {
+                return Err(EnvelopeDecodeError::BodyValidation(
+                    "envelope.famp must be a string".into(),
+                ));
+            }
+        }
+
+        // Step 4: deserialize into the typed wire struct. `deny_unknown_fields`
         // surfaces envelope-level unknown keys here as typed errors.
         let wire: WireEnvelope<B> = serde_json::from_value(value).map_err(Self::map_serde_error)?;
 
-        // Step 4: class + scope cross-check (D-C1 / §7.3a).
+        // Step 5: class + scope cross-check (D-C1 / §7.3a).
         if wire.class != B::CLASS {
             return Err(EnvelopeDecodeError::ClassMismatch {
                 expected: B::CLASS,
@@ -261,7 +281,7 @@ impl<B: BodySchema> SignedEnvelope<B> {
             });
         }
 
-        // Step 5: body cross-field validation (deliver interim × terminal_status,
+        // Step 6: body cross-field validation (deliver interim × terminal_status,
         // bounds ≥2-key rule, etc.). Default impl is a no-op.
         wire.body
             .post_decode_validate(wire.terminal_status.as_ref())?;
@@ -300,7 +320,7 @@ impl<B: BodySchema> SignedEnvelope<B> {
     /// canonical form is reconstructed at verify time.
     pub fn encode(&self) -> Result<Vec<u8>, EnvelopeDecodeError> {
         let view = WireEnvelopeRef::<'_, B> {
-            famp: self.inner.famp,
+            famp: &self.inner.famp,
             id: &self.inner.id,
             from: &self.inner.from,
             to: &self.inner.to,
