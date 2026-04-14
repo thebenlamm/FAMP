@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
 status: v0.7 milestone complete
-last_updated: "2026-04-14T00:52:41.490Z"
+last_updated: "2026-04-14T12:00:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -73,6 +73,7 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260414-cme | Remove obsolete wave2_impl feature gate from famp-canonical | 2026-04-14 | a77cfe1 | [260414-cme-remove-obsolete-wave2-impl-feature-gate-](./quick/260414-cme-remove-obsolete-wave2-impl-feature-gate-/) |
+| 260414-ecp | Wire UnsupportedVersion error on envelope decode (PR #2) | 2026-04-14 | 8d14341 | [260414-ecp-wire-unsupportedversion-error-on-envelop](./quick/260414-ecp-wire-unsupportedversion-error-on-envelop/) |
 
 ## Session Continuity
 
@@ -88,4 +89,4 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*Last activity: 2026-04-14 — Completed quick task 260414-cme: Remove obsolete wave2_impl feature gate from famp-canonical*
+*Last activity: 2026-04-14 — Completed quick task 260414-ecp: Wire UnsupportedVersion error on envelope decode (PR #2 of codebase review action plan)*
