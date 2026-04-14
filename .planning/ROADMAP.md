@@ -6,7 +6,7 @@
 
 - ✅ **v0.5.1 Spec Fork** — Phases 0–1 (shipped 2026-04-13). Interop contract locked; FAMP-v0.5.1-spec.md authoritative. See [milestones/v0.5.1-ROADMAP.md](milestones/v0.5.1-ROADMAP.md).
 - ✅ **v0.6 Foundation Crates** — Phases 1–3 (shipped 2026-04-13). Substrate shipped: `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements satisfied, 112/112 tests green. See [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md).
-- 📋 **v0.7 Personal Runtime** — Phases 1–4 (next). Minimal usable library on two transports.
+- ✅ **v0.7 Personal Runtime** — Phases 1–4 (shipped 2026-04-14). Minimal usable library on two transports. 4/4 phases, 15/15 plans, 253/253 tests green.
 - 📋 **v0.8+ Federation Profile** — Identity & Cards, Causality, Negotiation, Delegation, Provenance, Extensions, Adversarial Conformance.
 
 ## Phases
@@ -42,8 +42,8 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
 
 - [x] **Phase 1: Minimal Signed Envelope** — `famp-envelope` with INV-10 mandatory-signature enforcement and body schemas for the five shipped message classes (`request`, `commit`, `deliver`, `ack`, `control/cancel` only) (completed 2026-04-13)
 - [x] **Phase 2: Minimal Task Lifecycle** — 5-state task FSM (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`), compiler-checked terminals, proptest transition legality (completed 2026-04-13)
-- [ ] **Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example** — `Transport` trait, in-process `MemoryTransport`, local-file TOFU keyring, `personal_two_agents` example, three adversarial cases green on `MemoryTransport`
-- [ ] **Phase 4: Minimal HTTP Transport + Cross-Machine Example** — `famp-transport-http` (axum inbox + reqwest client + rustls + 1 MB body limit + pre-routing sig-verification middleware), `cross_machine_two_agents` example, the Phase 3 adversarial matrix extended to HTTP
+- [x] **Phase 3: MemoryTransport + TOFU Keyring + Same-Process Example** (4/4 plans) — completed 2026-04-13 — `Transport` trait, in-process `MemoryTransport`, local-file TOFU keyring, `personal_two_agents` example, three adversarial cases green on `MemoryTransport`
+- [x] **Phase 4: Minimal HTTP Transport + Cross-Machine Example** (5/5 plans) — completed 2026-04-14 — `famp-transport-http` (axum inbox + reqwest client + rustls + 1 MB body limit + pre-routing sig-verification middleware), `cross_machine_two_agents` example, the Phase 3 adversarial matrix extended to HTTP (3 cases × 2 transports)
 
 ## Phase Details
 
@@ -104,10 +104,10 @@ Archive: [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md) · Phases: [mi
   5. `.well-known` Agent Card distribution (TRANS-05) and the cancellation-safe spawn-channel send path (TRANS-08) are explicitly absent; the crate compiles and the examples run without them, and their omission is documented inline with a pointer to v0.8+.
 **Plans:** 5 plans
 - [x] 04-01-PLAN.md — famp-transport-http skeleton: deps + error enums (MiddlewareError, HttpTransportError) + lift peek_sender into famp-envelope
-- [ ] 04-02-PLAN.md — Server side: build_router + FampSigVerifyLayer (two-phase decode) + RequestBodyLimitLayer + sentinel layering tests (TRANS-04, TRANS-07, TRANS-09 partial)
-- [ ] 04-03-PLAN.md — Client side: HttpTransport (native AFIT) + tls.rs PEM/rustls helpers + CI no-openssl gate (TRANS-03, TRANS-06)
-- [ ] 04-04-PLAN.md — cross_machine_two_agents example + fixture certs + subprocess CONF-04 test + same-process safety net (EX-02, CONF-04)
-- [ ] 04-05-PLAN.md — Promote tests/adversarial.rs to directory module + HTTP adapter + 3 sentinel-checked HTTP rows reusing CONF-07 fixture byte-identically (TRANS-09 complete; CONF-05/06/07 HTTP rows)
+- [x] 04-02-PLAN.md — Server side: build_router + FampSigVerifyLayer (two-phase decode) + RequestBodyLimitLayer + sentinel layering tests (TRANS-04, TRANS-07, TRANS-09 partial)
+- [x] 04-03-PLAN.md — Client side: HttpTransport (native AFIT) + tls.rs PEM/rustls helpers + CI no-openssl gate (TRANS-03, TRANS-06)
+- [x] 04-04-PLAN.md — cross_machine_two_agents example + fixture certs + subprocess CONF-04 test + same-process safety net (EX-02, CONF-04)
+- [x] 04-05-PLAN.md — Promote tests/adversarial.rs to directory module + HTTP adapter + 3 sentinel-checked HTTP rows reusing CONF-07 fixture byte-identically (TRANS-09 complete; CONF-05/06/07 HTTP rows)
 
 ## Future Milestone Sketch (Federation Profile)
 
