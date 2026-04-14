@@ -68,7 +68,10 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
   3. Setting `FAMP_HOME=/tmp/test-famp famp init` creates the identity directory at the override path, not at `~/.famp/`; every other subcommand reads from the same override.
   4. Running any subcommand against a missing or incomplete `FAMP_HOME` (e.g., missing `key.ed25519`) produces a typed error identifying exactly which file is absent or malformed, and exits non-zero.
   5. Private key bytes never appear in stdout, stderr, logs, or any error message emitted by the CLI.
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 01-01-PLAN.md — CLI scaffold: deps, cli module tree, CliError, FAMP_HOME resolver, Config/Peers serde types, perms helpers (wave 1)
+- [ ] 01-02-PLAN.md — `famp init` impl: TLS generator, atomic --force replace, init::run_at, cli dispatcher, bin rewrite (wave 2)
+- [ ] 01-03-PLAN.md — Integration tests + load_identity + compile_fail doc-test on FampSigningKey (wave 3)
 
 ### Phase 2: Daemon & Inbox
 **Goal**: A running `famp listen` process accepts inbound signed messages over HTTPS, persists each one durably to a JSONL inbox, and shuts down cleanly — all without any change to the v0.7 wire protocol or transport code.
@@ -199,7 +202,7 @@ Rough ordering, not committed:
 | 2. Minimal Task Lifecycle | v0.7 | 3/3 | Complete | 2026-04-13 |
 | 3. MemoryTransport + TOFU Keyring | v0.7 | 4/4 | Complete | 2026-04-13 |
 | 4. Minimal HTTP Transport | v0.7 | 5/5 | Complete | 2026-04-14 |
-| 1. Identity & CLI Foundation | v0.8 | 0/? | Not started | - |
+| 1. Identity & CLI Foundation | v0.8 | 0/3 | Planned | - |
 | 2. Daemon & Inbox | v0.8 | 0/? | Not started | - |
 | 3. Conversation CLI | v0.8 | 0/? | Not started | - |
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 0/? | Not started | - |
