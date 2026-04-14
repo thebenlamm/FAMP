@@ -24,19 +24,21 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 - [x] `famp-crypto` — Ed25519 sign/verify with domain-separation prefix, `verify_strict`-only — *Validated in Phase 02: crypto-foundations. 7/7 truths verified. Ed25519 sign/verify with SPEC-03 domain-separation prefix, `verify_strict`-only (raw `verify` unreachable), weak-key rejection at ingress, base64url-unpadded strict codec, RFC 8032 KAT gate, §7.1c worked-example byte-exact interop gate, SHA-256 content-addressing via `sha2 0.11` (CRYPTO-07), constant-time verify via `subtle`. 24/24 nextest + clippy clean.*
 - [x] `famp-core` — shared types, typed error enum, INV-1..11 scaffolding — *Validated in Phase 03: core-types-invariants. 10/10 must-haves verified. Principal/Instance identity, UUIDv7 ID newtypes, ArtifactId with `sha256:<hex>` invariant (CORE-01..03); 15-variant flat `ProtocolErrorKind` with wire-string round-trip and ProtocolError wrapper (CORE-04); `invariants::INV_1..INV_11` namespaced doc anchors (CORE-05); `AuthorityScope` 5-variant enum with hand-written 5×5 `satisfies()` truth table, no `Ord` derive (CORE-06); exhaustive consumer stub under `#![deny(unreachable_patterns)]` making new variants a hard compile error (SC #3/#5). 66/66 famp-core + 112/112 workspace nextest green.*
 
-### Active — Personal Profile (v0.6 + v0.7)
+### Active — Personal Profile (v0.6 + v0.7) — COMPLETE ✓
 
 **v0.6 Foundation Crates — substrate: COMPLETE ✓**
 
-**v0.7 Personal Runtime — minimal usable library (next):**
+**v0.7 Personal Runtime — minimal usable library: COMPLETE ✓**
 - [x] `famp-envelope` — signed envelope with INV-10 enforcement; body schemas for `request`, `commit`, `deliver`, `ack`, `control/cancel` only — *Validated in Phase 01: minimal-signed-envelope. 5/5 must-haves verified, 73/73 nextest green, §7.1c vector-0 byte-exact on both canonical JSON (324 B) and Ed25519 signature (64 B). Sealed `BodySchema` trait + 5 body types, `UnsignedEnvelope`/`SignedEnvelope` type-state (INV-10 at the type level via compile_fail doctests), `deny_unknown_fields` at depth, ENV-12 cancel-only enforced as single-variant enum, ENV-09 narrowed (no `capability_snapshot`).*
-- [x] Minimal task lifecycle FSM: `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}` (5 states, compiler-checked terminals) — *Validated in Phase 02: minimal-task-lifecycle. 4/4 must-haves verified. `famp-fsm` `TaskFsm` engine with `const fn step()` over `(TaskState, MessageClass, Option<TerminalStatus>)` — 5 legal arrows, everything else `IllegalTransition`. `MessageClass`/`TerminalStatus` lifted into `famp-core` so `famp-fsm` depends on core only (D-D1 layering). FSM-03 compile-time exhaustiveness gate via `#![deny(unreachable_patterns)]` consumer stub (new variant = compile error). FSM-08 proptest Cartesian matrix: 5×5×4=100 tuples, 2048 cases, independent oracle, exact-field assertions on illegal transitions, state never mutates on error. 200/200 workspace tests green.*
-- [ ] `famp-transport` trait + `MemoryTransport` (in-process, ~50 LoC)
-- [ ] Trust-on-first-use keyring — local `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey. No Agent Card.
-- [ ] `famp-transport-http` (minimal) — axum `POST /famp/v0.5.1/inbox` endpoint, `reqwest` client send, rustls TLS, 1 MB body limit, signature-verification middleware before routing. **No** `.well-known` Agent Card distribution (TOFU keyring only), **no** cancellation-safe spawn-channel pattern.
-- [ ] `famp/examples/personal_two_agents.rs` — end-to-end signed request/commit/deliver in one binary via `MemoryTransport`, with typed trace
-- [ ] `famp/examples/cross_machine_two_agents.rs` — same flow across two processes/machines via HTTP, bootstrapped from a local keyring file or CLI flags (no Agent Card fetch)
-- [ ] Minimal negative tests: unsigned rejected, wrong-key rejected, canonical divergence detected — run against **both** transports
+- [x] Minimal task lifecycle FSM: `REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}` (5 states, compiler-checked terminals) — *Validated in Phase 02: minimal-task-lifecycle. 4/4 must-haves verified. `famp-fsm` `TaskFsm` engine, FSM-03 compile-time exhaustiveness gate, FSM-08 2048-case proptest matrix.*
+- [x] `famp-transport` trait + `MemoryTransport` (in-process) — *Validated in Phase 03. `Transport` trait async send + recv, in-process implementation under `crates/famp-transport/src/memory.rs`.*
+- [x] Trust-on-first-use keyring — local `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey — *Validated in Phase 03. `famp-keyring` with file format, `--peer` flag, round-trip fixture.*
+- [x] `famp-transport-http` — axum `POST /famp/v0.5.1/inbox/{principal}`, reqwest client, rustls (D-B5 full: platform verifier + extra anchor), 1 MB body limit, two-phase decode signature-verification middleware running BEFORE routing — *Validated in Phase 04. TRANS-03/04/06/07/09 satisfied; TRANS-05/08 explicitly deferred to v0.8+.*
+- [x] `famp/examples/personal_two_agents.rs` — end-to-end signed cycle in one binary via MemoryTransport — *Validated in Phase 03 (CONF-03, EX-01).*
+- [x] `famp/examples/cross_machine_two_agents.rs` — same flow over real HTTPS using fixture certs and TOFU keyring — *Validated in Phase 04 (CONF-04, EX-02). Same-process HTTPS test owns the CONF-04 gate; subprocess test #[ignore]'d due to bootstrap chicken-and-egg (deferred CLI flag).*
+- [x] Adversarial matrix: 3 cases × 2 transports = 6 rows (CONF-05/06/07 across MemoryTransport + HttpTransport) — *Validated in Phases 03+04. Byte-identical CONF-07 fixture reused; HTTP rows include sentinel proof that handler closure is not entered.*
+
+**v0.7 totals:** 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green, `cargo tree -i openssl` empty.
 
 ### Deferred — Federation Profile (v0.8+)
 
@@ -137,7 +139,11 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v0.7 Personal Runtime (Personal Profile — part 2 of 2)
+## Current Milestone: v0.8+ Federation Profile (next — to be canonicalized via `/gsd-new-milestone`)
+
+Personal Profile is complete. v0.8 begins the Federation Profile arc. See "Future Milestone Sketch" in ROADMAP.md for the proposed ordering.
+
+## Previous Milestone: v0.7 Personal Runtime — SHIPPED 2026-04-14
 
 **Goal:** A single developer can run the same signed `request → commit → deliver` cycle **two ways**: (a) in one binary via `MemoryTransport`, and (b) across two machines / two processes via a minimal HTTP binding, with trust bootstrapped from a local keyring file. This is the finish line for "something I can use myself."
 
@@ -160,10 +166,13 @@ This document evolves at phase transitions and milestone boundaries.
 ## Current State
 
 **Shipped:**
-- **v0.5.1 Spec Fork** (2026-04-13) — interop contract locked: `FAMP-v0.5.1-spec.md` at repo root, 28 changelog entries, worked Ed25519 example byte-exact from external Python `jcs 0.2.1` + `cryptography 46.0.7`.
-- **v0.6 Foundation Crates** (2026-04-13) — substrate fully shipped. `famp-canonical` (RFC 8785 JCS, SEED-001 resolved `serde_jcs`, 12/12 conformance gate, nightly 100M float corpus), `famp-crypto` (Ed25519 `verify_strict`-only, SPEC-03 domain separation, PITFALLS §7.1c worked example byte-exact, NIST KATs, `sha256_artifact_id`), `famp-core` (Principal/Instance, UUIDv7 ID newtypes, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, exhaustive consumer stub under `#![deny(unreachable_patterns)]`). 25/25 requirements satisfied. 112/112 workspace tests green. `just ci` clean end-to-end.
+- **v0.5.1 Spec Fork** (2026-04-13) — interop contract locked.
+- **v0.6 Foundation Crates** (2026-04-13) — substrate: `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests.
+- **v0.7 Personal Runtime** (2026-04-14) — minimal usable library on two transports. `famp-envelope`, `famp-fsm`, `famp-transport` + `MemoryTransport`, `famp-keyring` (TOFU), `famp-transport-http` (axum + rustls + reqwest, signature-verification middleware, 1 MB body cap, D-B5 full `rustls-platform-verifier` + extra anchor), two finish-line examples (`personal_two_agents`, `cross_machine_two_agents`), 3×2 adversarial matrix with sentinel proofs. 32/32 requirements, 253/253 tests, `cargo tree -i openssl` empty.
 
-**Next:** v0.7 Personal Runtime — Phases 1 (`famp-envelope`) and 2 (`famp-fsm`) complete. Remaining: `MemoryTransport` + TOFU keyring + same-process example (Phase 3), minimal HTTP transport + cross-machine example, both-transports negative test suite.
+**Next:** v0.8 Federation Profile — Identity & Cards (Agent Card format, federation credential, capability declaration, pluggable trust store, `.well-known` distribution / TRANS-05). Run `/gsd-new-milestone` to canonicalize.
+
+**Personal Profile finish line ✓:** Both finish-line examples build clean. `cargo nextest run --workspace` → 253/253. CONF-04 happy path runs over real rustls TLS. The 3 adversarial cases (unsigned / wrong-key / canonical divergence) fail closed on both `MemoryTransport` and `HttpTransport` with distinct typed errors.
 
 ---
-*Last updated: 2026-04-13 — Phase 02 minimal-task-lifecycle complete (5-state TaskFsm, compile-time exhaustiveness gate, 2048-case proptest matrix, 200/200 workspace tests green)*
+*Last updated: 2026-04-14 — v0.7 Personal Runtime shipped. 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green.*

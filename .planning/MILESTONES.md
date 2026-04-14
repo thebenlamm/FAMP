@@ -1,5 +1,23 @@
 # Milestones
 
+## v0.7 Personal Runtime (Shipped: 2026-04-14)
+
+**Phases completed:** 4 phases, 15 plans, 18 tasks
+
+**Key accomplishments:**
+
+- 19 integration tests
+- MessageClass and TerminalStatus lifted from famp-envelope to famp-core via backward-compatible re-exports, unblocking famp-fsm from any famp-envelope dependency (D-D1)
+- 5-state TaskFsm engine with single-function transition table (5 legal arrows), terminal immutability enforcement, and 12 deterministic fixture tests covering all v0.7 happy paths plus 60-combo terminal rejection matrix
+- Consumer stub under `#![deny(unreachable_patterns)]` proves variant-change safety at compile time; proptest matrix runs 2048 cases over the full 5×5×4 Cartesian product with an independent oracle, zero panics, and exact error-field assertions
+- Crate skeleton
+- Cargo wiring (`crates/famp/Cargo.toml`)
+- `crates/famp/examples/personal_two_agents.rs`
+- Task 1 — cycle_driver extraction + deps + fixtures
+- 1. [Rule 3 - Blocking] reqwest `rustls-no-provider` feature fails at runtime
+
+---
+
 ## Milestone Plan (adopted 2026-04-12)
 
 FAMP v1 is staged across **two profiles**:
