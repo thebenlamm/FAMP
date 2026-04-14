@@ -101,7 +101,7 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
 **Plans**: 4 plans
 - [x] 03-01-PLAN.md — Storage primitives + REQUIREMENTS.md cleanup: famp-taskdir crate, InboxCursor, real PeerEntry schema, fix Phase 2 frontmatter labels (wave 1)
 - [x] 03-02-PLAN.md — famp send (new-task / deliver / terminal modes) + famp peer add + TOFU TLS pinning + FSM glue (wave 2)
-- [ ] 03-03-PLAN.md — famp await (poll-with-timeout) + famp inbox list/ack + read_from helper + duration parsing (wave 3)
+- [x] 03-03-PLAN.md — famp await (poll-with-timeout) + famp inbox list/ack + read_from helper + duration parsing (wave 3)
 - [ ] 03-04-PLAN.md — InboxLock advisory + 3 end-to-end conversation tests (full lifecycle, restart safety, lock contention) (wave 4)
 
 ### Phase 4: MCP Server & Same-Laptop E2E
