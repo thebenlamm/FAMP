@@ -19,8 +19,10 @@ pub enum CryptoError {
     #[error("invalid signature encoding")]
     InvalidSignatureEncoding,
     /// `VerifyingKey::is_weak()` rejected the point at ingress: identity or
-    /// low-order 8-torsion element. Constructing a [`crate::TrustedVerifyingKey`]
-    /// that reached this variant means the trust boundary held. Spec §7.1b.
+    /// low-order 8-torsion element. Observing this variant in an error result
+    /// means the trust boundary held — no [`crate::TrustedVerifyingKey`] was
+    /// constructed, so downstream `verify_strict` can assume a prime-order
+    /// key. Spec §7.1b.
     #[error("weak public key rejected at ingress")]
     WeakKey,
     /// RFC 8785 canonicalization failed upstream in `famp-canonical`. Bubbled
@@ -33,8 +35,4 @@ pub enum CryptoError {
     /// a real property rather than an aspiration. Spec §7.1b.
     #[error("signature verification failed")]
     VerificationFailed,
-    /// Signing input was structurally invalid before Ed25519 was reached
-    /// (reserved for future use; currently unused but kept for forward-compat).
-    #[error("invalid signing input")]
-    InvalidSigningInput,
 }

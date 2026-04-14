@@ -85,6 +85,7 @@ of them invalidates every existing signature:
 - `FAMP_SPEC_VERSION` in `famp-core`
 - The canonicalization output of `famp-canonical` (RFC 8785 JCS — the conformance gate exists precisely to pin this)
 - Ed25519 `verify_strict` strictness in `famp-crypto` (never downgrade to plain `verify`)
+- `TrustedVerifyingKey::from_bytes` / `from_b64url` `is_weak()` ingress rejection in `famp-crypto` — `verify_strict` alone does **not** close the 8-torsion subgroup hole; the ingress-time weak-key check is the actual gate. Spec §7.1b
 
 If you need to change any of these, write the spec delta first, get it
 reviewed, then land the code change.
