@@ -13,6 +13,7 @@ use base64 as _;
 use clap as _;
 use ed25519_dalek as _;
 use famp as _;
+use time as _;
 use famp_canonical as _;
 use famp_core as _;
 use famp_crypto as _;

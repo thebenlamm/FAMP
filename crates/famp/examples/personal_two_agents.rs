@@ -26,6 +26,7 @@ use reqwest as _;
 use serde as _;
 use tempfile as _;
 use thiserror as _;
+use time as _;
 use toml as _;
 use url as _;
 

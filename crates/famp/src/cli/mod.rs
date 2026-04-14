@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 pub mod config;
 pub mod error;
 pub mod home;
+pub mod init;
 pub mod paths;
 pub mod perms;
 
