@@ -179,6 +179,60 @@ certs under
 [crates/famp/tests/fixtures/cross_machine/README.md](crates/famp/tests/fixtures/cross_machine/README.md)
 for deterministic test runs.
 
+## How FAMP Signs a Message
+
+**Canonical JSON (RFC 8785).** FAMP payloads are signed over bytes, not
+over JSON values. Every signer and every verifier, in every implementation,
+must produce the same byte string for the same logical value — that is
+what RFC 8785 (JCS) is for, and it is implemented in `famp-canonical`.
+Byte-exact is the entire interop story: if two implementations disagree on
+one byte of whitespace or one byte of key order, every downstream signature
+is unverifiable and the federation stops being a federation.
+
+**Domain separation.** Before Ed25519 touches the canonical bytes,
+`famp-crypto` prepends a 12-byte constant: `b"FAMP-sig-v1\0"`
+(`DOMAIN_PREFIX`). This prevents a signature produced for a FAMP envelope
+from being replayed in any unrelated context that also signs canonical
+JSON — database change records, JWT-adjacent tooling, other protocols.
+The `v1` suffix is the wire version; rotating signing semantics means
+shipping `FAMP-sig-v2\0`, not renaming fields. Spec §7.1a, §Δ08.
+
+**The four steps.** To sign: (1) canonicalize the unsigned payload to JCS
+bytes via `famp-canonical`; (2) prepend `FAMP-sig-v1\0`; (3) Ed25519 sign
+the concatenation; (4) encode the 64-byte signature as base64url unpadded
+(`URL_SAFE_NO_PAD`, strict alphabet). To verify: decode the signature
+under the same strict decoder, canonicalize the received payload with the
+`signature` field removed, prepend `FAMP-sig-v1\0`, and route Ed25519
+through `verify_strict` — never plain `verify`. Plain `verify` accepts
+malleable signatures and small-order points, and the failure mode is
+silent non-repudiation.
+
+**INV-10.** Every envelope on the wire is signed. Unsigned envelopes are
+rejected at ingress. There is no "internal trusted" escape hatch, no
+debug bypass, no "just this one message". This is what makes
+non-repudiation an actual property of the system rather than an
+aspiration, and it is enforced at the type level in `famp-envelope`:
+`Option<FampSignature>` does not appear anywhere on the signed envelope
+type.
+
+**Task FSM.** Tasks move through five states with no intermediate parking
+and no backtracking. Each transition is a signed envelope; the FSM is
+enforced by `famp-fsm`; `COMPLETED`, `FAILED`, and `CANCELLED` are
+absorbing terminals.
+
+```
+   REQUESTED
+       |
+       v
+   COMMITTED
+       |
+       +--> COMPLETED
+       |
+       +--> FAILED
+       |
+       +--> CANCELLED
+```
+
 ## Daily Loop
 
 | Command | What it does |
