@@ -242,6 +242,234 @@ fn tampered_famp_version_rejected_any() {
     );
 }
 
+// ---------------- famp field edge cases (PR #2.1 — adversarial coverage gap) ----------------
+//
+// All cases below are REGRESSION PINS (green on arrival). They lock the four
+// decode_value arms at envelope.rs:252-263 so a future "trim/normalize"
+// drive-by cannot weaken version handling silently.
+
+/// Build a signed `RequestBody` envelope, parse to `Value`, strip signature,
+/// apply `mutate` to the root object (callers may remove/replace `famp`),
+/// re-sign over the mutated `Value`, re-insert signature, return bytes.
+fn famp_tampered_bytes<F: FnOnce(&mut serde_json::Map<String, Value>)>(mutate: F) -> Vec<u8> {
+    let body = RequestBody {
+        scope: serde_json::json!({"task": "translate"}),
+        bounds: two_key_bounds(),
+        natural_language_summary: None,
+    };
+    let signed = UnsignedEnvelope::<RequestBody>::new(
+        id(),
+        alice(),
+        bob(),
+        AuthorityScope::Advisory,
+        ts(),
+        body,
+    )
+    .sign(&sk())
+    .unwrap();
+    let bytes = signed.encode().unwrap();
+    let mut value: Value = serde_json::from_slice(&bytes).unwrap();
+    let obj = value.as_object_mut().unwrap();
+    obj.remove("signature");
+    mutate(obj);
+    let new_sig = sign_value(&sk(), &value).unwrap();
+    value
+        .as_object_mut()
+        .unwrap()
+        .insert("signature".to_string(), Value::String(new_sig.to_b64url()));
+    serde_json::to_vec(&value).unwrap()
+}
+
+// Case 1: famp field missing entirely.
+
+#[test]
+fn famp_missing_rejected_typed() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.remove("famp");
+    });
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::MissingField { field } if field == "famp"),
+        "expected MissingField {{ field: \"famp\" }}, got {err:?}"
+    );
+    assert!(
+        !matches!(err, EnvelopeDecodeError::UnsupportedVersion { .. }),
+        "missing famp must NOT be reported as UnsupportedVersion, got {err:?}"
+    );
+}
+
+#[test]
+fn famp_missing_rejected_any() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.remove("famp");
+    });
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::MissingField { field } if field == "famp"),
+        "expected MissingField {{ field: \"famp\" }}, got {err:?}"
+    );
+    assert!(
+        !matches!(err, EnvelopeDecodeError::UnsupportedVersion { .. }),
+        "missing famp must NOT be reported as UnsupportedVersion, got {err:?}"
+    );
+}
+
+// Case 2: famp is a JSON number.
+
+#[test]
+fn famp_non_string_number_rejected_typed() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::from(42));
+    });
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::BodyValidation(ref msg) if msg == "envelope.famp must be a string"),
+        "expected BodyValidation(\"envelope.famp must be a string\"), got {err:?}"
+    );
+}
+
+#[test]
+fn famp_non_string_number_rejected_any() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::from(42));
+    });
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::BodyValidation(ref msg) if msg == "envelope.famp must be a string"),
+        "expected BodyValidation(\"envelope.famp must be a string\"), got {err:?}"
+    );
+}
+
+// Case 3: famp is null.
+
+#[test]
+fn famp_non_string_null_rejected_typed() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::Null);
+    });
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::BodyValidation(ref msg) if msg == "envelope.famp must be a string"),
+        "expected BodyValidation(\"envelope.famp must be a string\"), got {err:?}"
+    );
+}
+
+#[test]
+fn famp_non_string_null_rejected_any() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::Null);
+    });
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::BodyValidation(ref msg) if msg == "envelope.famp must be a string"),
+        "expected BodyValidation(\"envelope.famp must be a string\"), got {err:?}"
+    );
+}
+
+// Case 4: famp is an array.
+
+#[test]
+fn famp_non_string_array_rejected_typed() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::Array(vec![]));
+    });
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::BodyValidation(ref msg) if msg == "envelope.famp must be a string"),
+        "expected BodyValidation(\"envelope.famp must be a string\"), got {err:?}"
+    );
+}
+
+#[test]
+fn famp_non_string_array_rejected_any() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::Array(vec![]));
+    });
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::BodyValidation(ref msg) if msg == "envelope.famp must be a string"),
+        "expected BodyValidation(\"envelope.famp must be a string\"), got {err:?}"
+    );
+}
+
+// Case 5: famp is an empty string.
+
+#[test]
+fn famp_empty_string_rejected_typed() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::String(String::new()));
+    });
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found.is_empty()),
+        "expected UnsupportedVersion {{ found: \"\" }}, got {err:?}"
+    );
+}
+
+#[test]
+fn famp_empty_string_rejected_any() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::String(String::new()));
+    });
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found.is_empty()),
+        "expected UnsupportedVersion {{ found: \"\" }}, got {err:?}"
+    );
+}
+
+// Case 6: famp has leading whitespace — must NOT be trimmed.
+
+#[test]
+fn famp_leading_whitespace_rejected_typed() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::String(" 0.5.1".into()));
+    });
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == " 0.5.1"),
+        "expected UnsupportedVersion {{ found: \" 0.5.1\" }}, got {err:?}"
+    );
+}
+
+#[test]
+fn famp_leading_whitespace_rejected_any() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::String(" 0.5.1".into()));
+    });
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == " 0.5.1"),
+        "expected UnsupportedVersion {{ found: \" 0.5.1\" }}, got {err:?}"
+    );
+}
+
+// Case 7: famp has trailing newline — must NOT be trimmed.
+
+#[test]
+fn famp_trailing_newline_rejected_typed() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::String("0.5.1\n".into()));
+    });
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.5.1\n"),
+        "expected UnsupportedVersion {{ found: \"0.5.1\\n\" }}, got {err:?}"
+    );
+}
+
+#[test]
+fn famp_trailing_newline_rejected_any() {
+    let bytes = famp_tampered_bytes(|obj| {
+        obj.insert("famp".into(), Value::String("0.5.1\n".into()));
+    });
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.5.1\n"),
+        "expected UnsupportedVersion {{ found: \"0.5.1\\n\" }}, got {err:?}"
+    );
+}
+
 // ---------------- deliver cross-field adversarial cases ----------------
 
 fn sign_deliver(body: DeliverBody, terminal: Option<TerminalStatus>) -> Vec<u8> {
