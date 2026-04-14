@@ -29,16 +29,50 @@ impl Default for Config {
     }
 }
 
-/// Phase 1 placeholder. Fields land in Phase 3 (`famp peer add`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A registered peer agent — target of `famp send`, identified via `alias`.
+///
+/// Phase 3 promotes this from the Phase 1 zero-field placeholder to the
+/// real schema used by `famp peer add` / `famp send` (plan 03-01).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct PeerEntry {}
+pub struct PeerEntry {
+    /// Local alias (`famp send --to <alias>`).
+    pub alias: String,
+    /// `https://host:port` — schema validation lives in `famp peer add`.
+    pub endpoint: String,
+    /// base64url-unpadded ed25519 verifying key (32 raw bytes when decoded).
+    pub pubkey_b64: String,
+    /// TOFU-pinned TLS cert fingerprint (sha256 hex). `None` until first
+    /// successful contact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_fingerprint_sha256: Option<String>,
+}
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Peers {
     #[serde(default)]
     pub peers: Vec<PeerEntry>,
+}
+
+impl Peers {
+    pub fn find(&self, alias: &str) -> Option<&PeerEntry> {
+        self.peers.iter().find(|p| p.alias == alias)
+    }
+
+    pub fn find_mut(&mut self, alias: &str) -> Option<&mut PeerEntry> {
+        self.peers.iter_mut().find(|p| p.alias == alias)
+    }
+
+    /// Append `entry` if its alias is not yet present. Returns the
+    /// rejected entry back to the caller on duplicate.
+    pub fn try_add(&mut self, entry: PeerEntry) -> Result<(), PeerEntry> {
+        if self.find(&entry.alias).is_some() {
+            return Err(entry);
+        }
+        self.peers.push(entry);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -80,5 +114,52 @@ mod tests {
     fn peers_rejects_unknown_fields() {
         let res = toml::from_str::<Peers>("garbage = 1\n");
         assert!(res.is_err(), "deny_unknown_fields should reject garbage");
+    }
+
+    #[test]
+    fn peers_roundtrip_single_entry() {
+        let mut peers = Peers::default();
+        peers
+            .try_add(PeerEntry {
+                alias: "alice".to_string(),
+                endpoint: "https://127.0.0.1:9443".to_string(),
+                pubkey_b64: "abc".to_string(),
+                tls_fingerprint_sha256: None,
+            })
+            .unwrap();
+        let s = toml::to_string(&peers).unwrap();
+        let back: Peers = toml::from_str(&s).unwrap();
+        assert_eq!(back.peers.len(), 1);
+        assert_eq!(back.peers[0].alias, "alice");
+        assert_eq!(back.peers[0].endpoint, "https://127.0.0.1:9443");
+        assert_eq!(back.peers[0].pubkey_b64, "abc");
+        assert!(back.peers[0].tls_fingerprint_sha256.is_none());
+    }
+
+    #[test]
+    fn peers_try_add_rejects_duplicate_alias() {
+        let mut peers = Peers::default();
+        let entry = PeerEntry {
+            alias: "alice".to_string(),
+            endpoint: "https://127.0.0.1:9443".to_string(),
+            pubkey_b64: "abc".to_string(),
+            tls_fingerprint_sha256: None,
+        };
+        peers.try_add(entry.clone()).unwrap();
+        let err = peers.try_add(entry).unwrap_err();
+        assert_eq!(err.alias, "alice");
+    }
+
+    #[test]
+    fn peers_rejects_unknown_fields_on_entry() {
+        let src = "[[peers]]\nalias = \"x\"\nendpoint = \"https://x\"\npubkey_b64 = \"y\"\nbogus = 1\n";
+        let res = toml::from_str::<Peers>(src);
+        assert!(res.is_err(), "deny_unknown_fields should reject bogus field on entry");
+    }
+
+    #[test]
+    fn peers_find_returns_none_for_unknown_alias() {
+        let peers = Peers::default();
+        assert!(peers.find("nope").is_none());
     }
 }

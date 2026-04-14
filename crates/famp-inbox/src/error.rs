@@ -28,4 +28,7 @@ pub enum InboxError {
 
     #[error("inbox line contains embedded newline")]
     EmbeddedNewline,
+
+    #[error("cursor parse error at {path:?}")]
+    CursorParse { path: PathBuf },
 }

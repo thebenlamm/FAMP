@@ -15,6 +15,7 @@ workspace = true
 tokio = { workspace = true, features = ["fs", "sync", "io-util", "rt"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"
