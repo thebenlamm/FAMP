@@ -14,7 +14,7 @@
 
 - [x] **CLI-01**: `famp init` creates `~/.famp/` with a fresh Ed25519 keypair, a self-signed TLS cert + key, a default `config.toml`, and an empty `peers.toml`. Idempotent-safe: refuses to overwrite existing keys without `--force`.
 - [x] **CLI-02**: `famp listen` runs the listener daemon on the address configured in `config.toml` (default `127.0.0.1:8443`). Foreground process; structured logs to stderr.
-- [ ] **CLI-03**: `famp send` sends a body to a named peer. Three modes: `--new-task <title>` (opens a new task with a `request`), `--task <id>` (sends a `deliver` within an existing task), `--task <id> --terminal` (sends the final `deliver`, transitions task to `COMPLETED`).
+- [x] **CLI-03**: `famp send` sends a body to a named peer. Three modes: `--new-task <title>` (opens a new task with a `request`), `--task <id>` (sends a `deliver` within an existing task), `--task <id> --terminal` (sends the final `deliver`, transitions task to `COMPLETED`).
 - [ ] **CLI-04**: `famp await [--timeout <duration>]` blocks up to `<duration>` waiting for the next unread inbox entry; returns immediately if one is already waiting. Default timeout 60s. Returns structured output (task-id, peer, message class, body).
 - [ ] **CLI-05**: `famp inbox [--unread]` lists inbox entries without blocking. `--unread` filters to unread-only. Does not mark entries read.
 - [x] **CLI-06**: `famp peer add <name> --url <url> --pubkey <b64> --trust-cert <path>` registers a peer into `peers.toml`. Stores principal → VerifyingKey in the existing `famp-keyring` format.
@@ -49,9 +49,9 @@
 
 ### CONV — One-long-task conversation shape (5)
 
-- [ ] **CONV-01**: `famp send --new-task <title> --to <peer>` opens a new task: sends a `request` envelope, stores a local task record (`~/.famp/tasks/<task-id>.toml`) with initial state `REQUESTED`, returns the task-id.
-- [ ] **CONV-02**: `famp send --task <id> --to <peer>` sends a `deliver` envelope within the named task, updates the local task record, leaves the task in `COMMITTED` (or its current non-terminal state). Multiple non-terminal deliver messages within one task are allowed — this is the long-task shape.
-- [ ] **CONV-03**: `famp send --task <id> --terminal --to <peer>` sends the final `deliver`, the local task FSM steps to `COMPLETED`, and the task record is marked terminal. Further `send --task <id>` calls fail closed.
+- [x] **CONV-01**: `famp send --new-task <title> --to <peer>` opens a new task: sends a `request` envelope, stores a local task record (`~/.famp/tasks/<task-id>.toml`) with initial state `REQUESTED`, returns the task-id.
+- [x] **CONV-02**: `famp send --task <id> --to <peer>` sends a `deliver` envelope within the named task, updates the local task record, leaves the task in `COMMITTED` (or its current non-terminal state). Multiple non-terminal deliver messages within one task are allowed — this is the long-task shape.
+- [x] **CONV-03**: `famp send --task <id> --terminal --to <peer>` sends the final `deliver`, the local task FSM steps to `COMPLETED`, and the task record is marked terminal. Further `send --task <id>` calls fail closed.
 - [ ] **CONV-04**: Local task records live under `~/.famp/tasks/<task-id>.toml` and survive daemon restarts. Both sides of a conversation can resume across restarts without losing task context.
 - [ ] **CONV-05**: The v0.7 `famp-fsm` crate is used as-is for all transition checks. **Non-goal:** the conversation shape does not require any new FSM states, new message classes, or changes to the v0.5.1 envelope body schemas. This requirement is the checkpoint that proves v0.7 was expressive enough.
 
