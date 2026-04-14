@@ -4,9 +4,9 @@
 
 A Rust implementation of FAMP (Federated Agent Messaging Protocol) v0.5.1, staged in **two profiles** so a single developer can get a usable library before the full federation-grade semantics are built out.
 
-1. **Personal Profile (v0.6 + v0.7)** — the minimum usable library. Byte-exact canonical JSON, Ed25519-signed envelopes with domain separation, a five-state task lifecycle, and an in-process `MemoryTransport`. Goal: one developer can wire two locally-trusted agents in a single binary and run a signature-verified `request → commit → deliver` cycle end to end.
+1. **Personal Profile (v0.6 + v0.7 + v0.8)** — the minimum usable library *and* the daemon, CLI, and Claude Code integration that make it actually usable from a terminal. v0.6 shipped byte-exact canonical JSON, Ed25519-signed envelopes with domain separation, and the core types. v0.7 shipped the five-state task lifecycle, `MemoryTransport` and a minimal HTTP transport, and two examples proving the substrate. v0.8 wraps that substrate in a `famp` CLI, a persistent listener daemon with a file-based inbox, and an MCP server so two Claude Code sessions can drive two local agents through a long-running task.
 
-2. **Federation Profile (v0.8+)** — adds the semantics that matter at ecosystem scale: Agent Cards + federation credentials, negotiation/counter-proposal, the three delegation forms, provenance graphs, an extensions registry, an HTTP transport binding, the adversarial conformance matrix, and Level 2 + Level 3 conformance badges.
+2. **Federation Profile (v0.9+)** — adds the semantics that matter at ecosystem scale: Agent Cards + federation credentials, negotiation/counter-proposal, the three delegation forms, provenance graphs, an extensions registry, the adversarial conformance matrix, and Level 2 + Level 3 conformance badges.
 
 The signing substrate is the same in both profiles. Canonicalization, signing, and core types are done once and correctly in v0.6; Personal Profile exercises that substrate against a minimal runtime in v0.7; Federation Profile stacks ecosystem semantics on top without re-deriving the interop bytes.
 
@@ -139,9 +139,31 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v0.8+ Federation Profile (next — to be canonicalized via `/gsd-new-milestone`)
+## Current Milestone: v0.8 Usable from Claude Code
 
-Personal Profile is complete. v0.8 begins the Federation Profile arc. See "Future Milestone Sketch" in ROADMAP.md for the proposed ordering.
+**Goal:** Turn v0.7's proven substrate into something Ben can actually use — two Claude Code sessions on the same laptop, each driving a `famp` agent via MCP tools, coordinating on one long task.
+
+**Target features:**
+- `famp` CLI with subcommands (`init`, `listen`, `send`, `await`, `peer add`, `inbox`) — replacing today's 8-line placeholder binary
+- Persistent identity at `~/.famp/` (Ed25519 keypair, self-signed TLS cert, config, peer list) with one-time `famp init`
+- Background listener daemon that holds the v0.7 HttpTransport open and writes inbound messages to a file-based inbox
+- Block-with-timeout `famp await` for turn-based inbox semantics (Claude Code can't be interrupted by incoming network messages — pull model required)
+- MCP server exposing `famp_send` / `famp_await` / `famp_inbox` (and peer management) as Claude Code tools
+- **One-long-task conversation shape** — open a task, exchange many `deliver` messages back and forth within that one task, close with a terminal deliver. Exercises the v0.7 FSM without adding new message classes or changing the spec.
+- Same-laptop end-to-end: two Claude Code sessions, two daemons on different loopback ports, full round-trip via MCP tool calls
+
+**Explicitly NOT in v0.8:**
+- Agent Cards, federation credential, pluggable trust store, `.well-known` distribution — all defer to Federation Profile (v0.9+)
+- New message classes, new FSM states, or any v0.5.1 spec changes — v0.8 is pure implementation on top of v0.7
+- Cross-machine deployment (laptop ↔ EC2 via Tailscale) — same-laptop E2E is the v0.8 gate; the CLI and daemon are designed to work across hostnames, but the Tailscale bring-up and cross-machine smoke test are deferred to v0.9 or an informal post-v0.8 exercise
+- Group / multi-party chat — not in the v0.5.1 spec (bilateral only); requires a real protocol extension, not a milestone
+- crates.io publishing, public distribution, framework / abstraction work — library is still pre-release, not a published crate
+
+**Success shape:**
+1. `famp init` on a fresh laptop creates `~/.famp/` with keypair, cert, config, and empty peer list.
+2. Two shells each run `famp listen` on different loopback ports; each has `peer add`-ed the other.
+3. Two Claude Code sessions — each pointed at its own `famp` daemon via an MCP server — open a single task, exchange ≥4 `deliver` messages back and forth (driven by actual LLM conversation, not scripted), and close with a terminal deliver. The task closes COMPLETED on both sides.
+4. `just ci` green; no regression in the 253 v0.7 tests.
 
 ## Previous Milestone: v0.7 Personal Runtime — SHIPPED 2026-04-14
 
@@ -170,9 +192,9 @@ Personal Profile is complete. v0.8 begins the Federation Profile arc. See "Futur
 - **v0.6 Foundation Crates** (2026-04-13) — substrate: `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests.
 - **v0.7 Personal Runtime** (2026-04-14) — minimal usable library on two transports. `famp-envelope`, `famp-fsm`, `famp-transport` + `MemoryTransport`, `famp-keyring` (TOFU), `famp-transport-http` (axum + rustls + reqwest, signature-verification middleware, 1 MB body cap, D-B5 full `rustls-platform-verifier` + extra anchor), two finish-line examples (`personal_two_agents`, `cross_machine_two_agents`), 3×2 adversarial matrix with sentinel proofs. 32/32 requirements, 253/253 tests, `cargo tree -i openssl` empty.
 
-**Next:** v0.8 Federation Profile — Identity & Cards (Agent Card format, federation credential, capability declaration, pluggable trust store, `.well-known` distribution / TRANS-05). Run `/gsd-new-milestone` to canonicalize.
+**Next:** v0.8 Usable from Claude Code — `famp` CLI (`init`, `listen`, `send`, `await`, `peer add`, `inbox`), persistent identity at `~/.famp/`, file-based inbox daemon, block-with-timeout await, MCP server for Claude Code, one-long-task conversation shape, same-laptop E2E with two live Claude Code sessions driving two local daemons. Still Personal Profile — Federation Profile (Agent Cards, federation credential, negotiation, delegation, provenance) defers to v0.9+.
 
 **Personal Profile finish line ✓:** Both finish-line examples build clean. `cargo nextest run --workspace` → 253/253. CONF-04 happy path runs over real rustls TLS. The 3 adversarial cases (unsigned / wrong-key / canonical divergence) fail closed on both `MemoryTransport` and `HttpTransport` with distinct typed errors.
 
 ---
-*Last updated: 2026-04-14 — v0.7 Personal Runtime shipped. 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green.*
+*Last updated: 2026-04-14 — v0.8 Usable from Claude Code milestone opened. v0.7 Personal Runtime shipped: 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green.*

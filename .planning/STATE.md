@@ -1,34 +1,35 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.7
-milestone_name: Personal Runtime
-status: v0.7 milestone complete
-last_updated: "2026-04-14T19:30:00.000Z"
+milestone: v0.8
+milestone_name: Usable from Claude Code
+status: Defining requirements
+last_updated: "2026-04-14T20:00:00.000Z"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
-# STATE: FAMP — v0.7 Personal Runtime
+# STATE: FAMP — v0.8 Usable from Claude Code
 
-**Last Updated:** 2026-04-14 (PR #4.1 adversarial review followups landed — quick task 260414-g32)
+**Last Updated:** 2026-04-14 (v0.8 milestone opened; v0.7 shipped and archived; PR #4 / #4.1 cleanup landed)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-13 after v0.6 milestone)
+See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone section)
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** v0.7 Personal Runtime — COMPLETE. All 4 phases shipped. Awaiting milestone audit + archive (`/gsd-complete-milestone`).
+**Current focus:** v0.8 Usable from Claude Code — defining requirements. Turn v0.7's proven substrate into a `famp` CLI + listener daemon + file inbox + MCP server so two Claude Code sessions can drive two local agents through one long task on the same laptop.
 
 ## Current Position
 
-Phase: 4 (complete)
-Plan: All 5 plans complete; phase verified; code review fixed
-Milestone: v0.7 Personal Runtime — ready for audit + archive
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-14 — Milestone v0.8 started
 
 ## Last Shipped
 
