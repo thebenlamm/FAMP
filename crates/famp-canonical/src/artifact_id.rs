@@ -46,10 +46,11 @@ impl fmt::Display for ArtifactIdString {
 /// Inlined here per RESEARCH §"SHA-256 Artifact ID (Inline, No Hex Crate)"
 /// to keep the dependency tree minimal.
 fn bytes_to_lower_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        write!(s, "{b:02x}").expect("writing to String never fails");
+    for &b in bytes {
+        s.push(HEX[(b >> 4) as usize] as char);
+        s.push(HEX[(b & 0x0f) as usize] as char);
     }
     s
 }
