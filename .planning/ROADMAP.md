@@ -91,14 +91,18 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
 ### Phase 3: Conversation CLI
 **Goal**: A developer can open a task, exchange multiple `deliver` messages within it across two terminal sessions, and close it with a terminal deliver — all through CLI commands — with task state persisted to disk and surviving daemon restarts.
 **Depends on**: Phase 2
-**Requirements**: CLI-03, CLI-04, CLI-05, CLI-06, CONV-01, CONV-02, CONV-03, CONV-04, CONV-05
+**Requirements**: CLI-03, CLI-04, CLI-05, CLI-06, CONV-01, CONV-02, CONV-03, CONV-04, CONV-05, INBOX-02, INBOX-03, INBOX-05
 **Success Criteria** (what must be TRUE):
   1. `famp send --new-task "hello" --to alice` sends a signed `request` envelope to the named peer, creates `~/.famp/tasks/<uuid>.toml` with state `REQUESTED`, and prints the task-id to stdout.
   2. `famp send --task <id> --to alice` sends a `deliver` envelope within an existing task; the task record stays in its non-terminal state; calling this multiple times in sequence all succeed (the long-task shape works).
   3. `famp send --task <id> --terminal --to alice` sends the final `deliver`, the local task record transitions to `COMPLETED` via the v0.7 `famp-fsm` engine, and any subsequent `famp send --task <id>` call exits non-zero with a typed "task already terminal" error.
   4. `famp await --timeout 30s` blocks up to 30 seconds and returns structured output (task-id, from, message class, body) when a new inbox entry arrives; returns a typed timeout error if none arrives within the window.
   5. Task records survive a daemon restart: after `famp listen` is stopped and restarted, `famp send --task <id>` still finds the task record and sends correctly.
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 03-01-PLAN.md — Storage primitives + REQUIREMENTS.md cleanup: famp-taskdir crate, InboxCursor, real PeerEntry schema, fix Phase 2 frontmatter labels (wave 1)
+- [ ] 03-02-PLAN.md — famp send (new-task / deliver / terminal modes) + famp peer add + TOFU TLS pinning + FSM glue (wave 2)
+- [ ] 03-03-PLAN.md — famp await (poll-with-timeout) + famp inbox list/ack + read_from helper + duration parsing (wave 3)
+- [ ] 03-04-PLAN.md — InboxLock advisory + 3 end-to-end conversation tests (full lifecycle, restart safety, lock contention) (wave 4)
 
 ### Phase 4: MCP Server & Same-Laptop E2E
 **Goal**: Two Claude Code sessions on the same laptop — each pointing at its own `famp` daemon via an MCP server — can open one task, exchange ≥4 `deliver` messages driven by actual LLM conversation, and close the task with a terminal deliver that transitions COMPLETED on both sides.
