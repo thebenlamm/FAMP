@@ -35,7 +35,13 @@ const INBOX_CHANNEL_CAPACITY: usize = 64;
 pub struct HttpTransport {
     addr_map: Arc<Mutex<HashMap<Principal, Url>>>,
     inboxes: Arc<InboxRegistry>,
-    receivers: Mutex<HashMap<Principal, mpsc::Receiver<TransportMessage>>>,
+    // LOW-02: each receiver lives behind its own Arc<Mutex<_>> so recv()
+    // can clone the inner handle out of the outer map, drop the outer
+    // guard, and then await on the per-receiver mutex. Without this
+    // indirection the outer map lock had to stay held across
+    // rx.recv().await, which blocked concurrent register() calls for the
+    // lifetime of any parked recv.
+    receivers: Mutex<HashMap<Principal, Arc<Mutex<mpsc::Receiver<TransportMessage>>>>>,
     client: reqwest::Client,
     server_handle: Mutex<Option<JoinHandle<std::io::Result<()>>>>,
 }
@@ -90,7 +96,10 @@ impl HttpTransport {
         let (tx, rx) = mpsc::channel(INBOX_CHANNEL_CAPACITY);
         inboxes.insert(principal.clone(), tx);
         drop(inboxes);
-        self.receivers.lock().await.insert(principal, rx);
+        self.receivers
+            .lock()
+            .await
+            .insert(principal, Arc::new(Mutex::new(rx)));
     }
 
     /// Clone the inbox registry so the caller can pass it to `build_router`.
@@ -165,26 +174,25 @@ impl Transport for HttpTransport {
         }
     }
 
-    // The receivers map holds `mpsc::Receiver`s by-value; awaiting
-    // `recv()` requires `&mut Receiver`, so the outer Mutex guard MUST stay
-    // alive across the await. Clippy's `significant_drop_tightening` would
-    // suggest dropping the guard early, but doing so would invalidate the
-    // borrow on `rx`. Hold the lock for the duration of the await — the
-    // single-receiver-per-principal contention model means this is
-    // uncontended in practice.
-    #[allow(clippy::significant_drop_tightening)]
+    // LOW-02: clone the per-principal Arc<Mutex<Receiver>> out of the
+    // outer map, drop the outer guard, then await on the inner mutex.
+    // This keeps register() unblocked while a recv is parked.
     fn recv(
         &self,
         as_principal: &Principal,
     ) -> impl std::future::Future<Output = Result<TransportMessage, Self::Error>> + Send {
         let who = as_principal.clone();
         async move {
-            let mut guard = self.receivers.lock().await;
-            let rx = guard.get_mut(&who).ok_or_else(|| {
-                HttpTransportError::InboxClosed {
-                    principal: who.clone(),
-                }
-            })?;
+            let rx_handle = {
+                let guard = self.receivers.lock().await;
+                guard
+                    .get(&who)
+                    .cloned()
+                    .ok_or_else(|| HttpTransportError::InboxClosed {
+                        principal: who.clone(),
+                    })?
+            };
+            let mut rx = rx_handle.lock().await;
             rx.recv()
                 .await
                 .ok_or(HttpTransportError::InboxClosed { principal: who })
