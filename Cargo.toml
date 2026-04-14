@@ -9,6 +9,7 @@ members = [
   "crates/famp-keyring",
   "crates/famp-transport",
   "crates/famp-transport-http",
+  "crates/famp-inbox",
   "crates/famp",
 ]
 
