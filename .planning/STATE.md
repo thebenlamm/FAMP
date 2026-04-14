@@ -14,7 +14,7 @@ progress:
 
 # STATE: FAMP — v0.7 Personal Runtime
 
-**Last Updated:** 2026-04-14
+**Last Updated:** 2026-04-14 (PR #4 architectural cleanup landed — quick task 260414-fjo)
 
 ## Project Reference
 
@@ -76,6 +76,7 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 | 260414-ecp | Wire UnsupportedVersion error on envelope decode (PR #2) | 2026-04-14 | 8d14341 | [260414-ecp-wire-unsupportedversion-error-on-envelop](./quick/260414-ecp-wire-unsupportedversion-error-on-envelop/) |
 | 260414-esi | Seal famp field visibility + cover adversarial gaps (PR #2.1) | 2026-04-14 | 2e9cf92, bf4c70a | [260414-esi-seal-famp-field-visibility-and-cover-adv](./quick/260414-esi-seal-famp-field-visibility-and-cover-adv/) |
 | 260414-f4i | famp-crypto rustdoc + README "How FAMP Signs a Message" + CONTRIBUTING.md (PR #3) | 2026-04-14 | c0c5311, 243fc19, 1b432c5 | [260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv](./quick/260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv/) |
+| 260414-fjo | PR #4 architectural cleanup: drop Signer/Verifier traits, remove 5 stub crates, add famp umbrella re-exports | 2026-04-14 | 9e5426f, 08c442a, e8ecf9f | [260414-fjo-pr-4-architectural-cleanup-drop-signer-v](./quick/260414-fjo-pr-4-architectural-cleanup-drop-signer-v/) |
 
 ## Session Continuity
 
@@ -91,4 +92,6 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*Last activity: 2026-04-14 — Completed quick task 260414-f4i: PR #3 of codebase review action plan. famp-crypto public API now has rustdoc on every re-exported item covering WHY / INVARIANTS / PITFALLS / SPEC (explicit plain-`verify` warning on `verify_canonical_bytes`/`verify_value`; `DOMAIN_PREFIX` §7.1a/§Δ08 framing on `prefix.rs`); README gains a "How FAMP Signs a Message" conceptual section covering RFC 8785, domain separation, the 4-step flow, INV-10, and the 5-state task FSM ASCII diagram; `CONTRIBUTING.md` created at repo root with Setup, Repo Layout, Test Gates table, Commit Conventions, Spec Fidelity, and the "Do Not Touch Without a Spec Diff" list. `just ci` green. Commits: c0c5311, 243fc19, 1b432c5. Closes DEVOPS-DX-01/02/03.*
+*Last activity: 2026-04-14 — Completed quick task 260414-fjo: PR #4 of codebase review action plan. Three atomic commits land the ARCH+DEBT architectural cuts. (1) `refactor(famp-crypto): drop unused Signer and Verifier traits` (9e5426f) — ~90 LOC trait module deleted, README tightened; zero polymorphic consumers in the workspace, free functions remain the real API. (2) `refactor: remove unimplemented stub crates from workspace` (08c442a) — 5 empty scaffold crates (`famp-identity`, `famp-causality`, `famp-protocol`, `famp-extensions`, `famp-conformance`) deleted; `Cargo.toml` workspace shrinks from 14 to 9 members; `CONTRIBUTING.md` repo-layout and one stale `famp-crypto/README.md` cross-reference updated. (3) `feat(famp): add minimal public API re-exports for protocol core` (e8ecf9f) — 25-name umbrella (`famp::{Principal, SignedEnvelope, FampSigningKey, sign_value, canonicalize, …}`) across 4 source crates; compile-time regression gate at `crates/famp/tests/umbrella_reexports.rs`. `just ci` green after each. 261/261 workspace tests. No changes to spec bytes, signing semantics, or canonicalization.*
+
+*2026-04-14 — Completed quick task 260414-f4i: PR #3 of codebase review action plan. famp-crypto public API now has rustdoc on every re-exported item covering WHY / INVARIANTS / PITFALLS / SPEC (explicit plain-`verify` warning on `verify_canonical_bytes`/`verify_value`; `DOMAIN_PREFIX` §7.1a/§Δ08 framing on `prefix.rs`); README gains a "How FAMP Signs a Message" conceptual section covering RFC 8785, domain separation, the 4-step flow, INV-10, and the 5-state task FSM ASCII diagram; `CONTRIBUTING.md` created at repo root with Setup, Repo Layout, Test Gates table, Commit Conventions, Spec Fidelity, and the "Do Not Touch Without a Spec Diff" list. `just ci` green. Commits: c0c5311, 243fc19, 1b432c5. Closes DEVOPS-DX-01/02/03.*
