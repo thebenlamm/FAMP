@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Personal Runtime
 status: v0.7 milestone complete
-last_updated: "2026-04-14T14:00:00.000Z"
+last_updated: "2026-04-14T18:00:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -75,6 +75,7 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 | 260414-cme | Remove obsolete wave2_impl feature gate from famp-canonical | 2026-04-14 | a77cfe1 | [260414-cme-remove-obsolete-wave2-impl-feature-gate-](./quick/260414-cme-remove-obsolete-wave2-impl-feature-gate-/) |
 | 260414-ecp | Wire UnsupportedVersion error on envelope decode (PR #2) | 2026-04-14 | 8d14341 | [260414-ecp-wire-unsupportedversion-error-on-envelop](./quick/260414-ecp-wire-unsupportedversion-error-on-envelop/) |
 | 260414-esi | Seal famp field visibility + cover adversarial gaps (PR #2.1) | 2026-04-14 | 2e9cf92, bf4c70a | [260414-esi-seal-famp-field-visibility-and-cover-adv](./quick/260414-esi-seal-famp-field-visibility-and-cover-adv/) |
+| 260414-f4i | famp-crypto rustdoc + README "How FAMP Signs a Message" + CONTRIBUTING.md (PR #3) | 2026-04-14 | c0c5311, 243fc19, 1b432c5 | [260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv](./quick/260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv/) |
 
 ## Session Continuity
 
@@ -90,4 +91,4 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*Last activity: 2026-04-14 — Completed quick task 260414-esi: Seal famp field visibility + cover adversarial gaps (PR #2.1 of codebase review action plan). 272/272 workspace tests (baseline 257 + 14 adversarial + 1 compile_fail doctest). Commits: 2e9cf92, bf4c70a.*
+*Last activity: 2026-04-14 — Completed quick task 260414-f4i: PR #3 of codebase review action plan. famp-crypto public API now has rustdoc on every re-exported item covering WHY / INVARIANTS / PITFALLS / SPEC (explicit plain-`verify` warning on `verify_canonical_bytes`/`verify_value`; `DOMAIN_PREFIX` §7.1a/§Δ08 framing on `prefix.rs`); README gains a "How FAMP Signs a Message" conceptual section covering RFC 8785, domain separation, the 4-step flow, INV-10, and the 5-state task FSM ASCII diagram; `CONTRIBUTING.md` created at repo root with Setup, Repo Layout, Test Gates table, Commit Conventions, Spec Fidelity, and the "Do Not Touch Without a Spec Diff" list. `just ci` green. Commits: c0c5311, 243fc19, 1b432c5. Closes DEVOPS-DX-01/02/03.*
