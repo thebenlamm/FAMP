@@ -68,6 +68,12 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 
 - **None.** v0.6 substrate is byte-exact, CI-enforced, and ready to feed v0.7 envelope/transport layers.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260414-cme | Remove obsolete wave2_impl feature gate from famp-canonical | 2026-04-14 | a77cfe1 | [260414-cme-remove-obsolete-wave2-impl-feature-gate-](./quick/260414-cme-remove-obsolete-wave2-impl-feature-gate-/) |
+
 ## Session Continuity
 
 ### Recent Activity
@@ -82,4 +88,4 @@ Milestone: v0.7 Personal Runtime — ready for audit + archive
 - **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
 
 ---
-*State updated: 2026-04-13 — Phase 02 Plan 03 complete; Phase 02 all plans done (FSM-02, FSM-03, FSM-04, FSM-05, FSM-08 satisfied); awaiting verifier*
+*Last activity: 2026-04-14 — Completed quick task 260414-cme: Remove obsolete wave2_impl feature gate from famp-canonical*
