@@ -33,3 +33,8 @@ serde                    = { workspace = true, features = ["derive"] }
 serde_json               = { workspace = true }
 url                      = "2"
 futures-util             = "0.3"
+
+[dev-dependencies]
+famp-canonical = { path = "../famp-canonical" }
+tower          = { version = "0.5", features = ["util"] }
+tokio          = { workspace = true, features = ["macros", "rt"] }
