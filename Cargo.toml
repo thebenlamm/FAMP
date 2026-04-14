@@ -10,6 +10,7 @@ members = [
   "crates/famp-transport",
   "crates/famp-transport-http",
   "crates/famp-inbox",
+  "crates/famp-taskdir",
   "crates/famp",
 ]
 
