@@ -79,16 +79,11 @@ Types:
 - `DOMAIN_PREFIX: &[u8; 12]` — public read-only constant.
 - `CryptoError` — narrow error enum (`thiserror`), Phase 2 scope only.
 
-Trait sugar (pure delegation to free functions):
-
-- `Signer` — `sign_value`, `sign_canonical_bytes`
-- `Verifier` — `verify_value`, `verify_canonical_bytes`
-
-**Explicitly NOT re-exported:** `ed25519_dalek::VerifyingKey`,
-`ed25519_dalek::Signer`, `ed25519_dalek::Verifier`. There is NO public
-path from this crate to `ed25519_dalek::VerifyingKey::verify` (non-strict);
-only `verify_strict` is reachable, and only via `TrustedVerifyingKey`,
-which cannot be constructed without passing ingress checks.
+**Explicitly NOT re-exported:** `ed25519_dalek::VerifyingKey` is not
+re-exported. There is NO public path from this crate to
+`ed25519_dalek::VerifyingKey::verify` (non-strict); only `verify_strict`
+is reachable, and only via `TrustedVerifyingKey`, which cannot be
+constructed without passing ingress checks.
 
 ## Weak-key rejection at ingress
 
