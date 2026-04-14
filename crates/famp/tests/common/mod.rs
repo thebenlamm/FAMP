@@ -28,6 +28,7 @@
     clippy::missing_panics_doc
 )]
 
+pub mod conversation_harness;
 pub mod listen_harness;
 
 pub use listen_harness::{
