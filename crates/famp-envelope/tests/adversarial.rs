@@ -26,12 +26,14 @@ use thiserror as _;
 
 use famp_canonical::from_slice_strict;
 use famp_core::{AuthorityScope, MessageId, Principal};
-use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
+use famp_crypto::{sign_value, FampSigningKey, TrustedVerifyingKey};
 use famp_envelope::body::{
     AckBody, AckDisposition, Bounds, Budget, CommitBody, ControlBody, DeliverBody, ErrorCategory,
     ErrorDetail, RequestBody, TerminalStatus,
 };
-use famp_envelope::{EnvelopeDecodeError, SignedEnvelope, Timestamp, UnsignedEnvelope};
+use famp_envelope::{
+    AnySignedEnvelope, EnvelopeDecodeError, SignedEnvelope, Timestamp, UnsignedEnvelope,
+};
 use serde_json::Value;
 use std::fs;
 
@@ -184,6 +186,59 @@ fn unknown_envelope_field_rejected() {
                 | EnvelopeDecodeError::UnknownEnvelopeField { .. }
         ),
         "expected SignatureInvalid or UnknownEnvelopeField, got {err:?}"
+    );
+}
+
+// ---------------- version tampering (PR #2 — UnsupportedVersion wiring) ----------------
+
+fn tampered_famp_version_bytes() -> Vec<u8> {
+    // Build a valid signed RequestBody envelope, then tamper famp and re-sign.
+    let body = RequestBody {
+        scope: serde_json::json!({"task": "translate"}),
+        bounds: two_key_bounds(),
+        natural_language_summary: None,
+    };
+    let signed = UnsignedEnvelope::<RequestBody>::new(
+        id(),
+        alice(),
+        bob(),
+        AuthorityScope::Advisory,
+        ts(),
+        body,
+    )
+    .sign(&sk())
+    .unwrap();
+    let bytes = signed.encode().unwrap();
+    let mut value: Value = serde_json::from_slice(&bytes).unwrap();
+    let obj = value.as_object_mut().unwrap();
+    // Strip old signature before re-signing over the tampered Value.
+    obj.remove("signature");
+    obj.insert("famp".to_string(), Value::String("0.6.0".to_string()));
+    let new_sig = sign_value(&sk(), &value).unwrap();
+    value
+        .as_object_mut()
+        .unwrap()
+        .insert("signature".to_string(), Value::String(new_sig.to_b64url()));
+    serde_json::to_vec(&value).unwrap()
+}
+
+#[test]
+fn tampered_famp_version_rejected_typed() {
+    let bytes = tampered_famp_version_bytes();
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.6.0"),
+        "expected UnsupportedVersion {{ found: \"0.6.0\" }}, got {err:?}"
+    );
+}
+
+#[test]
+fn tampered_famp_version_rejected_any() {
+    let bytes = tampered_famp_version_bytes();
+    let err = AnySignedEnvelope::decode(&bytes, &vk()).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.6.0"),
+        "expected UnsupportedVersion {{ found: \"0.6.0\" }}, got {err:?}"
     );
 }
 
