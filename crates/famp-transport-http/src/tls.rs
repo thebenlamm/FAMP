@@ -25,6 +25,8 @@ pub enum TlsError {
     Io(#[from] std::io::Error),
     #[error("no private key found in PEM file")]
     NoPrivateKey,
+    #[error("no certificates found in PEM file: {0}")]
+    NoCertificatesInPem(std::path::PathBuf),
     #[error("rustls error: {0}")]
     Rustls(#[from] rustls::Error),
     #[error("platform verifier error: {0}")]
@@ -40,10 +42,19 @@ fn install_default_provider() {
 }
 
 /// Load all certificates from a PEM file at `path`.
+///
+/// Returns [`TlsError::NoCertificatesInPem`] if the file parses but yields
+/// zero certificates. `rustls_pemfile::certs` treats non-PEM input as "no
+/// items" (an empty iterator) rather than an error; surfacing that as a
+/// distinct typed error prevents a typo'd `--trust-cert` path from silently
+/// degrading to the OS-roots-only code path (MED-01).
 pub fn load_pem_cert(path: &Path) -> Result<Vec<CertificateDer<'static>>, TlsError> {
     let mut rd = BufReader::new(File::open(path)?);
-    let out: Result<Vec<_>, _> = rustls_pemfile::certs(&mut rd).collect();
-    Ok(out?)
+    let out: Vec<_> = rustls_pemfile::certs(&mut rd).collect::<Result<_, _>>()?;
+    if out.is_empty() {
+        return Err(TlsError::NoCertificatesInPem(path.to_path_buf()));
+    }
+    Ok(out)
 }
 
 /// Load the first supported private key (PKCS8 / RSA / SEC1) from a PEM file.
@@ -130,10 +141,13 @@ nZfkw0BBSUI0VBVrYTjpoFMrygJTvMtT5xsP4w8=
     fn load_pem_cert_rejects_garbage() {
         let path = write_tmp("garbage.pem", "this is not a pem file\n");
         // `rustls_pemfile::certs` returns an empty iterator on garbage rather
-        // than an error. The contract here is "no certs found" — we surface
-        // that by returning an empty Vec, which the caller can validate.
-        let certs = load_pem_cert(&path).expect("ok with empty result");
-        assert!(certs.is_empty(), "garbage PEM yields zero certs");
+        // than an error. MED-01: we surface that as a distinct typed error so
+        // a typo'd `--trust-cert` path fails loudly instead of silently
+        // degrading `build_client_config` to the OS-roots-only code path.
+        match load_pem_cert(&path) {
+            Err(TlsError::NoCertificatesInPem(p)) => assert_eq!(p, path),
+            other => panic!("expected NoCertificatesInPem, got {other:?}"),
+        }
     }
 
     #[test]
