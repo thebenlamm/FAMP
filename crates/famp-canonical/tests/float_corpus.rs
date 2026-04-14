@@ -24,10 +24,6 @@
 //! generated from a fixed seed upstream, so any developer can regenerate the
 //! same `float_corpus_sample.txt` by re-fetching the upstream gz and
 //! re-taking the first 100_000 lines.
-//!
-//! Gated behind `wave2_impl` (now default).
-
-#![cfg(feature = "wave2_impl")]
 
 const SAMPLE_SIZE_PR: usize = 100_000;
 const SAMPLE_DATA: &str = include_str!("vectors/float_corpus_sample.txt");

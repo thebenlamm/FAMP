@@ -21,8 +21,6 @@
 //! `emoji_keys.expected` file contains raw UTF-8 bytes (NOT \uXXXX escapes)
 //! per RFC 8785 §3.2.1 (UTF-8 pass-through for output).
 
-#![cfg(feature = "wave2_impl")]
-
 #[test]
 fn supplementary_plane_keys_sort_correctly() {
     let input = include_str!("vectors/supplementary/emoji_keys.json");

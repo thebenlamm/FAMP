@@ -7,13 +7,10 @@
 
 //! Duplicate-key rejection on strict-parse path (CANON-01, D-04..D-07).
 //!
-//! Verbatim from `.planning/phases/01-canonical-json-foundations/01-RESEARCH.md`
+//! Verifies `from_str_strict` returns `CanonicalError::DuplicateKey` on
+//! JSON objects with repeated keys. Verbatim from
+//! `.planning/phases/01-canonical-json-foundations/01-RESEARCH.md`
 //! §"Duplicate Key Rejection Test".
-//!
-//! Gated behind `wave2_impl` until Plan 02 lands `from_str_strict` and
-//! `CanonicalError::DuplicateKey`.
-
-#![cfg(feature = "wave2_impl")]
 
 #[test]
 fn duplicate_key_is_error() {

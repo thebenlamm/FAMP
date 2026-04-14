@@ -7,16 +7,10 @@
 
 //! RFC 8785 Appendix B conformance vector harness.
 //!
-//! These tests are gated behind `--features wave2_impl` because they reference
-//! public symbols (`canonicalize`, `CanonicalError`) that do not yet exist in
-//! the crate. Plan 02 will land the production code and enable this feature
-//! in CI.
-//!
-//! Source: RFC 8785 Appendix B (27 IEEE 754 → ECMAScript Number.toString
-//! pairs), transcribed verbatim from `.planning/phases/01-canonical-json-foundations/01-RESEARCH.md`
+//! Runs all 27 IEEE 754 → ECMAScript Number.toString pairs from
+//! RFC 8785 Appendix B against `canonicalize`. Transcribed verbatim
+//! from `.planning/phases/01-canonical-json-foundations/01-RESEARCH.md`
 //! §"Code Examples" → `rfc8785_appendix_b_all`.
-
-#![cfg(feature = "wave2_impl")]
 
 #[test]
 fn rfc8785_appendix_b_all() {
@@ -128,12 +122,9 @@ fn infinity_rejected() {
 
 #[test]
 fn cyberphone_weird_fixture() {
-    // Plan 02 will populate tests/vectors/input/weird.json + output/weird.json
-    // from the cyberphone testdata corpus. Until then, this test will fail to
-    // compile (include_str!/include_bytes! on missing files), which is the
-    // intended behavior — the test only enters the build graph when
-    // wave2_impl is enabled, AND Plan 02 ships fixtures and production code
-    // together.
+    // Fixture sourced from the cyberphone testdata corpus
+    // (tests/vectors/input/weird.json + output/weird.json). Asserts that
+    // `canonicalize` matches the reference implementation's byte-exact output.
     let input: serde_json::Value =
         serde_json::from_str(include_str!("vectors/input/weird.json")).unwrap();
     let got = famp_canonical::canonicalize(&input).unwrap();

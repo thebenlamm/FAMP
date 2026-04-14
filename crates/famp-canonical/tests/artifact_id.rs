@@ -10,11 +10,6 @@
 //! Asserts:
 //!  1. Empty-input SHA-256 matches the well-known constant.
 //!  2. Output is always lowercase hex per spec §3.6a (no uppercase).
-//!
-//! Gated behind `wave2_impl` until Plan 02 lands
-//! `artifact_id_for_canonical_bytes`.
-
-#![cfg(feature = "wave2_impl")]
 
 #[test]
 fn sha256_known_input() {
