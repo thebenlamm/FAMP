@@ -5,6 +5,7 @@
 //! rcgen secret. This is enforced by acceptance-criteria grep in Plan 01 and
 //! by Plan 03's `init_no_leak.rs` integration test.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
@@ -56,4 +57,13 @@ pub enum CliError {
         #[source]
         source: toml::de::Error,
     },
+
+    #[error("another famp listen is already bound to {addr}")]
+    PortInUse { addr: SocketAddr },
+
+    #[error("inbox error")]
+    Inbox(#[from] famp_inbox::InboxError),
+
+    #[error("TLS config error")]
+    Tls(#[from] famp_transport_http::TlsError),
 }

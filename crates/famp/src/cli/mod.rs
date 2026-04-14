@@ -7,11 +7,13 @@ pub mod config;
 pub mod error;
 pub mod home;
 pub mod init;
+pub mod listen;
 pub mod paths;
 pub mod perms;
 
 pub use error::CliError;
 pub use init::InitOutcome;
+pub use listen::ListenArgs;
 
 #[derive(Parser, Debug)]
 #[command(name = "famp", version, about = "FAMP v0.5.1 reference CLI")]
@@ -24,6 +26,9 @@ pub struct Cli {
 pub enum Commands {
     /// Initialize a FAMP home directory.
     Init(InitArgs),
+    /// Run the FAMP daemon: bind the HTTPS listener and append inbound
+    /// signed envelopes to `~/.famp/inbox.jsonl`.
+    Listen(ListenArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -37,5 +42,17 @@ pub struct InitArgs {
 pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Commands::Init(args) => init::run(args).map(|_| ()),
+        Commands::Listen(args) => {
+            // Only the `Listen` arm boots tokio; `Init` stays sync so
+            // `famp init` does not pay the multi-thread runtime cost.
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(listen::run(args))
+        }
     }
 }

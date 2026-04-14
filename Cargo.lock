@@ -618,6 +618,7 @@ dependencies = [
  "famp-crypto",
  "famp-envelope",
  "famp-fsm",
+ "famp-inbox",
  "famp-keyring",
  "famp-transport",
  "famp-transport-http",
@@ -631,6 +632,8 @@ dependencies = [
  "time",
  "tokio",
  "toml",
+ "tower",
+ "tower-http",
  "url",
 ]
 

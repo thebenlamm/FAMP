@@ -38,6 +38,7 @@ use clap as _;
 use famp_canonical as _;
 use famp_envelope as _;
 use famp_fsm as _;
+use famp_inbox as _;
 use famp_transport as _;
 use reqwest as _;
 use serde as _;
@@ -45,6 +46,8 @@ use tempfile as _;
 use thiserror as _;
 use time as _;
 use toml as _;
+use tower as _;
+use tower_http as _;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use famp_core::Principal;
