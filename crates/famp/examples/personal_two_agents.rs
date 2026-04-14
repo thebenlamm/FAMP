@@ -23,6 +23,7 @@ use clap as _;
 use famp_transport_http as _;
 use rcgen as _;
 use reqwest as _;
+use serde as _;
 use tempfile as _;
 use thiserror as _;
 use toml as _;

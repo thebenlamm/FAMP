@@ -23,6 +23,7 @@ use famp_transport as _;
 use famp_transport_http as _;
 use rand as _;
 use reqwest as _;
+use serde as _;
 use serde_json as _;
 use tempfile as _;
 use thiserror as _;

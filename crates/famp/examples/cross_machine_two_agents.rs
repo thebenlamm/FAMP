@@ -40,6 +40,7 @@ use famp_envelope as _;
 use famp_fsm as _;
 use famp_transport as _;
 use reqwest as _;
+use serde as _;
 use tempfile as _;
 use thiserror as _;
 use toml as _;
