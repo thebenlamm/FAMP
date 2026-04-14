@@ -19,17 +19,24 @@ famp-envelope = { path = "../famp-envelope" }
 famp-fsm = { path = "../famp-fsm" }
 famp-transport = { path = "../famp-transport" }
 famp-keyring = { path = "../famp-keyring" }
-tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+famp-transport-http = { path = "../famp-transport-http" }
+tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util"] }
 thiserror = { workspace = true }
 serde_json = { workspace = true }
 ed25519-dalek = { workspace = true }
 rand = { workspace = true }
+url = "2"
+base64 = { workspace = true }
 
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).
 famp-transport = { path = "../famp-transport", features = ["test-util"] }
-tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time"] }
+tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util"] }
+rcgen = "0.14"
+tempfile = "3"
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+axum = "0.8"
 
 [[bin]]
 name = "famp"

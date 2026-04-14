@@ -17,7 +17,12 @@
 
 // Silence workspace `unused_crate_dependencies` for deps pulled in via famp's
 // Cargo.toml that the example does not reference directly.
+use base64 as _;
+use famp_transport_http as _;
+use rcgen as _;
+use tempfile as _;
 use thiserror as _;
+use url as _;
 
 use famp::runtime::{adapter, process_one_message, RuntimeError};
 use famp_core::{AuthorityScope, MessageId, Principal};
