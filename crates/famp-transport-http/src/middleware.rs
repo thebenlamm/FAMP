@@ -23,6 +23,14 @@ use tower::{Layer, Service};
 use crate::error::MiddlewareError;
 
 const ONE_MIB: usize = 1_048_576;
+/// LOW-03: defense-in-depth cap inside the sig-verify layer. The outer
+/// `RequestBodyLimitLayer::new(ONE_MIB)` in `server.rs::build_router` is
+/// the authoritative 1 MiB gate (TRANS-07 §18). This inner cap is
+/// deliberately LARGER — if the outer layer is ever accidentally
+/// removed in a refactor, the inner one still caps at a clearly
+/// oversized sentinel so we don't buffer unbounded bytes, and the
+/// typed `MiddlewareError::BodyTooLarge` response still fires.
+const SIG_VERIFY_BODY_CAP: usize = ONE_MIB + 16 * 1024;
 
 #[derive(Clone)]
 pub struct FampSigVerifyLayer {
@@ -75,8 +83,11 @@ where
         let keyring = self.keyring.clone();
         Box::pin(async move {
             let (parts, body) = req.into_parts();
-            // Body already capped by outer RequestBodyLimitLayer; belt-and-braces cap here.
-            let Ok(bytes) = to_bytes(body, ONE_MIB).await else {
+            // Body already capped by outer RequestBodyLimitLayer. The inner
+            // cap (LOW-03) uses a deliberately larger sentinel so this
+            // branch is the defense-in-depth layer, not a duplicate of
+            // the outer 1 MiB limit.
+            let Ok(bytes) = to_bytes(body, SIG_VERIFY_BODY_CAP).await else {
                 return Ok(MiddlewareError::BodyTooLarge.into_response());
             };
 
