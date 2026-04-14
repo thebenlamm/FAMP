@@ -2,22 +2,21 @@
 
 #![forbid(unsafe_code)]
 
-// Silencers for dependencies consumed in later Plan 04-03 tasks but not
-// yet wired at this Wave 2 point. Remove from lib.rs as each Task lands.
-use rustls_platform_verifier as _;
-use rustls_pemfile as _;
-use rustls as _;
-use axum_server as _;
+// Silencers for dependencies still pending wiring after Plan 04-03. As each
+// later plan lands, remove the matching `use _ as _;` line.
 use famp_crypto as _;
 use serde_json as _;
 
 pub mod error;
 pub mod middleware;
 pub mod server;
+pub mod tls;
+pub mod tls_server;
 
 pub use error::{HttpTransportError, MiddlewareError};
 pub use middleware::FampSigVerifyLayer;
 pub use server::{build_router, InboxRegistry, ServerState, INBOX_ROUTE};
+pub use tls::{build_client_config, build_server_config, load_pem_cert, load_pem_key, TlsError};
 
 #[cfg(test)]
 mod tests {
