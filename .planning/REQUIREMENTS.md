@@ -104,12 +104,47 @@ These appear in future Federation Profile milestones. Listed here so they stay o
 
 ## Traceability
 
-*This section will be filled in by the roadmapper — each v0.8 requirement maps to exactly one phase.*
-
 | REQ-ID | Phase | Notes |
 |--------|-------|-------|
-| — | — | (pending roadmap) |
+| CLI-01 | Phase 1 | `famp init` — creates identity on disk |
+| CLI-02 | Phase 2 | `famp listen` — daemon entry point |
+| CLI-03 | Phase 3 | `famp send` — new-task / deliver / terminal modes |
+| CLI-04 | Phase 3 | `famp await` — block-with-timeout inbox read |
+| CLI-05 | Phase 3 | `famp inbox` — non-blocking list |
+| CLI-06 | Phase 3 | `famp peer add` — register peer |
+| CLI-07 | Phase 1 | `FAMP_HOME` override — foundational for all subcommands |
+| IDENT-01 | Phase 1 | Ed25519 key files with 0600 permissions |
+| IDENT-02 | Phase 1 | Self-signed TLS cert via rcgen |
+| IDENT-03 | Phase 1 | config.toml format |
+| IDENT-04 | Phase 1 | peers.toml format |
+| IDENT-05 | Phase 1 | Startup identity load + fail-closed |
+| IDENT-06 | Phase 1 | No key material in logs/stdout/MCP |
+| DAEMON-01 | Phase 2 | famp listen wraps v0.7 HttpTransport |
+| DAEMON-02 | Phase 2 | Verified messages appended to inbox; failed ones dropped |
+| DAEMON-03 | Phase 2 | SIGINT/SIGTERM graceful shutdown |
+| DAEMON-04 | Phase 2 | Single-instance gate |
+| DAEMON-05 | Phase 2 | fsync durability per inbox write |
+| INBOX-01 | Phase 2 | JSONL format with raw envelope bytes |
+| INBOX-02 | Phase 2 | Read cursor sidecar file |
+| INBOX-03 | Phase 2 | famp await poll-with-timeout semantics |
+| INBOX-04 | Phase 2 | Malformed-line resilience |
+| INBOX-05 | Phase 2 | Advisory inbox.lock |
+| CONV-01 | Phase 3 | New-task: request + task record creation |
+| CONV-02 | Phase 3 | Multi-deliver within one task (long-task shape) |
+| CONV-03 | Phase 3 | Terminal deliver + FSM COMPLETED transition |
+| CONV-04 | Phase 3 | Task records survive daemon restarts |
+| CONV-05 | Phase 3 | v0.7 famp-fsm used as-is; no new states or classes |
+| MCP-01 | Phase 4 | famp mcp stdio JSON-RPC server |
+| MCP-02 | Phase 4 | famp_send tool |
+| MCP-03 | Phase 4 | famp_await tool |
+| MCP-04 | Phase 4 | famp_inbox tool |
+| MCP-05 | Phase 4 | famp_peers tool |
+| MCP-06 | Phase 4 | Structured errors with famp_error_kind discriminator |
+| E2E-01 | Phase 4 | Automated integration test under cargo nextest |
+| E2E-02 | Phase 4 | Manual witnessed smoke test with two Claude Code sessions |
+| E2E-03 | Phase 4 | just ci green; 253 v0.7 tests unbroken; no openssl |
 
 ---
 
 *Requirements drafted: 2026-04-14 — v0.8 Usable from Claude Code. 37 requirements across 7 categories (CLI-01..07, IDENT-01..06, DAEMON-01..05, INBOX-01..05, CONV-01..05, MCP-01..06, E2E-01..03).*
+*Traceability filled: 2026-04-14 — 37/37 requirements mapped across 4 phases. 100% coverage.*

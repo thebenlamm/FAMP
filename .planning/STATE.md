@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
-status: Defining requirements
+status: Roadmap defined
 last_updated: "2026-04-14T20:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -14,7 +14,7 @@ progress:
 
 # STATE: FAMP — v0.8 Usable from Claude Code
 
-**Last Updated:** 2026-04-14 (v0.8 milestone opened; v0.7 shipped and archived; PR #4 / #4.1 cleanup landed)
+**Last Updated:** 2026-04-14 (v0.8 roadmap defined; 4 phases, 37 requirements, 100% coverage)
 
 ## Project Reference
 
@@ -22,21 +22,22 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** v0.8 Usable from Claude Code — defining requirements. Turn v0.7's proven substrate into a `famp` CLI + listener daemon + file inbox + MCP server so two Claude Code sessions can drive two local agents through one long task on the same laptop.
+**Current focus:** v0.8 Usable from Claude Code — roadmap defined. Turn v0.7's proven substrate into a `famp` CLI + listener daemon + file inbox + MCP server so two Claude Code sessions can drive two local agents through one long task on the same laptop.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 1 (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-04-14 — Milestone v0.8 started
+Status: Roadmap defined; awaiting `/gsd:plan-phase 1`
+Last activity: 2026-04-14 — v0.8 roadmap created (4 phases, 37 requirements)
+
+```
+v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
+```
 
 ## Last Shipped
 
-- **Phase 02 Plan 03** (2026-04-13) — FSM-03 consumer stub under `#![deny(unreachable_patterns)]` + FSM-08 proptest 100-tuple legality matrix. 5 FSM requirements all satisfied. 200/200 workspace tests. Commits: `4460297`, `507c565`.
-- **Phase 02 Plan 02** (2026-04-13) — `famp-fsm` crate: 5-state `TaskFsm` engine with single-function transition table (5 legal arrows), terminal immutability, 12 deterministic fixture tests. FSM-02, FSM-04, FSM-05 satisfied. 195/195 workspace tests. Commits: `26f7f13`, `7b79019`.
-- **Phase 02 Plan 01** (2026-04-13) — Type lift: `MessageClass` and `TerminalStatus` moved to `famp-core`. Backward-compatible re-exports in `famp-envelope`. 184/184 workspace tests green. `famp-fsm` crate layering constraint (D-D1) now satisfiable.
-- **v0.6 Foundation Crates** (2026-04-13) — `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests, `just ci` green. Archived to `.planning/milestones/v0.6-*.md` and `.planning/milestones/v0.6-phases/`. Git tag: `v0.6`.
+- **v0.7 Personal Runtime** (2026-04-14) — 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green. `famp-envelope`, `famp-fsm`, `famp-transport` + `MemoryTransport`, `famp-keyring` (TOFU), `famp-transport-http` (axum + rustls + reqwest), two finish-line examples, 3×2 adversarial matrix. `cargo tree -i openssl` empty.
 
 ## Accumulated Context
 
@@ -51,23 +52,21 @@ Last activity: 2026-04-14 — Milestone v0.8 started
 - **Narrow, phase-appropriate error enums** — not one god enum (repeated pattern in Plans 01-01 D-16 and 02-01)
 - **15-category flat `ProtocolErrorKind` + exhaustive consumer stub under `#![deny(unreachable_patterns)]`** — new error categories become compile errors in downstream crates
 - **`AuthorityScope` hand-written 5×5 `satisfies()` truth table, no `Ord` derive** — authority is a ladder, not a total order
-- **v0.7 TOFU keyring stays local-file** — `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey, loaded from file or `--peer` CLI flag. Explicitly not an "identity system" or "trust store"; Agent Cards defer to v0.8.
-- **v0.7 adversarial matrix = 3 cases × 2 transports, not 18** — CONF-05/06/07 own the three cases on `MemoryTransport`; Phase 4 extends the same matrix to HTTP without introducing new CONF-0x requirements.
-- **ENV-09 and ENV-12 are intentionally narrowed for v0.7** — ENV-09 ships with no capability-snapshot binding; ENV-12 ships cancel-only (no supersede, no close). The wider v0.6-catalog forms defer to Federation Profile.
-- **D-B5 + D-D1 resolved (2026-04-13, Phase 02 Plan 01):** `TerminalStatus` lifted to `famp-core` alongside `MessageClass`; `famp-fsm` depends only on `famp-core`, never on `famp-envelope`. Backward-compatible re-export pattern established: define in lower crate, `pub use` in former home.
-- **relation field dropped from TaskTransitionInput (2026-04-13, Phase 02 Plan 02):** D-B3 resolved — no v0.7 legal arrow needs relation inspection. `TaskTransitionInput` carries only `class` and `terminal_status`.
-- **FSM step() and accessors are const fn (2026-04-13, Phase 02 Plan 02):** All transition arms operate on Copy enums; clippy `missing_const_for_fn` (pedantic) required this. Correct and free.
-- **Clippy pedantic test file pattern (2026-04-13, Phase 02 Plan 02):** Test integration files use `#![allow(clippy::unwrap_used, unused_crate_dependencies)]` per famp-envelope precedent. Consistent pattern across all famp-* test files.
-- **match_same_arms allowed in FSM-03 consumer stub (2026-04-13, Phase 02 Plan 03):** Intentionally separate arms in is_terminal (Requested=>false, Committed=>false) document each variant explicitly — the purpose of the exhaustiveness gate. Merging to or-pattern defeats FSM-03's compile-time documentation intent.
-- **#[cfg(test)] use X as _; pattern for lib.rs (2026-04-13, Phase 02 Plan 03):** When a dev-dep is used only by integration tests, add `#[cfg(test)] use X as _;` after module-level `//!` doc comments in lib.rs to silence `unused_crate_dependencies` on the lib target. Pattern from famp-envelope, now extended to famp-fsm.
+- **v0.7 TOFU keyring stays local-file** — `HashMap<Principal, VerifyingKey>`, principal = raw Ed25519 pubkey, loaded from file or `--peer` CLI flag. Agent Cards defer to v0.9.
+- **v0.7 adversarial matrix = 3 cases × 2 transports, not 18** — CONF-05/06/07 own the three cases; Phase 4 extended the same matrix to HTTP without new CONF-0x requirements.
+- **ENV-09 and ENV-12 are intentionally narrowed for v0.7** — ENV-09 ships with no capability-snapshot binding; ENV-12 ships cancel-only. Wider forms defer to Federation Profile.
+- **D-B5 + D-D1 resolved (2026-04-13):** `TerminalStatus` lifted to `famp-core` alongside `MessageClass`; `famp-fsm` depends only on `famp-core`, never on `famp-envelope`.
+- **relation field dropped from TaskTransitionInput (2026-04-13):** D-B3 resolved — no v0.7 legal arrow needs relation inspection.
+- **FSM step() and accessors are const fn** — All transition arms operate on Copy enums.
+- **v0.8 phase shape:** 4 phases derived from the requirement dependency graph — Phase 1 (identity + CLI scaffold), Phase 2 (daemon + inbox), Phase 3 (conversation CLI + task records), Phase 4 (MCP + E2E). Dependency chain: v0.7 → P1 → P2 → P3 → P4.
 
 ### Open TODOs
 
-- None carried. v0.6 Plan 01-02 test-file clippy hygiene TODO closed 2026-04-13.
+- None carried.
 
 ### Known Blockers
 
-- **None.** v0.6 substrate is byte-exact, CI-enforced, and ready to feed v0.7 envelope/transport layers.
+- **None.**
 
 ### Quick Tasks Completed
 
@@ -84,18 +83,10 @@ Last activity: 2026-04-14 — Milestone v0.8 started
 
 ### Recent Activity
 
-- **2026-04-13:** **Phase 02 Plan 03 complete.** FSM-03 compile-time consumer stub + FSM-08 proptest 100-tuple legality matrix. All 5 Phase 2 FSM requirements satisfied. 200/200 workspace tests. Commits: `4460297`, `507c565`.
-- **2026-04-13:** **Phase 02 Plan 02 complete.** `famp-fsm` 5-state TaskFsm engine. 5-arrow transition table, terminal immutability, 12 fixture tests, clippy pedantic clean. 195/195 workspace tests. Commits: `26f7f13`, `7b79019`.
-- **2026-04-13:** **Phase 02 Plan 01 complete.** Type lift: `MessageClass` and `TerminalStatus` to `famp-core`. D-D1 crate layering blocker resolved. 184/184 workspace tests. Commits: `65c8ac1`, `012b807`.
-- **2026-04-13:** **v0.7 roadmap canonicalized.** 4 phases, 32 requirements, 100% coverage. Phase 1 (Minimal Signed Envelope) queued for `/gsd:plan-phase 1`.
-- **2026-04-13:** **v0.6 Foundation Crates milestone shipped and archived.** 3 phases, 9 plans, 16 tasks, 25/25 requirements satisfied. ROADMAP.md and REQUIREMENTS.md archived to `.planning/milestones/v0.6-*.md`; phase directories moved to `.planning/milestones/v0.6-phases/`. PROJECT.md evolved: all v0.6 requirements moved to Validated, Key Decisions annotated with outcomes.
-- **2026-04-13:** Phase 3 (core-types-invariants) complete. `famp-core` ships Principal/Instance, UUIDv7 IDs, ArtifactId, 15-category `ProtocolErrorKind`, `AuthorityScope` ladder, INV-1..INV-11 anchors, and exhaustive consumer stub. 66/66 famp-core + 112/112 workspace tests green.
-- **2026-04-13:** Phase 2 (crypto-foundations) complete. Plan 02-04 closed CRYPTO-07 (SHA-256 content-addressing) with NIST KAT gate.
-- **2026-04-13:** Phase 1 (canonical-json-foundations) complete. SEED-001 resolved: keep `serde_jcs`. 12/12 conformance gate green; nightly 100M float corpus workflow armed.
+- **2026-04-14:** **v0.8 roadmap created.** 4 phases, 37 requirements, 100% coverage. Phase 1 (Identity & CLI Foundation) queued for `/gsd:plan-phase 1`.
+- **2026-04-14:** **v0.7 Personal Runtime shipped.** 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests. Archived to `.planning/milestones/v0.7-*.md`.
+- **2026-04-14:** Completed quick task 260414-g32: PR #4.1 adversarial review followups. `just ci` green. 261/261 workspace tests.
+- **2026-04-14:** Completed quick task 260414-fjo: PR #4 architectural cleanup. Drop Signer/Verifier traits, remove 5 stub crates, add famp umbrella re-exports. `just ci` green. 261/261 workspace tests.
 
 ---
-*2026-04-14 — Completed quick task 260414-g32: PR #4.1 adversarial review followups. Single atomic commit `278cb83` lands three small fixes from the zed-velocity-engineer review of PR #3 + PR #4: (1) `CryptoError::WeakKey` rustdoc reworded — prior text read as if a `TrustedVerifyingKey` was successfully constructed when reaching that variant; flipped so semantics are explicit (error observed ⇒ no trusted key constructed ⇒ downstream `verify_strict` can assume prime-order). (2) Deleted unused `CryptoError::InvalidSigningInput` variant (zero consumers workspace-wide; "reserved for future use" comment violated no-hypothetical-forward-compat rule). (3) Added `TrustedVerifyingKey::from_bytes` / `from_b64url` `is_weak()` ingress gate to `CONTRIBUTING.md` "Do Not Touch Without a Spec Diff" list — `verify_strict` alone does NOT close the 8-torsion subgroup hole; ingress-time weak-key rejection is the actual gate (§7.1b). `just ci` green. 261/261 workspace tests. No spec bytes, signing semantics, or canonicalization touched.*
-
-*Last activity: 2026-04-14 — Completed quick task 260414-fjo: PR #4 of codebase review action plan. Three atomic commits land the ARCH+DEBT architectural cuts. (1) `refactor(famp-crypto): drop unused Signer and Verifier traits` (9e5426f) — ~90 LOC trait module deleted, README tightened; zero polymorphic consumers in the workspace, free functions remain the real API. (2) `refactor: remove unimplemented stub crates from workspace` (08c442a) — 5 empty scaffold crates (`famp-identity`, `famp-causality`, `famp-protocol`, `famp-extensions`, `famp-conformance`) deleted; `Cargo.toml` workspace shrinks from 14 to 9 members; `CONTRIBUTING.md` repo-layout and one stale `famp-crypto/README.md` cross-reference updated. (3) `feat(famp): add minimal public API re-exports for protocol core` (e8ecf9f) — 25-name umbrella (`famp::{Principal, SignedEnvelope, FampSigningKey, sign_value, canonicalize, …}`) across 4 source crates; compile-time regression gate at `crates/famp/tests/umbrella_reexports.rs`. `just ci` green after each. 261/261 workspace tests. No changes to spec bytes, signing semantics, or canonicalization.*
-
-*2026-04-14 — Completed quick task 260414-f4i: PR #3 of codebase review action plan. famp-crypto public API now has rustdoc on every re-exported item covering WHY / INVARIANTS / PITFALLS / SPEC (explicit plain-`verify` warning on `verify_canonical_bytes`/`verify_value`; `DOMAIN_PREFIX` §7.1a/§Δ08 framing on `prefix.rs`); README gains a "How FAMP Signs a Message" conceptual section covering RFC 8785, domain separation, the 4-step flow, INV-10, and the 5-state task FSM ASCII diagram; `CONTRIBUTING.md` created at repo root with Setup, Repo Layout, Test Gates table, Commit Conventions, Spec Fidelity, and the "Do Not Touch Without a Spec Diff" list. `just ci` green. Commits: c0c5311, 243fc19, 1b432c5. Closes DEVOPS-DX-01/02/03.*
+*2026-04-14 — v0.8 roadmap defined. 4 phases: (1) Identity & CLI Foundation — CLI-01/07, IDENT-01..06; (2) Daemon & Inbox — CLI-02, DAEMON-01..05, INBOX-01..05; (3) Conversation CLI — CLI-03..06, CONV-01..05; (4) MCP Server & Same-Laptop E2E — MCP-01..06, E2E-01..03. 37/37 requirements mapped. Next: `/gsd:plan-phase 1`.*
