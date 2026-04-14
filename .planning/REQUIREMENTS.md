@@ -37,7 +37,7 @@
 - [x] **DAEMON-02**: Inbound signed messages that pass verification are appended to the inbox file. Inbound messages that fail verification are logged and dropped (consistent with the v0.7 CONF-05/06/07 behavior).
 - [x] **DAEMON-03**: Daemon shuts down cleanly on `SIGINT` / `SIGTERM`: stops accepting new connections, flushes the inbox write, exits 0.
 - [x] **DAEMON-04**: Single-instance gate: if another process is already bound to `listen_addr`, refuse to start with a typed error. No silent port-stealing, no double-binding.
-- [ ] **DAEMON-05**: Inbox write is durable — each appended line is `fsync`'d before the HTTP response returns 200. Crash-consistency: either the sender sees a 200 and the line is on disk, or the sender sees an error and no line was written.
+- [x] **DAEMON-05**: Inbox write is durable — each appended line is `fsync`'d before the HTTP response returns 200. Crash-consistency: either the sender sees a 200 and the line is on disk, or the sender sees an error and no line was written.
 
 ### INBOX — File-based inbox (5)
 
