@@ -40,10 +40,36 @@ use std::collections::BTreeMap;
 /// Consumed by [`UnsignedEnvelope::sign`] into a `SignedEnvelope<B>`. There is
 /// no public API that yields an on-wire envelope in this state — the only path
 /// to wire bytes is through `sign()` → `SignedEnvelope::encode()`.
+///
+/// # Version-drift compile_fail gate (PR #2.1 HIGH-1)
+///
+/// ```compile_fail
+/// use famp_envelope::UnsignedEnvelope;
+/// use famp_envelope::body::AckBody;
+/// // Must fail: `famp` is a private field. The only way to get a valid
+/// // version literal into an UnsignedEnvelope is UnsignedEnvelope::new(),
+/// // which writes FAMP_SPEC_VERSION. Struct-literal construction with a
+/// // drifted version string is unrepresentable.
+/// let _: UnsignedEnvelope<AckBody> = UnsignedEnvelope {
+///     famp: "0.5.1 ".to_string(),
+///     id: unimplemented!(),
+///     from: unimplemented!(),
+///     to: unimplemented!(),
+///     scope: unimplemented!(),
+///     class: unimplemented!(),
+///     causality: None,
+///     authority: unimplemented!(),
+///     ts: unimplemented!(),
+///     terminal_status: None,
+///     idempotency_key: None,
+///     extensions: None,
+///     body: unimplemented!(),
+/// };
+/// ```
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnsignedEnvelope<B: BodySchema> {
-    pub famp: String,
+    famp: String,
     pub id: MessageId,
     pub from: Principal,
     pub to: Principal,

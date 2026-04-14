@@ -36,7 +36,7 @@ pub(crate) const SIGNATURE_FIELD: &str = "signature";
 )]
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) struct WireEnvelope<B: BodySchema> {
-    pub famp: String,
+    pub(crate) famp: String,
     pub id: MessageId,
     pub from: Principal,
     pub to: Principal,
