@@ -27,10 +27,7 @@ use famp_transport as _;
 use famp_transport_http as _;
 use rand as _;
 #[cfg(test)]
-use rcgen as _;
-#[cfg(test)]
 use reqwest as _;
-#[cfg(test)]
 use tempfile as _;
 use tokio as _;
 use url as _;
@@ -50,3 +47,4 @@ pub use famp_envelope::{
 };
 
 pub mod runtime;
+pub mod cli;

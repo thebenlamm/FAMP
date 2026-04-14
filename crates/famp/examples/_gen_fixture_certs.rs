@@ -10,6 +10,7 @@
 // tests reference but this one-shot binary does not.
 use axum as _;
 use base64 as _;
+use clap as _;
 use ed25519_dalek as _;
 use famp as _;
 use famp_canonical as _;
@@ -26,6 +27,7 @@ use serde_json as _;
 use tempfile as _;
 use thiserror as _;
 use tokio as _;
+use toml as _;
 use url as _;
 
 use rcgen::generate_simple_self_signed;
