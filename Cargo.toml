@@ -5,15 +5,10 @@ members = [
   "crates/famp-canonical",
   "crates/famp-crypto",
   "crates/famp-envelope",
-  "crates/famp-identity",
-  "crates/famp-causality",
   "crates/famp-fsm",
-  "crates/famp-protocol",
-  "crates/famp-extensions",
   "crates/famp-keyring",
   "crates/famp-transport",
   "crates/famp-transport-http",
-  "crates/famp-conformance",
   "crates/famp",
 ]
 

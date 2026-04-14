@@ -546,14 +546,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "famp-causality"
-version = "0.1.0"
-
-[[package]]
-name = "famp-conformance"
-version = "0.1.0"
-
-[[package]]
 name = "famp-core"
 version = "0.1.0"
 dependencies = [
@@ -597,10 +589,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "famp-extensions"
-version = "0.1.0"
-
-[[package]]
 name = "famp-fsm"
 version = "0.1.0"
 dependencies = [
@@ -612,10 +600,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "famp-identity"
-version = "0.1.0"
-
-[[package]]
 name = "famp-keyring"
 version = "0.1.0"
 dependencies = [
@@ -624,10 +608,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
 ]
-
-[[package]]
-name = "famp-protocol"
-version = "0.1.0"
 
 [[package]]
 name = "famp-transport"

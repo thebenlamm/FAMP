@@ -186,6 +186,6 @@ Deferred by Phase 2 scope (see `.planning/phases/02-crypto-foundations/02-CONTEX
 - `no_std` support — deferred.
 - Statistical timing tests (dudect-style) — deferred.
 - Agent Card / trust-store policy beyond raw weak-key rejection —
-  belongs in `famp-identity` (later phase).
+  deferred to the Federation Profile (v0.8+).
 - Protocol error taxonomy mapping (spec §15.1 15 categories) — belongs
   in `famp-core` (Phase 3); `CryptoError` stays narrow.

@@ -36,7 +36,6 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `crates/famp-keyring` — TOFU keyring file format and peer parsing
 - `crates/famp-transport` — `Transport` trait and `MemoryTransport`
 - `crates/famp-transport-http` — minimal HTTPS transport (`axum` + `reqwest` + `rustls`)
-- `crates/famp-identity`, `crates/famp-causality`, `crates/famp-protocol`, `crates/famp-extensions`, `crates/famp-conformance` — deferred federation-profile scaffolding
 - `crates/famp` — runtime glue, examples, and cross-crate integration tests
 
 ## Test Gates
