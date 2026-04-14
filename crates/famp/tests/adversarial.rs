@@ -3,7 +3,13 @@
 //! Phase 4 Plan 04-05 promoted this from a monolithic file to a directory
 //! module with shared case definitions + one adapter per transport.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::doc_markdown,
+    clippy::similar_names,
+    unused_crate_dependencies
+)]
 
 // Silence dev-deps consumed only by child modules.
 use ed25519_dalek as _;

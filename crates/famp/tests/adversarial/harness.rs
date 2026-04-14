@@ -5,7 +5,7 @@
 //! `assert_expected_error`; HttpTransport synthesizes a `RuntimeError` from
 //! the observed HTTP status+slug before calling this function.
 
-#![allow(dead_code)]
+#![allow(dead_code, clippy::match_same_arms)]
 
 use famp::runtime::RuntimeError;
 use famp_envelope::EnvelopeDecodeError;

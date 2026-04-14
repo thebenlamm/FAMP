@@ -5,7 +5,7 @@
 //! of the adapter, peek, canonical pre-check, recipient cross-check, and
 //! unknown-sender paths.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 use ed25519_dalek as _;
 use rand as _;

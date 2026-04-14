@@ -1,6 +1,6 @@
 //! Byte loaders for the three adversarial cases.
 //!
-//! Every builder is a real implementation — NO todo!() (checker B-5).
+//! Every builder is a real implementation — no unimplemented stubs (checker B-5).
 //! The unsigned + wrong-key builders are lifted verbatim from the Phase 3
 //! monolithic adversarial.rs; the CONF-07 loader reads the committed fixture
 //! and falls back to regenerating via the Phase 3 pretty-print trick if the
