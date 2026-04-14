@@ -23,10 +23,18 @@ pub fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
 }
 
 /// SHA-256 content-addressed identifier in FAMP `sha256:<lowercase-hex>`
-/// form, matching the spec `artifact-id` scheme.
+/// form, matching the spec `artifact-id` scheme (§3.6a).
 ///
 /// Returns a 71-character `String`: the literal prefix `sha256:` (7 bytes)
 /// followed by exactly 64 lowercase hex characters.
+///
+/// # Pitfalls
+///
+/// The full 71-character string is the wire identifier. Callers MUST NOT
+/// uppercase the hex, strip the `sha256:` prefix, or re-add it somewhere
+/// else in the stack. Comparing "just the hex" against a peer is the
+/// easiest way to ship a bug that only surfaces when a future digest family
+/// (`sha3:`, `blake3:`, …) lands.
 #[must_use]
 pub fn sha256_artifact_id(bytes: &[u8]) -> String {
     let digest = sha256_digest(bytes);

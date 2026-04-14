@@ -10,22 +10,60 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use subtle::ConstantTimeEq;
 
-/// Ed25519 signing key.
+/// Ed25519 signing key — 32-byte seed, wraps `ed25519_dalek::SigningKey`.
 ///
-/// Secret bytes are zeroized on drop by `ed25519-dalek`'s own drop-time
-/// `ZeroizeOnDrop` behavior, enabled via the `zeroize` feature wired in the
-/// workspace dep. We do not re-derive `Zeroize` / `ZeroizeOnDrop` on the
-/// newtype because `SigningKey` intentionally does not implement `Zeroize`
-/// directly — drop-time zeroization from dalek is the supported path
-/// (Pitfall 4).
+/// # Invariants
+///
+/// - 32-byte seed; never logged (`Debug` is redacted); never serialized to
+///   the wire. Signing keys live only in memory or on disk under operator
+///   control.
+/// - Drop-time zeroization is inherited from `ed25519-dalek`'s `zeroize`
+///   feature (wired in the workspace dep). The newtype intentionally does
+///   NOT re-derive `Zeroize` — dalek's own `ZeroizeOnDrop` is the supported
+///   path.
+///
+/// # Pitfalls
+///
+/// `FampSigningKey::from_bytes([0u8; 32])` and other all-constant seeds are
+/// test fixtures only. The crate-level quick-start doctest uses `[0u8; 32]`
+/// for illustration; production code must source 32 bytes from a CSPRNG.
 pub struct FampSigningKey(pub(crate) SigningKey);
 
-/// The ONLY verifying-key type reachable from public API.
-/// Construction enforces weak-key rejection (SPEC §7.1b, CRYPTO-02/03).
+/// The only verifying-key type reachable from public API.
+///
+/// The word "Trusted" is load-bearing: a `TrustedVerifyingKey` is one that
+/// has already passed canonical-point decode and weak-key / 8-torsion
+/// rejection at ingress (spec §7.1b, CRYPTO-02/03). Verification code
+/// downstream of this type may assume the key is safe to use.
+///
+/// # Invariants
+///
+/// - Constructed only via [`TrustedVerifyingKey::from_bytes`] or
+///   [`TrustedVerifyingKey::from_b64url`], both of which run the
+///   `is_weak()` check.
+/// - The underlying `VerifyingKey` is never exposed; the trust boundary
+///   only holds through this newtype.
+///
+/// # Pitfalls
+///
+/// Do NOT construct an `ed25519_dalek::VerifyingKey` directly and pass it
+/// to raw dalek APIs. The whole point of this wrapper is that the ingress
+/// check happens exactly once, here. Bypassing it reintroduces the 8-torsion
+/// hole that `verify_strict` alone does not close.
 #[derive(Clone)]
 pub struct TrustedVerifyingKey(pub(crate) VerifyingKey);
 
-/// Ed25519 signature newtype. 64 bytes on the wire.
+/// Raw 64-byte Ed25519 signature.
+///
+/// Wire encoding is base64url unpadded (`URL_SAFE_NO_PAD`, strict alphabet),
+/// yielding an 86-character string per spec §7.1b.
+///
+/// # Pitfalls
+///
+/// Strict decoding rejects trailing `=` padding and the standard (`+/`)
+/// alphabet by design. A signature that decodes under a lax decoder but
+/// fails strict decoding is a protocol bug in the *producer*, not a codec
+/// bug here — do not "fix" it by relaxing the decoder.
 #[derive(Clone)]
 pub struct FampSignature(pub(crate) Signature);
 

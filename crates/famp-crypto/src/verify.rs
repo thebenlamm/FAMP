@@ -8,7 +8,18 @@ use crate::{
     prefix::DOMAIN_PREFIX,
 };
 
-/// Verify a signature over an arbitrary `Serialize` value.
+/// Primary verification entry point. Canonicalizes `value`, prepends
+/// [`DOMAIN_PREFIX`], and routes through `verify_strict`.
+///
+/// See the crate-level quick-start example in `lib.rs` for the full
+/// sign/verify round-trip.
+///
+/// # Pitfalls
+///
+/// NEVER reach for `ed25519_dalek::VerifyingKey::verify` as a "faster" or
+/// "simpler" alternative. Plain `verify` accepts malleable signatures and
+/// small-order points that `verify_strict` rejects — non-repudiation then
+/// fails silently. See [`verify_canonical_bytes`] for the full rationale.
 pub fn verify_value<T: serde::Serialize + ?Sized>(
     verifying_key: &TrustedVerifyingKey,
     value: &T,
@@ -19,7 +30,25 @@ pub fn verify_value<T: serde::Serialize + ?Sized>(
 }
 
 /// Verify a signature over already-canonical bytes.
-/// Routes exclusively through `VerifyingKey::verify_strict`.
+///
+/// Internally uses `ed25519_dalek::VerifyingKey::verify_strict`, NOT plain
+/// `verify`. The distinction is load-bearing.
+///
+/// # Precondition
+///
+/// `canonical_bytes` MUST be the output of `famp_canonical::canonicalize`
+/// (RFC 8785 JCS). Any other byte shape is a protocol bug at the caller.
+///
+/// # Pitfalls
+///
+/// NEVER use `ed25519_dalek::VerifyingKey::verify` directly on a
+/// [`FampSignature`]. Plain `verify` accepts the second half of a malleable
+/// signature pair and accepts small-order points that `verify_strict`
+/// rejects. Both are silent non-repudiation failures: the caller sees `Ok`
+/// on a signature a well-behaved implementation would reject. This is why
+/// the entire public surface of this crate routes exclusively through
+/// `verify_strict` and why [`TrustedVerifyingKey`] is the only verifying-key
+/// type the public API exposes.
 pub fn verify_canonical_bytes(
     verifying_key: &TrustedVerifyingKey,
     canonical_bytes: &[u8],

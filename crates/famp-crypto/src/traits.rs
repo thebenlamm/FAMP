@@ -9,7 +9,16 @@ use crate::{
     keys::{FampSignature, FampSigningKey, TrustedVerifyingKey},
 };
 
-/// Thin sugar over `sign_value` / `sign_canonical_bytes`.
+/// Abstraction placeholder for future hardware-signer or remote-signer
+/// backends.
+///
+/// NOT currently load-bearing: the concrete free functions in
+/// [`crate::sign`] are the real API, and [`FampSigningKey`] implements
+/// this trait as thin sugar over them.
+///
+/// This trait may be removed, renamed, or replaced before v1.0. Do not
+/// depend on `Signer` as a bound in downstream crates — use the free
+/// functions directly until a stable extensibility contract lands.
 pub trait Signer {
     fn sign_value<T: serde::Serialize + ?Sized>(
         &self,
@@ -18,7 +27,14 @@ pub trait Signer {
     fn sign_canonical_bytes(&self, canonical_bytes: &[u8]) -> FampSignature;
 }
 
-/// Thin sugar over `verify_value` / `verify_canonical_bytes`.
+/// Abstraction placeholder, symmetric with [`Signer`].
+///
+/// NOT currently load-bearing: the concrete free functions in
+/// [`crate::verify`] are the real API, and [`TrustedVerifyingKey`]
+/// implements this trait as thin sugar over them.
+///
+/// Same caveat as [`Signer`]: may be removed or replaced before v1.0. Do
+/// not depend on `Verifier` as a bound in downstream crates yet.
 pub trait Verifier {
     fn verify_value<T: serde::Serialize + ?Sized>(
         &self,

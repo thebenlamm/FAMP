@@ -10,8 +10,18 @@ use crate::{
 };
 use ed25519_dalek::Signer as _;
 
-/// Sign an arbitrary `Serialize` value: canonicalize, prepend `DOMAIN_PREFIX`,
-/// sign via Ed25519.
+/// Primary signing entry point. Canonicalizes `value` via `famp-canonical`
+/// (RFC 8785), prepends [`DOMAIN_PREFIX`], then Ed25519-signs.
+///
+/// See the crate-level quick-start example in `lib.rs` for the full
+/// sign/verify round-trip.
+///
+/// # Pitfalls
+///
+/// If you already hold canonical bytes (e.g. in a hot loop that
+/// canonicalizes once and signs many times), call [`sign_canonical_bytes`]
+/// instead to skip the re-canonicalization cost. Both paths produce
+/// byte-identical signatures for byte-identical input.
 pub fn sign_value<T: serde::Serialize + ?Sized>(
     signing_key: &FampSigningKey,
     value: &T,
@@ -20,8 +30,16 @@ pub fn sign_value<T: serde::Serialize + ?Sized>(
     Ok(sign_canonical_bytes(signing_key, &canonical))
 }
 
-/// Sign already-canonical bytes: prepend `DOMAIN_PREFIX` internally, then sign.
-/// The caller MUST pass bytes produced by `famp_canonical::canonicalize`.
+/// Sign already-canonical bytes. Internally prepends [`DOMAIN_PREFIX`] and
+/// calls Ed25519.
+///
+/// # Precondition
+///
+/// `canonical_bytes` MUST be the output of `famp_canonical::canonicalize`
+/// (RFC 8785 JCS). There is no internal canonicalization step. Passing raw
+/// `serde_json::to_vec` output produces a perfectly valid Ed25519 signature
+/// that will not round-trip across implementations. Use [`sign_value`] if
+/// you want the canonicalize step done for you.
 #[must_use]
 pub fn sign_canonical_bytes(signing_key: &FampSigningKey, canonical_bytes: &[u8]) -> FampSignature {
     let mut input = Vec::with_capacity(DOMAIN_PREFIX.len() + canonical_bytes.len());
