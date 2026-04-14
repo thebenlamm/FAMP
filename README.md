@@ -18,9 +18,9 @@ protocol layers plus a reference HTTP transport binding.
 # 1. Install rustup (toolchain manager). Skip if already installed.
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 
-# 2. Enter the repo (rust-toolchain.toml auto-installs 1.87.0)
+# 2. Enter the repo (rust-toolchain.toml auto-installs 1.89.0)
 cd FAMP
-rustc --version   # should print: rustc 1.87.0
+rustc --version   # should print: rustc 1.89.0
 
 # 3. Install dev tools (one-time)
 cargo install cargo-nextest --locked
