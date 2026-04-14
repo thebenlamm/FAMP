@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
-status: verifying
-last_updated: "2026-04-14T21:02:08.435Z"
+status: executing
+last_updated: "2026-04-14T21:33:21.951Z"
 last_activity: 2026-04-14
 ---
 
@@ -17,13 +17,13 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 02 — daemon-inbox
+**Current focus:** Phase 03 — conversation-cli
 
 ## Current Position
 
-Phase: 02 (daemon-inbox) — COMPLETE (ready for verification)
-Plan: 3 of 3 shipped — famp-inbox library (02-01) + famp listen daemon (02-02) + 5 integration tests locking all Phase 2 ROADMAP success criteria (02-03)
-Status: Phase complete — ready for verification
+Phase: 03 (conversation-cli) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-04-14
 
 ```

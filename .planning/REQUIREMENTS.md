@@ -17,7 +17,7 @@
 - [ ] **CLI-03**: `famp send` sends a body to a named peer. Three modes: `--new-task <title>` (opens a new task with a `request`), `--task <id>` (sends a `deliver` within an existing task), `--task <id> --terminal` (sends the final `deliver`, transitions task to `COMPLETED`).
 - [ ] **CLI-04**: `famp await [--timeout <duration>]` blocks up to `<duration>` waiting for the next unread inbox entry; returns immediately if one is already waiting. Default timeout 60s. Returns structured output (task-id, peer, message class, body).
 - [ ] **CLI-05**: `famp inbox [--unread]` lists inbox entries without blocking. `--unread` filters to unread-only. Does not mark entries read.
-- [ ] **CLI-06**: `famp peer add <name> --url <url> --pubkey <b64> --trust-cert <path>` registers a peer into `peers.toml`. Stores principal → VerifyingKey in the existing `famp-keyring` format.
+- [x] **CLI-06**: `famp peer add <name> --url <url> --pubkey <b64> --trust-cert <path>` registers a peer into `peers.toml`. Stores principal → VerifyingKey in the existing `famp-keyring` format.
 - [x] **CLI-07**: `FAMP_HOME` env var overrides `~/.famp/` for every subcommand (test + dev ergonomics).
 
 ### IDENT — Persistent identity on disk (6)
