@@ -103,4 +103,19 @@ pub enum CliError {
 
     #[error("send args invalid: {reason}")]
     SendArgsInvalid { reason: String },
+
+    #[error("await timed out after {timeout}")]
+    AwaitTimeout { timeout: String },
+
+    #[error("invalid duration: {value}")]
+    InvalidDuration { value: String },
+}
+
+/// Parse a user-supplied duration string via `humantime`. Accepts the
+/// common forms `"30s"`, `"5m"`, `"1h"`, `"250ms"`. Any other input
+/// surfaces as [`CliError::InvalidDuration`].
+pub fn parse_duration(s: &str) -> Result<std::time::Duration, CliError> {
+    humantime::parse_duration(s).map_err(|_| CliError::InvalidDuration {
+        value: s.to_string(),
+    })
 }

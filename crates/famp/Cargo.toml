@@ -43,6 +43,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { workspace = true }
+humantime = "2"
 
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so

@@ -27,6 +27,7 @@ use reqwest as _;
 use serde as _;
 use famp_taskdir as _;
 use hex as _;
+use humantime as _;
 use rustls as _;
 use sha2 as _;
 use tempfile as _;

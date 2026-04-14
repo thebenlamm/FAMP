@@ -42,6 +42,7 @@ use famp_inbox as _;
 use famp_transport as _;
 use famp_taskdir as _;
 use hex as _;
+use humantime as _;
 use reqwest as _;
 use rustls as _;
 use serde as _;

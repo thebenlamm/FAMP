@@ -28,6 +28,7 @@ use famp_transport_http as _;
 use rand as _;
 use famp_taskdir as _;
 use hex as _;
+use humantime as _;
 use reqwest as _;
 use rustls as _;
 use serde as _;
