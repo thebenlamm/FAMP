@@ -27,14 +27,10 @@ use crate::body::deliver::TerminalStatus;
 use crate::body::BodySchema;
 use crate::causality::Causality;
 use crate::wire::{WireEnvelope, SIGNATURE_FIELD};
-use crate::{
-    EnvelopeDecodeError, EnvelopeScope, FampVersion, MessageClass, Timestamp,
-};
+use crate::{EnvelopeDecodeError, EnvelopeScope, FampVersion, MessageClass, Timestamp};
 use famp_canonical::from_slice_strict;
 use famp_core::{AuthorityScope, MessageId, Principal};
-use famp_crypto::{
-    sign_value, verify_value, FampSignature, FampSigningKey, TrustedVerifyingKey,
-};
+use famp_crypto::{sign_value, verify_value, FampSignature, FampSigningKey, TrustedVerifyingKey};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -179,7 +175,6 @@ impl<B: BodySchema> UnsignedEnvelope<B> {
     }
 }
 
-
 /// Borrowing serialize-only projection over `UnsignedEnvelope` / `SignedEnvelope`.
 /// Avoids cloning `B` for the sign and encode paths. Private — never public.
 #[derive(Serialize)]
@@ -249,8 +244,7 @@ impl<B: BodySchema> SignedEnvelope<B> {
 
         // Step 3: deserialize into the typed wire struct. `deny_unknown_fields`
         // surfaces envelope-level unknown keys here as typed errors.
-        let wire: WireEnvelope<B> =
-            serde_json::from_value(value).map_err(Self::map_serde_error)?;
+        let wire: WireEnvelope<B> = serde_json::from_value(value).map_err(Self::map_serde_error)?;
 
         // Step 4: class + scope cross-check (D-C1 / §7.3a).
         if wire.class != B::CLASS {

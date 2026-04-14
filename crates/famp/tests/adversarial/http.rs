@@ -105,9 +105,9 @@ fn project_to_runtime_error(status: u16, slug: Option<&str>) -> RuntimeError {
         (400, "bad_envelope") => RuntimeError::Decode(EnvelopeDecodeError::MissingSignature),
         (401, "signature_invalid") => RuntimeError::Decode(EnvelopeDecodeError::SignatureInvalid),
         (400, "canonical_divergence") => RuntimeError::CanonicalDivergence,
-        _ => panic!(
-            "HTTP adversarial returned status={status} slug={slug:?} (not in D-D6 mapping)"
-        ),
+        _ => {
+            panic!("HTTP adversarial returned status={status} slug={slug:?} (not in D-D6 mapping)")
+        }
     }
 }
 

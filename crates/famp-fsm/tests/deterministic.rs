@@ -10,7 +10,10 @@ use famp_core::{MessageClass, TerminalStatus};
 use famp_fsm::{TaskFsm, TaskFsmError, TaskState, TaskTransitionInput};
 
 fn input(class: MessageClass, ts: Option<TerminalStatus>) -> TaskTransitionInput {
-    TaskTransitionInput { class, terminal_status: ts }
+    TaskTransitionInput {
+        class,
+        terminal_status: ts,
+    }
 }
 
 #[test]
@@ -30,14 +33,21 @@ fn requested_commit_to_committed() {
 #[test]
 fn committed_deliver_completed_to_completed() {
     let mut fsm = TaskFsm::__with_state_for_testing(TaskState::Committed);
-    let next = fsm.step(input(MessageClass::Deliver, Some(TerminalStatus::Completed))).unwrap();
+    let next = fsm
+        .step(input(
+            MessageClass::Deliver,
+            Some(TerminalStatus::Completed),
+        ))
+        .unwrap();
     assert_eq!(next, TaskState::Completed);
 }
 
 #[test]
 fn committed_deliver_failed_to_failed() {
     let mut fsm = TaskFsm::__with_state_for_testing(TaskState::Committed);
-    let next = fsm.step(input(MessageClass::Deliver, Some(TerminalStatus::Failed))).unwrap();
+    let next = fsm
+        .step(input(MessageClass::Deliver, Some(TerminalStatus::Failed)))
+        .unwrap();
     assert_eq!(next, TaskState::Failed);
 }
 
@@ -96,7 +106,11 @@ fn check_terminal_is_stuck(terminal: TaskState) {
                 }
                 other => panic!("expected IllegalTransition from {terminal:?} for ({class:?}, {ts:?}), got {other:?}"),
             }
-            assert_eq!(fsm.state(), terminal, "state must not mutate on illegal transition");
+            assert_eq!(
+                fsm.state(),
+                terminal,
+                "state must not mutate on illegal transition"
+            );
         }
     }
 }
@@ -104,7 +118,12 @@ fn check_terminal_is_stuck(terminal: TaskState) {
 #[test]
 fn illegal_at_requested_rejected() {
     let mut fsm = TaskFsm::new();
-    let err = fsm.step(input(MessageClass::Deliver, Some(TerminalStatus::Completed))).unwrap_err();
+    let err = fsm
+        .step(input(
+            MessageClass::Deliver,
+            Some(TerminalStatus::Completed),
+        ))
+        .unwrap_err();
     assert!(matches!(err, TaskFsmError::IllegalTransition { .. }));
     assert_eq!(fsm.state(), TaskState::Requested);
 }

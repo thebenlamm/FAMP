@@ -27,7 +27,13 @@ pub(crate) const SIGNATURE_FIELD: &str = "signature";
 /// flattened type. This is the only composition in serde 1.0.228 that
 /// actually enforces `deny_unknown_fields` on both envelope and body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, bound(serialize = "B: Serialize", deserialize = "B: serde::de::DeserializeOwned"))]
+#[serde(
+    deny_unknown_fields,
+    bound(
+        serialize = "B: Serialize",
+        deserialize = "B: serde::de::DeserializeOwned"
+    )
+)]
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) struct WireEnvelope<B: BodySchema> {
     pub famp: FampVersion,

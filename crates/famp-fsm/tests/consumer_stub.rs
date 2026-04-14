@@ -14,7 +14,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     unused_crate_dependencies,
-    clippy::match_same_arms,
+    clippy::match_same_arms
 )]
 
 use famp_fsm::TaskState;
@@ -25,7 +25,7 @@ const fn describe_state(s: TaskState) -> &'static str {
         TaskState::Requested => "requested",
         TaskState::Committed => "committed",
         TaskState::Completed => "completed",
-        TaskState::Failed    => "failed",
+        TaskState::Failed => "failed",
         TaskState::Cancelled => "cancelled",
     }
 }
@@ -36,7 +36,7 @@ const fn is_terminal(s: TaskState) -> bool {
         TaskState::Requested => false,
         TaskState::Committed => false,
         TaskState::Completed => true,
-        TaskState::Failed    => true,
+        TaskState::Failed => true,
         TaskState::Cancelled => true,
     }
 }
@@ -46,7 +46,7 @@ fn describe_every_variant() {
     assert_eq!(describe_state(TaskState::Requested), "requested");
     assert_eq!(describe_state(TaskState::Committed), "committed");
     assert_eq!(describe_state(TaskState::Completed), "completed");
-    assert_eq!(describe_state(TaskState::Failed),    "failed");
+    assert_eq!(describe_state(TaskState::Failed), "failed");
     assert_eq!(describe_state(TaskState::Cancelled), "cancelled");
 }
 

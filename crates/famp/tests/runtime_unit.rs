@@ -13,8 +13,7 @@ use thiserror as _;
 use tokio as _;
 
 use famp::runtime::{
-    adapter::fsm_input_from_envelope, error::RuntimeError, peek::peek_sender,
-    process_one_message,
+    adapter::fsm_input_from_envelope, error::RuntimeError, peek::peek_sender, process_one_message,
 };
 use famp_canonical::canonicalize;
 use famp_core::{AuthorityScope, MessageId, Principal};
@@ -73,14 +72,8 @@ fn canonical_ack_bytes(sk: &FampSigningKey, from: Principal, to: Principal) -> V
         disposition: AckDisposition::Accepted,
         reason: None,
     };
-    let unsigned = UnsignedEnvelope::<AckBody>::new(
-        msg_id(),
-        from,
-        to,
-        AuthorityScope::Advisory,
-        ts(),
-        body,
-    );
+    let unsigned =
+        UnsignedEnvelope::<AckBody>::new(msg_id(), from, to, AuthorityScope::Advisory, ts(), body);
     let signed = unsigned.sign(sk).expect("sign must succeed");
     let encoded = signed.encode().expect("encode must succeed");
     let value: serde_json::Value =
@@ -118,7 +111,10 @@ fn unit3_peek_sender_malformed_json_returns_malformed() {
     let bytes = b"{not json";
     let err = peek_sender(bytes).expect_err("peek must fail on malformed JSON");
     assert!(
-        matches!(err, RuntimeError::Decode(EnvelopeDecodeError::MalformedJson(_))),
+        matches!(
+            err,
+            RuntimeError::Decode(EnvelopeDecodeError::MalformedJson(_))
+        ),
         "expected Decode(MalformedJson), got {err:?}"
     );
 }
@@ -181,7 +177,10 @@ fn unit6_recipient_mismatch_returns_typed_error() {
     };
     let err = process_one_message(&tm, &keyring, &mut fsm).expect_err("must mismatch");
     match err {
-        RuntimeError::RecipientMismatch { transport, envelope } => {
+        RuntimeError::RecipientMismatch {
+            transport,
+            envelope,
+        } => {
             assert_eq!(transport, carol());
             assert_eq!(envelope, bob());
         }

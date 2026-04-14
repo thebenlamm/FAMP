@@ -10,11 +10,7 @@
 //! shrink output is debuggable. The broader adversarial matrix lives in
 //! Phase 3 CONF-05/06/07.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::unnested_or_patterns
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::unnested_or_patterns)]
 
 use famp_canonical as _;
 use hex as _;
@@ -25,8 +21,8 @@ use thiserror as _;
 use famp_core::{AuthorityScope, MessageId, Principal};
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
 use famp_envelope::body::{
-    AckBody, AckDisposition, Bounds, Budget, CommitBody, ControlAction, ControlBody,
-    ControlTarget, DeliverBody, RequestBody, TerminalStatus,
+    AckBody, AckDisposition, Bounds, Budget, CommitBody, ControlAction, ControlBody, ControlTarget,
+    DeliverBody, RequestBody, TerminalStatus,
 };
 use famp_envelope::{SignedEnvelope, Timestamp, UnsignedEnvelope};
 use proptest::prelude::*;
@@ -163,22 +159,15 @@ fn sign_roundtrip<B>(body: B, terminal: Option<TerminalStatus>) -> Result<(), St
 where
     B: famp_envelope::BodySchema + PartialEq + std::fmt::Debug,
 {
-    let mut e = UnsignedEnvelope::<B>::new(
-        id(),
-        alice(),
-        bob(),
-        AuthorityScope::Advisory,
-        ts(),
-        body,
-    );
+    let mut e =
+        UnsignedEnvelope::<B>::new(id(), alice(), bob(), AuthorityScope::Advisory, ts(), body);
     if let Some(t) = terminal {
         e = e.with_terminal_status(t);
     }
     let expected_body = e.body.clone();
     let signed = e.sign(&sk()).map_err(|e| format!("{e:?}"))?;
     let bytes = signed.encode().map_err(|e| format!("{e:?}"))?;
-    let decoded =
-        SignedEnvelope::<B>::decode(&bytes, &vk()).map_err(|e| format!("{e:?}"))?;
+    let decoded = SignedEnvelope::<B>::decode(&bytes, &vk()).map_err(|e| format!("{e:?}"))?;
     if decoded.body() != &expected_body {
         return Err("body round-trip diverged".to_string());
     }
@@ -189,14 +178,8 @@ fn tamper_fails<B>(body: B, terminal: Option<TerminalStatus>) -> Result<(), Stri
 where
     B: famp_envelope::BodySchema,
 {
-    let mut e = UnsignedEnvelope::<B>::new(
-        id(),
-        alice(),
-        bob(),
-        AuthorityScope::Advisory,
-        ts(),
-        body,
-    );
+    let mut e =
+        UnsignedEnvelope::<B>::new(id(), alice(), bob(), AuthorityScope::Advisory, ts(), body);
     if let Some(t) = terminal {
         e = e.with_terminal_status(t);
     }

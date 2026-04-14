@@ -12,7 +12,9 @@ pub struct TaskFsm {
 impl TaskFsm {
     /// Construct a fresh task FSM in the `Requested` state.
     pub const fn new() -> Self {
-        Self { state: TaskState::Requested }
+        Self {
+            state: TaskState::Requested,
+        }
     }
 
     /// Current FSM state (cheap copy).
@@ -25,11 +27,17 @@ impl TaskFsm {
     /// states have no outgoing arms.
     pub const fn step(&mut self, input: TaskTransitionInput) -> Result<TaskState, TaskFsmError> {
         let next = match (self.state, input.class, input.terminal_status) {
-            (TaskState::Requested, MessageClass::Commit,  None)                            => TaskState::Committed,
-            (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Completed)) => TaskState::Completed,
-            (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Failed))    => TaskState::Failed,
+            (TaskState::Requested, MessageClass::Commit, None) => TaskState::Committed,
+            (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Completed)) => {
+                TaskState::Completed
+            }
+            (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Failed)) => {
+                TaskState::Failed
+            }
             // Both Requested and Committed can be cancelled via Control
-            (TaskState::Requested | TaskState::Committed, MessageClass::Control, None)     => TaskState::Cancelled,
+            (TaskState::Requested | TaskState::Committed, MessageClass::Control, None) => {
+                TaskState::Cancelled
+            }
             _ => {
                 return Err(TaskFsmError::IllegalTransition {
                     from: self.state,

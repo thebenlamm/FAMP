@@ -12,7 +12,7 @@
     clippy::unwrap_used,
     clippy::expect_used,
     unused_crate_dependencies,
-    clippy::match_same_arms,
+    clippy::match_same_arms
 )]
 
 use famp_core::{MessageClass, TerminalStatus};
@@ -56,10 +56,16 @@ const fn expected_next(
     ts: Option<TerminalStatus>,
 ) -> Option<TaskState> {
     match (state, class, ts) {
-        (TaskState::Requested, MessageClass::Commit,  None)                            => Some(TaskState::Committed),
-        (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Completed)) => Some(TaskState::Completed),
-        (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Failed))    => Some(TaskState::Failed),
-        (TaskState::Requested | TaskState::Committed, MessageClass::Control, None)     => Some(TaskState::Cancelled),
+        (TaskState::Requested, MessageClass::Commit, None) => Some(TaskState::Committed),
+        (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Completed)) => {
+            Some(TaskState::Completed)
+        }
+        (TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Failed)) => {
+            Some(TaskState::Failed)
+        }
+        (TaskState::Requested | TaskState::Committed, MessageClass::Control, None) => {
+            Some(TaskState::Cancelled)
+        }
         _ => None,
     }
 }
@@ -103,21 +109,77 @@ proptest! {
 /// 100 combinations, but this test documents the legal arrows directly.
 #[test]
 fn all_five_legal_arrows_covered_by_oracle() {
-    assert_eq!(expected_next(TaskState::Requested, MessageClass::Commit,  None),                            Some(TaskState::Committed));
-    assert_eq!(expected_next(TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Completed)), Some(TaskState::Completed));
-    assert_eq!(expected_next(TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Failed)),    Some(TaskState::Failed));
-    assert_eq!(expected_next(TaskState::Requested, MessageClass::Control, None),                            Some(TaskState::Cancelled));
-    assert_eq!(expected_next(TaskState::Committed, MessageClass::Control, None),                            Some(TaskState::Cancelled));
+    assert_eq!(
+        expected_next(TaskState::Requested, MessageClass::Commit, None),
+        Some(TaskState::Committed)
+    );
+    assert_eq!(
+        expected_next(
+            TaskState::Committed,
+            MessageClass::Deliver,
+            Some(TerminalStatus::Completed)
+        ),
+        Some(TaskState::Completed)
+    );
+    assert_eq!(
+        expected_next(
+            TaskState::Committed,
+            MessageClass::Deliver,
+            Some(TerminalStatus::Failed)
+        ),
+        Some(TaskState::Failed)
+    );
+    assert_eq!(
+        expected_next(TaskState::Requested, MessageClass::Control, None),
+        Some(TaskState::Cancelled)
+    );
+    assert_eq!(
+        expected_next(TaskState::Committed, MessageClass::Control, None),
+        Some(TaskState::Cancelled)
+    );
 }
 
 /// Spot-check: oracle rejects a representative sample of illegal tuples.
 #[test]
 fn oracle_rejects_known_illegal_tuples() {
-    assert_eq!(expected_next(TaskState::Requested, MessageClass::Deliver, Some(TerminalStatus::Completed)), None);
-    assert_eq!(expected_next(TaskState::Committed, MessageClass::Request, None), None);
-    assert_eq!(expected_next(TaskState::Completed, MessageClass::Commit,  None), None);
-    assert_eq!(expected_next(TaskState::Failed,    MessageClass::Deliver, Some(TerminalStatus::Completed)), None);
-    assert_eq!(expected_next(TaskState::Cancelled, MessageClass::Control, None), None);
-    assert_eq!(expected_next(TaskState::Requested, MessageClass::Ack,     None), None);
-    assert_eq!(expected_next(TaskState::Committed, MessageClass::Deliver, Some(TerminalStatus::Cancelled)), None);
+    assert_eq!(
+        expected_next(
+            TaskState::Requested,
+            MessageClass::Deliver,
+            Some(TerminalStatus::Completed)
+        ),
+        None
+    );
+    assert_eq!(
+        expected_next(TaskState::Committed, MessageClass::Request, None),
+        None
+    );
+    assert_eq!(
+        expected_next(TaskState::Completed, MessageClass::Commit, None),
+        None
+    );
+    assert_eq!(
+        expected_next(
+            TaskState::Failed,
+            MessageClass::Deliver,
+            Some(TerminalStatus::Completed)
+        ),
+        None
+    );
+    assert_eq!(
+        expected_next(TaskState::Cancelled, MessageClass::Control, None),
+        None
+    );
+    assert_eq!(
+        expected_next(TaskState::Requested, MessageClass::Ack, None),
+        None
+    );
+    assert_eq!(
+        expected_next(
+            TaskState::Committed,
+            MessageClass::Deliver,
+            Some(TerminalStatus::Cancelled)
+        ),
+        None
+    );
 }

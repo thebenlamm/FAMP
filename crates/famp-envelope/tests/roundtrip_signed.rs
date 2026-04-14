@@ -21,12 +21,10 @@ use thiserror as _;
 use famp_core::{AuthorityScope, MessageId, Principal};
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
 use famp_envelope::body::{
-    AckBody, AckDisposition, Bounds, Budget, CommitBody, ControlAction, ControlBody,
-    ControlTarget, DeliverBody, ErrorCategory, ErrorDetail, RequestBody, TerminalStatus,
+    AckBody, AckDisposition, Bounds, Budget, CommitBody, ControlAction, ControlBody, ControlTarget,
+    DeliverBody, ErrorCategory, ErrorDetail, RequestBody, TerminalStatus,
 };
-use famp_envelope::{
-    Causality, Relation, SignedEnvelope, Timestamp, UnsignedEnvelope,
-};
+use famp_envelope::{Causality, Relation, SignedEnvelope, Timestamp, UnsignedEnvelope};
 
 // RFC 8032 Test 1 keypair — same as vector_zero.
 const SECRET: [u8; 32] = [

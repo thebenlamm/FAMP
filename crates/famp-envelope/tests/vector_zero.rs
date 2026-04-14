@@ -18,10 +18,10 @@ use serde as _;
 use thiserror as _;
 
 use famp_canonical::{canonicalize, from_slice_strict};
-use serde_json::Value;
 use famp_crypto::{sign_value, FampSigningKey, TrustedVerifyingKey};
 use famp_envelope::body::{AckBody, AckDisposition};
 use famp_envelope::{AnySignedEnvelope, EnvelopeDecodeError, SignedEnvelope};
+use serde_json::Value;
 use std::fs;
 
 const VECTOR_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/vectors/vector_0");

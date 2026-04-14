@@ -27,11 +27,11 @@ pub fn peek_sender(bytes: &[u8]) -> Result<Principal, EnvelopeDecodeError> {
         .get("from")
         .and_then(serde_json::Value::as_str)
         .ok_or(EnvelopeDecodeError::MissingField { field: "from" })?;
-    Principal::from_str(from_str)
-        .map_err(|_| EnvelopeDecodeError::MissingField { field: "from" })
+    Principal::from_str(from_str).map_err(|_| EnvelopeDecodeError::MissingField { field: "from" })
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -46,7 +46,10 @@ mod tests {
     fn peek_sender_rejects_missing_from() {
         let bytes = br#"{"to":"agent:local/bob"}"#;
         let err = peek_sender(bytes).unwrap_err();
-        assert!(matches!(err, EnvelopeDecodeError::MissingField { field: "from" }));
+        assert!(matches!(
+            err,
+            EnvelopeDecodeError::MissingField { field: "from" }
+        ));
     }
 
     #[test]

@@ -17,9 +17,11 @@
 
 // Silence workspace `unused_crate_dependencies` for deps pulled in via famp's
 // Cargo.toml that the example does not reference directly.
+use axum as _;
 use base64 as _;
 use famp_transport_http as _;
 use rcgen as _;
+use reqwest as _;
 use tempfile as _;
 use thiserror as _;
 use url as _;
@@ -130,8 +132,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 1. Receive request
             let req_msg = transport.recv(&bob_p).await.expect("recv request");
-            let req_env = process_one_message(&req_msg, &bob_keyring, &mut fsm)
-                .expect("request must verify");
+            let req_env =
+                process_one_message(&req_msg, &bob_keyring, &mut fsm).expect("request must verify");
             assert!(matches!(req_env, AnySignedEnvelope::Request(_)));
             log_line(
                 &trace,
@@ -191,8 +193,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 4. Receive ack from alice
             let ack_msg = transport.recv(&bob_p).await.expect("recv ack");
-            let ack_env = process_one_message(&ack_msg, &bob_keyring, &mut fsm)
-                .expect("ack must verify");
+            let ack_env =
+                process_one_message(&ack_msg, &bob_keyring, &mut fsm).expect("ack must verify");
             assert!(matches!(ack_env, AnySignedEnvelope::Ack(_)));
             // Ack is wire-only; bob does not advance its FSM here.
         })

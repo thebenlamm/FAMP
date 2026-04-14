@@ -81,9 +81,7 @@ pub fn build_server_config(
 /// * `Some(path)` — adds the PEM(s) at `path` as additional trust anchors on
 ///   top of the OS roots (useful for self-signed dev certs).
 /// * `None` — trust only the OS root store.
-pub fn build_client_config(
-    trust_cert_path: Option<&Path>,
-) -> Result<ClientConfig, TlsError> {
+pub fn build_client_config(trust_cert_path: Option<&Path>) -> Result<ClientConfig, TlsError> {
     install_default_provider();
 
     let extra_roots: Vec<CertificateDer<'static>> = match trust_cert_path {

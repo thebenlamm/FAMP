@@ -134,7 +134,10 @@ fn parse_args() -> Args {
                 let bytes = URL_SAFE_NO_PAD
                     .decode(b64.as_bytes())
                     .unwrap_or_else(|_| usage_and_exit());
-                let arr: [u8; 32] = bytes.as_slice().try_into().unwrap_or_else(|_| usage_and_exit());
+                let arr: [u8; 32] = bytes
+                    .as_slice()
+                    .try_into()
+                    .unwrap_or_else(|_| usage_and_exit());
                 args.peers.push((principal, arr));
             }
             "--addr" => {
@@ -242,8 +245,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
         }
         Role::Bob => {
-            cycle_driver::drive_bob(&transport, &keyring, &bob_p, &alice_p, &my_sk, &trace)
-                .await?;
+            cycle_driver::drive_bob(&transport, &keyring, &bob_p, &alice_p, &my_sk, &trace).await?;
         }
     }
 

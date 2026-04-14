@@ -48,7 +48,10 @@ fn rt1b_canonical_fixture_round_trips_byte_identical() {
     canonical.save_to_file(tmp.path()).unwrap();
     let saved = std::fs::read(tmp.path()).unwrap();
     let original = std::fs::read(CANONICAL_FIXTURE).unwrap();
-    assert_eq!(saved, original, "canonical fixture must round-trip byte-identical");
+    assert_eq!(
+        saved, original,
+        "canonical fixture must round-trip byte-identical"
+    );
 }
 
 #[test]

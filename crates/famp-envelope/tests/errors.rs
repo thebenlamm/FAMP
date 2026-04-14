@@ -63,7 +63,9 @@ fn no_variant_maps_to_other_or_unmapped() {
             class: MessageClass::Ack,
             field: "x".into(),
         },
-        EnvelopeDecodeError::UnsupportedVersion { found: "0.9".into() },
+        EnvelopeDecodeError::UnsupportedVersion {
+            found: "0.9".into(),
+        },
         EnvelopeDecodeError::UnknownClass { found: "x".into() },
         EnvelopeDecodeError::ClassMismatch {
             expected: MessageClass::Request,

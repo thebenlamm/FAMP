@@ -24,11 +24,7 @@ use tokio::{
 };
 use url::Url;
 
-use crate::{
-    error::HttpTransportError,
-    server::InboxRegistry,
-    tls::build_client_config,
-};
+use crate::{error::HttpTransportError, server::InboxRegistry, tls::build_client_config};
 
 const INBOX_CHANNEL_CAPACITY: usize = 64;
 

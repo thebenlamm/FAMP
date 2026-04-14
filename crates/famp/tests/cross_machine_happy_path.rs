@@ -45,7 +45,11 @@ use tokio::{
 /// not `[[example]]` targets, so we compute the path from
 /// `CARGO_MANIFEST_DIR` and the current profile instead.
 fn example_bin_path() -> std::path::PathBuf {
-    let profile = if cfg!(debug_assertions) { "debug" } else { "release" };
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
@@ -99,7 +103,10 @@ async fn cross_machine_request_commit_deliver_ack() {
             }
         }
     }
-    assert!(!bob_addr.is_empty(), "bob did not print LISTENING before 5s");
+    assert!(
+        !bob_addr.is_empty(),
+        "bob did not print LISTENING before 5s"
+    );
 
     // Step 3: wait for bob's pubkey + cert files.
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -110,7 +117,10 @@ async fn cross_machine_request_commit_deliver_ack() {
         bob_pub.exists() && bob_crt.exists(),
         "bob did not write pub/cert files"
     );
-    let bob_pub_b64 = std::fs::read_to_string(&bob_pub).unwrap().trim().to_string();
+    let bob_pub_b64 = std::fs::read_to_string(&bob_pub)
+        .unwrap()
+        .trim()
+        .to_string();
 
     // Step 4: spawn alice pointed at bob.
     let alice = Command::new(example_bin_path())

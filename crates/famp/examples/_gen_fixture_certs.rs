@@ -8,6 +8,7 @@
 
 // Silence workspace `unused_crate_dependencies` for deps the other example /
 // tests reference but this one-shot binary does not.
+use axum as _;
 use base64 as _;
 use ed25519_dalek as _;
 use famp as _;
@@ -20,6 +21,7 @@ use famp_keyring as _;
 use famp_transport as _;
 use famp_transport_http as _;
 use rand as _;
+use reqwest as _;
 use serde_json as _;
 use tempfile as _;
 use thiserror as _;
@@ -38,7 +40,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for name in ["alice", "bob"] {
         let ck = generate_simple_self_signed(vec!["localhost".into(), "127.0.0.1".into()])?;
         std::fs::write(dir.join(format!("{name}.crt")), ck.cert.pem())?;
-        std::fs::write(dir.join(format!("{name}.key")), ck.signing_key.serialize_pem())?;
+        std::fs::write(
+            dir.join(format!("{name}.key")),
+            ck.signing_key.serialize_pem(),
+        )?;
         println!("wrote {name}.crt + {name}.key");
     }
     Ok(())

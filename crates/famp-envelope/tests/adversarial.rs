@@ -11,7 +11,11 @@
 //! D-D3 (unknown nested body field) adversarial inputs reuse the Plan 01-02
 //! fixtures under `tests/fixtures/adversarial/`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::needless_raw_string_hashes)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes
+)]
 
 use famp_canonical as _;
 use hex as _;
@@ -27,9 +31,7 @@ use famp_envelope::body::{
     AckBody, AckDisposition, Bounds, Budget, CommitBody, ControlBody, DeliverBody, ErrorCategory,
     ErrorDetail, RequestBody, TerminalStatus,
 };
-use famp_envelope::{
-    EnvelopeDecodeError, SignedEnvelope, Timestamp, UnsignedEnvelope,
-};
+use famp_envelope::{EnvelopeDecodeError, SignedEnvelope, Timestamp, UnsignedEnvelope};
 use serde_json::Value;
 use std::fs;
 

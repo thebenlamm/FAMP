@@ -26,11 +26,7 @@ use famp_envelope::body::{
 use famp_envelope::EnvelopeDecodeError;
 
 fn load(name: &str) -> String {
-    let path = format!(
-        "{}/tests/fixtures/{}",
-        env!("CARGO_MANIFEST_DIR"),
-        name
-    );
+    let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
     std::fs::read_to_string(path).unwrap()
 }
 
@@ -38,7 +34,10 @@ fn roundtrip_value<T: serde::Serialize + serde::de::DeserializeOwned>(json: &str
     let typed: T = serde_json::from_str(json).unwrap();
     let re = serde_json::to_value(&typed).unwrap();
     let orig: serde_json::Value = serde_json::from_str(json).unwrap();
-    assert_eq!(re, orig, "round-trip through typed struct must preserve semantic value");
+    assert_eq!(
+        re, orig,
+        "round-trip through typed struct must preserve semantic value"
+    );
 }
 
 // -------------------------------------------------------------------------
@@ -103,7 +102,10 @@ fn deliver_interim_with_terminal_status_fails() {
     let err = body
         .validate_against_terminal_status(Some(&TerminalStatus::Completed))
         .unwrap_err();
-    assert!(matches!(err, EnvelopeDecodeError::InterimWithTerminalStatus));
+    assert!(matches!(
+        err,
+        EnvelopeDecodeError::InterimWithTerminalStatus
+    ));
 }
 
 #[test]

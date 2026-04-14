@@ -171,12 +171,7 @@ async fn unsigned_request_does_not_enter_handler() {
     // W-1 fix: non-empty keyring so this path is *distinct* from the unknown-sender test.
     let sentinel = Arc::new(AtomicBool::new(false));
     let app = sentinel_router(alice_pinned_keyring(), sentinel.clone());
-    let resp = oneshot(
-        app,
-        "/famp/v0.5.1/inbox/agent:local/bob",
-        unsigned_bytes(),
-    )
-    .await;
+    let resp = oneshot(app, "/famp/v0.5.1/inbox/agent:local/bob", unsigned_bytes()).await;
     assert_eq!(
         resp.status(),
         StatusCode::BAD_REQUEST,
@@ -203,12 +198,7 @@ async fn unknown_sender_does_not_enter_handler() {
     // Empty keyring + an envelope claiming `from=agent:local/alice` → UnknownSender.
     let sentinel = Arc::new(AtomicBool::new(false));
     let app = sentinel_router(empty_keyring(), sentinel.clone());
-    let resp = oneshot(
-        app,
-        "/famp/v0.5.1/inbox/agent:local/bob",
-        unsigned_bytes(),
-    )
-    .await;
+    let resp = oneshot(app, "/famp/v0.5.1/inbox/agent:local/bob", unsigned_bytes()).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     assert!(!sentinel.load(Ordering::SeqCst));
 }
@@ -219,12 +209,7 @@ async fn wrong_key_does_not_enter_handler() {
     // claiming from=alice → SignatureInvalid.
     let sentinel = Arc::new(AtomicBool::new(false));
     let app = sentinel_router(alice_pinned_keyring(), sentinel.clone());
-    let resp = oneshot(
-        app,
-        "/famp/v0.5.1/inbox/agent:local/bob",
-        wrong_key_bytes(),
-    )
-    .await;
+    let resp = oneshot(app, "/famp/v0.5.1/inbox/agent:local/bob", wrong_key_bytes()).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     assert!(!sentinel.load(Ordering::SeqCst));
 }

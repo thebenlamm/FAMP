@@ -8,7 +8,14 @@ use std::process::Command;
 #[test]
 fn personal_two_agents_exits_zero_with_expected_trace() {
     let output = Command::new(env!("CARGO"))
-        .args(["run", "--quiet", "-p", "famp", "--example", "personal_two_agents"])
+        .args([
+            "run",
+            "--quiet",
+            "-p",
+            "famp",
+            "--example",
+            "personal_two_agents",
+        ])
         .output()
         .expect("failed to invoke cargo run");
     assert!(

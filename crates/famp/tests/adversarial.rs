@@ -16,11 +16,11 @@ use ed25519_dalek as _;
 use rand as _;
 use thiserror as _;
 
-#[path = "adversarial/harness.rs"]
-mod harness;
 #[path = "adversarial/fixtures.rs"]
 mod fixtures;
-#[path = "adversarial/memory.rs"]
-mod memory;
+#[path = "adversarial/harness.rs"]
+mod harness;
 #[path = "adversarial/http.rs"]
 mod http;
+#[path = "adversarial/memory.rs"]
+mod memory;
