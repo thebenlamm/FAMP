@@ -31,4 +31,7 @@ pub enum InboxError {
 
     #[error("cursor parse error at {path:?}")]
     CursorParse { path: PathBuf },
+
+    #[error("inbox lock held by pid {pid} at {path:?}")]
+    LockHeld { path: PathBuf, pid: u32 },
 }

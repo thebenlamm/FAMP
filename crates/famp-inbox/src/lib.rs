@@ -16,8 +16,10 @@
 pub mod append;
 pub mod cursor;
 pub mod error;
+pub mod lock;
 pub mod read;
 
 pub use crate::append::Inbox;
 pub use crate::cursor::InboxCursor;
 pub use crate::error::InboxError;
+pub use crate::lock::InboxLock;

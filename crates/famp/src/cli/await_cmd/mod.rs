@@ -29,7 +29,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use famp_inbox::{read::read_from, InboxCursor};
+use famp_inbox::{read::read_from, InboxCursor, InboxLock};
 
 use crate::cli::error::{parse_duration, CliError};
 use crate::cli::{home, paths};
@@ -66,6 +66,12 @@ pub async fn run_at(
     let timeout = parse_duration(&args.timeout)?;
     let inbox_path = paths::inbox_jsonl_path(home);
     let cursor = InboxCursor::at(paths::inbox_cursor_path(home));
+
+    // Advisory lock (Plan 03-04 INBOX-05): fail-fast if another
+    // single-consumer reader holds the lock. Held for the lifetime of
+    // this call; dropped on return (happy path, timeout, or error).
+    let _lock = InboxLock::acquire(home).map_err(CliError::Inbox)?;
+
     let deadline = Instant::now() + timeout;
 
     loop {

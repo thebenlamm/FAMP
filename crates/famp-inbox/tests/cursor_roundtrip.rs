@@ -3,6 +3,8 @@
 // Silencers for workspace deps consumed transitively via famp_inbox.
 use serde_json as _;
 use thiserror as _;
+#[cfg(unix)]
+use nix as _;
 
 use famp_inbox::InboxCursor;
 use tempfile::TempDir;
