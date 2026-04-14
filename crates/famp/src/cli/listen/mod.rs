@@ -64,6 +64,13 @@ pub async fn run(args: ListenArgs) -> Result<(), CliError> {
                 source: e,
             },
         })?;
+    // axum-server 0.8 refuses to register a blocking socket with tokio
+    // (see tokio-rs/tokio#7172). `std::net::TcpListener::bind` returns a
+    // blocking socket, so flip it here before handing off.
+    listener.set_nonblocking(true).map_err(|e| CliError::Io {
+        path: home.clone(),
+        source: e,
+    })?;
     let bound = listener.local_addr().map_err(|e| CliError::Io {
         path: home.clone(),
         source: e,
@@ -84,6 +91,13 @@ pub async fn run_on_listener(
     listener: std::net::TcpListener,
     shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<(), CliError> {
+    // Ensure the listener is non-blocking regardless of caller path.
+    // axum-server 0.8 panics if handed a blocking socket (tokio-rs/tokio#7172).
+    listener.set_nonblocking(true).map_err(|e| CliError::Io {
+        path: home.to_path_buf(),
+        source: e,
+    })?;
+
     let layout = load_identity(home)?;
 
     // Load config (for future use — currently unused past bind, but parsing
