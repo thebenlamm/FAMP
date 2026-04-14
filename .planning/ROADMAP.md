@@ -83,7 +83,10 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
   3. Starting a second `famp listen` instance while one is already bound to the same port exits non-zero with a typed error rather than silently binding to a random port or hanging.
   4. Sending `SIGINT` or `SIGTERM` to a running daemon causes it to stop accepting new connections, flush any buffered inbox writes, and exit 0 within a few seconds.
   5. A truncated or malformed JSONL line in the inbox (simulating a mid-write crash) does not prevent subsequent `famp await` or `famp inbox` calls from reading the lines that follow it.
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 02-01-PLAN.md — famp-inbox crate: durable JSONL append with fsync, tail-tolerant reader (wave 1)
+- [ ] 02-02-PLAN.md — famp listen command: tokio daemon, FampSigVerifyLayer reuse, inbox-append handler, graceful shutdown (wave 2)
+- [ ] 02-03-PLAN.md — Integration tests: smoke, SIGKILL durability, bind collision, SIGINT shutdown, truncated tail (wave 3)
 
 ### Phase 3: Conversation CLI
 **Goal**: A developer can open a task, exchange multiple `deliver` messages within it across two terminal sessions, and close it with a terminal deliver — all through CLI commands — with task state persisted to disk and surviving daemon restarts.
@@ -203,7 +206,7 @@ Rough ordering, not committed:
 | 3. MemoryTransport + TOFU Keyring | v0.7 | 4/4 | Complete | 2026-04-13 |
 | 4. Minimal HTTP Transport | v0.7 | 5/5 | Complete | 2026-04-14 |
 | 1. Identity & CLI Foundation | v0.8 | 0/3 | Planned | - |
-| 2. Daemon & Inbox | v0.8 | 0/? | Not started | - |
+| 2. Daemon & Inbox | v0.8 | 0/3 | Planned | - |
 | 3. Conversation CLI | v0.8 | 0/? | Not started | - |
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 0/? | Not started | - |
 
