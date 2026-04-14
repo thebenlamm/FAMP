@@ -66,4 +66,41 @@ pub enum CliError {
 
     #[error("TLS config error")]
     Tls(#[from] famp_transport_http::TlsError),
+
+    #[error("peer not found: {alias}")]
+    PeerNotFound { alias: String },
+
+    #[error("peer already exists: {alias}")]
+    PeerDuplicate { alias: String },
+
+    #[error("invalid peer endpoint: {value}")]
+    PeerEndpointInvalid { value: String },
+
+    #[error("invalid peer pubkey (must be 32 bytes base64url-unpadded): {value}")]
+    PeerPubkeyInvalid { value: String },
+
+    #[error("task record not found: {task_id}")]
+    TaskNotFound { task_id: String },
+
+    #[error("task already terminal: {task_id}")]
+    TaskTerminal { task_id: String },
+
+    #[error("send failed")]
+    SendFailed(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("taskdir error")]
+    TaskDir(#[from] famp_taskdir::TaskDirError),
+
+    #[error("envelope encode/sign failed")]
+    Envelope(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("tls fingerprint mismatch for peer {alias}: pinned={pinned}, got={got}")]
+    TlsFingerprintMismatch {
+        alias: String,
+        pinned: String,
+        got: String,
+    },
+
+    #[error("send args invalid: {reason}")]
+    SendArgsInvalid { reason: String },
 }

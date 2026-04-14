@@ -13,7 +13,11 @@
 //!       via `famp peer add` (`name`, `url`, `pubkey_b64`, `trust_cert_path`).
 
 use serde::{Deserialize, Serialize};
+use std::io::Write as _;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::Path;
+
+use crate::cli::error::CliError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -42,6 +46,12 @@ pub struct PeerEntry {
     pub endpoint: String,
     /// base64url-unpadded ed25519 verifying key (32 raw bytes when decoded).
     pub pubkey_b64: String,
+    /// Optional FAMP principal (`agent:authority/name`) used as the envelope
+    /// `to` field and inbox URL segment. `None` → caller derives a default
+    /// (Phase 3 `famp send` uses `agent:localhost/self` to interoperate with
+    /// the Phase 2 listen daemon's self-keyring).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub principal: Option<String>,
     /// TOFU-pinned TLS cert fingerprint (sha256 hex). `None` until first
     /// successful contact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -73,6 +83,60 @@ impl Peers {
         self.peers.push(entry);
         Ok(())
     }
+}
+
+/// Read `peers.toml` from disk. Empty file → empty `Peers`.
+pub fn read_peers(path: &Path) -> Result<Peers, CliError> {
+    let bytes = std::fs::read(path).map_err(|source| CliError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if bytes.is_empty() {
+        return Ok(Peers::default());
+    }
+    let text = std::str::from_utf8(&bytes).map_err(|err| CliError::Io {
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, err),
+    })?;
+    toml::from_str(text).map_err(|source| CliError::TomlParse {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// Atomically write `peers.toml` via same-directory `NamedTempFile` +
+/// `sync_all` + `persist`. Shared helper used by `famp peer add` and the
+/// TOFU fingerprint capture path in `famp send`.
+pub fn write_peers_atomic(path: &Path, peers: &Peers) -> Result<(), CliError> {
+    let serialized = toml::to_string(peers).map_err(CliError::TomlSerialize)?;
+    let parent = path.parent().ok_or_else(|| CliError::HomeHasNoParent {
+        path: path.to_path_buf(),
+    })?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|source| CliError::Io {
+        path: parent.to_path_buf(),
+        source,
+    })?;
+    tmp.write_all(serialized.as_bytes())
+        .map_err(|source| CliError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    tmp.as_file_mut()
+        .sync_all()
+        .map_err(|source| CliError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    tmp.persist(path).map_err(|err| CliError::Io {
+        path: path.to_path_buf(),
+        source: err.error,
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -124,6 +188,7 @@ mod tests {
                 alias: "alice".to_string(),
                 endpoint: "https://127.0.0.1:9443".to_string(),
                 pubkey_b64: "abc".to_string(),
+                principal: None,
                 tls_fingerprint_sha256: None,
             })
             .unwrap();
@@ -143,6 +208,7 @@ mod tests {
             alias: "alice".to_string(),
             endpoint: "https://127.0.0.1:9443".to_string(),
             pubkey_b64: "abc".to_string(),
+            principal: None,
             tls_fingerprint_sha256: None,
         };
         peers.try_add(entry.clone()).unwrap();

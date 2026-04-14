@@ -512,6 +512,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 dependencies = [
  "powerfmt",
+ "serde_core",
 ]
 
 [[package]]
@@ -620,13 +621,17 @@ dependencies = [
  "famp-fsm",
  "famp-inbox",
  "famp-keyring",
+ "famp-taskdir",
  "famp-transport",
  "famp-transport-http",
+ "hex",
  "rand 0.8.5",
  "rcgen",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.18",
  "time",
@@ -635,6 +640,7 @@ dependencies = [
  "tower",
  "tower-http",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -720,6 +726,17 @@ dependencies = [
  "famp-crypto",
  "tempfile",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "famp-taskdir"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "toml",
+ "uuid",
 ]
 
 [[package]]
@@ -1809,6 +1826,7 @@ dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",

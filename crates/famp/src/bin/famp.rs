@@ -14,14 +14,17 @@ use famp_envelope as _;
 use famp_fsm as _;
 use famp_inbox as _;
 use famp_keyring as _;
+use famp_taskdir as _;
 use famp_transport as _;
 use famp_transport_http as _;
+use hex as _;
 use rand as _;
 use rcgen as _;
-#[cfg(test)]
 use reqwest as _;
+use rustls as _;
 use serde as _;
 use serde_json as _;
+use sha2 as _;
 use tempfile as _;
 use thiserror as _;
 use time as _;
@@ -30,6 +33,7 @@ use toml as _;
 use tower as _;
 use tower_http as _;
 use url as _;
+use uuid as _;
 
 use clap::Parser;
 

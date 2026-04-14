@@ -21,6 +21,26 @@ pub struct IdentityLayout {
     pub peers_toml: PathBuf,
 }
 
+/// Directory that holds per-task TOML records (`famp-taskdir` root).
+pub fn tasks_dir(home: &Path) -> PathBuf {
+    home.join("tasks")
+}
+
+/// `inbox.jsonl` sidecar cursor file.
+pub fn inbox_cursor_path(home: &Path) -> PathBuf {
+    home.join("inbox.cursor")
+}
+
+/// Append-only inbox jsonl file.
+pub fn inbox_jsonl_path(home: &Path) -> PathBuf {
+    home.join("inbox.jsonl")
+}
+
+/// `peers.toml` path under `home`.
+pub fn peers_toml_path(home: &Path) -> PathBuf {
+    home.join(PEERS_TOML)
+}
+
 impl IdentityLayout {
     pub fn at(home: PathBuf) -> Self {
         Self {

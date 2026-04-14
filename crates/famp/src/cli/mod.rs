@@ -9,7 +9,9 @@ pub mod home;
 pub mod init;
 pub mod listen;
 pub mod paths;
+pub mod peer;
 pub mod perms;
+pub mod send;
 
 pub use error::CliError;
 pub use init::InitOutcome;
@@ -29,6 +31,10 @@ pub enum Commands {
     /// Run the FAMP daemon: bind the HTTPS listener and append inbound
     /// signed envelopes to `~/.famp/inbox.jsonl`.
     Listen(ListenArgs),
+    /// Manage the peer registry (`peers.toml`).
+    Peer(peer::PeerArgs),
+    /// Send an envelope to a peer — new task, deliver, or terminal.
+    Send(send::SendArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -53,6 +59,17 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     source: e,
                 })?;
             rt.block_on(listen::run(args))
+        }
+        Commands::Peer(args) => peer::run(args),
+        Commands::Send(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(send::run(args))
         }
     }
 }
