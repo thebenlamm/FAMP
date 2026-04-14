@@ -10,6 +10,8 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::too_many_arguments,
+    clippy::future_not_send,
+    clippy::doc_markdown,
     dead_code
 )]
 

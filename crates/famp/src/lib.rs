@@ -9,6 +9,14 @@
 // unit (examples and tests are separate compile units).
 use base64 as _;
 use ed25519_dalek as _;
+#[cfg(test)]
+use axum as _;
+#[cfg(test)]
+use rcgen as _;
+#[cfg(test)]
+use reqwest as _;
+#[cfg(test)]
+use tempfile as _;
 use famp_crypto as _;
 use famp_transport as _;
 use famp_transport_http as _;
