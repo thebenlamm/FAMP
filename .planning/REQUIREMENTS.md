@@ -53,7 +53,7 @@
 - [x] **CONV-02**: `famp send --task <id> --to <peer>` sends a `deliver` envelope within the named task, updates the local task record, leaves the task in `COMMITTED` (or its current non-terminal state). Multiple non-terminal deliver messages within one task are allowed — this is the long-task shape.
 - [x] **CONV-03**: `famp send --task <id> --terminal --to <peer>` sends the final `deliver`, the local task FSM steps to `COMPLETED`, and the task record is marked terminal. Further `send --task <id>` calls fail closed.
 - [x] **CONV-04**: Local task records live under `~/.famp/tasks/<task-id>.toml` and survive daemon restarts. Both sides of a conversation can resume across restarts without losing task context.
-- [ ] **CONV-05**: The v0.7 `famp-fsm` crate is used as-is for all transition checks. **Non-goal:** the conversation shape does not require any new FSM states, new message classes, or changes to the v0.5.1 envelope body schemas. This requirement is the checkpoint that proves v0.7 was expressive enough.
+- [x] **CONV-05**: The v0.7 `famp-fsm` crate is used as-is for all transition checks. **Non-goal:** the conversation shape does not require any new FSM states, new message classes, or changes to the v0.5.1 envelope body schemas. This requirement is the checkpoint that proves v0.7 was expressive enough.
 
 ### MCP — Claude Code integration (6)
 

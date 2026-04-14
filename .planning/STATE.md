@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
-status: executing
-last_updated: "2026-04-14T22:01:55.943Z"
+status: verifying
+last_updated: "2026-04-14T22:18:35.678Z"
 last_activity: 2026-04-14
 ---
 
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 
 Phase: 03 (conversation-cli) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-14
 
 ```
