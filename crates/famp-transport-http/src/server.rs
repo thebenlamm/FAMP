@@ -86,13 +86,27 @@ async fn inbox_handler(
         .clone();
     drop(inboxes_guard);
 
+    let recipient_for_log = recipient.clone();
+    let sender_for_log = sender.clone();
     tx.send(TransportMessage {
         sender,
         recipient,
         bytes: body.to_vec(),
     })
     .await
-    .map_err(|_| MiddlewareError::Internal)?;
+    .map_err(|e| {
+        // LOW-04: surface diagnostics on inbox send failure. The only
+        // failure mode for mpsc::Sender::send on a bounded channel is
+        // channel-closed (receiver dropped), which collapses to a 500
+        // without context. Tracing is not yet wired in Phase 4, so log
+        // via eprintln! per the review guidance; upgrade to
+        // tracing::error! when the tracing layer lands.
+        eprintln!(
+            "famp-transport-http: inbox send failed (sender={sender_for_log}, \
+             recipient={recipient_for_log}): {e}"
+        );
+        MiddlewareError::Internal
+    })?;
 
     Ok(StatusCode::ACCEPTED)
 }
