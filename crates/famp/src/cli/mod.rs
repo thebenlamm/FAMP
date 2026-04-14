@@ -11,6 +11,7 @@ pub mod paths;
 pub mod perms;
 
 pub use error::CliError;
+pub use init::InitOutcome;
 
 #[derive(Parser, Debug)]
 #[command(name = "famp", version, about = "FAMP v0.5.1 reference CLI")]
@@ -32,8 +33,9 @@ pub struct InitArgs {
     pub force: bool,
 }
 
-/// Plan 01 stub. Plan 02 replaces the body to dispatch to `init::run_at`.
-#[allow(clippy::missing_const_for_fn, clippy::needless_pass_by_value)]
-pub fn run(_cli: Cli) -> Result<(), CliError> {
-    Err(CliError::HomeNotSet)
+/// Top-level CLI dispatcher. Called from `bin/famp.rs`.
+pub fn run(cli: Cli) -> Result<(), CliError> {
+    match cli.command {
+        Commands::Init(args) => init::run(args).map(|_| ()),
+    }
 }
