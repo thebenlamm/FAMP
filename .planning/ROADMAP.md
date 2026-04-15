@@ -117,7 +117,7 @@ Archive: [milestones/v0.7-ROADMAP.md](milestones/v0.7-ROADMAP.md) · Audit: [mil
 **Plans**: 3 plans
 - [x] 04-01-PLAN.md — Multi-entry keyring from peers.toml + commit-reply handshake + delete Phase 3 FSM shortcut (wave 1)
 - [x] 04-02-PLAN.md — famp mcp stdio server + four tools + CliError::mcp_error_kind() exhaustive gate (wave 2)
-- [ ] 04-03-PLAN.md — two-daemon E2E-01 automated test + E2E-02 manual smoke checklist + just e2e-smoke recipe (wave 3)
+- [x] 04-03-PLAN.md — two-daemon E2E-01 automated test + E2E-02 manual smoke checklist + just e2e-smoke recipe (wave 3)
 **UI hint**: yes
 
 ---
@@ -211,11 +211,11 @@ Rough ordering, not committed:
 | 1. Minimal Signed Envelope | v0.7 | 3/3 | Complete | 2026-04-13 |
 | 2. Minimal Task Lifecycle | v0.7 | 3/3 | Complete | 2026-04-13 |
 | 3. MemoryTransport + TOFU Keyring | v0.7 | 4/4 | Complete | 2026-04-13 |
-| 4. Minimal HTTP Transport | v0.7 | 2/3 | In Progress|  |
-| 1. Identity & CLI Foundation | v0.8 | 0/3 | Planned | - |
-| 2. Daemon & Inbox | v0.8 | 0/3 | Planned | - |
-| 3. Conversation CLI | v0.8 | 0/? | Not started | - |
-| 4. MCP Server & Same-Laptop E2E | v0.8 | 0/? | Not started | - |
+| 4. Minimal HTTP Transport | v0.7 | 5/5 | Complete | 2026-04-14 |
+| 1. Identity & CLI Foundation | v0.8 | 3/3 | Complete | 2026-04-14 |
+| 2. Daemon & Inbox | v0.8 | 3/3 | Complete | 2026-04-14 |
+| 3. Conversation CLI | v0.8 | 4/4 | Complete | 2026-04-14 |
+| 4. MCP Server & Same-Laptop E2E | v0.8 | 3/3 | Complete | 2026-04-15 |
 
 ---
-*Roadmap updated: 2026-04-14 — v0.8 Usable from Claude Code roadmap created (4 phases, 37 requirements, 100% coverage). v0.7 Personal Runtime shipped (4/4 phases, 15/15 plans, 253/253 tests).*
+*Roadmap updated: 2026-04-15 — v0.8 Usable from Claude Code complete (4/4 phases, 13/13 plans, 355/355 tests). MCP server + two-daemon E2E shipped.*
