@@ -10,6 +10,7 @@ pub mod home;
 pub mod inbox;
 pub mod init;
 pub mod listen;
+pub mod mcp;
 pub mod paths;
 pub mod peer;
 pub mod perms;
