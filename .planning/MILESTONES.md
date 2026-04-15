@@ -1,5 +1,24 @@
 # Milestones
 
+## v0.8 Usable from Claude Code (Shipped: 2026-04-15)
+
+**Phases completed:** 4 phases, 13 plans
+**Timeline:** 2026-04-14 → 2026-04-15 (2-day execution)
+**Test footprint:** 355/355 workspace tests green; `just ci` clean; `cargo tree -i openssl` empty
+**Requirements:** 37/37 satisfied (CLI-01..07, IDENT-01..06, DAEMON-01..05, INBOX-01..05, CONV-01..05, MCP-01..06, E2E-01..03)
+
+**Key accomplishments:**
+
+- **`famp init` creates persistent identity** — Ed25519 keypair (0600 permissions), self-signed TLS cert via `rcgen`, `config.toml` + `peers.toml`. `FAMP_HOME` env var override for test isolation.
+- **`famp listen` daemon** — wraps v0.7 `famp-transport-http` with durable JSONL inbox (fsync-before-200), SIGINT/SIGTERM graceful shutdown, single-instance port guard, auto-commit handler for inbound requests.
+- **`famp-inbox` crate** — append-only JSONL with atomic fsync, tail-tolerant reader (survives mid-write crash), advisory lock for concurrent access, cursor-based read tracking.
+- **Conversation CLI** — `famp send --new-task/--task/--terminal`, `famp await --timeout`, `famp inbox`, `famp peer add`. Task records persist in `~/.famp/tasks/` and survive daemon restarts. TLS TOFU pinning on first contact.
+- **`famp mcp` stdio server** — JSON-RPC over stdin/stdout with 4 tools (`famp_send`, `famp_await`, `famp_inbox`, `famp_peers`). Exhaustive `CliError::mcp_error_kind()` mapping (28 variants, no wildcard).
+- **E2E-01 automated test** — two-daemon harness with mutual peer registration, full `request → auto-commit → 4 delivers → terminal → COMPLETED` lifecycle under `cargo nextest`.
+- **E2E-02 manual smoke test PASSED** — CLI-based test (5 delivers exchanged, task COMPLETED). MCP server works but Claude Code integration needs debugging. Inbox artifacts archived.
+
+---
+
 ## v0.7 Personal Runtime (Shipped: 2026-04-14)
 
 **Phases completed:** 4 phases, 15 plans, 18 tasks

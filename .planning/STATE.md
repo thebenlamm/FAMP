@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
-status: complete
-last_updated: "2026-04-15"
+status: All v0.8 phases shipped
+last_updated: "2026-04-15T20:12:44.035Z"
 last_activity: 2026-04-15
 ---
 
