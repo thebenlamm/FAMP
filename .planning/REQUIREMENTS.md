@@ -66,9 +66,9 @@
 
 ### E2E — Same-laptop finish line (3)
 
-- [ ] **E2E-01**: Integration test: two `famp` daemons on different loopback ports, each with the other added as a peer, exchange a full task lifecycle — `request → commit → deliver × N → terminal deliver → ack` — entirely through the CLI. Runs under `cargo nextest` and gates v0.8.
-- [ ] **E2E-02**: **Finish-line smoke test (manual, witnessed):** two live Claude Code sessions on the same laptop, each with the `famp` MCP server wired in, open one task and exchange **≥4 `deliver` messages** back and forth driven by actual LLM conversation (not scripted), ending in a terminal deliver that closes the task on both sides. Success is observed, not asserted — but the run is captured and the outcome recorded in the phase verification doc.
-- [ ] **E2E-03**: `just ci` stays green. No regression in the 253 v0.7 tests. No new dependencies that pull `openssl` or `native-tls` (the `cargo tree -i openssl` empty gate holds).
+- [x] **E2E-01**: Integration test: two `famp` daemons on different loopback ports, each with the other added as a peer, exchange a full task lifecycle — `request → commit → deliver × N → terminal deliver → ack` — entirely through the CLI. Runs under `cargo nextest` and gates v0.8.
+- [x] **E2E-02**: **Finish-line smoke test (manual, witnessed):** two live Claude Code sessions on the same laptop, each with the `famp` MCP server wired in, open one task and exchange **≥4 `deliver` messages** back and forth driven by actual LLM conversation (not scripted), ending in a terminal deliver that closes the task on both sides. Success is observed, not asserted — but the run is captured and the outcome recorded in the phase verification doc.
+- [x] **E2E-03**: `just ci` stays green. No regression in the 253 v0.7 tests. No new dependencies that pull `openssl` or `native-tls` (the `cargo tree -i openssl` empty gate holds).
 
 ---
 
