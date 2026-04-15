@@ -10,6 +10,7 @@ pub mod home;
 pub mod inbox;
 pub mod init;
 pub mod listen;
+pub mod mcp;
 pub mod paths;
 pub mod peer;
 pub mod perms;
@@ -42,6 +43,10 @@ pub enum Commands {
     Await(await_cmd::AwaitArgs),
     /// Inspect the inbox (list + cursor ack).
     Inbox(inbox::InboxArgs),
+    /// Start the MCP stdio JSON-RPC server (four tools: `famp_send`, `famp_await`,
+    /// `famp_inbox`, `famp_peers`). Reads Content-Length-framed JSON-RPC from
+    /// stdin; writes framed responses to stdout.
+    Mcp(mcp::McpArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -97,6 +102,16 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     source: e,
                 })?;
             rt.block_on(inbox::run(args))
+        }
+        Commands::Mcp(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(mcp::run(args))
         }
     }
 }

@@ -62,14 +62,39 @@ enum SendMode {
     DeliverTerminal,
 }
 
+/// Outcome returned by [`run_at_structured`].
+///
+/// Carries the task id and final FSM state string without printing to stdout.
+/// The CLI entry [`run_at`] calls this and prints `task_id` for new-task mode;
+/// the MCP tool uses the structured form directly.
+#[derive(Debug, Clone)]
+pub struct SendOutcome {
+    /// The `UUIDv7` task id (the opening request's `id` field).
+    pub task_id: String,
+    /// Human-readable FSM state after the send (`"requested"`, `"delivered"`,
+    /// `"terminal"`).
+    pub state: String,
+}
+
 /// Production entry — resolves `FAMP_HOME`.
 pub async fn run(args: SendArgs) -> Result<(), CliError> {
     let home = home::resolve_famp_home()?;
     run_at(&home, args).await
 }
 
-/// Test-facing entry.
+/// Test-facing entry — prints `task_id` to stdout on new-task mode (CLI parity).
 pub async fn run_at(home: &Path, args: SendArgs) -> Result<(), CliError> {
+    let new_task = args.new_task.is_some();
+    let outcome = run_at_structured(home, args).await?;
+    if new_task {
+        println!("{}", outcome.task_id);
+    }
+    Ok(())
+}
+
+/// Structured entry — returns [`SendOutcome`] without printing. Used by the
+/// MCP tool wrapper so it can embed `task_id` in the JSON-RPC result.
+pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcome, CliError> {
     let layout = load_identity(home)?;
     let signing_key = load_signing_key(&layout)?;
     let from_principal = load_self_principal();
@@ -160,10 +185,15 @@ pub async fn run_at(home: &Path, args: SendArgs) -> Result<(), CliError> {
         outcome.captured_fingerprint,
     )?;
 
-    if matches!(mode, SendMode::NewTask) {
-        println!("{task_id}");
-    }
-    Ok(())
+    let state = match mode {
+        SendMode::NewTask => "requested",
+        SendMode::DeliverNonTerminal => "delivered",
+        SendMode::DeliverTerminal => "terminal",
+    };
+    Ok(SendOutcome {
+        task_id,
+        state: state.to_string(),
+    })
 }
 
 /// Load the daemon's 32-byte Ed25519 seed from disk and wrap it as a

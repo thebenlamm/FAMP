@@ -58,11 +58,66 @@ pub struct AwaitArgs {
     pub task: Option<String>,
 }
 
+/// Structured outcome returned by [`run_at_structured`]. Maps to the JSON
+/// shape locked by Phase 3 Plan 03-03 but without printing.
+#[derive(Debug, Clone)]
+pub struct AwaitOutcome {
+    pub offset: u64,
+    pub task_id: String,
+    pub from: String,
+    pub class: String,
+    pub body: serde_json::Value,
+}
+
 /// Top-level entry point. Resolves `FAMP_HOME` and forwards to [`run_at`].
 pub async fn run(args: AwaitArgs) -> Result<(), CliError> {
     let home = home::resolve_famp_home()?;
     let mut stdout = std::io::stdout();
     run_at(&home, args, &mut stdout).await
+}
+
+/// Structured entry — returns [`AwaitOutcome`] without printing. Used by the
+/// MCP tool wrapper so it can embed the matched entry as a JSON-RPC result.
+pub async fn run_at_structured(home: &Path, args: AwaitArgs) -> Result<AwaitOutcome, CliError> {
+    let mut buf = Vec::<u8>::new();
+    run_at(home, args, &mut buf).await?;
+    // `run_at` writes exactly one JSON line on success.
+    let line = std::str::from_utf8(&buf)
+        .map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        })?
+        .trim_end();
+    let value: serde_json::Value =
+        serde_json::from_str(line).map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        })?;
+    Ok(AwaitOutcome {
+        offset: value
+            .get("offset")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0),
+        task_id: value
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        from: value
+            .get("from")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        class: value
+            .get("class")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        body: value
+            .get("body")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    })
 }
 
 /// Core polling loop. `out` lets tests capture the one structured

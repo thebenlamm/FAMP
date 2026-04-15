@@ -22,7 +22,7 @@ famp-keyring = { path = "../famp-keyring" }
 famp-transport-http = { path = "../famp-transport-http" }
 famp-inbox = { path = "../famp-inbox" }
 famp-taskdir = { path = "../famp-taskdir" }
-tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "signal", "net"] }
+tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "io-std", "signal", "net"] }
 axum = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["limit"] }
@@ -44,7 +44,6 @@ hex = { workspace = true }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { workspace = true }
 humantime = "2"
-
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).

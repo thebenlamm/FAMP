@@ -1,0 +1,69 @@
+//! `famp_inbox` MCP tool — wraps `cli::inbox::{list, ack}`.
+//!
+//! Input shape (JSON):
+//! ```json
+//! {
+//!   "action": "list" | "ack",
+//!   "since":  123,    // optional byte offset for list
+//!   "offset": 456     // required for ack
+//! }
+//! ```
+//!
+//! Output shape for `list`:
+//! ```json
+//! { "entries": [ { "offset": ..., "task_id": "...", ... }, ... ] }
+//! ```
+//!
+//! Output shape for `ack`:
+//! ```json
+//! { "ok": true }
+//! ```
+
+use std::path::Path;
+
+use serde_json::Value;
+
+use crate::cli::error::CliError;
+use crate::cli::inbox::{ack, list};
+
+/// Dispatch a `famp_inbox` tool call.
+pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
+    let action = input["action"]
+        .as_str()
+        .ok_or_else(|| CliError::SendArgsInvalid {
+            reason: "famp_inbox: missing required field 'action'".to_string(),
+        })?;
+
+    match action {
+        "list" => {
+            let since = input["since"].as_u64();
+            let mut buf = Vec::<u8>::new();
+            list::run_list(home, since, &mut buf)?;
+
+            // Parse line-by-line into a JSON array.
+            let entries: Vec<Value> = std::str::from_utf8(&buf)
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+                })?
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| serde_json::from_str(l).unwrap_or(Value::Null))
+                .collect();
+
+            Ok(serde_json::json!({ "entries": entries }))
+        }
+        "ack" => {
+            let offset = input["offset"]
+                .as_u64()
+                .ok_or_else(|| CliError::SendArgsInvalid {
+                    reason: "famp_inbox action=ack requires 'offset'".to_string(),
+                })?;
+            ack::run_ack(home, offset).await?;
+            Ok(serde_json::json!({ "ok": true }))
+        }
+        other => Err(CliError::SendArgsInvalid {
+            reason: format!("famp_inbox: unknown action '{other}'; expected list|ack"),
+        }),
+    }
+}
