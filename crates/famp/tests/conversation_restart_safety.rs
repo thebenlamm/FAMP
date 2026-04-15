@@ -28,7 +28,8 @@ async fn task_record_survives_listener_restart() {
     add_self_peer(home, "self", addr1);
     let task_id = new_task(home, "self", "before restart").await;
     deliver(home, "self", &task_id, false, "msg 1").await;
-    assert_eq!(inbox_line_count(home), 2);
+    // Phase 4: request triggers auto-commit reply, so inbox has request + commit + deliver = 3.
+    assert_eq!(inbox_line_count(home), 3);
     let rec_before = read_task(home, &task_id);
     assert_eq!(rec_before.state, "REQUESTED");
     assert!(!rec_before.terminal);
@@ -49,9 +50,10 @@ async fn task_record_survives_listener_restart() {
     // 5. Send another deliver on the SAME task id: the --task path must
     //    find the persisted record and accept the send.
     deliver(home, "self", &task_id, false, "after restart").await;
+    // Phase 4: inbox = request + commit-reply + first-deliver + second-deliver = 4.
     assert_eq!(
         inbox_line_count(home),
-        3,
+        4,
         "inbox grows on the restarted daemon"
     );
 

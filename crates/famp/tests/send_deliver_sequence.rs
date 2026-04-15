@@ -121,9 +121,11 @@ async fn send_deliver_sequence_keeps_record_non_terminal() {
     assert!(!rec.terminal);
     assert_ne!(rec.last_send_at.as_deref(), Some(first_send_at.as_str()));
 
-    // 4. Inbox should have 4 lines.
+    // 4. Inbox should have 5 lines: 1 request + 1 auto-commit reply + 3 delivers.
+    // Phase 4: the daemon auto-commits on every inbound request, so the commit
+    // reply envelope is stored in the inbox alongside the request and delivers.
     let lines = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
-    assert_eq!(lines.len(), 4, "expected 1 request + 3 delivers");
+    assert_eq!(lines.len(), 5, "expected 1 request + 1 commit reply + 3 delivers");
 
     let _ = shutdown_tx.send(());
     let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;

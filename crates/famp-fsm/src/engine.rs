@@ -50,8 +50,20 @@ impl TaskFsm {
         Ok(next)
     }
 
+    /// Resume an FSM from a persisted state (e.g. a task record loaded from
+    /// disk). This is the Phase 4 replacement for the Phase 3
+    /// `__with_state_for_testing` shortcut: it is public, intentional, and
+    /// represents a legitimate "I know the current state from durable storage"
+    /// operation rather than test-only seeding.
+    ///
+    /// `__with_state_for_testing` remains available for existing test code in
+    /// `famp-fsm`'s own test suite but MUST NOT be used by `crates/famp/src/`.
+    pub const fn resume(state: TaskState) -> Self {
+        Self { state }
+    }
+
     /// Test-only constructor that seeds the FSM in an arbitrary state.
-    /// Public consumers must use `new()`. Hidden from rustdoc.
+    /// Public consumers must use `new()` or `resume()`. Hidden from rustdoc.
     #[doc(hidden)]
     pub const fn __with_state_for_testing(state: TaskState) -> Self {
         Self { state }

@@ -14,6 +14,13 @@
 //! - On timeout, returns [`CliError::AwaitTimeout`] with the original
 //!   string and leaves the cursor untouched.
 //!
+//! ## Phase 4: FSM advance on commit envelopes
+//!
+//! When a matched entry has `class == "commit"` and its `task_id` matches a
+//! local task record in `TaskDir`, `advance_committed` is called on the record
+//! before printing the structured line. This drives REQUESTED → COMMITTED on
+//! the originator side without any test-only state seeding.
+//!
 //! The output JSON shape is locked by Phase 3 Plan 03-03 and documented
 //! in that plan's SUMMARY:
 //!
@@ -30,8 +37,10 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use famp_inbox::{read::read_from, InboxCursor, InboxLock};
+use famp_taskdir::TaskDir;
 
 use crate::cli::error::{parse_duration, CliError};
+use crate::cli::send::fsm_glue::advance_committed;
 use crate::cli::{home, paths};
 
 pub mod poll;
@@ -79,6 +88,24 @@ pub async fn run_at(
         let entries = read_from(&inbox_path, start).map_err(CliError::Inbox)?;
 
         if let Some((value, advance_to)) = poll::find_match(&entries, &args.task) {
+            // Phase 4: if this is a commit-class envelope matching a local
+            // task in REQUESTED, advance the record to COMMITTED before
+            // printing. This is the T-04-07 mitigation — only advances when
+            // class == "commit" AND task_id matches a local record.
+            let class = value.get("class").and_then(|v| v.as_str()).unwrap_or("");
+            let task_id_str = value.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
+            if class == "commit" && !task_id_str.is_empty() {
+                let tasks_dir = paths::tasks_dir(home);
+                if let Ok(tasks) = TaskDir::open(&tasks_dir) {
+                    if tasks.read(task_id_str).is_ok() {
+                        let _ = tasks.update(task_id_str, |mut r| {
+                            let _ = advance_committed(&mut r);
+                            r
+                        });
+                    }
+                }
+            }
+
             let line = serde_json::to_string(&value).unwrap_or_default();
             writeln!(out, "{line}").map_err(|e| CliError::Io {
                 path: inbox_path.clone(),
