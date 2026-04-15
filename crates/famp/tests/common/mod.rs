@@ -30,6 +30,7 @@
 
 pub mod conversation_harness;
 pub mod listen_harness;
+pub mod two_daemon_harness;
 
 pub use listen_harness::{
     build_signed_ack_bytes, build_trusting_reqwest_client, init_home_in_process, post_bytes,

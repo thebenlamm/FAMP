@@ -97,10 +97,8 @@ pub async fn run(args: ListenArgs) -> Result<(), CliError> {
 fn build_keyring(
     home: &Path,
     self_vk: famp_crypto::TrustedVerifyingKey,
+    self_principal_str: &str,
 ) -> Result<famp_keyring::Keyring, CliError> {
-    // TODO(principal-config): read self-principal from config.toml once that
-    // field lands; hard-coded for Phase 4 Plan 04-01 narrowing.
-    let self_principal_str = "agent:localhost/self";
     let self_principal: famp_core::Principal = self_principal_str
         .parse()
         .map_err(|e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
@@ -181,16 +179,26 @@ pub async fn run_on_listener(
 
     let layout = load_identity(home)?;
 
-    // Load config (for future use — currently unused past bind, but parsing
-    // it here means a malformed config after init fails loudly).
+    // Load config — reads `listen_addr` and the optional `principal` override.
+    // A malformed config after init fails loudly here.
     let cfg_bytes = std::fs::read_to_string(&layout.config_toml).map_err(|e| CliError::Io {
         path: layout.config_toml.clone(),
         source: e,
     })?;
-    let _cfg: Config = toml::from_str(&cfg_bytes).map_err(|e| CliError::TomlParse {
+    let cfg: Config = toml::from_str(&cfg_bytes).map_err(|e| CliError::TomlParse {
         path: layout.config_toml.clone(),
         source: e,
     })?;
+
+    // Resolve self-principal: config.toml `principal` field overrides the
+    // Phase 2/3 default. This lets two daemons on the same machine use
+    // distinct identities (e.g., `agent:localhost/alice` and
+    // `agent:localhost/bob`) — required by the Phase 4 two-daemon E2E harness.
+    let self_principal_str = cfg
+        .principal
+        .as_deref()
+        .unwrap_or("agent:localhost/self")
+        .to_string();
 
     // Load the daemon's own signing key (raw 32-byte seed on disk).
     let seed_bytes = std::fs::read(&layout.key_ed25519).map_err(|e| CliError::Io {
@@ -207,14 +215,17 @@ pub async fn run_on_listener(
     drop(seed_bytes); // Explicit drop (Copy [u8;32], Vec dropped here).
 
     // Build multi-entry keyring from peers.toml + self. See `build_keyring`.
-    let keyring = Arc::new(build_keyring(home, vk)?);
+    let keyring = Arc::new(build_keyring(home, vk, &self_principal_str)?);
 
     // Build auto-commit context. The reqwest client used by auto-commit shares
     // the same TOFU-verifier config as `famp send` (via post_envelope).
-    // self_principal hard-coded to agent:localhost/self matching build_keyring.
-    let self_principal: famp_core::Principal = "agent:localhost/self"
+    // self_principal reads from config (overridable by `config.toml`).
+    let self_principal: famp_core::Principal = self_principal_str
         .parse()
-        .unwrap_or_else(|_| unreachable!("static principal string"));
+        .map_err(|e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
+            alias: "self".to_string(),
+            reason: format!("self principal parse: {e}"),
+        })?;
     let auto_commit_ctx = Arc::new(auto_commit::AutoCommitCtx {
         signing_key: sk,
         self_principal,

@@ -97,7 +97,7 @@ pub async fn run_at(home: &Path, args: SendArgs) -> Result<(), CliError> {
 pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcome, CliError> {
     let layout = load_identity(home)?;
     let signing_key = load_signing_key(&layout)?;
-    let from_principal = load_self_principal();
+    let from_principal = load_self_principal(&layout);
 
     let peers_path = paths::peers_toml_path(home);
     let mut peers = read_peers(&peers_path)?;
@@ -213,15 +213,24 @@ fn load_signing_key(
     Ok(famp_crypto::FampSigningKey::from_bytes(seed))
 }
 
-/// Phase 3 narrowing: the local `from` principal is hardcoded to
-/// `agent:localhost/self`, matching the Phase 2 `famp listen` self-keyring
-/// entry. A proper per-instance principal lives in the `config.toml`
-/// schema in Phase 4.
-#[allow(clippy::option_if_let_else)]
-fn load_self_principal() -> Principal {
-    "agent:localhost/self"
+/// Resolve the daemon's own `from` principal.
+///
+/// Reads the optional `principal` field from `config.toml`; if absent,
+/// falls back to `agent:localhost/self` (the Phase 2/3 default). This
+/// allows two daemons on the same machine to use distinct identities,
+/// which is required by the Phase 4 two-daemon E2E harness.
+fn load_self_principal(layout: &IdentityLayout) -> Principal {
+    let fallback = "agent:localhost/self";
+    // Best-effort config read — if the file is missing or unparseable,
+    // fall through to the default so callers are not blocked on a bad config.
+    let principal_str = std::fs::read_to_string(&layout.config_toml)
+        .ok()
+        .and_then(|s| toml::from_str::<crate::cli::config::Config>(&s).ok())
+        .and_then(|cfg| cfg.principal)
+        .unwrap_or_else(|| fallback.to_string());
+    principal_str
         .parse()
-        .unwrap_or_else(|_| unreachable!("static principal string parses"))
+        .unwrap_or_else(|_| fallback.parse().unwrap_or_else(|_| unreachable!()))
 }
 
 /// Resolve the peer's on-wire principal. Prefers the explicit

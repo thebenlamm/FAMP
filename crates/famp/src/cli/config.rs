@@ -23,12 +23,22 @@ use crate::cli::error::CliError;
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub listen_addr: SocketAddr,
+    /// Optional override for the daemon's self-principal.
+    ///
+    /// When absent, `run_on_listener` uses `agent:localhost/self` (the
+    /// Phase 2/3 default). Set this in `config.toml` to distinguish two
+    /// daemons on the same machine — e.g., `agent:localhost/alice` vs
+    /// `agent:localhost/bob`. Phase 4 Plan 04-03 uses this to build the
+    /// two-daemon E2E harness with distinct identities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub principal: Option<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             listen_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8443),
+            principal: None,
         }
     }
 }
