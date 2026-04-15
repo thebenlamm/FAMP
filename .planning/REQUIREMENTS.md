@@ -57,12 +57,12 @@
 
 ### MCP — Claude Code integration (6)
 
-- [ ] **MCP-01**: `famp mcp` subcommand runs a stdio MCP server (JSON-RPC over stdin/stdout) that wraps the CLI. Can be registered in Claude Code's `.mcp.json` as a local server.
-- [ ] **MCP-02**: Tool `famp_send` — params: `{ peer, mode: "new_task" | "deliver" | "terminal", task_id?, title?, body }`. Returns task-id + ok status. Wraps `CLI-03`.
-- [ ] **MCP-03**: Tool `famp_await` — params: `{ timeout_seconds? }`. Returns the next unread inbox entry (task-id, from, class, body) or a structured timeout error. Wraps `CLI-04`.
-- [ ] **MCP-04**: Tool `famp_inbox` — params: `{ unread_only? }`. Returns a list (possibly empty). Non-blocking. Wraps `CLI-05`.
-- [ ] **MCP-05**: Tool `famp_peers` — no params. Returns the peer list from `peers.toml`. Read-only.
-- [ ] **MCP-06**: All tool errors are returned as structured MCP errors with a `famp_error_kind` discriminator (`identity_missing`, `peer_not_found`, `task_not_found`, `task_terminal`, `timeout`, `signature_failure`, etc.), not as `anyhow` strings. Misuse is categorizable, not opaque.
+- [x] **MCP-01**: `famp mcp` subcommand runs a stdio MCP server (JSON-RPC over stdin/stdout) that wraps the CLI. Can be registered in Claude Code's `.mcp.json` as a local server.
+- [x] **MCP-02**: Tool `famp_send` — params: `{ peer, mode: "new_task" | "deliver" | "terminal", task_id?, title?, body }`. Returns task-id + ok status. Wraps `CLI-03`.
+- [x] **MCP-03**: Tool `famp_await` — params: `{ timeout_seconds? }`. Returns the next unread inbox entry (task-id, from, class, body) or a structured timeout error. Wraps `CLI-04`.
+- [x] **MCP-04**: Tool `famp_inbox` — params: `{ unread_only? }`. Returns a list (possibly empty). Non-blocking. Wraps `CLI-05`.
+- [x] **MCP-05**: Tool `famp_peers` — no params. Returns the peer list from `peers.toml`. Read-only.
+- [x] **MCP-06**: All tool errors are returned as structured MCP errors with a `famp_error_kind` discriminator (`identity_missing`, `peer_not_found`, `task_not_found`, `task_terminal`, `timeout`, `signature_failure`, etc.), not as `anyhow` strings. Misuse is categorizable, not opaque.
 
 ### E2E — Same-laptop finish line (3)
 

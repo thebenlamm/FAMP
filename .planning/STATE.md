@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
 status: executing
-last_updated: "2026-04-14T22:41:47.462Z"
-last_activity: 2026-04-14 -- Phase 04 execution started
+last_updated: "2026-04-15T02:31:16.633Z"
+last_activity: 2026-04-15
 ---
 
 # STATE: FAMP — v0.8 Usable from Claude Code
@@ -22,9 +22,9 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 ## Current Position
 
 Phase: 04 (mcp-server-e2e) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 04
-Last activity: 2026-04-14 -- Phase 04 execution started
+Plan: 3 of 3 (next: 04-03)
+Status: Plan 02 complete; 04-03 (E2E same-laptop) queued
+Last activity: 2026-04-15
 
 ```
 v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
@@ -81,6 +81,7 @@ v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0%
 
 ### Recent Activity
 
+- **2026-04-15:** **Plan 04-02 shipped — MCP stdio server + 4 tools.** Hand-rolled Content-Length-framed JSON-RPC server, exhaustive `CliError::mcp_error_kind()` (28 variants, no wildcard), `famp_send`/`famp_await`/`famp_inbox`/`famp_peers` tools, 4/4 subprocess integration tests pass. Commits `f2fb5ff` (Task 1) + `7005886` (Task 2). 353/354 workspace tests (1 pre-existing `send_new_task` failure). MCP-01..06 complete.
 - **2026-04-14:** **Plan 02-03 shipped — Phase 2 complete.** 5 integration test binaries lock DAEMON-01/02/03/04/05 + INBOX-02/04/05 at the OS-process boundary. Shared harness at `tests/common/listen_harness.rs` (spawn/sign/POST/read + ChildGuard). 298/298 workspace tests green. Commits `82776b9` (test: harness) + `4d14f0f` (test: 5 integration tests + stderr-drainer fix + SIGINT-race fix).
 - **2026-04-14:** **Plan 02-02 shipped** — `famp listen` daemon wired end-to-end. Custom Router reusing `FampSigVerifyLayer` + inbox-append handler returning 200 (durability receipt); SIGINT/SIGTERM shutdown; `PortInUse` mapping for `AddrInUse`. 293/293 workspace tests. Commits `f51b590` (feat) + `0dc56a7` (fix: non-blocking listener). CLI-02, DAEMON-01/02/03/04, INBOX-03 complete.
 - **2026-04-14:** **Plan 02-01 shipped** — `famp-inbox` library crate with durable append (fsync-before-return) + tail-tolerant read. 8/8 crate tests, 292/292 workspace tests, `cargo tree -i openssl` empty. Commits `b7ca9bb` (feat) + `071b781` (test). INBOX-01/02/04/05 complete.
