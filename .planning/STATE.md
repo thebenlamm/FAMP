@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.8
 milestone_name: Usable from Claude Code
-status: verifying
-last_updated: "2026-04-14T22:18:35.678Z"
-last_activity: 2026-04-14
+status: executing
+last_updated: "2026-04-14T22:41:47.462Z"
+last_activity: 2026-04-14 -- Phase 04 execution started
 ---
 
 # STATE: FAMP — v0.8 Usable from Claude Code
@@ -17,14 +17,14 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 03 — conversation-cli
+**Current focus:** Phase 04 — mcp-server-e2e
 
 ## Current Position
 
-Phase: 03 (conversation-cli) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
-Last activity: 2026-04-14
+Phase: 04 (mcp-server-e2e) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 04
+Last activity: 2026-04-14 -- Phase 04 execution started
 
 ```
 v0.8 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
