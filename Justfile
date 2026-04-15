@@ -62,6 +62,36 @@ spec-lint:
 ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint
     @echo "✓ local CI-parity checks passed"
 
+# Start two famp daemons in the background for the Phase 4 E2E-02
+# witnessed smoke test. Prints the .mcp.json snippet each Claude Code
+# session should paste.
+e2e-smoke:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SMOKE_A=/tmp/famp-smoke-a
+    SMOKE_B=/tmp/famp-smoke-b
+    rm -rf "$SMOKE_A" "$SMOKE_B"
+    mkdir -p "$SMOKE_A" "$SMOKE_B"
+    FAMP_HOME="$SMOKE_A" cargo run --release -q -p famp -- init
+    FAMP_HOME="$SMOKE_B" cargo run --release -q -p famp -- init
+    # (Users configure mutual peer_add using their preferred flow;
+    # the checklist in 04-E2E-SMOKE.md walks through it.)
+    FAMP_HOME="$SMOKE_A" cargo run --release -q -p famp -- listen --listen 127.0.0.1:18443 &
+    A_PID=$!
+    FAMP_HOME="$SMOKE_B" cargo run --release -q -p famp -- listen --listen 127.0.0.1:18444 &
+    B_PID=$!
+    echo "Daemon A pid=$A_PID home=$SMOKE_A"
+    echo "Daemon B pid=$B_PID home=$SMOKE_B"
+    echo ""
+    echo "=== Paste into Claude Code session 1 (.mcp.json) ==="
+    printf '{\n  "mcpServers": {\n    "famp-alice": {\n      "command": "cargo",\n      "args": ["run", "--release", "-q", "-p", "famp", "--", "mcp"],\n      "env": { "FAMP_HOME": "%s" }\n    }\n  }\n}\n' "$SMOKE_A"
+    echo ""
+    echo "=== Paste into Claude Code session 2 (.mcp.json) ==="
+    printf '{\n  "mcpServers": {\n    "famp-bob": {\n      "command": "cargo",\n      "args": ["run", "--release", "-q", "-p", "famp", "--", "mcp"],\n      "env": { "FAMP_HOME": "%s" }\n    }\n  }\n}\n' "$SMOKE_B"
+    echo ""
+    echo "To stop: kill $A_PID $B_PID"
+    wait $A_PID $B_PID
+
 # Clean build artifacts
 clean:
     cargo clean
