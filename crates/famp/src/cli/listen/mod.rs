@@ -27,6 +27,7 @@ use crate::cli::error::CliError;
 use crate::cli::init::load_identity;
 use crate::cli::paths;
 
+pub mod auto_commit;
 pub mod router;
 pub mod signal;
 
@@ -208,6 +209,18 @@ pub async fn run_on_listener(
     // Build multi-entry keyring from peers.toml + self. See `build_keyring`.
     let keyring = Arc::new(build_keyring(home, vk)?);
 
+    // Build auto-commit context. The reqwest client used by auto-commit shares
+    // the same TOFU-verifier config as `famp send` (via post_envelope).
+    // self_principal hard-coded to agent:localhost/self matching build_keyring.
+    let self_principal: famp_core::Principal = "agent:localhost/self"
+        .parse()
+        .unwrap_or_else(|_| unreachable!("static principal string"));
+    let auto_commit_ctx = Arc::new(auto_commit::AutoCommitCtx {
+        signing_key: sk,
+        self_principal,
+        peers_toml_path: paths::peers_toml_path(home),
+    });
+
     // Open the inbox (creates the 0600 file on first call).
     let inbox_path = layout.home.join("inbox.jsonl");
     let inbox = Arc::new(famp_inbox::Inbox::open(&inbox_path).await?);
@@ -217,9 +230,8 @@ pub async fn run_on_listener(
     let key = famp_transport_http::tls::load_pem_key(&layout.tls_key_pem)?;
     let server_config = Arc::new(famp_transport_http::tls::build_server_config(certs, key)?);
 
-    // Build the router (reuses FampSigVerifyLayer unmodified; custom handler
-    // that appends to the inbox before returning 200).
-    let router = router::build_listen_router(keyring, inbox);
+    // Build the router with auto-commit wiring (Phase 4 Plan 04-01 Task 2).
+    let router = router::build_listen_router(keyring, inbox, auto_commit_ctx);
 
     // Spawn the TLS server on the pre-bound listener.
     let join =

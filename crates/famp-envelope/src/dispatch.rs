@@ -10,7 +10,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 use crate::body::{AckBody, CommitBody, ControlBody, DeliverBody, RequestBody};
-use crate::{EnvelopeDecodeError, SignedEnvelope};
+use crate::{EnvelopeDecodeError, MessageClass, SignedEnvelope};
 use famp_canonical::from_slice_strict;
 use famp_crypto::TrustedVerifyingKey;
 use serde_json::Value;
@@ -25,6 +25,18 @@ pub enum AnySignedEnvelope {
 }
 
 impl AnySignedEnvelope {
+    /// Return the envelope class. Cheap — reads from the already-decoded inner.
+    #[must_use]
+    pub fn class(&self) -> MessageClass {
+        match self {
+            Self::Request(e) => e.class(),
+            Self::Commit(e) => e.class(),
+            Self::Deliver(e) => e.class(),
+            Self::Ack(e) => e.class(),
+            Self::Control(e) => e.class(),
+        }
+    }
+
     /// Decode wire bytes into a typed router variant. Strict-parses first,
     /// then inspects the top-level `class` string to pick a typed decode
     /// path. Unknown classes short-circuit with

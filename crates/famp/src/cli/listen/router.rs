@@ -9,12 +9,15 @@
 //! **200 OK** — stricter than 202 because the 200 is a durability receipt
 //! (fsync happened before we return).
 //!
-//! The `Extension<Arc<AnySignedEnvelope>>` extractor is pulled even though we
-//! do not use its contents: it is a compile-time proof that the upstream
-//! sig-verify layer actually ran (the layer stashes the decoded envelope into
-//! request extensions in Step 5 of middleware.rs). If anyone ever removes the
-//! layer, this extractor will panic at runtime and the listen router will 500
-//! every request — a loud failure, which is what we want.
+//! ## Phase 4 auto-commit wiring
+//!
+//! After the inbox append (durability receipt is 200 — MUST happen first),
+//! the handler inspects the stashed `Extension<Arc<AnySignedEnvelope>>`. If
+//! `class == Request`, it spawns a detached tokio task calling
+//! `auto_commit::spawn_reply`. The 200 response semantics are preserved: the
+//! client always sees 200 before any outbound commit POST begins.
+//!
+//! `AutoCommitCtx` is injected via router state alongside the inbox.
 
 use std::sync::Arc;
 
@@ -25,27 +28,40 @@ use axum::{
     routing::post,
     Router,
 };
-use famp_envelope::AnySignedEnvelope;
+use famp_envelope::{AnySignedEnvelope, MessageClass};
 use famp_keyring::Keyring;
 use famp_transport_http::FampSigVerifyLayer;
 use tower::ServiceBuilder;
 use tower_http::limit::RequestBodyLimitLayer;
 
+use super::auto_commit::{spawn_reply, AutoCommitCtx};
+
 const ONE_MIB: usize = 1_048_576;
 const INBOX_ROUTE: &str = "/famp/v0.5.1/inbox/{principal}";
 
+/// Combined router state — inbox + auto-commit context.
+#[derive(Clone)]
+struct ListenState {
+    inbox: Arc<famp_inbox::Inbox>,
+    auto_commit_ctx: Arc<AutoCommitCtx>,
+}
+
 /// Build the axum router for `famp listen`.
 ///
-/// State: `Arc<famp_inbox::Inbox>` injected via `with_state`. The inbox is
-/// shared across all handler invocations — concurrent appends serialize on
-/// the inbox's internal `tokio::sync::Mutex<File>` (Plan 02-01 contract).
+/// Phase 4: takes an `AutoCommitCtx` in addition to the inbox so the handler
+/// can dispatch commit replies on inbound request envelopes.
 pub fn build_listen_router(
     keyring: Arc<Keyring>,
     inbox: Arc<famp_inbox::Inbox>,
+    auto_commit_ctx: Arc<AutoCommitCtx>,
 ) -> Router {
+    let state = ListenState {
+        inbox,
+        auto_commit_ctx,
+    };
     Router::new()
         .route(INBOX_ROUTE, post(inbox_append_handler))
-        .with_state(inbox)
+        .with_state(state)
         .layer(
             ServiceBuilder::new()
                 // OUTER — 1 MiB body cap per TRANS-07. Runs first.
@@ -59,26 +75,32 @@ pub fn build_listen_router(
         )
 }
 
-/// Handler: append the raw (already-verified) body bytes to the inbox and
-/// return 200 OK on durable commit.
+/// Handler: append the raw (already-verified) body bytes to the inbox,
+/// return 200 OK on durable commit, THEN spawn an auto-commit reply if
+/// the envelope class is Request.
 ///
-/// We append `body` (the raw wire bytes) rather than re-encoding the decoded
-/// envelope. This preserves byte-exactness (P3 of famp-inbox's pitfall notes)
-/// — the bytes signed on the wire are the bytes on disk, no canonicalization
-/// round-trip drift possible.
+/// Ordering guarantee: inbox append (fsync → 200) happens BEFORE the
+/// auto-commit task is spawned. The 200 durability receipt semantics
+/// (Plan 02-02 contract) are fully preserved.
 async fn inbox_append_handler(
-    State(inbox): State<Arc<famp_inbox::Inbox>>,
-    Extension(_envelope): Extension<Arc<AnySignedEnvelope>>,
+    State(state): State<ListenState>,
+    Extension(envelope): Extension<Arc<AnySignedEnvelope>>,
     body: Bytes,
 ) -> Result<StatusCode, StatusCode> {
-    match inbox.append(&body).await {
-        Ok(()) => Ok(StatusCode::OK),
+    // Step 1: durable append — fsync before 200.
+    match state.inbox.append(&body).await {
+        Ok(()) => {}
         Err(e) => {
-            // Tracing is deferred to Phase 4 per CONTEXT §Deferred — until
-            // then, log errors with `eprintln!` so operators can diagnose
-            // inbox failures from the daemon's stderr stream.
             eprintln!("famp listen: inbox append failed: {e}");
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     }
+
+    // Step 2: auto-commit dispatch (fire-and-forget, non-blocking).
+    // Only for Request-class envelopes; other classes are stored but not replied to.
+    if envelope.class() == MessageClass::Request {
+        spawn_reply(state.auto_commit_ctx.clone(), envelope);
+    }
+
+    Ok(StatusCode::OK)
 }

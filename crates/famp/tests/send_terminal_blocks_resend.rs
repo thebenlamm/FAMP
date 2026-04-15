@@ -33,6 +33,7 @@ fn pubkey_b64(home: &std::path::Path) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::too_many_lines)]
 async fn terminal_send_locks_resend() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().to_path_buf();
@@ -88,6 +89,26 @@ async fn terminal_send_locks_resend() {
     let tasks = TaskDir::open(home.join("tasks")).unwrap();
     let task_id = tasks.list().unwrap()[0].task_id.clone();
 
+    // Phase 4: await the auto-commit reply to advance record to COMMITTED.
+    // The daemon fires a commit reply on every inbound request; we must
+    // consume it via `famp await --task <id>` before sending a terminal deliver
+    // (advance_terminal requires COMMITTED state since the FSM shortcut was removed).
+    {
+        let mut buf = Vec::<u8>::new();
+        famp::cli::await_cmd::run_at(
+            &home,
+            famp::cli::await_cmd::AwaitArgs {
+                timeout: "5s".to_string(),
+                task: Some(task_id.clone()),
+            },
+            &mut buf,
+        )
+        .await
+        .expect("await commit reply before terminal send");
+    }
+    let rec_committed = tasks.read(&task_id).unwrap();
+    assert_eq!(rec_committed.state, "COMMITTED", "must be COMMITTED before terminal send");
+
     // Terminal deliver.
     send_run_at(
         &home,
@@ -108,7 +129,8 @@ async fn terminal_send_locks_resend() {
 
     let lines_after_terminal =
         famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
-    assert_eq!(lines_after_terminal.len(), 2, "request + terminal deliver");
+    // Phase 4: request + commit-reply + terminal deliver = 3 lines.
+    assert_eq!(lines_after_terminal.len(), 3, "request + commit reply + terminal deliver");
 
     // Subsequent send must fail with TaskTerminal.
     let err = send_run_at(
@@ -133,7 +155,7 @@ async fn terminal_send_locks_resend() {
     assert_eq!(rec_after_reject, rec_after_terminal);
     let lines_after_reject =
         famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
-    assert_eq!(lines_after_reject.len(), 2);
+    assert_eq!(lines_after_reject.len(), 3);
 
     let _ = shutdown_tx.send(());
     let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;
