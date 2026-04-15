@@ -95,14 +95,23 @@ async fn send_new_task_creates_record_and_hits_daemon() {
     // UUIDv7 hyphenated form is 36 chars.
     assert_eq!(rec.task_id.len(), 36);
 
-    // Daemon inbox should have exactly one line (the request envelope).
+    // Give the fire-and-forget auto-commit reply time to land.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Daemon inbox should have exactly two lines: (1) the request envelope, and
+    // (2) the auto-commit reply sent by the daemon when it received the request.
     let lines = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
-    assert_eq!(lines.len(), 1, "expected one inbox line");
-    let class = lines[0]
+    assert_eq!(lines.len(), 2, "expected two inbox lines (request + auto-commit)");
+    let class0 = lines[0]
         .get("class")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    assert_eq!(class, "request");
+    assert_eq!(class0, "request");
+    let class1 = lines[1]
+        .get("class")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    assert_eq!(class1, "commit");
 
     // Shutdown.
     let _ = shutdown_tx.send(());
