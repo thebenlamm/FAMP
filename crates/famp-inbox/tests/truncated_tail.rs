@@ -6,11 +6,7 @@
 //! These tests write raw bytes via `std::fs::write` so the read path is
 //! verified independently of `Inbox::append`.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 use famp_inbox::{read::read_all, InboxError};
 use serde_json::json;

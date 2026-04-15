@@ -23,8 +23,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::io::{stdin, stdout};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
 use crate::cli::error::CliError;
 use crate::cli::mcp::tools;

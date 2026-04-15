@@ -50,11 +50,9 @@ async fn spawn_daemon_pre_bound(
     let (tx, rx) = oneshot::channel::<()>();
     let home_owned = home.to_path_buf();
     let handle = tokio::spawn(async move {
-        famp::cli::listen::run_on_listener(
-            &home_owned,
-            listener,
-            async move { let _ = rx.await; },
-        )
+        famp::cli::listen::run_on_listener(&home_owned, listener, async move {
+            let _ = rx.await;
+        })
         .await
         .expect("run_on_listener");
     });
@@ -97,7 +95,10 @@ async fn full_long_task_conversation_completes() {
     assert!(!rec.terminal);
     // The auto-commit reply may have already arrived by the time we check,
     // so the inbox may hold 1 (request only) or 2 (request + commit).
-    assert!(inbox_line_count(home) >= 1, "at least the request envelope is on disk");
+    assert!(
+        inbox_line_count(home) >= 1,
+        "at least the request envelope is on disk"
+    );
 
     // 3. Await the auto-commit reply → record advances to COMMITTED.
     let mut buf: Vec<u8> = Vec::new();
@@ -120,7 +121,10 @@ async fn full_long_task_conversation_completes() {
         deliver(home, "self", &task_id, false, &format!("msg {i}")).await;
     }
     let rec = read_task(home, &task_id);
-    assert_eq!(rec.state, "COMMITTED", "non-terminal delivers keep COMMITTED");
+    assert_eq!(
+        rec.state, "COMMITTED",
+        "non-terminal delivers keep COMMITTED"
+    );
     assert!(!rec.terminal);
     assert_eq!(inbox_line_count(home), 5, "request + commit + 3 delivers");
 
@@ -129,7 +133,11 @@ async fn full_long_task_conversation_completes() {
     let rec = read_task(home, &task_id);
     assert_eq!(rec.state, "COMPLETED");
     assert!(rec.terminal);
-    assert_eq!(inbox_line_count(home), 6, "request + commit + 3 delivers + terminal");
+    assert_eq!(
+        inbox_line_count(home),
+        6,
+        "request + commit + 3 delivers + terminal"
+    );
 
     // 6. Subsequent send on the same task must fail TaskTerminal.
     let result = try_deliver(home, "self", &task_id, false, "ghost").await;
@@ -140,11 +148,7 @@ async fn full_long_task_conversation_completes() {
     let rec_after = read_task(home, &task_id);
     assert_eq!(rec_after, read_task(home, &task_id));
     assert!(rec_after.terminal);
-    assert_eq!(
-        inbox_line_count(home),
-        6,
-        "rejected send must not append"
-    );
+    assert_eq!(inbox_line_count(home), 6, "rejected send must not append");
 
     // 7. `famp await` (no task filter) consumes the next inbox entry and
     //    returns the locked JSON shape. The cursor is now past the commit

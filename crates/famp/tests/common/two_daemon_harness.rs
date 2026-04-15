@@ -80,9 +80,7 @@ impl TwoDaemons {
 /// with an additional `principal` line so `run_on_listener` picks it up.
 fn write_config_principal(home: &Path, principal: &str) {
     let config_path = home.join("config.toml");
-    let content = format!(
-        "listen_addr = \"127.0.0.1:8443\"\nprincipal = \"{principal}\"\n"
-    );
+    let content = format!("listen_addr = \"127.0.0.1:8443\"\nprincipal = \"{principal}\"\n");
     std::fs::write(&config_path, content).expect("write config.toml");
 }
 
@@ -96,13 +94,9 @@ async fn spawn_one(
     let (tx, rx) = oneshot::channel::<()>();
     let home_owned = home.to_path_buf();
     let handle = tokio::spawn(async move {
-        famp::cli::listen::run_on_listener(
-            &home_owned,
-            listener,
-            async move {
-                let _ = rx.await;
-            },
-        )
+        famp::cli::listen::run_on_listener(&home_owned, listener, async move {
+            let _ = rx.await;
+        })
         .await
         .expect("run_on_listener");
     });

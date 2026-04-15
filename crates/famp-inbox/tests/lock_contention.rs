@@ -24,7 +24,11 @@ fn acquire_creates_lock_file_with_pid() {
     assert!(path.exists(), "lock file must exist after acquire");
     let contents = std::fs::read_to_string(&path).unwrap();
     let pid: u32 = contents.trim().parse().expect("pid parses");
-    assert_eq!(pid, std::process::id(), "lock file holds this process's pid");
+    assert_eq!(
+        pid,
+        std::process::id(),
+        "lock file holds this process's pid"
+    );
     drop(lock);
 }
 

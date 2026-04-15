@@ -7,11 +7,7 @@
 //!    disk is unchanged after the rejected send.
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 mod common;
 
@@ -107,7 +103,10 @@ async fn terminal_send_locks_resend() {
         .expect("await commit reply before terminal send");
     }
     let rec_committed = tasks.read(&task_id).unwrap();
-    assert_eq!(rec_committed.state, "COMMITTED", "must be COMMITTED before terminal send");
+    assert_eq!(
+        rec_committed.state, "COMMITTED",
+        "must be COMMITTED before terminal send"
+    );
 
     // Terminal deliver.
     send_run_at(
@@ -127,10 +126,13 @@ async fn terminal_send_locks_resend() {
     assert_eq!(rec_after_terminal.state, "COMPLETED");
     assert!(rec_after_terminal.terminal);
 
-    let lines_after_terminal =
-        famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
+    let lines_after_terminal = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
     // Phase 4: request + commit-reply + terminal deliver = 3 lines.
-    assert_eq!(lines_after_terminal.len(), 3, "request + commit reply + terminal deliver");
+    assert_eq!(
+        lines_after_terminal.len(),
+        3,
+        "request + commit reply + terminal deliver"
+    );
 
     // Subsequent send must fail with TaskTerminal.
     let err = send_run_at(
@@ -153,8 +155,7 @@ async fn terminal_send_locks_resend() {
     // Record unchanged, inbox line count unchanged.
     let rec_after_reject = tasks.read(&task_id).unwrap();
     assert_eq!(rec_after_reject, rec_after_terminal);
-    let lines_after_reject =
-        famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
+    let lines_after_reject = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
     assert_eq!(lines_after_reject.len(), 3);
 
     let _ = shutdown_tx.send(());

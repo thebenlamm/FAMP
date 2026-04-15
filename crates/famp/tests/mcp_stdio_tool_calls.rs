@@ -96,7 +96,12 @@ impl McpHarness {
 
         let stdin = child.stdin.take().expect("stdin");
         let stdout = child.stdout.take().expect("stdout");
-        Self { child, stdin, stdout, home }
+        Self {
+            child,
+            stdin,
+            stdout,
+            home,
+        }
     }
 
     /// Spawn `famp mcp` reusing an already-initialized `TempDir` home.
@@ -143,7 +148,10 @@ impl McpHarness {
         }));
         let resp = self.recv();
         assert_eq!(resp["jsonrpc"], "2.0", "initialize response: {resp}");
-        assert!(resp["result"].is_object(), "initialize must return result: {resp}");
+        assert!(
+            resp["result"].is_object(),
+            "initialize must return result: {resp}"
+        );
 
         // Send initialized notification (no response expected).
         self.send(&serde_json::json!({
@@ -203,7 +211,10 @@ fn mcp_initialize_lists_four_tools() {
 
     assert_eq!(names.len(), 4, "expected exactly 4 tools, got: {names:?}");
     for expected in &["famp_send", "famp_await", "famp_inbox", "famp_peers"] {
-        assert!(names.contains(expected), "missing tool {expected}, got: {names:?}");
+        assert!(
+            names.contains(expected),
+            "missing tool {expected}, got: {names:?}"
+        );
     }
 }
 
@@ -224,8 +235,9 @@ fn mcp_famp_send_new_task_returns_structured() {
     let home_dir = common::conversation_harness::setup_home();
 
     // Spawn the in-process listener on an ephemeral port.
-    let (addr, listener_handle, shutdown_tx) =
-        rt.block_on(common::conversation_harness::spawn_listener(home_dir.path()));
+    let (addr, listener_handle, shutdown_tx) = rt.block_on(
+        common::conversation_harness::spawn_listener(home_dir.path()),
+    );
 
     // Register the peer pointing at the real bound address.
     common::conversation_harness::add_self_peer(home_dir.path(), "self", addr);
@@ -246,33 +258,48 @@ fn mcp_famp_send_new_task_returns_structured() {
     });
     send_msg(&mut stdin, &init_msg);
     let init_resp = recv_msg(&mut stdout, Duration::from_secs(10));
-    assert_eq!(init_resp["jsonrpc"], "2.0", "initialize response: {init_resp}");
-    assert!(init_resp["result"].is_object(), "initialize must return result: {init_resp}");
-    send_msg(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized"
-    }));
+    assert_eq!(
+        init_resp["jsonrpc"], "2.0",
+        "initialize response: {init_resp}"
+    );
+    assert!(
+        init_resp["result"].is_object(),
+        "initialize must return result: {init_resp}"
+    );
+    send_msg(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized"
+        }),
+    );
 
     // Call famp_send new_task.
-    send_msg(&mut stdin, &serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/call",
-        "params": {
-            "name": "famp_send",
-            "arguments": {
-                "peer": "self",
-                "mode": "new_task",
-                "title": "hello from mcp test"
+    send_msg(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "famp_send",
+                "arguments": {
+                    "peer": "self",
+                    "mode": "new_task",
+                    "title": "hello from mcp test"
+                }
             }
-        }
-    }));
+        }),
+    );
     let resp = recv_msg(&mut stdout, Duration::from_secs(15));
 
     // Clean up subprocess and listener before asserting.
     let _ = child.kill();
     let _ = child.wait();
-    rt.block_on(common::conversation_harness::stop_listener(listener_handle, shutdown_tx));
+    rt.block_on(common::conversation_harness::stop_listener(
+        listener_handle,
+        shutdown_tx,
+    ));
 
     assert!(resp["error"].is_null(), "unexpected error: {resp}");
     let text = resp["result"]["content"][0]["text"]
@@ -280,7 +307,11 @@ fn mcp_famp_send_new_task_returns_structured() {
         .expect("text content");
     let result: serde_json::Value = serde_json::from_str(text).expect("parse result text");
     let task_id = result["task_id"].as_str().expect("task_id field");
-    assert_eq!(task_id.len(), 36, "task_id should be 36-char UUID, got: {task_id}");
+    assert_eq!(
+        task_id.len(),
+        36,
+        "task_id should be 36-char UUID, got: {task_id}"
+    );
     assert!(result["state"].is_string(), "state field missing: {result}");
 }
 

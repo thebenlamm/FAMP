@@ -198,18 +198,15 @@ pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcom
 
 /// Load the daemon's 32-byte Ed25519 seed from disk and wrap it as a
 /// `FampSigningKey`. Mirrors the Phase 2 listen loader (`listen::run_on_listener`).
-fn load_signing_key(
-    layout: &IdentityLayout,
-) -> Result<famp_crypto::FampSigningKey, CliError> {
+fn load_signing_key(layout: &IdentityLayout) -> Result<famp_crypto::FampSigningKey, CliError> {
     let seed_bytes = std::fs::read(&layout.key_ed25519).map_err(|source| CliError::Io {
         path: layout.key_ed25519.clone(),
         source,
     })?;
-    let seed: [u8; 32] =
-        <[u8; 32]>::try_from(seed_bytes.as_slice()).map_err(|_| CliError::Io {
-            path: layout.key_ed25519.clone(),
-            source: std::io::Error::other("key.ed25519 is not 32 bytes"),
-        })?;
+    let seed: [u8; 32] = <[u8; 32]>::try_from(seed_bytes.as_slice()).map_err(|_| CliError::Io {
+        path: layout.key_ed25519.clone(),
+        source: std::io::Error::other("key.ed25519 is not 32 bytes"),
+    })?;
     Ok(famp_crypto::FampSigningKey::from_bytes(seed))
 }
 
@@ -312,11 +309,12 @@ fn build_deliver_envelope(
     // `task_id` is a UUIDv7 string; re-parse it into a `MessageId` for the
     // causality reference. The local task record key IS the opening
     // request's `id`.
-    let ref_id: MessageId = task_id.parse().map_err(|e: uuid::Error| {
-        CliError::SendArgsInvalid {
-            reason: format!("task id {task_id} is not a valid UUIDv7: {e}"),
-        }
-    })?;
+    let ref_id: MessageId =
+        task_id
+            .parse()
+            .map_err(|e: uuid::Error| CliError::SendArgsInvalid {
+                reason: format!("task id {task_id} is not a valid UUIDv7: {e}"),
+            })?;
     let causality = Causality {
         rel: Relation::Delivers,
         referenced: ref_id,
@@ -354,9 +352,7 @@ fn build_deliver_envelope(
     let signed: SignedEnvelope<DeliverBody> = unsigned
         .sign(sk)
         .map_err(|e| CliError::Envelope(Box::new(e)))?;
-    signed
-        .encode()
-        .map_err(|e| CliError::Envelope(Box::new(e)))
+    signed.encode().map_err(|e| CliError::Envelope(Box::new(e)))
 }
 
 fn uuid_str_from_message_id(id: &MessageId) -> String {
@@ -385,11 +381,8 @@ fn persist_post_send(
     let now_s = now_timestamp().0;
     match mode {
         SendMode::NewTask => {
-            let rec = TaskRecord::new_requested(
-                task_id.to_string(),
-                alias.to_string(),
-                now_s.clone(),
-            );
+            let rec =
+                TaskRecord::new_requested(task_id.to_string(), alias.to_string(), now_s.clone());
             // last_send_at is also updated on the new task.
             let mut rec = rec;
             rec.last_send_at = Some(now_s);

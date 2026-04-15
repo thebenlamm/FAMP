@@ -3,11 +3,7 @@
 //! Open an inbox via the public API, append three payloads, drop the inbox
 //! so the file handle releases, re-read via `read_all`, assert exact order.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 use famp_inbox::{read::read_all, Inbox};
 use serde_json::json;

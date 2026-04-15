@@ -2,11 +2,7 @@
 //! (cross-phase TLS conformance gate) + narrowed IDENT-03 / IDENT-04.
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 use std::os::unix::fs::PermissionsExt;
 
@@ -66,10 +62,10 @@ fn init_tls_output_loads_via_transport_http() {
     let mut err = Vec::<u8>::new();
     famp::cli::init::run_at(&home, false, &mut out, &mut err).expect("init");
 
-    let certs = famp_transport_http::tls::load_pem_cert(&home.join("tls.cert.pem"))
-        .expect("load_pem_cert");
+    let certs =
+        famp_transport_http::tls::load_pem_cert(&home.join("tls.cert.pem")).expect("load_pem_cert");
     let key =
         famp_transport_http::tls::load_pem_key(&home.join("tls.key.pem")).expect("load_pem_key");
-    let _cfg = famp_transport_http::tls::build_server_config(certs, key)
-        .expect("build_server_config");
+    let _cfg =
+        famp_transport_http::tls::build_server_config(certs, key).expect("build_server_config");
 }

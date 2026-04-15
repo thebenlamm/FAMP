@@ -84,7 +84,11 @@ async fn smoke_post_delivers_to_inbox() {
         .get("class")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    assert_eq!(class, "ack", "expected class=ack; got value: {:?}", lines[0]);
+    assert_eq!(
+        class, "ack",
+        "expected class=ack; got value: {:?}",
+        lines[0]
+    );
 
     // Shutdown the daemon task.
     let _ = shutdown_tx.send(());

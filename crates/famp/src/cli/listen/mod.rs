@@ -61,14 +61,13 @@ pub async fn run(args: ListenArgs) -> Result<(), CliError> {
     };
 
     let addr = args.listen.unwrap_or(cfg.listen_addr);
-    let listener =
-        std::net::TcpListener::bind(addr).map_err(|e| match e.kind() {
-            std::io::ErrorKind::AddrInUse => CliError::PortInUse { addr },
-            _ => CliError::Io {
-                path: home.clone(),
-                source: e,
-            },
-        })?;
+    let listener = std::net::TcpListener::bind(addr).map_err(|e| match e.kind() {
+        std::io::ErrorKind::AddrInUse => CliError::PortInUse { addr },
+        _ => CliError::Io {
+            path: home.clone(),
+            source: e,
+        },
+    })?;
     // axum-server 0.8 refuses to register a blocking socket with tokio
     // (see tokio-rs/tokio#7172). `std::net::TcpListener::bind` returns a
     // blocking socket, so flip it here before handing off.
@@ -99,12 +98,15 @@ fn build_keyring(
     self_vk: famp_crypto::TrustedVerifyingKey,
     self_principal_str: &str,
 ) -> Result<famp_keyring::Keyring, CliError> {
-    let self_principal: famp_core::Principal = self_principal_str
-        .parse()
-        .map_err(|e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
-            alias: "self".to_string(),
-            reason: format!("self principal parse: {e}"),
-        })?;
+    let self_principal: famp_core::Principal =
+        self_principal_str
+            .parse()
+            .map_err(
+                |e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
+                    alias: "self".to_string(),
+                    reason: format!("self principal parse: {e}"),
+                },
+            )?;
 
     let peers_path = paths::peers_toml_path(home);
     let peers = read_peers(&peers_path)?;
@@ -118,17 +120,18 @@ fn build_keyring(
                 reason: format!("base64url decode failed: {e}"),
             })?;
         let raw32: [u8; 32] =
-            raw.as_slice().try_into().map_err(|_| CliError::KeyringBuildFailed {
-                alias: peer.alias.clone(),
-                reason: format!("pubkey must be 32 bytes, got {}", raw.len()),
-            })?;
-        let peer_vk =
-            famp_crypto::TrustedVerifyingKey::from_bytes(&raw32).map_err(|e| {
-                CliError::KeyringBuildFailed {
+            raw.as_slice()
+                .try_into()
+                .map_err(|_| CliError::KeyringBuildFailed {
                     alias: peer.alias.clone(),
-                    reason: format!("invalid Ed25519 verifying key: {e}"),
-                }
-            })?;
+                    reason: format!("pubkey must be 32 bytes, got {}", raw.len()),
+                })?;
+        let peer_vk = famp_crypto::TrustedVerifyingKey::from_bytes(&raw32).map_err(|e| {
+            CliError::KeyringBuildFailed {
+                alias: peer.alias.clone(),
+                reason: format!("invalid Ed25519 verifying key: {e}"),
+            }
+        })?;
         let peer_principal_str = peer
             .principal
             .clone()
@@ -136,26 +139,29 @@ fn build_keyring(
         let peer_principal: famp_core::Principal =
             peer_principal_str
                 .parse()
-                .map_err(|e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
-                    alias: peer.alias.clone(),
-                    reason: format!("invalid principal '{peer_principal_str}': {e}"),
-                })?;
-        keyring = keyring
-            .with_peer(peer_principal, peer_vk)
-            .map_err(|e| CliError::KeyringBuildFailed {
+                .map_err(
+                    |e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
+                        alias: peer.alias.clone(),
+                        reason: format!("invalid principal '{peer_principal_str}': {e}"),
+                    },
+                )?;
+        keyring = keyring.with_peer(peer_principal, peer_vk).map_err(|e| {
+            CliError::KeyringBuildFailed {
                 alias: peer.alias.clone(),
                 reason: format!("keyring insert failed: {e}"),
-            })?;
+            }
+        })?;
     }
 
     // Self-entry last — ensures backward compat (Phase 3 self-addressed tests)
     // and cannot be overridden by a peer that claims the same principal.
-    keyring = keyring
-        .with_peer(self_principal, self_vk)
-        .map_err(|e| CliError::KeyringBuildFailed {
-            alias: "self".to_string(),
-            reason: format!("self keyring insert failed: {e}"),
-        })?;
+    keyring =
+        keyring
+            .with_peer(self_principal, self_vk)
+            .map_err(|e| CliError::KeyringBuildFailed {
+                alias: "self".to_string(),
+                reason: format!("self keyring insert failed: {e}"),
+            })?;
     Ok(keyring)
 }
 
@@ -205,11 +211,10 @@ pub async fn run_on_listener(
         path: layout.key_ed25519.clone(),
         source: e,
     })?;
-    let seed: [u8; 32] =
-        <[u8; 32]>::try_from(seed_bytes.as_slice()).map_err(|_| CliError::Io {
-            path: layout.key_ed25519.clone(),
-            source: std::io::Error::other("key.ed25519 is not 32 bytes"),
-        })?;
+    let seed: [u8; 32] = <[u8; 32]>::try_from(seed_bytes.as_slice()).map_err(|_| CliError::Io {
+        path: layout.key_ed25519.clone(),
+        source: std::io::Error::other("key.ed25519 is not 32 bytes"),
+    })?;
     let sk = famp_crypto::FampSigningKey::from_bytes(seed);
     let vk = sk.verifying_key();
     drop(seed_bytes); // Explicit drop (Copy [u8;32], Vec dropped here).
@@ -220,12 +225,15 @@ pub async fn run_on_listener(
     // Build auto-commit context. The reqwest client used by auto-commit shares
     // the same TOFU-verifier config as `famp send` (via post_envelope).
     // self_principal reads from config (overridable by `config.toml`).
-    let self_principal: famp_core::Principal = self_principal_str
-        .parse()
-        .map_err(|e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
-            alias: "self".to_string(),
-            reason: format!("self principal parse: {e}"),
-        })?;
+    let self_principal: famp_core::Principal =
+        self_principal_str
+            .parse()
+            .map_err(
+                |e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
+                    alias: "self".to_string(),
+                    reason: format!("self principal parse: {e}"),
+                },
+            )?;
     let auto_commit_ctx = Arc::new(auto_commit::AutoCommitCtx {
         signing_key: sk,
         self_principal,
@@ -245,8 +253,7 @@ pub async fn run_on_listener(
     let router = router::build_listen_router(keyring, inbox, auto_commit_ctx);
 
     // Spawn the TLS server on the pre-bound listener.
-    let join =
-        famp_transport_http::tls_server::serve_std_listener(listener, router, server_config);
+    let join = famp_transport_http::tls_server::serve_std_listener(listener, router, server_config);
 
     tokio::select! {
         res = join => {

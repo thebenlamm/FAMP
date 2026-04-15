@@ -65,9 +65,7 @@ pub fn pubkey_b64(home: &Path) -> String {
 /// The caller MUST drop `shutdown_tx` (or `send(())` it) and then
 /// `.await` the join handle before the test returns, otherwise the
 /// daemon task will outlive the test's tokio runtime.
-pub async fn spawn_listener(
-    home: &Path,
-) -> (SocketAddr, JoinHandle<()>, oneshot::Sender<()>) {
+pub async fn spawn_listener(home: &Path) -> (SocketAddr, JoinHandle<()>, oneshot::Sender<()>) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
@@ -152,7 +150,11 @@ pub async fn new_task(home: &Path, alias: &str, summary: &str) -> String {
     .expect("send new task");
     let tasks = TaskDir::open(home.join("tasks")).unwrap();
     let records = tasks.list().unwrap();
-    assert_eq!(records.len(), 1, "expected exactly one task record after new_task");
+    assert_eq!(
+        records.len(),
+        1,
+        "expected exactly one task record after new_task"
+    );
     records[0].task_id.clone()
 }
 

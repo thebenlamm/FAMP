@@ -28,8 +28,8 @@ mod common;
 use std::time::Duration;
 
 use common::conversation_harness::{
-    add_self_peer, await_once, deliver, new_task, read_task, setup_home, update_peer_endpoint,
-    stop_listener,
+    add_self_peer, await_once, deliver, new_task, read_task, setup_home, stop_listener,
+    update_peer_endpoint,
 };
 use famp::cli::await_cmd::{run_at as await_run_at, AwaitArgs};
 
@@ -85,20 +85,29 @@ async fn auto_commit_round_trip() {
     .expect("await timed out waiting for commit reply");
 
     let text = String::from_utf8(buf).unwrap();
-    let line = text.lines().next().expect("await printed at least one line");
+    let line = text
+        .lines()
+        .next()
+        .expect("await printed at least one line");
     let val: serde_json::Value = serde_json::from_str(line).expect("await output is JSON");
     let class = val["class"].as_str().unwrap_or("");
     assert_eq!(class, "commit", "second entry must be the commit reply");
 
     // 4. Re-read task record — should now be COMMITTED (advance_committed ran).
     let rec = read_task(home, &task_id);
-    assert_eq!(rec.state, "COMMITTED", "record must be COMMITTED after commit reply");
+    assert_eq!(
+        rec.state, "COMMITTED",
+        "record must be COMMITTED after commit reply"
+    );
     assert!(!rec.terminal, "COMMITTED is non-terminal");
 
     // 5. Send --task <id> --terminal. Real FSM walks COMMITTED → COMPLETED.
     deliver(home, "self", &task_id, true, "done").await;
     let rec = read_task(home, &task_id);
-    assert_eq!(rec.state, "COMPLETED", "terminal deliver must produce COMPLETED");
+    assert_eq!(
+        rec.state, "COMPLETED",
+        "terminal deliver must produce COMPLETED"
+    );
     assert!(rec.terminal, "COMPLETED is terminal");
 
     // 6. Structural check: __with_state_for_testing must not appear in src/.
@@ -125,16 +134,18 @@ async fn auto_commit_round_trip() {
 async fn spawn_listener_at(
     home: &std::path::Path,
     listener: std::net::TcpListener,
-) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>, tokio::sync::oneshot::Sender<()>) {
+) -> (
+    std::net::SocketAddr,
+    tokio::task::JoinHandle<()>,
+    tokio::sync::oneshot::Sender<()>,
+) {
     let addr = listener.local_addr().unwrap();
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let home_owned = home.to_path_buf();
     let handle = tokio::spawn(async move {
-        famp::cli::listen::run_on_listener(
-            &home_owned,
-            listener,
-            async move { let _ = rx.await; },
-        )
+        famp::cli::listen::run_on_listener(&home_owned, listener, async move {
+            let _ = rx.await;
+        })
         .await
         .expect("run_on_listener");
     });

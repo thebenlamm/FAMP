@@ -113,10 +113,7 @@ pub fn spawn_listen(home: &Path, listen_arg: &str) -> Child {
 /// Returns `Err` if the child exited before printing the line, or if
 /// `timeout` elapsed. The error string includes any partial stderr we did
 /// read, for actionable failure diagnostics.
-pub fn read_stderr_bound_addr(
-    child: &mut Child,
-    timeout: Duration,
-) -> Result<SocketAddr, String> {
+pub fn read_stderr_bound_addr(child: &mut Child, timeout: Duration) -> Result<SocketAddr, String> {
     let stderr = child
         .stderr
         .take()
@@ -202,11 +199,7 @@ fn parse_listening_line(line: &str) -> Option<String> {
 /// Poll `addr` with a TCP connect until success or `timeout` elapses.
 /// Also checks the child hasn't already exited: returns an error with
 /// the exit status if so, rather than spinning until timeout.
-pub fn wait_for_bind(
-    child: &mut Child,
-    addr: SocketAddr,
-    timeout: Duration,
-) -> Result<(), String> {
+pub fn wait_for_bind(child: &mut Child, addr: SocketAddr, timeout: Duration) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     let mut backoff = Duration::from_millis(10);
     loop {
@@ -296,8 +289,7 @@ pub async fn post_bytes(
     // Percent-encode the principal segment via `url::Url::path_segments_mut`
     // (same technique as famp_transport_http::transport — MED-03), so the
     // `:` / `/` bytes in `agent:localhost/self` become `%3A` / `%2F`.
-    let mut url =
-        url::Url::parse(&format!("https://{addr}/")).expect("parse base url");
+    let mut url = url::Url::parse(&format!("https://{addr}/")).expect("parse base url");
     {
         let mut segs = url
             .path_segments_mut()

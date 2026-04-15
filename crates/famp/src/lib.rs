@@ -46,5 +46,5 @@ pub use famp_envelope::{
     UnsignedEnvelope, FAMP_SPEC_VERSION,
 };
 
-pub mod runtime;
 pub mod cli;
+pub mod runtime;

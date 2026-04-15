@@ -6,11 +6,7 @@
 //! accept that this is a defense-in-depth test, not a proof.
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 /// D-17 mechanism #3: run init, read the seed back from disk, and scan
 /// captured stdout+stderr for any 8-byte sliding window of the seed.

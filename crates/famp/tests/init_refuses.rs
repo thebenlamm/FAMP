@@ -2,11 +2,7 @@
 //! `--force` is not passed.
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 use famp::cli::CliError;
 

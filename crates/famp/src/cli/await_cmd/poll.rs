@@ -68,10 +68,7 @@ fn extract_task_id(value: &Value) -> Option<&str> {
 /// for a reply (commit/deliver/ack), never to receive their own outgoing
 /// request back. Skipped entries are NOT consumed — the caller's
 /// consume-and-discard logic in `mod.rs` handles advancing past them.
-pub fn find_match(
-    entries: &[(Value, u64)],
-    task_filter: &Option<String>,
-) -> Option<(Value, u64)> {
+pub fn find_match(entries: &[(Value, u64)], task_filter: &Option<String>) -> Option<(Value, u64)> {
     for (value, end_offset) in entries {
         let class = value.get("class").and_then(Value::as_str).unwrap_or("");
         let task_id = extract_task_id(value);

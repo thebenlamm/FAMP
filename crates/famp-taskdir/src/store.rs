@@ -136,10 +136,7 @@ impl TaskDir {
             let text = match std::str::from_utf8(&bytes) {
                 Ok(t) => t,
                 Err(err) => {
-                    eprintln!(
-                        "famp-taskdir: skipping non-utf8 {}: {err}",
-                        path.display()
-                    );
+                    eprintln!("famp-taskdir: skipping non-utf8 {}: {err}", path.display());
                     continue;
                 }
             };

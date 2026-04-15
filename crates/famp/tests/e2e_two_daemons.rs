@@ -23,11 +23,7 @@
 //! 8. Teardown + assert inbox counts.
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 mod common;
 
@@ -184,7 +180,10 @@ async fn e2e_two_daemons_full_lifecycle() {
 
     // A's task record should now be COMMITTED.
     let rec = read_task(&a_home, &task_id);
-    assert_eq!(rec.state, "COMMITTED", "A: after receiving commit → COMMITTED");
+    assert_eq!(
+        rec.state, "COMMITTED",
+        "A: after receiving commit → COMMITTED"
+    );
     assert!(!rec.terminal);
 
     // A's inbox at this point: the commit reply from B (the auto-commit).
@@ -209,7 +208,10 @@ async fn e2e_two_daemons_full_lifecycle() {
     // Bob awaits deliver-1 (consume from B's inbox with task filter).
     let b_d1 = await_one(&b_home, Some(&task_id)).await;
     assert_eq!(b_d1.class, "deliver", "B: deliver-1 class");
-    assert_eq!(b_d1.from, "agent:localhost/alice", "B: deliver-1 from Alice");
+    assert_eq!(
+        b_d1.from, "agent:localhost/alice",
+        "B: deliver-1 from Alice"
+    );
 
     // deliver-2: B → A
     send_deliver(&b_home, "alice", &task_id, "deliver 2 from bob").await;
@@ -254,14 +256,20 @@ async fn e2e_two_daemons_full_lifecycle() {
 
     // A's record should now be COMPLETED.
     let rec = read_task(&a_home, &task_id);
-    assert_eq!(rec.state, "COMPLETED", "A: after terminal deliver → COMPLETED");
+    assert_eq!(
+        rec.state, "COMPLETED",
+        "A: after terminal deliver → COMPLETED"
+    );
     assert!(rec.terminal, "A: record marked terminal");
 
     // ── Step 6: Bob consumes the terminal deliver ─────────────────────────────
     let b_term = await_one(&b_home, Some(&task_id)).await;
     assert_eq!(b_term.class, "deliver", "B: terminal deliver class");
     // Verify it is a terminal deliver: `body.interim` must be false.
-    let interim = b_term.body.get("interim").and_then(serde_json::Value::as_bool);
+    let interim = b_term
+        .body
+        .get("interim")
+        .and_then(serde_json::Value::as_bool);
     assert_eq!(
         interim,
         Some(false),

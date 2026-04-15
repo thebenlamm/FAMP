@@ -102,10 +102,13 @@ impl Inbox {
                     path: self.path.clone(),
                     source,
                 })?;
-            guard.write_all(b"\n").await.map_err(|source| InboxError::Io {
-                path: self.path.clone(),
-                source,
-            })?;
+            guard
+                .write_all(b"\n")
+                .await
+                .map_err(|source| InboxError::Io {
+                    path: self.path.clone(),
+                    source,
+                })?;
             guard.sync_data().await.map_err(|source| InboxError::Io {
                 path: self.path.clone(),
                 source,
@@ -187,12 +190,19 @@ mod tests {
         }
 
         let values = read_all(&path).unwrap();
-        assert_eq!(values.len(), 16, "all 16 lines must be present and parseable");
+        assert_eq!(
+            values.len(),
+            16,
+            "all 16 lines must be present and parseable"
+        );
 
         let mut seen = std::collections::BTreeSet::new();
         for v in values {
             let i = v["i"].as_u64().unwrap();
-            assert!(seen.insert(i), "duplicate index {i} — interleaving detected");
+            assert!(
+                seen.insert(i),
+                "duplicate index {i} — interleaving detected"
+            );
             assert_eq!(v["pad"].as_str().unwrap().len(), 900);
         }
         assert_eq!(seen.len(), 16);

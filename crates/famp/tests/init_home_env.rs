@@ -13,11 +13,7 @@
 //! wrap the two calls in `unsafe { }`.
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 #[test]
 fn famp_home_env_var_overrides_default() {

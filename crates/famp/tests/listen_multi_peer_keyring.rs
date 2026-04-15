@@ -46,11 +46,9 @@ async fn spawn_daemon_in_process(
     let (tx, rx) = oneshot::channel::<()>();
     let home_owned = daemon_home.to_path_buf();
     let handle = tokio::spawn(async move {
-        famp::cli::listen::run_on_listener(
-            &home_owned,
-            listener,
-            async move { let _ = rx.await; },
-        )
+        famp::cli::listen::run_on_listener(&home_owned, listener, async move {
+            let _ = rx.await;
+        })
         .await
         .expect("run_on_listener");
     });
@@ -145,9 +143,7 @@ async fn accepts_envelope_from_registered_peer() {
     let to_p: Principal = "agent:localhost/self".parse().unwrap();
     let bytes = build_signed_request_bytes(sender_home, &from_p, &to_p);
     let client = build_trusting_reqwest_client(daemon_home);
-    let resp = post_bytes(&client, addr, &to_p, bytes)
-        .await
-        .expect("post");
+    let resp = post_bytes(&client, addr, &to_p, bytes).await.expect("post");
 
     let status = resp.status();
     stop_daemon(handle, shutdown_tx).await;
@@ -179,15 +175,19 @@ async fn accepts_envelope_from_self() {
             disposition: AckDisposition::Accepted,
             reason: None,
         };
-        let unsigned: UnsignedEnvelope<AckBody> =
-            UnsignedEnvelope::new(id, me.clone(), me.clone(), AuthorityScope::Advisory, ts, body);
+        let unsigned: UnsignedEnvelope<AckBody> = UnsignedEnvelope::new(
+            id,
+            me.clone(),
+            me.clone(),
+            AuthorityScope::Advisory,
+            ts,
+            body,
+        );
         let signed = unsigned.sign(&load_self_signing_key(home)).expect("sign");
         signed.encode().expect("encode")
     };
     let client = build_trusting_reqwest_client(home);
-    let resp = post_bytes(&client, addr, &me, bytes)
-        .await
-        .expect("post");
+    let resp = post_bytes(&client, addr, &me, bytes).await.expect("post");
     let status = resp.status();
     stop_daemon(handle, shutdown_tx).await;
 
@@ -220,9 +220,7 @@ async fn rejects_envelope_from_unknown_principal() {
     let bytes = build_signed_request_bytes(ghost_home, &ghost_p, &to_p);
 
     let client = build_trusting_reqwest_client(daemon_home);
-    let resp = post_bytes(&client, addr, &to_p, bytes)
-        .await
-        .expect("post");
+    let resp = post_bytes(&client, addr, &to_p, bytes).await.expect("post");
     let status = resp.status();
     stop_daemon(handle, shutdown_tx).await;
 

@@ -47,12 +47,8 @@ fn second_listen_on_same_port_errors_port_in_use() {
     // We deliberately don't read the stderr beacon here — we only care
     // that port is taken. Use wait_for_bind to sync: that also surfaces
     // a spurious A-failure (e.g., cert load) as a clean error.
-    wait_for_bind(
-        guard_a.as_mut().unwrap(),
-        addr,
-        Duration::from_secs(5),
-    )
-    .expect("daemon A should bind the scratch port");
+    wait_for_bind(guard_a.as_mut().unwrap(), addr, Duration::from_secs(5))
+        .expect("daemon A should bind the scratch port");
 
     // Daemon B — should fail fast with PortInUse on the same addr.
     let mut child_b = spawn_listen(&home_b, &addr.to_string());

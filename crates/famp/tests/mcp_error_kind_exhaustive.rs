@@ -38,43 +38,158 @@ fn make_toml_de_error() -> toml::de::Error {
 fn variants_a() -> Vec<(&'static str, CliError)> {
     vec![
         ("HomeNotSet", CliError::HomeNotSet),
-        ("HomeNotAbsolute", CliError::HomeNotAbsolute { path: path("relative") }),
-        ("HomeHasNoParent", CliError::HomeHasNoParent { path: path("/") }),
-        ("HomeCreateFailed", CliError::HomeCreateFailed { path: path("/tmp/x"), source: io_err() }),
-        ("AlreadyInitialized", CliError::AlreadyInitialized { existing_files: vec![path("a")] }),
-        ("IdentityIncomplete", CliError::IdentityIncomplete { missing: path("key.ed25519") }),
+        (
+            "HomeNotAbsolute",
+            CliError::HomeNotAbsolute {
+                path: path("relative"),
+            },
+        ),
+        (
+            "HomeHasNoParent",
+            CliError::HomeHasNoParent { path: path("/") },
+        ),
+        (
+            "HomeCreateFailed",
+            CliError::HomeCreateFailed {
+                path: path("/tmp/x"),
+                source: io_err(),
+            },
+        ),
+        (
+            "AlreadyInitialized",
+            CliError::AlreadyInitialized {
+                existing_files: vec![path("a")],
+            },
+        ),
+        (
+            "IdentityIncomplete",
+            CliError::IdentityIncomplete {
+                missing: path("key.ed25519"),
+            },
+        ),
         ("KeygenFailed", CliError::KeygenFailed(Box::new(io_err()))),
-        ("CertgenFailed", CliError::CertgenFailed(rcgen::Error::CouldNotParseCertificate)),
-        ("Io", CliError::Io { path: path("/tmp"), source: io_err() }),
-        ("TomlSerialize", CliError::TomlSerialize(make_toml_ser_error())),
-        ("TomlParse", CliError::TomlParse { path: path("peers.toml"), source: make_toml_de_error() }),
-        ("PortInUse", CliError::PortInUse { addr: "127.0.0.1:8443".parse().expect("valid addr") }),
-        ("Inbox", CliError::Inbox(famp_inbox::InboxError::Io { path: path("/tmp/inbox.jsonl"), source: io_err() })),
-        ("Tls", CliError::Tls(famp_transport_http::TlsError::NoPrivateKey)),
+        (
+            "CertgenFailed",
+            CliError::CertgenFailed(rcgen::Error::CouldNotParseCertificate),
+        ),
+        (
+            "Io",
+            CliError::Io {
+                path: path("/tmp"),
+                source: io_err(),
+            },
+        ),
+        (
+            "TomlSerialize",
+            CliError::TomlSerialize(make_toml_ser_error()),
+        ),
+        (
+            "TomlParse",
+            CliError::TomlParse {
+                path: path("peers.toml"),
+                source: make_toml_de_error(),
+            },
+        ),
+        (
+            "PortInUse",
+            CliError::PortInUse {
+                addr: "127.0.0.1:8443".parse().expect("valid addr"),
+            },
+        ),
+        (
+            "Inbox",
+            CliError::Inbox(famp_inbox::InboxError::Io {
+                path: path("/tmp/inbox.jsonl"),
+                source: io_err(),
+            }),
+        ),
+        (
+            "Tls",
+            CliError::Tls(famp_transport_http::TlsError::NoPrivateKey),
+        ),
     ]
 }
 
 /// Construct the second half of known `CliError` variants.
 fn variants_b() -> Vec<(&'static str, CliError)> {
     vec![
-        ("PeerNotFound", CliError::PeerNotFound { alias: "alice".to_string() }),
-        ("PeerDuplicate", CliError::PeerDuplicate { alias: "alice".to_string() }),
-        ("PeerEndpointInvalid", CliError::PeerEndpointInvalid { value: "not-a-url".to_string() }),
-        ("PeerPubkeyInvalid", CliError::PeerPubkeyInvalid { value: "bad-key".to_string() }),
-        ("TaskNotFound", CliError::TaskNotFound { task_id: "abc".to_string() }),
-        ("TaskTerminal", CliError::TaskTerminal { task_id: "abc".to_string() }),
+        (
+            "PeerNotFound",
+            CliError::PeerNotFound {
+                alias: "alice".to_string(),
+            },
+        ),
+        (
+            "PeerDuplicate",
+            CliError::PeerDuplicate {
+                alias: "alice".to_string(),
+            },
+        ),
+        (
+            "PeerEndpointInvalid",
+            CliError::PeerEndpointInvalid {
+                value: "not-a-url".to_string(),
+            },
+        ),
+        (
+            "PeerPubkeyInvalid",
+            CliError::PeerPubkeyInvalid {
+                value: "bad-key".to_string(),
+            },
+        ),
+        (
+            "TaskNotFound",
+            CliError::TaskNotFound {
+                task_id: "abc".to_string(),
+            },
+        ),
+        (
+            "TaskTerminal",
+            CliError::TaskTerminal {
+                task_id: "abc".to_string(),
+            },
+        ),
         ("SendFailed", CliError::SendFailed(Box::new(io_err()))),
-        ("TaskDir", CliError::TaskDir(famp_taskdir::TaskDirError::NotFound { task_id: "abc".to_string() })),
+        (
+            "TaskDir",
+            CliError::TaskDir(famp_taskdir::TaskDirError::NotFound {
+                task_id: "abc".to_string(),
+            }),
+        ),
         ("Envelope", CliError::Envelope(Box::new(io_err()))),
-        ("TlsFingerprintMismatch", CliError::TlsFingerprintMismatch {
-            alias: "peer".to_string(), pinned: "aa".to_string(), got: "bb".to_string(),
-        }),
-        ("SendArgsInvalid", CliError::SendArgsInvalid { reason: "test".to_string() }),
-        ("AwaitTimeout", CliError::AwaitTimeout { timeout: "30s".to_string() }),
-        ("InvalidDuration", CliError::InvalidDuration { value: "bad".to_string() }),
-        ("KeyringBuildFailed", CliError::KeyringBuildFailed {
-            alias: "peer".to_string(), reason: "bad key".to_string(),
-        }),
+        (
+            "TlsFingerprintMismatch",
+            CliError::TlsFingerprintMismatch {
+                alias: "peer".to_string(),
+                pinned: "aa".to_string(),
+                got: "bb".to_string(),
+            },
+        ),
+        (
+            "SendArgsInvalid",
+            CliError::SendArgsInvalid {
+                reason: "test".to_string(),
+            },
+        ),
+        (
+            "AwaitTimeout",
+            CliError::AwaitTimeout {
+                timeout: "30s".to_string(),
+            },
+        ),
+        (
+            "InvalidDuration",
+            CliError::InvalidDuration {
+                value: "bad".to_string(),
+            },
+        ),
+        (
+            "KeyringBuildFailed",
+            CliError::KeyringBuildFailed {
+                alias: "peer".to_string(),
+                reason: "bad key".to_string(),
+            },
+        ),
     ]
 }
 
@@ -91,7 +206,10 @@ fn all_variant_kinds() -> Vec<(&'static str, String)> {
 #[test]
 fn every_variant_has_mcp_kind() {
     for (variant, kind) in all_variant_kinds() {
-        assert!(!kind.is_empty(), "CliError::{variant} has an empty mcp_error_kind()");
+        assert!(
+            !kind.is_empty(),
+            "CliError::{variant} has an empty mcp_error_kind()"
+        );
     }
 }
 
@@ -110,21 +228,58 @@ fn mcp_kinds_are_unique() {
 #[test]
 fn mcp_kind_mapping_spot_checks() {
     let checks: &[(&str, CliError)] = &[
-        ("peer_not_found", CliError::PeerNotFound { alias: "x".to_string() }),
-        ("peer_duplicate", CliError::PeerDuplicate { alias: "x".to_string() }),
-        ("task_not_found", CliError::TaskNotFound { task_id: "x".to_string() }),
-        ("task_terminal", CliError::TaskTerminal { task_id: "x".to_string() }),
-        ("await_timeout", CliError::AwaitTimeout { timeout: "30s".to_string() }),
-        ("keyring_build_failed", CliError::KeyringBuildFailed {
-            alias: "x".to_string(), reason: "y".to_string(),
-        }),
-        ("tls_fingerprint_mismatch", CliError::TlsFingerprintMismatch {
-            alias: "x".to_string(), pinned: "a".to_string(), got: "b".to_string(),
-        }),
+        (
+            "peer_not_found",
+            CliError::PeerNotFound {
+                alias: "x".to_string(),
+            },
+        ),
+        (
+            "peer_duplicate",
+            CliError::PeerDuplicate {
+                alias: "x".to_string(),
+            },
+        ),
+        (
+            "task_not_found",
+            CliError::TaskNotFound {
+                task_id: "x".to_string(),
+            },
+        ),
+        (
+            "task_terminal",
+            CliError::TaskTerminal {
+                task_id: "x".to_string(),
+            },
+        ),
+        (
+            "await_timeout",
+            CliError::AwaitTimeout {
+                timeout: "30s".to_string(),
+            },
+        ),
+        (
+            "keyring_build_failed",
+            CliError::KeyringBuildFailed {
+                alias: "x".to_string(),
+                reason: "y".to_string(),
+            },
+        ),
+        (
+            "tls_fingerprint_mismatch",
+            CliError::TlsFingerprintMismatch {
+                alias: "x".to_string(),
+                pinned: "a".to_string(),
+                got: "b".to_string(),
+            },
+        ),
     ];
 
     for (expected, err) in checks {
         let got = err.mcp_error_kind();
-        assert_eq!(got, *expected, "mcp_error_kind() for {err:?}: expected {expected:?}, got {got:?}");
+        assert_eq!(
+            got, *expected,
+            "mcp_error_kind() for {err:?}: expected {expected:?}, got {got:?}"
+        );
     }
 }

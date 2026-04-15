@@ -13,8 +13,8 @@ use crate::cli::paths;
 /// Does NOT advance the cursor.
 pub fn run_list(home: &Path, since: Option<u64>, out: &mut dyn Write) -> Result<(), CliError> {
     let inbox_path = paths::inbox_jsonl_path(home);
-    let entries = famp_inbox::read::read_from(&inbox_path, since.unwrap_or(0))
-        .map_err(CliError::Inbox)?;
+    let entries =
+        famp_inbox::read::read_from(&inbox_path, since.unwrap_or(0)).map_err(CliError::Inbox)?;
 
     for (value, end_offset) in entries {
         let task_id = value.get("task_id").and_then(Value::as_str).unwrap_or("");

@@ -172,9 +172,8 @@ mod tests {
 
     #[test]
     fn config_rejects_unknown_fields() {
-        let res = toml::from_str::<Config>(
-            "listen_addr = \"127.0.0.1:8443\"\nlog_level = \"debug\"\n",
-        );
+        let res =
+            toml::from_str::<Config>("listen_addr = \"127.0.0.1:8443\"\nlog_level = \"debug\"\n");
         assert!(res.is_err(), "deny_unknown_fields should reject log_level");
     }
 
@@ -228,9 +227,13 @@ mod tests {
 
     #[test]
     fn peers_rejects_unknown_fields_on_entry() {
-        let src = "[[peers]]\nalias = \"x\"\nendpoint = \"https://x\"\npubkey_b64 = \"y\"\nbogus = 1\n";
+        let src =
+            "[[peers]]\nalias = \"x\"\nendpoint = \"https://x\"\npubkey_b64 = \"y\"\nbogus = 1\n";
         let res = toml::from_str::<Peers>(src);
-        assert!(res.is_err(), "deny_unknown_fields should reject bogus field on entry");
+        assert!(
+            res.is_err(),
+            "deny_unknown_fields should reject bogus field on entry"
+        );
     }
 
     #[test]

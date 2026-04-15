@@ -44,15 +44,10 @@ fn sigint_causes_exit_0_within_5s() {
     // instead of handled gracefully.
     let addr = {
         let child = guard.as_mut().unwrap();
-        read_stderr_bound_addr(child, Duration::from_secs(5))
-            .expect("read beacon line")
+        read_stderr_bound_addr(child, Duration::from_secs(5)).expect("read beacon line")
     };
-    wait_for_bind(
-        guard.as_mut().unwrap(),
-        addr,
-        Duration::from_secs(5),
-    )
-    .expect("daemon must accept before we SIGINT");
+    wait_for_bind(guard.as_mut().unwrap(), addr, Duration::from_secs(5))
+        .expect("daemon must accept before we SIGINT");
     // Extra settle window: the tokio select! arming `ctrl_c()` runs
     // slightly after tls_server::serve_std_listener spawns. Giving it
     // ~100ms is well under the test's 5s budget and eliminates flake.
@@ -63,7 +58,10 @@ fn sigint_causes_exit_0_within_5s() {
         .args(["-INT", &pid.to_string()])
         .status()
         .expect("/bin/kill");
-    assert!(kill_status.success(), "/bin/kill -INT failed: {kill_status:?}");
+    assert!(
+        kill_status.success(),
+        "/bin/kill -INT failed: {kill_status:?}"
+    );
 
     // Poll try_wait() for up to 5s.
     let deadline = std::time::Instant::now() + Duration::from_secs(5);

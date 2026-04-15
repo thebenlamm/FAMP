@@ -8,11 +8,7 @@
 //! - the daemon inbox now contains exactly four lines (1 request + 3 deliver)
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 mod common;
 
@@ -125,7 +121,11 @@ async fn send_deliver_sequence_keeps_record_non_terminal() {
     // Phase 4: the daemon auto-commits on every inbound request, so the commit
     // reply envelope is stored in the inbox alongside the request and delivers.
     let lines = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
-    assert_eq!(lines.len(), 5, "expected 1 request + 1 commit reply + 3 delivers");
+    assert_eq!(
+        lines.len(),
+        5,
+        "expected 1 request + 1 commit reply + 3 delivers"
+    );
 
     let _ = shutdown_tx.send(());
     let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;

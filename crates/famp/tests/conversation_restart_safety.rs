@@ -14,8 +14,8 @@
 mod common;
 
 use common::conversation_harness::{
-    add_self_peer, deliver, inbox_line_count, new_task, read_task, setup_home,
-    spawn_listener, stop_listener, update_peer_endpoint,
+    add_self_peer, deliver, inbox_line_count, new_task, read_task, setup_home, spawn_listener,
+    stop_listener, update_peer_endpoint,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

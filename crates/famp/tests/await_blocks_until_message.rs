@@ -18,10 +18,10 @@ use std::time::Duration;
 use famp::cli::await_cmd::{run_at as await_run_at, AwaitArgs};
 use famp_inbox::InboxCursor;
 
+use common::init_home_in_process;
 use common::listen_harness::{
     build_signed_ack_bytes, build_trusting_reqwest_client, post_bytes, self_principal,
 };
-use common::init_home_in_process;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn await_blocks_until_message_arrives() {
@@ -51,7 +51,10 @@ async fn await_blocks_until_message_arrives() {
         if tokio::net::TcpStream::connect(addr).await.is_ok() {
             break;
         }
-        assert!(tokio::time::Instant::now() < deadline, "daemon bind timed out");
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "daemon bind timed out"
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
@@ -89,7 +92,11 @@ async fn await_blocks_until_message_arrives() {
     // Exactly one JSON line on stdout.
     let text = String::from_utf8(buf).unwrap();
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines.len(), 1, "expected one await output line, got: {text}");
+    assert_eq!(
+        lines.len(),
+        1,
+        "expected one await output line, got: {text}"
+    );
 
     // Parse and lock the JSON shape.
     let value: serde_json::Value = serde_json::from_str(lines[0]).unwrap();

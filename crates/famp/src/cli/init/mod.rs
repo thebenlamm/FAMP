@@ -83,15 +83,10 @@ pub fn run_at(
             // ran to completion and set the cell. The `ok_or_else` turns the
             // theoretical None into an io error rather than a panic, honoring
             // the workspace `clippy::expect_used` lint.
-            let mut outcome =
-                outcome_cell
-                    .into_inner()
-                    .ok_or_else(|| CliError::Io {
-                        path: home.to_path_buf(),
-                        source: std::io::Error::other(
-                            "internal: materialize_identity did not set outcome",
-                        ),
-                    })?;
+            let mut outcome = outcome_cell.into_inner().ok_or_else(|| CliError::Io {
+                path: home.to_path_buf(),
+                source: std::io::Error::other("internal: materialize_identity did not set outcome"),
+            })?;
             outcome.home = home.to_path_buf();
             emit_output(out, err, &outcome)?;
             Ok(outcome)
@@ -180,11 +175,9 @@ fn materialize_identity(layout: &IdentityLayout) -> Result<InitOutcome, CliError
 
     // 3. TLS cert + key.
     let (cert_pem, key_pem) = tls::generate_tls().map_err(CliError::CertgenFailed)?;
-    perms::write_public(&layout.tls_cert_pem, cert_pem.as_bytes()).map_err(|e| {
-        CliError::Io {
-            path: layout.tls_cert_pem.clone(),
-            source: e,
-        }
+    perms::write_public(&layout.tls_cert_pem, cert_pem.as_bytes()).map_err(|e| CliError::Io {
+        path: layout.tls_cert_pem.clone(),
+        source: e,
     })?;
     perms::write_secret(&layout.tls_key_pem, key_pem.as_bytes()).map_err(|e| CliError::Io {
         path: layout.tls_key_pem.clone(),

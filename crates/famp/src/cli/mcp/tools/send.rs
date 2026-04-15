@@ -74,7 +74,9 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
         },
         other => {
             return Err(CliError::SendArgsInvalid {
-                reason: format!("famp_send: unknown mode '{other}'; expected new_task|deliver|terminal"),
+                reason: format!(
+                    "famp_send: unknown mode '{other}'; expected new_task|deliver|terminal"
+                ),
             });
         }
     };

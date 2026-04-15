@@ -18,9 +18,7 @@
 use std::sync::{Arc, Mutex};
 
 use reqwest::tls::Version;
-use rustls::client::danger::{
-    HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
-};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 use sha2::{Digest, Sha256};
@@ -141,11 +139,11 @@ pub async fn post_envelope(
     let mut url = url::Url::parse(&base)
         .map_err(|e| CliError::SendFailed(Box::new(std::io::Error::other(e.to_string()))))?;
     {
-        let mut segs = url
-            .path_segments_mut()
-            .map_err(|()| CliError::SendFailed(Box::new(std::io::Error::other(
+        let mut segs = url.path_segments_mut().map_err(|()| {
+            CliError::SendFailed(Box::new(std::io::Error::other(
                 "endpoint has no path segments",
-            ))))?;
+            )))
+        })?;
         segs.pop_if_empty();
         segs.extend(["famp", "v0.5.1", "inbox"]);
         segs.push(recipient_principal);
@@ -166,10 +164,8 @@ pub async fn post_envelope(
                 if let Some(mismatch) = msg.find("famp-tofu-mismatch:") {
                     let tail = &msg[mismatch + "famp-tofu-mismatch:".len()..];
                     if let Some((pinned_s, rest)) = tail.split_once(':') {
-                        let got: String = rest
-                            .chars()
-                            .take_while(char::is_ascii_hexdigit)
-                            .collect();
+                        let got: String =
+                            rest.chars().take_while(char::is_ascii_hexdigit).collect();
                         return Err(CliError::TlsFingerprintMismatch {
                             alias: alias.to_string(),
                             pinned: pinned_s.to_string(),

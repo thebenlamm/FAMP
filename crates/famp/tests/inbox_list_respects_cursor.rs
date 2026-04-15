@@ -52,15 +52,16 @@ async fn inbox_list_and_ack_honor_cursor() {
     assert_eq!(off1, LINE1.len() as u64);
     assert_eq!(off2, (LINE1.len() + LINE2.len()) as u64);
     assert_eq!(off3, body.len() as u64);
-    assert_eq!(
-        parsed[0]["body"]["text"].as_str().unwrap(),
-        "one"
-    );
+    assert_eq!(parsed[0]["body"]["text"].as_str().unwrap(), "one");
     assert_eq!(parsed[2]["body"]["text"].as_str().unwrap(), "three");
 
     // list does NOT advance the cursor.
     let cursor = InboxCursor::at(home.join("inbox.cursor"));
-    assert_eq!(cursor.read().await.unwrap(), 0, "list must not touch cursor");
+    assert_eq!(
+        cursor.read().await.unwrap(),
+        0,
+        "list must not touch cursor"
+    );
 
     // ack(off2) advances the cursor without printing.
     run_ack(&home, off2).await.unwrap();

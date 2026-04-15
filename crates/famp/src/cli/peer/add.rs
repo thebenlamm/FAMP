@@ -47,11 +47,12 @@ pub fn run_add_at(
     }
 
     // 2. Validate pubkey — base64url-unpadded → 32 bytes.
-    let raw = URL_SAFE_NO_PAD
-        .decode(pubkey_b64.as_bytes())
-        .map_err(|_| CliError::PeerPubkeyInvalid {
-            value: pubkey_b64.clone(),
-        })?;
+    let raw =
+        URL_SAFE_NO_PAD
+            .decode(pubkey_b64.as_bytes())
+            .map_err(|_| CliError::PeerPubkeyInvalid {
+                value: pubkey_b64.clone(),
+            })?;
     if raw.len() != 32 {
         return Err(CliError::PeerPubkeyInvalid { value: pubkey_b64 });
     }

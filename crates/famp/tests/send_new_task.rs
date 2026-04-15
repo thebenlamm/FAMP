@@ -7,11 +7,7 @@
 //! the daemon's inbox contains exactly one request envelope line.
 
 #![cfg(unix)]
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 mod common;
 
@@ -59,7 +55,10 @@ async fn send_new_task_creates_record_and_hits_daemon() {
         if tokio::net::TcpStream::connect(addr).await.is_ok() {
             break;
         }
-        assert!(tokio::time::Instant::now() < deadline, "daemon bind timed out");
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "daemon bind timed out"
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
@@ -101,7 +100,11 @@ async fn send_new_task_creates_record_and_hits_daemon() {
     // Daemon inbox should have exactly two lines: (1) the request envelope, and
     // (2) the auto-commit reply sent by the daemon when it received the request.
     let lines = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
-    assert_eq!(lines.len(), 2, "expected two inbox lines (request + auto-commit)");
+    assert_eq!(
+        lines.len(),
+        2,
+        "expected two inbox lines (request + auto-commit)"
+    );
     let class0 = lines[0]
         .get("class")
         .and_then(serde_json::Value::as_str)

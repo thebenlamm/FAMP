@@ -6,9 +6,7 @@
 //! - CN: `"famp-local"`
 //! - validity: 3650 days
 
-use rcgen::{
-    CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256,
-};
+use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use time::{Duration, OffsetDateTime};
 
 /// Returns `(cert_pem, key_pem)` — a self-signed ECDSA P-256 cert valid for
@@ -64,10 +62,9 @@ mod tests {
             .and_then(|mut f| f.write_all(key.as_bytes()))
             .expect("write key");
 
-        let certs =
-            famp_transport_http::tls::load_pem_cert(&cert_path).expect("load_pem_cert");
+        let certs = famp_transport_http::tls::load_pem_cert(&cert_path).expect("load_pem_cert");
         let k = famp_transport_http::tls::load_pem_key(&key_path).expect("load_pem_key");
-        let _cfg = famp_transport_http::tls::build_server_config(certs, k)
-            .expect("build_server_config");
+        let _cfg =
+            famp_transport_http::tls::build_server_config(certs, k).expect("build_server_config");
     }
 }

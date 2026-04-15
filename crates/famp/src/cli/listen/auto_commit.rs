@@ -30,12 +30,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use famp_core::{AuthorityScope, MessageId, Principal};
+use famp_crypto::FampSigningKey;
 use famp_envelope::{
     body::{commit::CommitBody, Bounds},
-    AnySignedEnvelope, Causality, Relation, SignedEnvelope, Timestamp,
-    UnsignedEnvelope,
+    AnySignedEnvelope, Causality, Relation, SignedEnvelope, Timestamp, UnsignedEnvelope,
 };
-use famp_crypto::FampSigningKey;
 
 use crate::cli::config::read_peers;
 use crate::cli::send::client::post_envelope;
@@ -72,7 +71,10 @@ pub fn spawn_reply(ctx: Arc<AutoCommitCtx>, req: Arc<AnySignedEnvelope>) {
     });
 }
 
-async fn send_reply(ctx: &AutoCommitCtx, req: &AnySignedEnvelope) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn send_reply(
+    ctx: &AutoCommitCtx,
+    req: &AnySignedEnvelope,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Only reply to Request-class envelopes addressed to self.
     let (req_from, req_to, req_id) = match req {
         AnySignedEnvelope::Request(e) => (e.from_principal(), e.to_principal(), *e.id()),
@@ -84,13 +86,16 @@ async fn send_reply(ctx: &AutoCommitCtx, req: &AnySignedEnvelope) -> Result<(), 
 
     // T-04-02: look up req.from() in peers.toml.
     let peers = read_peers(&ctx.peers_toml_path)?;
-    let Some(peer) = peers.peers.iter().find(|p| {
-        p.principal.as_deref().unwrap_or("agent:localhost/self")
-            == req_from.to_string().as_str()
-    }).cloned() else {
-        eprintln!(
-            "famp listen: auto-commit: no peer entry for from={req_from}, dropping"
-        );
+    let Some(peer) = peers
+        .peers
+        .iter()
+        .find(|p| {
+            p.principal.as_deref().unwrap_or("agent:localhost/self")
+                == req_from.to_string().as_str()
+        })
+        .cloned()
+    else {
+        eprintln!("famp listen: auto-commit: no peer entry for from={req_from}, dropping");
         return Ok(());
     };
 
@@ -145,7 +150,10 @@ async fn send_reply(ctx: &AutoCommitCtx, req: &AnySignedEnvelope) -> Result<(), 
         &peer.alias,
     )
     .await
-    .map_err(|e| Box::new(std::io::Error::other(format!("post_envelope: {e}"))) as Box<dyn std::error::Error + Send + Sync>)?;
+    .map_err(|e| {
+        Box::new(std::io::Error::other(format!("post_envelope: {e}")))
+            as Box<dyn std::error::Error + Send + Sync>
+    })?;
 
     Ok(())
 }

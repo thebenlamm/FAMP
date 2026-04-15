@@ -1,10 +1,6 @@
 //! Phase 3 Plan 03-02 Task 1 — `famp peer add` integration tests.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    unused_crate_dependencies
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 use std::path::Path;
 

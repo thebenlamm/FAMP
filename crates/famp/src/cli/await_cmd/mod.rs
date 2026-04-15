@@ -88,11 +88,10 @@ pub async fn run_at_structured(home: &Path, args: AwaitArgs) -> Result<AwaitOutc
             source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
         })?
         .trim_end();
-    let value: serde_json::Value =
-        serde_json::from_str(line).map_err(|e| CliError::Io {
-            path: std::path::PathBuf::new(),
-            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-        })?;
+    let value: serde_json::Value = serde_json::from_str(line).map_err(|e| CliError::Io {
+        path: std::path::PathBuf::new(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+    })?;
     Ok(AwaitOutcome {
         offset: value
             .get("offset")
