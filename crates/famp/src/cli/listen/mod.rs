@@ -16,12 +16,16 @@
 //! a SIGINT durability test that locks this contract.
 
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
-use crate::cli::config::Config;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
+
+use crate::cli::config::{read_peers, Config};
 use crate::cli::error::CliError;
 use crate::cli::init::load_identity;
+use crate::cli::paths;
 
 pub mod router;
 pub mod signal;
@@ -80,6 +84,82 @@ pub async fn run(args: ListenArgs) -> Result<(), CliError> {
     run_on_listener(&home, listener, signal::shutdown_signal()).await
 }
 
+/// Build the daemon keyring from `peers.toml` entries + the daemon's own
+/// self-principal (`agent:localhost/self` by default).
+///
+/// T-04-01 mitigation: any malformed peer entry (bad pubkey length, bad
+/// base64, bad principal string) is **fatal** — the daemon refuses to start
+/// rather than operating with a silently narrowed trust set.
+///
+/// The self-entry is inserted LAST so it cannot be shadowed by a peer that
+/// chose to claim the same principal string.
+fn build_keyring(
+    home: &Path,
+    self_vk: famp_crypto::TrustedVerifyingKey,
+) -> Result<famp_keyring::Keyring, CliError> {
+    // TODO(principal-config): read self-principal from config.toml once that
+    // field lands; hard-coded for Phase 4 Plan 04-01 narrowing.
+    let self_principal_str = "agent:localhost/self";
+    let self_principal: famp_core::Principal = self_principal_str
+        .parse()
+        .map_err(|e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
+            alias: "self".to_string(),
+            reason: format!("self principal parse: {e}"),
+        })?;
+
+    let peers_path = paths::peers_toml_path(home);
+    let peers = read_peers(&peers_path)?;
+
+    let mut keyring = famp_keyring::Keyring::new();
+    for peer in &peers.peers {
+        let raw = URL_SAFE_NO_PAD
+            .decode(peer.pubkey_b64.as_bytes())
+            .map_err(|e| CliError::KeyringBuildFailed {
+                alias: peer.alias.clone(),
+                reason: format!("base64url decode failed: {e}"),
+            })?;
+        let raw32: [u8; 32] =
+            raw.as_slice().try_into().map_err(|_| CliError::KeyringBuildFailed {
+                alias: peer.alias.clone(),
+                reason: format!("pubkey must be 32 bytes, got {}", raw.len()),
+            })?;
+        let peer_vk =
+            famp_crypto::TrustedVerifyingKey::from_bytes(&raw32).map_err(|e| {
+                CliError::KeyringBuildFailed {
+                    alias: peer.alias.clone(),
+                    reason: format!("invalid Ed25519 verifying key: {e}"),
+                }
+            })?;
+        let peer_principal_str = peer
+            .principal
+            .clone()
+            .unwrap_or_else(|| self_principal_str.to_string());
+        let peer_principal: famp_core::Principal =
+            peer_principal_str
+                .parse()
+                .map_err(|e: famp_core::ParsePrincipalError| CliError::KeyringBuildFailed {
+                    alias: peer.alias.clone(),
+                    reason: format!("invalid principal '{peer_principal_str}': {e}"),
+                })?;
+        keyring = keyring
+            .with_peer(peer_principal, peer_vk)
+            .map_err(|e| CliError::KeyringBuildFailed {
+                alias: peer.alias.clone(),
+                reason: format!("keyring insert failed: {e}"),
+            })?;
+    }
+
+    // Self-entry last — ensures backward compat (Phase 3 self-addressed tests)
+    // and cannot be overridden by a peer that claims the same principal.
+    keyring = keyring
+        .with_peer(self_principal, self_vk)
+        .map_err(|e| CliError::KeyringBuildFailed {
+            alias: "self".to_string(),
+            reason: format!("self keyring insert failed: {e}"),
+        })?;
+    Ok(keyring)
+}
+
 /// Test-facing entry point. Takes a pre-bound listener so integration tests
 /// can use `127.0.0.1:0` for ephemeral ports and read `local_addr()` before
 /// handing control to the server.
@@ -123,27 +203,10 @@ pub async fn run_on_listener(
         })?;
     let sk = famp_crypto::FampSigningKey::from_bytes(seed);
     let vk = sk.verifying_key();
-    // Explicit drop of the seed bytes (no zeroization — Copy semantics
-    // for the [u8; 32], the Vec is dropped here).
-    drop(seed_bytes);
+    drop(seed_bytes); // Explicit drop (Copy [u8;32], Vec dropped here).
 
-    // Build the self-keyring: a single entry (self-principal → own vk).
-    // Phase 2 scope — peer keys land in Phase 3. Plan 02-03's integration
-    // tests will sign with this same self-principal so the sig-verify
-    // middleware can resolve them.
-    let self_principal: famp_core::Principal = "agent:localhost/self"
-        .parse()
-        .map_err(|e: famp_core::ParsePrincipalError| CliError::Io {
-            path: PathBuf::new(),
-            source: std::io::Error::other(format!("self principal parse: {e}")),
-        })?;
-    let keyring = famp_keyring::Keyring::new()
-        .with_peer(self_principal, vk)
-        .map_err(|e| CliError::Io {
-            path: PathBuf::new(),
-            source: std::io::Error::other(format!("self keyring build: {e}")),
-        })?;
-    let keyring = Arc::new(keyring);
+    // Build multi-entry keyring from peers.toml + self. See `build_keyring`.
+    let keyring = Arc::new(build_keyring(home, vk)?);
 
     // Open the inbox (creates the 0600 file on first call).
     let inbox_path = layout.home.join("inbox.jsonl");
@@ -159,7 +222,8 @@ pub async fn run_on_listener(
     let router = router::build_listen_router(keyring, inbox);
 
     // Spawn the TLS server on the pre-bound listener.
-    let join = famp_transport_http::tls_server::serve_std_listener(listener, router, server_config);
+    let join =
+        famp_transport_http::tls_server::serve_std_listener(listener, router, server_config);
 
     tokio::select! {
         res = join => {

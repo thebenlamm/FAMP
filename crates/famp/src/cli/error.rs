@@ -109,6 +109,13 @@ pub enum CliError {
 
     #[error("invalid duration: {value}")]
     InvalidDuration { value: String },
+
+    /// Fatal error building the keyring from peers.toml at daemon startup.
+    /// An invalid peer entry (bad pubkey length, bad base64, bad principal)
+    /// is not recoverable — the daemon refuses to start rather than silently
+    /// operating with a narrowed trust set (T-04-01 mitigated).
+    #[error("keyring build failed for peer '{alias}': {reason}")]
+    KeyringBuildFailed { alias: String, reason: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the
