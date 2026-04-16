@@ -122,15 +122,23 @@ pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcom
         }
     };
 
+    // Check if existing task is terminal (if it exists locally).
+    // If the task doesn't exist, we'll create it on-demand when sending the reply.
+    // This happens when replying to a request we *received* (not originated).
     if let Some(id) = &args.task {
-        let existing = tasks.read(id).map_err(|e| match e {
-            famp_taskdir::TaskDirError::NotFound { task_id } => CliError::TaskNotFound { task_id },
-            other => CliError::TaskDir(other),
-        })?;
-        if existing.terminal {
-            return Err(CliError::TaskTerminal {
-                task_id: id.clone(),
-            });
+        match tasks.read(id) {
+            Ok(existing) => {
+                if existing.terminal {
+                    return Err(CliError::TaskTerminal {
+                        task_id: id.clone(),
+                    });
+                }
+            }
+            Err(famp_taskdir::TaskDirError::NotFound { .. }) => {
+                // Task doesn't exist locally — we're replying to a received request.
+                // We'll create a record in persist_post_send.
+            }
+            Err(other) => return Err(CliError::TaskDir(other)),
         }
     }
 
@@ -389,19 +397,47 @@ fn persist_post_send(
             tasks.create(&rec)?;
         }
         SendMode::DeliverNonTerminal => {
-            tasks.update(task_id, |mut r| {
+            // Try to update existing record; if not found, create one for this
+            // received task we're now replying to.
+            match tasks.update(task_id, |mut r| {
                 r.last_send_at = Some(now_s.clone());
                 r
-            })?;
+            }) {
+                Ok(_) => {}
+                Err(famp_taskdir::TaskDirError::NotFound { .. }) => {
+                    // Create a record for this received task.
+                    let mut rec = TaskRecord::new_requested(
+                        task_id.to_string(),
+                        alias.to_string(),
+                        now_s.clone(),
+                    );
+                    rec.last_send_at = Some(now_s);
+                    tasks.create(&rec)?;
+                }
+                Err(e) => return Err(CliError::TaskDir(e)),
+            }
         }
         SendMode::DeliverTerminal => {
-            tasks.update(task_id, |mut r| {
+            // Try to update existing record; if not found, create one.
+            match tasks.update(task_id, |mut r| {
                 r.last_send_at = Some(now_s.clone());
-                // Phase 3 shortcut: seed FSM at Committed to satisfy v0.7
-                // legality. TODO(phase4): round-trip a real commit reply.
                 let _ = fsm_glue::advance_terminal(&mut r);
                 r
-            })?;
+            }) {
+                Ok(_) => {}
+                Err(famp_taskdir::TaskDirError::NotFound { .. }) => {
+                    // Create and immediately mark terminal for this received task.
+                    let mut rec = TaskRecord::new_requested(
+                        task_id.to_string(),
+                        alias.to_string(),
+                        now_s.clone(),
+                    );
+                    rec.last_send_at = Some(now_s);
+                    let _ = fsm_glue::advance_terminal(&mut rec);
+                    tasks.create(&rec)?;
+                }
+                Err(e) => return Err(CliError::TaskDir(e)),
+            }
         }
     }
 

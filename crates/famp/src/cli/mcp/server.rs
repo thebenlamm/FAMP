@@ -1,14 +1,9 @@
-//! Stdio MCP JSON-RPC server — Content-Length framing, hand-rolled.
+//! Stdio MCP JSON-RPC server — newline-delimited JSON.
 //!
 //! ## Wire format
 //!
-//! Per the MCP specification, stdio transport uses LSP-style Content-Length
-//! framing:
-//! ```text
-//! Content-Length: <N>\r\n
-//! \r\n
-//! <N bytes of UTF-8 JSON>
-//! ```
+//! Claude Code's stdio transport uses newline-delimited JSON (NDJSON):
+//! one JSON object per line, terminated by `\n`.
 //!
 //! ## Handled methods
 //!
@@ -24,7 +19,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::io::{stdin, stdout};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::cli::error::CliError;
 use crate::cli::mcp::tools;
@@ -41,39 +36,39 @@ fn tool_descriptors() -> serde_json::Value {
     serde_json::json!([
         {
             "name": "famp_send",
-            "description": "Send a FAMP envelope to a peer (new task, deliver, or terminal deliver).",
+            "description": "Send a FAMP message. Use 'new_task' to start a conversation. Use 'deliver' or 'terminal' to REPLY to an existing task (you MUST include the task_id from the inbox entry you're responding to).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "peer":    { "type": "string", "description": "Peer alias from peers.toml" },
-                    "mode":    { "type": "string", "enum": ["new_task", "deliver", "terminal"] },
-                    "task_id": { "type": "string", "description": "Required for deliver/terminal" },
-                    "title":   { "type": "string", "description": "New-task summary" },
-                    "body":    { "type": "string", "description": "Optional free-form body text" }
+                    "peer":    { "type": "string", "description": "Peer alias (e.g. 'alice' or 'bob')" },
+                    "mode":    { "type": "string", "enum": ["new_task", "deliver", "terminal"], "description": "new_task=start conversation, deliver=interim reply, terminal=final reply" },
+                    "task_id": { "type": "string", "description": "The task_id from the inbox entry you're replying to. REQUIRED for deliver/terminal modes." },
+                    "title":   { "type": "string", "description": "Summary (for new_task mode)" },
+                    "body":    { "type": "string", "description": "Message content" }
                 },
                 "required": ["peer", "mode"]
             }
         },
         {
             "name": "famp_await",
-            "description": "Block until a new inbox entry arrives (with optional task filter).",
+            "description": "Wait for a new message to arrive. Use task_id to wait for a reply to a specific task you sent.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "timeout_seconds": { "type": "integer", "description": "Timeout in seconds (default 30)" },
-                    "task_id":         { "type": "string",  "description": "Optional task-id filter" }
+                    "task_id":         { "type": "string",  "description": "Wait for reply to this specific task" }
                 }
             }
         },
         {
             "name": "famp_inbox",
-            "description": "List or ack inbox entries.",
+            "description": "List received messages. Each entry has a 'task_id' — use that task_id with famp_send (mode=deliver or terminal) to reply.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "enum": ["list", "ack"] },
-                    "since":  { "type": "integer", "description": "Byte offset for list (default 0)" },
-                    "offset": { "type": "integer", "description": "Byte offset to ack to" }
+                    "action": { "type": "string", "enum": ["list", "ack"], "description": "list=show messages, ack=mark as processed" },
+                    "since":  { "type": "integer", "description": "Byte offset to start from (default 0)" },
+                    "offset": { "type": "integer", "description": "Byte offset to ack up to" }
                 },
                 "required": ["action"]
             }
@@ -98,14 +93,14 @@ fn tool_descriptors() -> serde_json::Value {
 
 // ── framing ───────────────────────────────────────────────────────────────────
 
-/// Write one Content-Length-framed message to stdout.
+/// Write one newline-delimited JSON message to stdout.
 async fn write_msg<W>(out: &mut W, msg: &serde_json::Value) -> std::io::Result<()>
 where
     W: AsyncWriteExt + Unpin,
 {
-    let body = serde_json::to_string(msg).map_err(std::io::Error::other)?;
-    let frame = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
-    out.write_all(frame.as_bytes()).await?;
+    let mut body = serde_json::to_string(msg).map_err(std::io::Error::other)?;
+    body.push('\n');
+    out.write_all(body.as_bytes()).await?;
     out.flush().await
 }
 
@@ -153,33 +148,23 @@ fn tool_result(value: &serde_json::Value) -> serde_json::Value {
 
 // ── message reader ────────────────────────────────────────────────────────────
 
-/// Read one Content-Length-framed JSON-RPC message from a buffered stdin.
+/// Read one newline-delimited JSON-RPC message from a buffered stdin.
 /// Returns `None` on EOF.
 async fn read_msg<R>(reader: &mut BufReader<R>) -> Option<serde_json::Value>
 where
-    R: AsyncReadExt + Unpin,
+    R: tokio::io::AsyncRead + Unpin,
 {
-    // Read header lines until blank line.
-    let mut content_length: Option<usize> = None;
-    loop {
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).await.ok()?;
-        if n == 0 {
-            return None; // EOF
-        }
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed.is_empty() {
-            break; // blank line = end of headers
-        }
-        if let Some(rest) = trimmed.strip_prefix("Content-Length:") {
-            content_length = rest.trim().parse().ok();
-        }
+    let mut line = String::new();
+    let n = reader.read_line(&mut line).await.ok()?;
+    if n == 0 {
+        return None; // EOF
     }
-
-    let len = content_length?;
-    let mut body = vec![0u8; len];
-    reader.read_exact(&mut body).await.ok()?;
-    serde_json::from_slice(&body).ok()
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        // Skip empty lines, try again
+        return Box::pin(read_msg(reader)).await;
+    }
+    serde_json::from_str(trimmed).ok()
 }
 
 // ── main server loop ──────────────────────────────────────────────────────────

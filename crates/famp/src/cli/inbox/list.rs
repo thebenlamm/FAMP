@@ -17,9 +17,18 @@ pub fn run_list(home: &Path, since: Option<u64>, out: &mut dyn Write) -> Result<
         famp_inbox::read::read_from(&inbox_path, since.unwrap_or(0)).map_err(CliError::Inbox)?;
 
     for (value, end_offset) in entries {
-        let task_id = value.get("task_id").and_then(Value::as_str).unwrap_or("");
-        let from = value.get("from").and_then(Value::as_str).unwrap_or("");
         let class = value.get("class").and_then(Value::as_str).unwrap_or("");
+        // For request: the envelope's id IS the task_id to reply to.
+        // For deliver/commit: the task_id is in causality.ref.
+        let task_id = match class {
+            "request" => value.get("id").and_then(Value::as_str).unwrap_or(""),
+            _ => value
+                .get("causality")
+                .and_then(|c| c.get("ref"))
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        };
+        let from = value.get("from").and_then(Value::as_str).unwrap_or("");
         let body = value.get("body").cloned().unwrap_or(Value::Null);
         let shaped = json!({
             "offset": end_offset,
