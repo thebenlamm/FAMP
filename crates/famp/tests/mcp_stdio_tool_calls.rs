@@ -1,7 +1,7 @@
 //! Integration tests for the `famp mcp` stdio JSON-RPC server.
 //!
-//! Each test spawns `famp mcp` as a subprocess, sends Content-Length-framed
-//! JSON-RPC requests over stdin, and reads framed responses from stdout.
+//! Each test spawns `famp mcp` as a subprocess, sends newline-delimited
+//! JSON-RPC requests over stdin, and reads NDJSON responses from stdout.
 //! Tests are time-bounded to 10 s per read.
 
 // Integration test binaries inherit all of famp's transitive deps.
@@ -10,7 +10,7 @@
 
 mod common;
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
@@ -20,49 +20,33 @@ use famp::FampSigningKey;
 
 // ── frame helpers ─────────────────────────────────────────────────────────────
 
-/// Write one Content-Length-framed JSON-RPC message to `stdin`.
+/// Write one newline-delimited JSON-RPC message to `stdin`.
 fn send_msg(stdin: &mut ChildStdin, msg: &serde_json::Value) {
-    let body = serde_json::to_string(msg).expect("serialize");
-    let frame = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
-    stdin.write_all(frame.as_bytes()).expect("write to stdin");
+    let mut body = serde_json::to_string(msg).expect("serialize");
+    body.push('\n');
+    stdin.write_all(body.as_bytes()).expect("write to stdin");
     stdin.flush().expect("flush stdin");
 }
 
-/// Read one Content-Length-framed JSON-RPC message from `stdout`.
+/// Read one newline-delimited JSON-RPC message from `stdout`.
 /// Panics if no complete message arrives within `timeout`.
 fn recv_msg(stdout: &mut ChildStdout, timeout: Duration) -> serde_json::Value {
+    use std::io::BufRead;
     let deadline = std::time::Instant::now() + timeout;
-    let mut header_buf = Vec::new();
-    let mut byte = [0u8; 1];
+    let mut reader = std::io::BufReader::new(stdout);
 
-    // Read byte-by-byte until we see \r\n\r\n.
     loop {
         assert!(
             std::time::Instant::now() < deadline,
-            "timed out waiting for MCP response header"
+            "timed out waiting for MCP response"
         );
-        stdout.read_exact(&mut byte).expect("read byte");
-        header_buf.push(byte[0]);
-        if header_buf.ends_with(b"\r\n\r\n") {
-            break;
+        let mut line = String::new();
+        reader.read_line(&mut line).expect("read line");
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return serde_json::from_str(trimmed).expect("parse JSON line");
         }
     }
-
-    let header = std::str::from_utf8(&header_buf).expect("utf8 header");
-    let content_length: usize = header
-        .lines()
-        .find(|l| l.starts_with("Content-Length:"))
-        .expect("Content-Length header")
-        .split(':')
-        .nth(1)
-        .expect("value after colon")
-        .trim()
-        .parse()
-        .expect("parse content length");
-
-    let mut body = vec![0u8; content_length];
-    stdout.read_exact(&mut body).expect("read body");
-    serde_json::from_slice(&body).expect("parse JSON body")
 }
 
 // ── harness ───────────────────────────────────────────────────────────────────

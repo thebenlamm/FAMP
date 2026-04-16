@@ -154,17 +154,18 @@ async fn read_msg<R>(reader: &mut BufReader<R>) -> Option<serde_json::Value>
 where
     R: tokio::io::AsyncRead + Unpin,
 {
-    let mut line = String::new();
-    let n = reader.read_line(&mut line).await.ok()?;
-    if n == 0 {
-        return None; // EOF
+    loop {
+        let mut line = String::new();
+        let n = reader.read_line(&mut line).await.ok()?;
+        if n == 0 {
+            return None; // EOF
+        }
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return serde_json::from_str(trimmed).ok();
+        }
+        // Skip empty lines, continue loop
     }
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        // Skip empty lines, try again
-        return Box::pin(read_msg(reader)).await;
-    }
-    serde_json::from_str(trimmed).ok()
 }
 
 // ── main server loop ──────────────────────────────────────────────────────────
