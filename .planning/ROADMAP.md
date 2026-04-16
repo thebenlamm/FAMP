@@ -7,7 +7,7 @@
 - ✅ **v0.5.1 Spec Fork** — Phases 0–1 (shipped 2026-04-13). Interop contract locked; FAMP-v0.5.1-spec.md authoritative. See [milestones/v0.5.1-ROADMAP.md](milestones/v0.5.1-ROADMAP.md).
 - ✅ **v0.6 Foundation Crates** — Phases 1–3 (shipped 2026-04-13). Substrate shipped: `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements satisfied, 112/112 tests green. See [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md).
 - ✅ **v0.7 Personal Runtime** — Phases 1–4 (shipped 2026-04-14). Minimal usable library on two transports. 4/4 phases, 15/15 plans, 253/253 tests green.
-- ✅ **v0.8 Usable from Claude Code** — Phases 1–4 (shipped 2026-04-15). CLI + daemon + inbox + MCP server. 4/4 phases, 13/13 plans, 37/37 requirements, 355/355 tests green. See [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md).
+- ✅ **v0.8 Usable from Claude Code** — Phases 1–4 (shipped 2026-04-16). CLI + daemon + inbox + MCP server + streamlined onboarding (`setup`/`info`/`peer import`). 4/4 phases, 13/13 plans, 37/37 requirements, 366/366 tests green. See [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md).
 - 📋 **v0.9+ Federation Profile** — Identity & Cards, Causality, Negotiation, Delegation, Provenance, Extensions, Adversarial Conformance.
 
 ## Phases
@@ -162,4 +162,4 @@ Rough ordering, not committed:
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 3/3 | Complete | 2026-04-15 |
 
 ---
-*Roadmap updated: 2026-04-15 — v0.8 Usable from Claude Code SHIPPED (4/4 phases, 13/13 plans, 37/37 requirements, 355/355 tests). E2E-02 manual smoke test PASSED.*
+*Roadmap updated: 2026-04-16 — v0.8 Usable from Claude Code SHIPPED (4/4 phases, 13/13 plans, 37/37 requirements, 366/366 tests). Streamlined onboarding: `famp setup`, `famp info`, `famp peer import`. E2E-02 manual smoke test PASSED.*

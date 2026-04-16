@@ -1,20 +1,20 @@
 # FAMP — Federated Agent Messaging Protocol (Rust reference implementation)
 
-**Status:** `v0.7 Personal Runtime` shipped
+**Status:** `v0.8 Usable from Claude Code` — MCP integration complete
 
 FAMP is a Rust implementation of the Federated Agent Messaging Protocol, built
 in two layers:
 
-- **Personal Profile (`v0.6` + `v0.7`)**: a signed agent-to-agent runtime a
-  single developer can actually use today
-- **Federation Profile (`v0.8+`)**: the larger ecosystem semantics that sit on
+- **Personal Profile (`v0.6` + `v0.7` + `v0.8`)**: a signed agent-to-agent runtime
+  a single developer can actually use today, with CLI tools and MCP integration
+- **Federation Profile (`v0.9+`)**: the larger ecosystem semantics that sit on
   top later, including Agent Cards, federation trust, negotiation, delegation,
   provenance, extensions, and full conformance badges
 
 The current repo ships the **personal runtime**: canonical JSON, Ed25519
 signing with domain separation, typed core IDs/errors, signed envelopes, a
-minimal task FSM, an in-process transport, a minimal HTTPS transport, and a
-TOFU keyring.
+minimal task FSM, an in-process transport, a minimal HTTPS transport, a
+TOFU keyring, and a full CLI with MCP server for Claude Code integration.
 
 ## What Works Today
 
@@ -37,13 +37,22 @@ TOFU keyring.
 - `MemoryTransport` for same-process use
 - Minimal HTTPS transport built on `axum`, `reqwest`, and `rustls`
 - TOFU keyring binding `Principal -> VerifyingKey`
+- **Full CLI** with streamlined onboarding:
+  - `famp setup` — one-command identity creation with auto port selection
+  - `famp info` — output peer card for sharing
+  - `famp peer import` — import peer cards from other agents
+  - `famp listen` — run the HTTPS daemon
+  - `famp send` — send signed envelopes
+  - `famp inbox` — inspect received messages
+  - `famp await` — block until new messages arrive
+- **MCP server** (`famp mcp`) for Claude Code integration
 - Two runnable examples:
   - same-process happy path
   - cross-machine HTTPS happy path
 
 ## Not Shipped Yet
 
-Deferred to the federation-profile milestones (`v0.8+`):
+Deferred to the federation-profile milestones (`v0.9+`):
 
 - Agent Cards and federation credentials
 - `.well-known` card distribution
@@ -53,7 +62,6 @@ Deferred to the federation-profile milestones (`v0.8+`):
 - extensions registry
 - replay defense / freshness windows / idempotency scoping
 - full adversarial conformance matrix and Level 2/3 badges
-- CLI workflows beyond the current examples
 
 ## Prerequisites
 
@@ -79,7 +87,62 @@ cargo install just --locked
 just ci
 ```
 
-## Quick Start
+## Quick Start (CLI)
+
+The fastest way to get two agents talking:
+
+```bash
+# 1. Build the CLI
+cargo build --release
+
+# 2. Set up two agents with unique ports
+./target/release/famp setup --name alice --home /tmp/famp-alice --port 8443
+./target/release/famp setup --name bob --home /tmp/famp-bob --port 8444
+
+# 3. Exchange peer cards (pipe-friendly!)
+FAMP_HOME=/tmp/famp-alice ./target/release/famp info | \
+  FAMP_HOME=/tmp/famp-bob ./target/release/famp peer import
+FAMP_HOME=/tmp/famp-bob ./target/release/famp info | \
+  FAMP_HOME=/tmp/famp-alice ./target/release/famp peer import
+
+# 4. Start daemons (in separate terminals or background)
+FAMP_HOME=/tmp/famp-alice ./target/release/famp listen &
+FAMP_HOME=/tmp/famp-bob ./target/release/famp listen &
+
+# 5. Send a message from Alice to Bob
+FAMP_HOME=/tmp/famp-alice ./target/release/famp send \
+  --to bob --action new_task --body '{"task": "hello"}'
+```
+
+Each `famp setup` outputs a **peer card** — a JSON blob containing endpoint,
+public key, and principal that other agents need to register you as a peer.
+
+## MCP Integration (Claude Code)
+
+FAMP includes an MCP server for use with Claude Code. Add to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "famp-alice": {
+      "command": "/path/to/famp",
+      "args": ["mcp"],
+      "env": { "FAMP_HOME": "/tmp/famp-alice" }
+    }
+  }
+}
+```
+
+The MCP server exposes four tools:
+- `famp_send` — send signed envelopes
+- `famp_inbox` — list received messages
+- `famp_await` — wait for new messages
+- `famp_peers` — list/add peers
+
+See [`.planning/HANDOFF-mcp-integration.md`](.planning/HANDOFF-mcp-integration.md)
+for detailed MCP setup instructions.
+
+## Programmatic Examples
 
 Run the in-process happy path:
 
@@ -276,7 +339,8 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `v0.5.1`: spec fork, shipped
 - `v0.6`: foundation crates, shipped
 - `v0.7`: personal runtime, shipped
-- `v0.8+`: federation profile, next
+- `v0.8`: usable from Claude Code (CLI + MCP), shipped
+- `v0.9+`: federation profile, next
 
 See [`.planning/ROADMAP.md`](.planning/ROADMAP.md) for the current roadmap and
 [`.planning/MILESTONES.md`](.planning/MILESTONES.md) for milestone history.

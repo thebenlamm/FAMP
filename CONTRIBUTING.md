@@ -1,13 +1,13 @@
 # Contributing to FAMP
 
 FAMP is a Rust reference implementation of the Federated Agent Messaging
-Protocol. The `v0.7` Personal Runtime is maintained by a single developer.
-External PRs are welcome from `v1.0` onward; until then, please file issues
-rather than PRs.
+Protocol. The `v0.8` Personal Runtime (with MCP integration) is maintained by
+a single developer. External PRs are welcome from `v1.0` onward; until then,
+please file issues rather than PRs.
 
 ## Setup
 
-The Rust toolchain is pinned by `rust-toolchain.toml` to `1.89.0`. Running
+The Rust toolchain is pinned by `rust-toolchain.toml` to `1.87.0`. Running
 any `cargo` command in the repo auto-installs it via `rustup`.
 
 1. Install `rustup`: <https://rustup.rs>
@@ -33,10 +33,12 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `crates/famp-core` — typed `Principal`/`Instance`, UUIDv7 IDs, `ArtifactId`, `ProtocolErrorKind`, invariants
 - `crates/famp-envelope` — signed envelope types and the five shipped message bodies
 - `crates/famp-fsm` — the 5-state task FSM
+- `crates/famp-inbox` — append-only inbox storage
 - `crates/famp-keyring` — TOFU keyring file format and peer parsing
+- `crates/famp-taskdir` — task state directory management
 - `crates/famp-transport` — `Transport` trait and `MemoryTransport`
 - `crates/famp-transport-http` — minimal HTTPS transport (`axum` + `reqwest` + `rustls`)
-- `crates/famp` — runtime glue, examples, and cross-crate integration tests
+- `crates/famp` — CLI binary, MCP server, runtime glue, examples, and integration tests
 
 ## Test Gates
 
@@ -66,7 +68,7 @@ locally is the shipping bar.
 
 ## Code Review
 
-For `v0.7`: single maintainer plus adversarial review agent. Workflow is
+For `v0.8`: single maintainer plus adversarial review agent. Workflow is
 documented in `CLAUDE.md`. Every non-trivial change gets an adversarial
 review pass before merge.
 
