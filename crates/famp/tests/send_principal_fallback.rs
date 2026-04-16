@@ -1,0 +1,134 @@
+//! Regression test for the silent-principal-fallback finding.
+//!
+//! `famp send` must NOT silently sign as `agent:localhost/self` when the
+//! configured principal is malformed or `config.toml` cannot be parsed.
+//! The fallback applies only when the field is genuinely absent.
+
+#![cfg(unix)]
+#![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
+
+mod common;
+
+use famp::cli::peer::add::run_add_at;
+use famp::cli::send::{run_at as send_run_at, SendArgs};
+
+use common::init_home_in_process;
+
+/// A peer entry is required so `send` reaches `load_self_principal` rather
+/// than failing earlier on `PeerNotFound`. The endpoint never gets dialled
+/// because the principal load fails first.
+fn add_dummy_peer(home: &std::path::Path) {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine as _;
+    let bytes = std::fs::read(home.join("pub.ed25519")).unwrap();
+    let pubkey = URL_SAFE_NO_PAD.encode(bytes);
+    run_add_at(
+        home,
+        "self".to_string(),
+        "https://127.0.0.1:1".to_string(),
+        pubkey,
+        Some("agent:localhost/self".to_string()),
+    )
+    .expect("peer add");
+}
+
+fn send_args() -> SendArgs {
+    SendArgs {
+        to: "self".to_string(),
+        new_task: Some("hi".to_string()),
+        task: None,
+        terminal: false,
+        body: None,
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn malformed_config_toml_is_a_hard_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().to_path_buf();
+    init_home_in_process(&home);
+    add_dummy_peer(&home);
+
+    // Corrupt the config so it's no longer valid TOML.
+    std::fs::write(home.join("config.toml"), b"this = is = not = valid =\n").unwrap();
+
+    let res = send_run_at(&home, send_args()).await;
+    let err = res.expect_err("malformed config.toml must fail send, not silently fall back");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("toml parse failed"),
+        "expected TOML parse error, got: {msg}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn malformed_principal_field_is_a_hard_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().to_path_buf();
+    init_home_in_process(&home);
+    add_dummy_peer(&home);
+
+    // Valid TOML, but the principal value is not a valid Principal.
+    std::fs::write(
+        home.join("config.toml"),
+        b"listen_addr = \"127.0.0.1:8443\"\nprincipal = \"not-a-valid-principal\"\n",
+    )
+    .unwrap();
+
+    let res = send_run_at(&home, send_args()).await;
+    let err = res.expect_err("malformed principal must be hard-error, not silent fallback");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("send failed"),
+        "expected send-failed wrapper, got: {msg}"
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn absent_principal_field_uses_fallback() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().to_path_buf();
+    init_home_in_process(&home);
+    add_dummy_peer(&home);
+
+    // Default config: no principal field. Send must NOT fail on load_self_principal;
+    // it will fail later on connect (port 1 has no listener), and that's fine —
+    // we just need to confirm the principal load itself succeeded.
+    let res = send_run_at(&home, send_args()).await;
+    let err = res.expect_err("connect to 127.0.0.1:1 should fail");
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("toml parse failed") && !msg.contains("invalid"),
+        "fallback path must not produce a config error, got: {msg}"
+    );
+}
+
+// Silencers: this binary only uses a small slice of the workspace deps via
+// `common`, so quiet `unused_crate_dependencies` for the rest.
+use axum as _;
+use clap as _;
+use ed25519_dalek as _;
+use famp_canonical as _;
+use famp_core as _;
+use famp_crypto as _;
+use famp_envelope as _;
+use famp_fsm as _;
+use famp_inbox as _;
+use famp_keyring as _;
+use famp_taskdir as _;
+use famp_transport as _;
+use famp_transport_http as _;
+use hex as _;
+use rand as _;
+use rcgen as _;
+use rustls as _;
+use serde as _;
+use serde_json as _;
+use sha2 as _;
+use thiserror as _;
+use time as _;
+use toml as _;
+use tower as _;
+use tower_http as _;
+use url as _;
+use uuid as _;

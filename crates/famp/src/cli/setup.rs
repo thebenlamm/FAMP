@@ -1,10 +1,10 @@
 //! `famp setup` — one-command onboarding for FAMP agents.
 //!
 //! This command handles the full setup flow:
-//! 1. Creates FAMP_HOME if needed (or uses existing)
+//! 1. Creates `FAMP_HOME` if needed (or uses existing)
 //! 2. Runs `famp init` if not already initialized
 //! 3. Picks an available port (default range 8443-8543)
-//! 4. Updates config.toml with the selected port
+//! 4. Updates `config.toml` with the selected port
 //! 5. Outputs a peer card JSON that can be shared with other agents
 //!
 //! The peer card format:
@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::cli::config::Config;
 use crate::cli::error::CliError;
-use crate::cli::paths::IdentityLayout;
 use crate::cli::init;
+use crate::cli::paths::IdentityLayout;
 
 /// Peer card: shareable identity for peer registration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,8 +54,8 @@ pub struct SetupArgs {
     #[arg(long)]
     pub port: Option<u16>,
 
-    /// Override FAMP_HOME (useful for running multiple agents).
-    /// If not specified, uses $FAMP_HOME or creates a unique directory.
+    /// Override `FAMP_HOME` (useful for running multiple agents).
+    /// If not specified, uses `$FAMP_HOME` or creates a unique directory.
     #[arg(long)]
     pub home: Option<String>,
 
@@ -69,7 +69,7 @@ pub struct SetupArgs {
 }
 
 /// Production entry point.
-pub fn run(args: SetupArgs) -> Result<PeerCard, CliError> {
+pub fn run(args: &SetupArgs) -> Result<PeerCard, CliError> {
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
     run_with_io(args, &mut stdout, &mut stderr)
@@ -77,7 +77,7 @@ pub fn run(args: SetupArgs) -> Result<PeerCard, CliError> {
 
 /// Test-facing entry point with injectable IO.
 pub fn run_with_io(
-    args: SetupArgs,
+    args: &SetupArgs,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<PeerCard, CliError> {
@@ -106,7 +106,7 @@ pub fn run_with_io(
         Some(p) => p,
         None => find_available_port(8443, 8543)?,
     };
-    writeln!(err, "Selected port: {}", port).ok();
+    writeln!(err, "Selected port: {port}").ok();
 
     // 4. Update config.toml with port and principal
     let principal = format!("agent:localhost/{}", args.name);
@@ -114,7 +114,7 @@ pub fn run_with_io(
     writeln!(err, "Updated config.toml").ok();
 
     // 5. Build and output peer card
-    let endpoint = format!("https://127.0.0.1:{}", port);
+    let endpoint = format!("https://127.0.0.1:{port}");
     let card = PeerCard {
         alias: args.name.clone(),
         endpoint,
@@ -128,7 +128,7 @@ pub fn run_with_io(
             path: home_path.clone(),
             source: std::io::Error::other(e.to_string()),
         })?;
-        writeln!(out, "{}", json).ok();
+        writeln!(out, "{json}").ok();
     } else {
         writeln!(out, "Alias:     {}", card.alias).ok();
         writeln!(out, "Endpoint:  {}", card.endpoint).ok();
@@ -138,9 +138,18 @@ pub fn run_with_io(
 
     writeln!(err).ok();
     writeln!(err, "Setup complete! Next steps:").ok();
-    writeln!(err, "  1. Start the daemon: FAMP_HOME={} famp listen", home_path.display()).ok();
+    writeln!(
+        err,
+        "  1. Start the daemon: FAMP_HOME={} famp listen",
+        home_path.display()
+    )
+    .ok();
     writeln!(err, "  2. Share your peer card (above) with other agents").ok();
-    writeln!(err, "  3. Import their peer cards: famp peer import < their-card.json").ok();
+    writeln!(
+        err,
+        "  3. Import their peer cards: famp peer import < their-card.json"
+    )
+    .ok();
 
     Ok(card)
 }
@@ -154,21 +163,22 @@ fn validate_agent_name(name: &str) -> Result<(), CliError> {
             reason: "name cannot be empty".to_string(),
         });
     }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return Err(CliError::InvalidAgentName {
             name: name.to_string(),
-            reason: "name must contain only alphanumeric characters, underscores, or hyphens".to_string(),
+            reason: "name must contain only alphanumeric characters, underscores, or hyphens"
+                .to_string(),
         });
     }
     Ok(())
 }
 
-/// Resolve FAMP_HOME path from args, env, or derive from name.
+/// Resolve `FAMP_HOME` path from args, env, or derive from name.
 /// Does not create the directory — that's handled by `init::run_at`.
-fn resolve_home_path(
-    arg_home: Option<&str>,
-    name: &str,
-) -> Result<std::path::PathBuf, CliError> {
+fn resolve_home_path(arg_home: Option<&str>, name: &str) -> Result<std::path::PathBuf, CliError> {
     // Priority: --home flag > FAMP_HOME env > create new
     if let Some(h) = arg_home {
         let path = std::path::PathBuf::from(h);
@@ -213,23 +223,28 @@ fn read_existing_pubkey(layout: &IdentityLayout) -> Result<String, CliError> {
 /// process claims the port in between, `famp listen` will fail with `PortInUse`.
 /// For production use, prefer specifying `--port` explicitly.
 fn find_available_port(start: u16, end: u16) -> Result<u16, CliError> {
+    use std::net::{IpAddr, Ipv4Addr};
     for port in start..=end {
-        let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
         if TcpListener::bind(addr).is_ok() {
             return Ok(port);
         }
     }
+    // Report the start of the range; PortInUse carries a single SocketAddr.
     Err(CliError::PortInUse {
-        addr: format!("127.0.0.1:{}-{}", start, end).parse().unwrap_or_else(|_| {
-            format!("127.0.0.1:{}", start).parse().unwrap()
-        }),
+        addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), start),
     })
 }
 
-/// Update config.toml with the selected port and principal.
+/// Update `config.toml` with the selected port and principal.
 /// Preserves any other existing fields in the config.
+///
+/// A malformed existing `config.toml` is a hard error — we refuse to silently
+/// overwrite a config the user may have edited by hand.
 fn update_config(config_path: &Path, port: u16, principal: &str) -> Result<(), CliError> {
-    // Read existing config if present, otherwise use default
+    use std::net::{IpAddr, Ipv4Addr};
+
+    // Read existing config if present, otherwise use default.
     let mut config = if config_path.exists() {
         let bytes = std::fs::read(config_path).map_err(|e| CliError::Io {
             path: config_path.to_path_buf(),
@@ -239,21 +254,31 @@ fn update_config(config_path: &Path, port: u16, principal: &str) -> Result<(), C
             path: config_path.to_path_buf(),
             source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
         })?;
-        toml::from_str(text).unwrap_or_default()
+        // Empty file → default; malformed → hard error.
+        if text.trim().is_empty() {
+            Config::default()
+        } else {
+            toml::from_str(text).map_err(|e| CliError::TomlParse {
+                path: config_path.to_path_buf(),
+                source: e,
+            })?
+        }
     } else {
         Config::default()
     };
 
     // Update only the fields we care about
-    config.listen_addr = format!("127.0.0.1:{}", port).parse().unwrap();
+    config.listen_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     config.principal = Some(principal.to_string());
 
     let toml_str = toml::to_string(&config).map_err(CliError::TomlSerialize)?;
 
     // Write atomically
-    let parent = config_path.parent().ok_or_else(|| CliError::HomeHasNoParent {
-        path: config_path.to_path_buf(),
-    })?;
+    let parent = config_path
+        .parent()
+        .ok_or_else(|| CliError::HomeHasNoParent {
+            path: config_path.to_path_buf(),
+        })?;
     let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| CliError::Io {
         path: parent.to_path_buf(),
         source: e,

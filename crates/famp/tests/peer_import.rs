@@ -89,7 +89,7 @@ fn peer_import_roundtrip_with_setup_and_info() {
     };
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::setup::run_with_io(alice_args, &mut out, &mut err).expect("setup alice");
+    famp::cli::setup::run_with_io(&alice_args, &mut out, &mut err).expect("setup alice");
 
     // Setup Bob
     let bob_args = famp::cli::setup::SetupArgs {
@@ -101,18 +101,19 @@ fn peer_import_roundtrip_with_setup_and_info() {
     };
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::setup::run_with_io(bob_args, &mut out, &mut err).expect("setup bob");
+    famp::cli::setup::run_with_io(&bob_args, &mut out, &mut err).expect("setup bob");
 
     // Get Alice's peer card via info
     let info_args = famp::cli::info::InfoArgs {
         format: "json".to_string(),
     };
     let mut alice_card_out = Vec::<u8>::new();
-    famp::cli::info::run_at(&alice_home, info_args, &mut alice_card_out).expect("info alice");
+    famp::cli::info::run_at(&alice_home, &info_args, &mut alice_card_out).expect("info alice");
     let alice_card_json = String::from_utf8(alice_card_out).unwrap();
 
     // Import Alice to Bob
-    famp::cli::peer::import::run_import_at(&bob_home, Some(alice_card_json)).expect("import alice to bob");
+    famp::cli::peer::import::run_import_at(&bob_home, Some(alice_card_json))
+        .expect("import alice to bob");
 
     // Verify Bob has Alice as a peer
     let bob_peers = std::fs::read_to_string(bob_home.join("peers.toml")).unwrap();

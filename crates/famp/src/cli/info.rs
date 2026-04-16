@@ -22,14 +22,18 @@ pub struct InfoArgs {
 }
 
 /// Production entry point.
-pub fn run(args: InfoArgs) -> Result<PeerCard, CliError> {
+pub fn run(args: &InfoArgs) -> Result<PeerCard, CliError> {
     let home_path = home::resolve_famp_home()?;
     let mut stdout = std::io::stdout().lock();
     run_at(&home_path, args, &mut stdout)
 }
 
 /// Test-facing entry point.
-pub fn run_at(home: &Path, args: InfoArgs, out: &mut dyn std::io::Write) -> Result<PeerCard, CliError> {
+pub fn run_at(
+    home: &Path,
+    args: &InfoArgs,
+    out: &mut dyn std::io::Write,
+) -> Result<PeerCard, CliError> {
     // Verify identity is complete
     let layout = init::load_identity(home)?;
 
@@ -40,7 +44,7 @@ pub fn run_at(home: &Path, args: InfoArgs, out: &mut dyn std::io::Write) -> Resu
     })?;
     if pub_bytes.len() != 32 {
         return Err(CliError::IdentityIncomplete {
-            missing: layout.pub_ed25519.clone(),
+            missing: layout.pub_ed25519,
         });
     }
     let pubkey = URL_SAFE_NO_PAD.encode(&pub_bytes);
@@ -60,13 +64,11 @@ pub fn run_at(home: &Path, args: InfoArgs, out: &mut dyn std::io::Write) -> Resu
     })?;
 
     // Build peer card
-    let principal = config.principal.unwrap_or_else(|| "agent:localhost/self".to_string());
+    let principal = config
+        .principal
+        .unwrap_or_else(|| "agent:localhost/self".to_string());
     // Extract alias from principal: "agent:authority/name" -> "name"
-    let alias = principal
-        .rsplit('/')
-        .next()
-        .unwrap_or("self")
-        .to_string();
+    let alias = principal.rsplit('/').next().unwrap_or("self").to_string();
     let endpoint = format!("https://{}", config.listen_addr);
 
     let card = PeerCard {
@@ -82,7 +84,7 @@ pub fn run_at(home: &Path, args: InfoArgs, out: &mut dyn std::io::Write) -> Resu
             path: home.to_path_buf(),
             source: std::io::Error::other(e.to_string()),
         })?;
-        writeln!(out, "{}", json).ok();
+        writeln!(out, "{json}").ok();
     } else {
         writeln!(out, "Alias:     {}", card.alias).ok();
         writeln!(out, "Endpoint:  {}", card.endpoint).ok();

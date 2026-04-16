@@ -7,7 +7,7 @@ please file issues rather than PRs.
 
 ## Setup
 
-The Rust toolchain is pinned by `rust-toolchain.toml` to `1.87.0`. Running
+The Rust toolchain is pinned by `rust-toolchain.toml` to `1.89.0`. Running
 any `cargo` command in the repo auto-installs it via `rustup`.
 
 1. Install `rustup`: <https://rustup.rs>

@@ -9,7 +9,7 @@ use crate::cli::error::CliError::{
     HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, Io,
     KeygenFailed, KeyringBuildFailed, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
     PeerNotFound, PeerPubkeyInvalid, PortInUse, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound,
-    TaskTerminal, Tls, TlsFingerprintMismatch, TomlParse, TomlSerialize,
+    TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse, TomlSerialize,
 };
 
 impl crate::cli::error::CliError {
@@ -48,6 +48,7 @@ impl crate::cli::error::CliError {
             TaskDir(_) => "taskdir_error",
             Envelope(_) => "envelope_error",
             TlsFingerprintMismatch { .. } => "tls_fingerprint_mismatch",
+            TofuBootstrapRefused { .. } => "tofu_bootstrap_refused",
             SendArgsInvalid { .. } => "send_args_invalid",
             AwaitTimeout { .. } => "await_timeout",
             InvalidDuration { .. } => "invalid_duration",

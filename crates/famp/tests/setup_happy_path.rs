@@ -20,14 +20,17 @@ fn setup_creates_identity_and_outputs_peer_card() {
 
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    let card = famp::cli::setup::run_with_io(args, &mut out, &mut err).expect("setup happy path");
+    let card = famp::cli::setup::run_with_io(&args, &mut out, &mut err).expect("setup happy path");
 
     // Verify peer card fields
     assert_eq!(card.alias, "alice");
     assert_eq!(card.endpoint, "https://127.0.0.1:9999");
     assert_eq!(card.principal, "agent:localhost/alice");
     assert!(!card.pubkey.is_empty());
-    assert!(!card.pubkey.contains('='), "pubkey must be unpadded base64url");
+    assert!(
+        !card.pubkey.contains('='),
+        "pubkey must be unpadded base64url"
+    );
 
     // Verify JSON output
     let out_str = String::from_utf8(out).unwrap();
@@ -60,7 +63,7 @@ fn setup_rejects_invalid_names() {
     };
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    let result = famp::cli::setup::run_with_io(args, &mut out, &mut err);
+    let result = famp::cli::setup::run_with_io(&args, &mut out, &mut err);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
     assert!(err_msg.contains("invalid agent name"));
@@ -75,12 +78,12 @@ fn setup_rejects_invalid_names() {
     };
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    let result = famp::cli::setup::run_with_io(args, &mut out, &mut err);
+    let result = famp::cli::setup::run_with_io(&args, &mut out, &mut err);
     assert!(result.is_err());
 
     // Test empty name
     let args = SetupArgs {
-        name: "".to_string(),
+        name: String::new(),
         port: Some(9998),
         home: Some(home.display().to_string()),
         force: false,
@@ -88,7 +91,7 @@ fn setup_rejects_invalid_names() {
     };
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    let result = famp::cli::setup::run_with_io(args, &mut out, &mut err);
+    let result = famp::cli::setup::run_with_io(&args, &mut out, &mut err);
     assert!(result.is_err());
 }
 
@@ -107,7 +110,8 @@ fn setup_accepts_valid_name_characters() {
 
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    let card = famp::cli::setup::run_with_io(args, &mut out, &mut err).expect("valid name should work");
+    let card =
+        famp::cli::setup::run_with_io(&args, &mut out, &mut err).expect("valid name should work");
     assert_eq!(card.alias, "valid-name_123");
 }
 
@@ -126,7 +130,7 @@ fn setup_text_format_outputs_readable_text() {
 
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::setup::run_with_io(args, &mut out, &mut err).expect("setup");
+    famp::cli::setup::run_with_io(&args, &mut out, &mut err).expect("setup");
 
     let out_str = String::from_utf8(out).unwrap();
     assert!(out_str.contains("Alias:"));

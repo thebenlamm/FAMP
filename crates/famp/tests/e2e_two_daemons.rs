@@ -149,6 +149,8 @@ fn seed_committed_record(home: &std::path::Path, task_id: &str, peer_alias: &str
 /// ```
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn e2e_two_daemons_full_lifecycle() {
+    famp::cli::send::client::allow_tofu_bootstrap_for_tests();
+
     // ── Setup ────────────────────────────────────────────────────────────────
     let daemons = spawn_two_daemons().await;
     let a_home = daemons.a_home.path().to_path_buf();

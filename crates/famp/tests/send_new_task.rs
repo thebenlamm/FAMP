@@ -29,6 +29,10 @@ fn pubkey_b64(home: &std::path::Path) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn send_new_task_creates_record_and_hits_daemon() {
+    // Existing tests rely on first-contact TOFU pinning, which is now
+    // opt-in. The production env var equivalent is FAMP_TOFU_BOOTSTRAP=1.
+    famp::cli::send::client::allow_tofu_bootstrap_for_tests();
+
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().to_path_buf();
     init_home_in_process(&home);

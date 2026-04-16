@@ -66,8 +66,8 @@ pub struct InitArgs {
 pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Commands::Init(args) => init::run(args).map(|_| ()),
-        Commands::Setup(args) => setup::run(args).map(|_| ()),
-        Commands::Info(args) => info::run(args).map(|_| ()),
+        Commands::Setup(args) => setup::run(&args).map(|_| ()),
+        Commands::Info(args) => info::run(&args).map(|_| ()),
         Commands::Listen(args) => {
             // Only the `Listen` arm boots tokio; `Init` stays sync so
             // `famp init` does not pay the multi-thread runtime cost.

@@ -190,6 +190,13 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
                 reason: "bad key".to_string(),
             },
         ),
+        (
+            "TofuBootstrapRefused",
+            CliError::TofuBootstrapRefused {
+                alias: "peer".to_string(),
+                got: "ab".to_string(),
+            },
+        ),
     ]
 }
 

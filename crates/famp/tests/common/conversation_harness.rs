@@ -41,8 +41,13 @@ use super::listen_harness::init_home_in_process;
 
 /// Create a temporary `FAMP_HOME`, initialize it in-process, and return
 /// the owning `TempDir`. Caller holds the guard for the test duration.
+///
+/// Also enables first-contact TOFU bootstrap for the test process. Production
+/// requires `FAMP_TOFU_BOOTSTRAP=1`; tests use the programmatic toggle so we
+/// don't have to plumb env vars through `cargo test`.
 #[must_use]
 pub fn setup_home() -> tempfile::TempDir {
+    famp::cli::send::client::allow_tofu_bootstrap_for_tests();
     let tmp = tempfile::TempDir::new().unwrap();
     init_home_in_process(tmp.path());
     tmp

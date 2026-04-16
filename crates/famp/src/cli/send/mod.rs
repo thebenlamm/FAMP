@@ -97,7 +97,7 @@ pub async fn run_at(home: &Path, args: SendArgs) -> Result<(), CliError> {
 pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcome, CliError> {
     let layout = load_identity(home)?;
     let signing_key = load_signing_key(&layout)?;
-    let from_principal = load_self_principal(&layout);
+    let from_principal = load_self_principal(&layout)?;
 
     let peers_path = paths::peers_toml_path(home);
     let mut peers = read_peers(&peers_path)?;
@@ -220,22 +220,80 @@ fn load_signing_key(layout: &IdentityLayout) -> Result<famp_crypto::FampSigningK
 
 /// Resolve the daemon's own `from` principal.
 ///
-/// Reads the optional `principal` field from `config.toml`; if absent,
-/// falls back to `agent:localhost/self` (the Phase 2/3 default). This
-/// allows two daemons on the same machine to use distinct identities,
-/// which is required by the Phase 4 two-daemon E2E harness.
-fn load_self_principal(layout: &IdentityLayout) -> Principal {
+/// Reads the optional `principal` field from `config.toml`. The fallback
+/// `agent:localhost/self` is used **only** when the field is genuinely absent
+/// (or the config file does not exist). Any other failure — IO error, TOML
+/// parse error, or a present-but-malformed principal string — is a hard
+/// error: signing outbound traffic under the wrong identity would be a
+/// silent security defect, not a recoverable best-effort condition.
+fn load_self_principal(layout: &IdentityLayout) -> Result<Principal, CliError> {
     let fallback = "agent:localhost/self";
-    // Best-effort config read — if the file is missing or unparseable,
-    // fall through to the default so callers are not blocked on a bad config.
-    let principal_str = std::fs::read_to_string(&layout.config_toml)
-        .ok()
-        .and_then(|s| toml::from_str::<crate::cli::config::Config>(&s).ok())
-        .and_then(|cfg| cfg.principal)
-        .unwrap_or_else(|| fallback.to_string());
-    principal_str
-        .parse()
-        .unwrap_or_else(|_| fallback.parse().unwrap_or_else(|_| unreachable!()))
+
+    // File missing → treat as "principal field absent" and use fallback.
+    let bytes = match std::fs::read(&layout.config_toml) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return fallback
+                .parse()
+                .map_err(|err: famp_core::ParsePrincipalError| {
+                    CliError::SendFailed(Box::new(std::io::Error::other(format!(
+                        "fallback principal {fallback} failed to parse: {err}"
+                    ))))
+                });
+        }
+        Err(source) => {
+            return Err(CliError::Io {
+                path: layout.config_toml.clone(),
+                source,
+            });
+        }
+    };
+
+    let text = std::str::from_utf8(&bytes).map_err(|err| CliError::Io {
+        path: layout.config_toml.clone(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, err),
+    })?;
+
+    // Empty file → no principal field configured; use fallback.
+    if text.trim().is_empty() {
+        return fallback
+            .parse()
+            .map_err(|err: famp_core::ParsePrincipalError| {
+                CliError::SendFailed(Box::new(std::io::Error::other(format!(
+                    "fallback principal {fallback} failed to parse: {err}"
+                ))))
+            });
+    }
+
+    // Malformed TOML is a hard failure — refuse to silently sign as the
+    // fallback identity when the operator's config is corrupt.
+    let cfg: crate::cli::config::Config =
+        toml::from_str(text).map_err(|source| CliError::TomlParse {
+            path: layout.config_toml.clone(),
+            source,
+        })?;
+
+    cfg.principal.map_or_else(
+        // Field genuinely absent → fallback.
+        || {
+            fallback
+                .parse()
+                .map_err(|err: famp_core::ParsePrincipalError| {
+                    CliError::SendFailed(Box::new(std::io::Error::other(format!(
+                        "fallback principal {fallback} failed to parse: {err}"
+                    ))))
+                })
+        },
+        // Field present → MUST parse cleanly; no silent fallback on garbage.
+        |s| {
+            s.parse().map_err(|err: famp_core::ParsePrincipalError| {
+                CliError::SendFailed(Box::new(std::io::Error::other(format!(
+                    "configured principal {s:?} in {} is invalid: {err}",
+                    layout.config_toml.display()
+                ))))
+            })
+        },
+    )
 }
 
 /// Resolve the peer's on-wire principal. Prefers the explicit

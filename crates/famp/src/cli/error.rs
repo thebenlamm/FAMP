@@ -107,6 +107,18 @@ pub enum CliError {
         got: String,
     },
 
+    /// First-contact TOFU pinning was refused because the operator did not
+    /// opt in via `FAMP_TOFU_BOOTSTRAP=1`. The `got` field carries the leaf
+    /// SHA-256 the server presented, so the operator can verify it
+    /// out-of-band and pre-pin the fingerprint in `peers.toml`.
+    #[error(
+        "first-contact TOFU bootstrap refused for peer {alias}: \
+         observed leaf sha256={got}. Either pre-pin the fingerprint in \
+         peers.toml (tls_fingerprint_sha256) or rerun with \
+         FAMP_TOFU_BOOTSTRAP=1 to accept this leaf as the trust anchor."
+    )]
+    TofuBootstrapRefused { alias: String, got: String },
+
     #[error("send args invalid: {reason}")]
     SendArgsInvalid { reason: String },
 

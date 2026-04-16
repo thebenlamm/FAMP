@@ -21,14 +21,14 @@ fn info_outputs_peer_card_json() {
     };
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    let setup_card = famp::cli::setup::run_with_io(setup_args, &mut out, &mut err).expect("setup");
+    let setup_card = famp::cli::setup::run_with_io(&setup_args, &mut out, &mut err).expect("setup");
 
     // Now test info
     let info_args = InfoArgs {
         format: "json".to_string(),
     };
     let mut info_out = Vec::<u8>::new();
-    let info_card = famp::cli::info::run_at(&home, info_args, &mut info_out).expect("info");
+    let info_card = famp::cli::info::run_at(&home, &info_args, &mut info_out).expect("info");
 
     // Verify info outputs same data as setup
     assert_eq!(info_card.pubkey, setup_card.pubkey);
@@ -62,7 +62,7 @@ principal = "agent:myhost.example.com/specialname"
         format: "json".to_string(),
     };
     let mut info_out = Vec::<u8>::new();
-    let info_card = famp::cli::info::run_at(&home, info_args, &mut info_out).expect("info");
+    let info_card = famp::cli::info::run_at(&home, &info_args, &mut info_out).expect("info");
 
     // Alias should be extracted from after the last slash
     assert_eq!(info_card.alias, "specialname");
@@ -79,7 +79,7 @@ fn info_fails_without_identity() {
         format: "json".to_string(),
     };
     let mut out = Vec::<u8>::new();
-    let result = famp::cli::info::run_at(&home, info_args, &mut out);
+    let result = famp::cli::info::run_at(&home, &info_args, &mut out);
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();

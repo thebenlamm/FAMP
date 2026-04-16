@@ -40,16 +40,22 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
             let mut buf = Vec::<u8>::new();
             list::run_list(home, since, &mut buf)?;
 
-            // Parse line-by-line into a JSON array.
-            let entries: Vec<Value> = std::str::from_utf8(&buf)
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-                })?
-                .lines()
-                .filter(|l| !l.is_empty())
-                .map(|l| serde_json::from_str(l).unwrap_or(Value::Null))
-                .collect();
+            // Parse line-by-line into a JSON array. A malformed line is a
+            // hard tool-call failure — silently mapping it to `null` (the
+            // pre-fix behaviour) made downstream agents miss messages or
+            // mis-handle inbox state without ever seeing an error.
+            let text = std::str::from_utf8(&buf).map_err(|e| CliError::Io {
+                path: std::path::PathBuf::new(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+            })?;
+            let mut entries: Vec<Value> = Vec::new();
+            for (idx, line) in text.lines().filter(|l| !l.is_empty()).enumerate() {
+                let parsed: Value =
+                    serde_json::from_str(line).map_err(|err| CliError::SendArgsInvalid {
+                        reason: format!("famp_inbox: list line {idx} is not valid JSON: {err}"),
+                    })?;
+                entries.push(parsed);
+            }
 
             Ok(serde_json::json!({ "entries": entries }))
         }

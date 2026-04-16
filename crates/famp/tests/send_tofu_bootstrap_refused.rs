@@ -1,11 +1,14 @@
-//! Phase 3 Plan 03-02 Task 2 — `famp send --task` multi-deliver sequence.
+//! Regression test for the TOFU bootstrap hardening.
 //!
-//! After a new task, sends three non-terminal deliver envelopes and asserts:
-//! - the task record stays in REQUESTED (Phase 3 does not step the FSM on
-//!   non-terminal deliver — see `fsm_glue` module docs for the Phase 4 plan)
-//! - `record.terminal` stays false
-//! - `last_send_at` is updated on each call
-//! - the daemon inbox now contains exactly four lines (1 request + 3 deliver)
+//! By default, `famp send` MUST refuse a first-contact connection (no pinned
+//! `tls_fingerprint_sha256` for the alias). The pre-fix behaviour silently
+//! pinned whatever leaf the network returned, which made a one-time on-path
+//! attacker able to permanently hijack the alias.
+//!
+//! This test deliberately does NOT call
+//! `allow_tofu_bootstrap_for_tests()` and does NOT set
+//! `FAMP_TOFU_BOOTSTRAP=1` — and lives in its own test binary so other
+//! tests' process-wide opt-in cannot leak in.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -17,7 +20,6 @@ use std::time::Duration;
 
 use famp::cli::peer::add::run_add_at;
 use famp::cli::send::{run_at as send_run_at, SendArgs};
-use famp_taskdir::TaskDir;
 
 use common::init_home_in_process;
 
@@ -29,13 +31,30 @@ fn pubkey_b64(home: &std::path::Path) -> String {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn send_deliver_sequence_keeps_record_non_terminal() {
-    famp::cli::send::client::allow_tofu_bootstrap_for_tests();
+async fn first_contact_without_pin_or_opt_in_is_refused() {
+    // Ensure the env opt-in is NOT set for this test binary.
+    // (set_var would race; this test process should not have it set anyway.)
+    assert!(
+        std::env::var("FAMP_TOFU_BOOTSTRAP").is_err(),
+        "test must run without FAMP_TOFU_BOOTSTRAP set"
+    );
+    // Tripwire: this test binary must NOT contain any test that calls
+    // `allow_tofu_bootstrap_for_tests()` (e.g. via `setup_home()`), or
+    // parallel execution would silently flip the atomic and regress this
+    // assertion to a false pass. If a future dev adds such a test here,
+    // this assertion fires loudly instead of letting the security check
+    // become a no-op.
+    assert!(
+        !famp::cli::send::client::ALLOW_TOFU_BOOTSTRAP_FOR_TESTS
+            .load(std::sync::atomic::Ordering::SeqCst),
+        "test binary must not have any test that opts into TOFU bootstrap"
+    );
 
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().to_path_buf();
     init_home_in_process(&home);
 
+    // Spin up the daemon so a real TLS leaf is presented.
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
@@ -51,15 +70,17 @@ async fn send_deliver_sequence_keeps_record_non_terminal() {
             .expect("run_on_listener");
     });
 
+    // Wait for daemon bind.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     loop {
         if tokio::net::TcpStream::connect(addr).await.is_ok() {
             break;
         }
-        assert!(tokio::time::Instant::now() < deadline, "bind timed out");
+        assert!(tokio::time::Instant::now() < deadline, "bind timeout");
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
+    // Register peer with NO tls_fingerprint_sha256 — first-contact territory.
     run_add_at(
         &home,
         "self".to_string(),
@@ -69,71 +90,30 @@ async fn send_deliver_sequence_keeps_record_non_terminal() {
     )
     .expect("peer add");
 
-    // 1. Open task.
-    send_run_at(
+    let res = send_run_at(
         &home,
         SendArgs {
             to: "self".to_string(),
-            new_task: Some("open task".to_string()),
+            new_task: Some("must be refused".to_string()),
             task: None,
             terminal: false,
             body: None,
         },
     )
-    .await
-    .expect("new task send");
-
-    let tasks = TaskDir::open(home.join("tasks")).unwrap();
-    let task_id = {
-        let records = tasks.list().unwrap();
-        assert_eq!(records.len(), 1);
-        records[0].task_id.clone()
-    };
-    let first_send_at = tasks
-        .read(&task_id)
-        .unwrap()
-        .last_send_at
-        .expect("last_send_at after first send");
-
-    // 2. Three non-terminal delivers.
-    for i in 1..=3 {
-        // Small sleep so RFC-3339-second timestamps differ across sends.
-        tokio::time::sleep(Duration::from_millis(1100)).await;
-        send_run_at(
-            &home,
-            SendArgs {
-                to: "self".to_string(),
-                new_task: None,
-                task: Some(task_id.clone()),
-                terminal: false,
-                body: Some(format!("interim {i}")),
-            },
-        )
-        .await
-        .unwrap_or_else(|e| panic!("deliver {i} failed: {e}"));
-    }
-
-    // 3. Record should still be non-terminal, last_send_at should have moved.
-    let rec = tasks.read(&task_id).unwrap();
-    assert_eq!(rec.state, "REQUESTED");
-    assert!(!rec.terminal);
-    assert_ne!(rec.last_send_at.as_deref(), Some(first_send_at.as_str()));
-
-    // 4. Inbox should have 5 lines: 1 request + 1 auto-commit reply + 3 delivers.
-    // Phase 4: the daemon auto-commits on every inbound request, so the commit
-    // reply envelope is stored in the inbox alongside the request and delivers.
-    let lines = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
+    .await;
+    let err = res.expect_err("first contact without opt-in must fail closed");
+    let kind = err.mcp_error_kind();
     assert_eq!(
-        lines.len(),
-        5,
-        "expected 1 request + 1 commit reply + 3 delivers"
+        kind, "tofu_bootstrap_refused",
+        "expected typed TofuBootstrapRefused, got {kind}: {err}"
     );
 
+    // Tear down.
     let _ = shutdown_tx.send(());
     let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;
 }
 
-// Silencers.
+// Silencers
 use axum as _;
 use clap as _;
 use ed25519_dalek as _;
@@ -142,7 +122,9 @@ use famp_core as _;
 use famp_crypto as _;
 use famp_envelope as _;
 use famp_fsm as _;
+use famp_inbox as _;
 use famp_keyring as _;
+use famp_taskdir as _;
 use famp_transport as _;
 use famp_transport_http as _;
 use hex as _;

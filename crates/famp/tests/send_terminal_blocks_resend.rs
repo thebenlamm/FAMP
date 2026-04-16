@@ -31,6 +31,8 @@ fn pubkey_b64(home: &std::path::Path) -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[allow(clippy::too_many_lines)]
 async fn terminal_send_locks_resend() {
+    famp::cli::send::client::allow_tofu_bootstrap_for_tests();
+
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().to_path_buf();
     init_home_in_process(&home);

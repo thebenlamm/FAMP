@@ -75,7 +75,7 @@ Deferred to the federation-profile milestones (`v0.9+`):
 # 1. Install rustup (skip if already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 
-# 2. Enter the repo (rust-toolchain.toml auto-installs 1.87.0)
+# 2. Enter the repo (rust-toolchain.toml auto-installs 1.89.0)
 cd FAMP
 rustc --version
 
@@ -110,12 +110,32 @@ FAMP_HOME=/tmp/famp-alice ./target/release/famp listen &
 FAMP_HOME=/tmp/famp-bob ./target/release/famp listen &
 
 # 5. Send a message from Alice to Bob
-FAMP_HOME=/tmp/famp-alice ./target/release/famp send \
+#    First contact requires explicit TOFU opt-in (see "TLS trust" below).
+FAMP_TOFU_BOOTSTRAP=1 FAMP_HOME=/tmp/famp-alice ./target/release/famp send \
   --to bob --action new_task --body '{"task": "hello"}'
 ```
 
 Each `famp setup` outputs a **peer card** — a JSON blob containing endpoint,
 public key, and principal that other agents need to register you as a peer.
+
+### TLS trust (TOFU bootstrap)
+
+FAMP uses self-signed TLS certificates with **Trust-On-First-Use** pinning.
+Once a peer's leaf-cert SHA-256 is recorded in `peers.toml`
+(`tls_fingerprint_sha256`), every subsequent connection rejects on mismatch.
+
+The first connection has nothing to compare against. By default, FAMP
+**refuses** that first connection rather than silently pinning whatever the
+network returns — a one-time on-path attacker could otherwise capture an
+alias permanently. To allow the first connection, set:
+
+```bash
+FAMP_TOFU_BOOTSTRAP=1 famp send --to <alias> ...
+```
+
+Use this only when you trust the path between you and the peer (typically
+loopback or a brand-new private link). Subsequent sends do not need the
+flag — the pinned fingerprint is the trust anchor from then on.
 
 ## MCP Integration (Claude Code)
 

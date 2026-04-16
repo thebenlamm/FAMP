@@ -7,9 +7,9 @@ use std::io::Read as _;
 use std::path::Path;
 
 use crate::cli::error::CliError;
+use crate::cli::home;
 use crate::cli::peer::add::run_add_at;
 use crate::cli::setup::PeerCard;
-use crate::cli::home;
 
 /// Production entry point. Resolves `FAMP_HOME` and delegates.
 pub fn run_import(card_json: Option<String>) -> Result<(), CliError> {
@@ -20,18 +20,17 @@ pub fn run_import(card_json: Option<String>) -> Result<(), CliError> {
 /// Test-facing entry point.
 pub fn run_import_at(home: &Path, card_json: Option<String>) -> Result<(), CliError> {
     // Read card from arg or stdin
-    let json = match card_json {
-        Some(j) => j,
-        None => {
-            let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| CliError::Io {
-                    path: home.to_path_buf(),
-                    source: e,
-                })?;
-            buf
-        }
+    let json = if let Some(j) = card_json {
+        j
+    } else {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| CliError::Io {
+                path: home.to_path_buf(),
+                source: e,
+            })?;
+        buf
     };
 
     // Parse peer card

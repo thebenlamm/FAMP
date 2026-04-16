@@ -91,6 +91,20 @@ fn tool_descriptors() -> serde_json::Value {
     ])
 }
 
+/// Truncate a malformed input line to a small preview suitable for an
+/// error payload — keeps `data` from carrying an arbitrarily large body
+/// back to the peer.
+fn preview(line: &str) -> String {
+    const MAX: usize = 120;
+    if line.len() <= MAX {
+        line.to_string()
+    } else {
+        let mut s: String = line.chars().take(MAX).collect();
+        s.push('…');
+        s
+    }
+}
+
 // ── framing ───────────────────────────────────────────────────────────────────
 
 /// Write one newline-delimited JSON message to stdout.
@@ -148,23 +162,55 @@ fn tool_result(value: &serde_json::Value) -> serde_json::Value {
 
 // ── message reader ────────────────────────────────────────────────────────────
 
+/// Outcome of one read of the MCP NDJSON stream.
+#[derive(Debug)]
+enum ReadOutcome {
+    /// Successfully parsed a JSON-RPC message.
+    Message(serde_json::Value),
+    /// The peer closed stdin cleanly — server should exit its loop.
+    Eof,
+    /// Underlying IO failure on stdin — surface via `-32700` so the peer
+    /// gets a deterministic response rather than a silent hang.
+    IoError(std::io::Error),
+    /// Line arrived but is not valid JSON — emit JSON-RPC `-32700 Parse error`.
+    ParseError {
+        line: String,
+        source: serde_json::Error,
+    },
+}
+
 /// Read one newline-delimited JSON-RPC message from a buffered stdin.
-/// Returns `None` on EOF.
-async fn read_msg<R>(reader: &mut BufReader<R>) -> Option<serde_json::Value>
+///
+/// Distinguishes EOF, IO failure, and JSON parse failure so the server
+/// loop can report parse errors as `-32700` instead of silently treating
+/// them as EOF (which made misbehaving clients hang waiting for a response).
+async fn read_msg<R>(reader: &mut BufReader<R>) -> ReadOutcome
 where
     R: tokio::io::AsyncRead + Unpin,
 {
     loop {
         let mut line = String::new();
-        let n = reader.read_line(&mut line).await.ok()?;
+        let n = match reader.read_line(&mut line).await {
+            Ok(n) => n,
+            Err(e) => return ReadOutcome::IoError(e),
+        };
         if n == 0 {
-            return None; // EOF
+            return ReadOutcome::Eof;
         }
         let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            return serde_json::from_str(trimmed).ok();
+        if trimmed.is_empty() {
+            // Skip empty/whitespace-only lines, continue loop.
+            continue;
         }
-        // Skip empty lines, continue loop
+        match serde_json::from_str(trimmed) {
+            Ok(v) => return ReadOutcome::Message(v),
+            Err(source) => {
+                return ReadOutcome::ParseError {
+                    line: trimmed.to_string(),
+                    source,
+                };
+            }
+        }
     }
 }
 
@@ -176,7 +222,30 @@ pub async fn run(home: PathBuf) -> Result<(), CliError> {
     let mut reader = BufReader::new(stdin());
     let mut out = stdout();
 
-    while let Some(msg) = read_msg(&mut reader).await {
+    loop {
+        let msg = match read_msg(&mut reader).await {
+            ReadOutcome::Message(m) => m,
+            ReadOutcome::Eof => break,
+            ReadOutcome::IoError(e) => {
+                // Emit a JSON-RPC parse error with id=null so the peer is not
+                // left hanging, then exit the loop — stdin is unrecoverable.
+                let data = serde_json::json!({ "io_error": e.to_string() });
+                let resp = error_response(&serde_json::Value::Null, -32_700, "Parse error", &data);
+                let _ = write_msg(&mut out, &resp).await;
+                break;
+            }
+            ReadOutcome::ParseError { line, source } => {
+                // The spec says id MUST be null when the request id can't be
+                // determined (which is exactly the case for a non-JSON line).
+                let data = serde_json::json!({
+                    "parse_error": source.to_string(),
+                    "line_preview": preview(&line),
+                });
+                let resp = error_response(&serde_json::Value::Null, -32_700, "Parse error", &data);
+                let _ = write_msg(&mut out, &resp).await;
+                continue;
+            }
+        };
         let id = msg.get("id").cloned().unwrap_or(serde_json::Value::Null);
         let method = msg
             .get("method")

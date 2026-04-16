@@ -96,6 +96,10 @@ impl McpHarness {
         let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
             .args(["mcp"])
             .env("FAMP_HOME", home.path())
+            // The MCP test exercises the real `famp send` code path, which
+            // hits an unknown TLS leaf on first contact. Production now
+            // refuses that without an explicit opt-in; tests opt in.
+            .env("FAMP_TOFU_BOOTSTRAP", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
