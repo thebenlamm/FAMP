@@ -405,8 +405,8 @@ fn persist_post_send(
             }) {
                 Ok(_) => {}
                 Err(famp_taskdir::TaskDirError::NotFound { .. }) => {
-                    // Create a record for this received task.
-                    let mut rec = TaskRecord::new_requested(
+                    // Create a record for this received task (we're the responder).
+                    let mut rec = TaskRecord::new_committed(
                         task_id.to_string(),
                         alias.to_string(),
                         now_s.clone(),
@@ -427,13 +427,14 @@ fn persist_post_send(
                 Ok(_) => {}
                 Err(famp_taskdir::TaskDirError::NotFound { .. }) => {
                     // Create and immediately mark terminal for this received task.
-                    let mut rec = TaskRecord::new_requested(
+                    let mut rec = TaskRecord::new_committed(
                         task_id.to_string(),
                         alias.to_string(),
                         now_s.clone(),
                     );
                     rec.last_send_at = Some(now_s);
-                    let _ = fsm_glue::advance_terminal(&mut rec);
+                    // COMMITTED → COMPLETED is a valid FSM transition.
+                    fsm_glue::advance_terminal(&mut rec)?;
                     tasks.create(&rec)?;
                 }
                 Err(e) => return Err(CliError::TaskDir(e)),

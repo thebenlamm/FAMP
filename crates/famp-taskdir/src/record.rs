@@ -33,10 +33,25 @@ pub struct TaskRecord {
 
 impl TaskRecord {
     /// Build a fresh record in the `REQUESTED` state.
+    /// Use this when *originating* a task (sending a request).
     pub fn new_requested(task_id: String, peer: String, now_rfc3339: String) -> Self {
         Self {
             task_id,
             state: "REQUESTED".to_string(),
+            peer,
+            opened_at: now_rfc3339,
+            last_send_at: None,
+            last_recv_at: None,
+            terminal: false,
+        }
+    }
+
+    /// Build a fresh record in the `COMMITTED` state.
+    /// Use this when *receiving* a task (replying to someone else's request).
+    pub fn new_committed(task_id: String, peer: String, now_rfc3339: String) -> Self {
+        Self {
+            task_id,
+            state: "COMMITTED".to_string(),
             peer,
             opened_at: now_rfc3339,
             last_send_at: None,
