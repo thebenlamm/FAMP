@@ -6,10 +6,10 @@
 
 use crate::cli::error::CliError::{
     AlreadyInitialized, AwaitTimeout, CertgenFailed, Envelope, HomeCreateFailed, HomeHasNoParent,
-    HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidDuration, Io, KeygenFailed,
-    KeyringBuildFailed, PeerDuplicate, PeerEndpointInvalid, PeerNotFound, PeerPubkeyInvalid,
-    PortInUse, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal, Tls,
-    TlsFingerprintMismatch, TomlParse, TomlSerialize,
+    HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, Io,
+    KeygenFailed, KeyringBuildFailed, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
+    PeerNotFound, PeerPubkeyInvalid, PortInUse, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound,
+    TaskTerminal, Tls, TlsFingerprintMismatch, TomlParse, TomlSerialize,
 };
 
 impl crate::cli::error::CliError {
@@ -52,6 +52,8 @@ impl crate::cli::error::CliError {
             AwaitTimeout { .. } => "await_timeout",
             InvalidDuration { .. } => "invalid_duration",
             KeyringBuildFailed { .. } => "keyring_build_failed",
+            PeerCardInvalid { .. } => "peer_card_invalid",
+            InvalidAgentName { .. } => "invalid_agent_name",
         }
     }
 }

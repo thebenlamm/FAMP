@@ -79,6 +79,12 @@ pub enum CliError {
     #[error("invalid peer pubkey (must be 32 bytes base64url-unpadded): {value}")]
     PeerPubkeyInvalid { value: String },
 
+    #[error("invalid peer card JSON: {reason}")]
+    PeerCardInvalid { reason: String },
+
+    #[error("invalid agent name '{name}': {reason}")]
+    InvalidAgentName { name: String, reason: String },
+
     #[error("task record not found: {task_id}")]
     TaskNotFound { task_id: String },
 

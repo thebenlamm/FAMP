@@ -8,6 +8,7 @@ pub mod config;
 pub mod error;
 pub mod home;
 pub mod inbox;
+pub mod info;
 pub mod init;
 pub mod listen;
 pub mod mcp;
@@ -15,6 +16,7 @@ pub mod paths;
 pub mod peer;
 pub mod perms;
 pub mod send;
+pub mod setup;
 
 pub use error::CliError;
 pub use init::InitOutcome;
@@ -31,6 +33,10 @@ pub struct Cli {
 pub enum Commands {
     /// Initialize a FAMP home directory.
     Init(InitArgs),
+    /// One-command setup: init + port selection + peer card output.
+    Setup(setup::SetupArgs),
+    /// Output this agent's peer card (for sharing with other agents).
+    Info(info::InfoArgs),
     /// Run the FAMP daemon: bind the HTTPS listener and append inbound
     /// signed envelopes to `~/.famp/inbox.jsonl`.
     Listen(ListenArgs),
@@ -60,6 +66,8 @@ pub struct InitArgs {
 pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Commands::Init(args) => init::run(args).map(|_| ()),
+        Commands::Setup(args) => setup::run(args).map(|_| ()),
+        Commands::Info(args) => info::run(args).map(|_| ()),
         Commands::Listen(args) => {
             // Only the `Listen` arm boots tokio; `Init` stays sync so
             // `famp init` does not pay the multi-thread runtime cost.

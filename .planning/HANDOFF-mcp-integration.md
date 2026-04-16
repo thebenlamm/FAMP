@@ -38,19 +38,57 @@ Successfully debugged and fixed FAMP MCP server integration with Claude Code. Fo
 - All 4 MCP integration tests pass
 - E2E flow verified: new_task → commit → deliver → terminal
 
-## Still TODO
+## Onboarding UX (DONE)
 
-### Onboarding UX
-Current setup is manual and tedious. Need easier onboarding:
-- Option A: Bootstrap prompt (markdown instructions)
-- Option B: `/famp-register` skill (Claude Code native)
-- Option C: `famp setup` CLI wizard
+Three new CLI commands simplify setup:
 
-See prompt in session for tackling this.
+### `famp setup` — One-command onboarding
+```bash
+famp setup --name alice --home /tmp/famp-alice --port 8450
+```
+- Creates FAMP_HOME if needed
+- Generates Ed25519 identity + TLS cert
+- Auto-selects available port (or uses --port)
+- Sets principal to `agent:localhost/<name>`
+- Outputs peer card JSON for sharing
 
-### Known Issues
+### `famp info` — Output peer card
+```bash
+FAMP_HOME=/tmp/famp-alice famp info
+```
+Outputs the current agent's peer card (JSON by default).
+
+### `famp peer import` — Import peer card
+```bash
+echo '<peer-card-json>' | FAMP_HOME=/tmp/famp-alice famp peer import
+# or
+famp peer import --card '<peer-card-json>'
+```
+
+### Claude Code Skill
+`/famp-setup` skill in `.claude/skills/famp-setup/SKILL.md` guides users through setup.
+
+## Quick Start (New Flow)
+
+```bash
+# 1. Setup two agents
+famp setup --name alice --home /tmp/famp-alice --port 8450
+famp setup --name bob --home /tmp/famp-bob --port 8451
+
+# 2. Exchange peer cards
+FAMP_HOME=/tmp/famp-alice famp info | FAMP_HOME=/tmp/famp-bob famp peer import
+FAMP_HOME=/tmp/famp-bob famp info | FAMP_HOME=/tmp/famp-alice famp peer import
+
+# 3. Start daemons
+FAMP_HOME=/tmp/famp-alice famp listen &
+FAMP_HOME=/tmp/famp-bob famp listen &
+
+# 4. Configure MCP (.mcp.json)
+# See "MCP Configuration" section below
+```
+
+## Known Issues
 - Daemons must be started manually (`famp listen`)
-- Peer exchange requires manual copy/paste of pubkeys
 - No auto-discovery of local agents
 
 ## MCP Configuration
