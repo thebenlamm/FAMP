@@ -87,13 +87,28 @@ impl TaskDir {
     }
 
     /// Read → mutate via closure → atomic write. Returns the new record.
+    ///
+    /// The mutation closure must NOT change `task_id`. The original id is
+    /// the on-disk file key; allowing it to change here would silently
+    /// create a second file under the new id while leaving the old one
+    /// intact (orphan record + duplicate identity). Callers that genuinely
+    /// need to rename a task should delete the old record and `create` a
+    /// new one explicitly.
     pub fn update<F>(&self, task_id: &str, mutate: F) -> Result<TaskRecord, TaskDirError>
     where
         F: FnOnce(TaskRecord) -> TaskRecord,
     {
         let current = self.read(task_id)?;
         let next = mutate(current);
-        let path = self.path_for(&next.task_id)?;
+        if next.task_id != task_id {
+            return Err(TaskDirError::TaskIdChanged {
+                original: task_id.to_string(),
+                next: next.task_id,
+            });
+        }
+        // Use the validated original task_id, not next.task_id, so the
+        // path is anchored to the file we read above.
+        let path = self.path_for(task_id)?;
         let body = toml::to_string(&next).map_err(|source| TaskDirError::TomlSerialize {
             task_id: next.task_id.clone(),
             source,

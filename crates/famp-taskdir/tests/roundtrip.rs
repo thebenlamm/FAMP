@@ -137,3 +137,42 @@ fn open_is_idempotent() {
     let _ = TaskDir::open(dir.path()).unwrap();
     let _ = TaskDir::open(dir.path()).unwrap();
 }
+
+#[test]
+fn update_rejects_changed_task_id_and_does_not_create_orphan() {
+    let dir = TempDir::new().unwrap();
+    let store = TaskDir::open(dir.path()).unwrap();
+    let rec = sample_record();
+    store.create(&rec).unwrap();
+
+    let original_id = rec.task_id;
+    let new_id = "01931d7a-9999-7abc-8def-abcdef012345".to_string();
+
+    let err = store
+        .update(&original_id, |mut r| {
+            r.task_id = new_id.clone();
+            r
+        })
+        .unwrap_err();
+
+    match err {
+        TaskDirError::TaskIdChanged { original, next } => {
+            assert_eq!(original, original_id);
+            assert_eq!(next, new_id);
+        }
+        other => panic!("expected TaskIdChanged, got {other:?}"),
+    }
+
+    // No file under the new id should exist (no orphan).
+    let new_path = dir.path().join(format!("{new_id}.toml"));
+    assert!(
+        !new_path.exists(),
+        "rejected update must not have created an orphan file at {}",
+        new_path.display()
+    );
+    // Original file is still intact and unchanged.
+    let original_path = dir.path().join(format!("{original_id}.toml"));
+    assert!(original_path.exists(), "original file must remain on disk");
+    let still = store.read(&original_id).unwrap();
+    assert_eq!(still.task_id, original_id);
+}
