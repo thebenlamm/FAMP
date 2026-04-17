@@ -2,19 +2,27 @@
 
 **Status:** `v0.8 Usable from Claude Code` — MCP integration complete
 
-FAMP is a Rust implementation of the Federated Agent Messaging Protocol, built
-in two layers:
+FAMP is a Rust implementation of the Federated Agent Messaging Protocol.
 
-- **Personal Profile (`v0.6` + `v0.7` + `v0.8`)**: a signed agent-to-agent runtime
-  a single developer can actually use today, with CLI tools and MCP integration
-- **Federation Profile (`v0.9+`)**: the larger ecosystem semantics that sit on
-  top later, including Agent Cards, federation trust, negotiation, delegation,
-  provenance, extensions, and full conformance badges
+**The fastest thing to try:** get two Claude Code windows on your Mac
+exchanging signed messages, via the [`famp-local`](scripts/famp-local)
+wrapper shipped in this repo. See [Quick Start (local)](#quick-start-local)
+below — four commands, no cert wrangling, no peer-card piping.
 
-The current repo ships the **personal runtime**: canonical JSON, Ed25519
-signing with domain separation, typed core IDs/errors, signed envelopes, a
-minimal task FSM, an in-process transport, a minimal HTTPS transport, a
-TOFU keyring, and a full CLI with MCP server for Claude Code integration.
+Under the hood it's a v0.5.1-spec-conformant stack: canonical JSON
+(RFC 8785), Ed25519 signatures with domain separation, typed identity
+and envelope types, a 5-state task FSM, and an HTTPS transport with
+TOFU pinning. The raw federation CLI (`famp setup / listen / send /
+peer add`) is still there if you want manual control or cross-machine
+setup; the local wrapper is just an ergonomics layer over those same
+primitives.
+
+- **Local (v0.8 + `famp-local`)** — same-host agents, one command to
+  wire a directory into a mesh.
+- **Federation Profile (v0.9 / v1.0)** — cross-host protocol, Agent
+  Cards, delegation, provenance. v0.9 re-scopes the local path into a
+  proper socket-activated broker; federation moves to a v1.0 gateway.
+  See the [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
 
 ## What Works Today
 
@@ -52,8 +60,16 @@ TOFU keyring, and a full CLI with MCP server for Claude Code integration.
 
 ## Not Shipped Yet
 
-Deferred to the federation-profile milestones (`v0.9+`):
+**v0.9 — Local-First Bus** (in design):
+- UDS-backed broker with socket-activated lifecycle
+- IRC-style channels / broadcast primitive (`#name`)
+- Zero-crypto same-host path (filesystem is the trust boundary)
+- `famp_register` MCP tool so windows pick their identity at session start
+  instead of via pre-configured `FAMP_HOME` env vars
+- See the full [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
 
+**v1.0 — Federation Profile** (after v0.9):
+- `famp-gateway` bridging the local bus to remote FAMP-over-HTTPS
 - Agent Cards and federation credentials
 - `.well-known` card distribution
 - negotiation / counter-proposal
@@ -92,9 +108,65 @@ cargo install just --locked
 just ci
 ```
 
-## Quick Start (CLI)
+## Quick Start (local)
 
-The fastest way to get two agents talking:
+Two Claude Code windows on the same Mac, exchanging signed messages,
+in four commands:
+
+```bash
+# 1. Install the famp binary to ~/.cargo/bin
+cargo install --path crates/famp
+
+# 2. Wire each repo directory into the mesh
+#    - creates an identity (default name = basename of the dir)
+#    - exchanges peer cards, pre-pins TLS fingerprints
+#    - starts background daemons
+#    - drops a project-scoped .mcp.json
+#    - updates ~/.zprofile so daemons come back at next login
+scripts/famp-local wire ~/Workspace/RepoA
+scripts/famp-local wire ~/Workspace/RepoB
+
+# 3. Restart the Claude Code windows for RepoA and RepoB
+#    (MCP servers are loaded once at session start)
+
+# 4. In either window, ask Claude to send a message:
+#    "send a message to RepoB saying hello"
+#    Claude picks up the `famp_send` / `famp_inbox` / `famp_await`
+#    MCP tools and the message lands on the other side.
+```
+
+Override the identity name per-directory if the repo name doesn't fit:
+
+```bash
+scripts/famp-local wire ~/Workspace/God --as architect
+```
+
+Full CLI:
+
+| Command | What it does |
+|---|---|
+| `famp-local wire <dir> [--as <name>] [--force]` | Add a directory to the mesh and drop a project-scoped `.mcp.json` |
+| `famp-local unwire <dir>` | Remove `.mcp.json` from a directory (identity and daemon stay) |
+| `famp-local send <from> <to> <text>` | CLI-level send without going through Claude |
+| `famp-local inbox <name>` | List a name's inbox entries |
+| `famp-local status` | Show all known identities and daemon state |
+| `famp-local stop [<name>...]` | Stop daemon(s); with no args, stops all |
+| `famp-local clean` | Stop everything and wipe `~/.famp-local` |
+
+`famp-local` is a bash wrapper around the v0.8 CLI — see
+[`scripts/famp-local`](scripts/famp-local). It exists to compress the raw
+eight-step federation flow (below, under "Advanced") into one command
+while v0.9's proper socket-activated broker is in design. When v0.9 ships,
+the wrapper goes away and `famp-local wire` becomes a single-line install
+of the broker plus one MCP registration.
+
+## Advanced: manual CLI (federation path)
+
+The raw federation-grade flow. Use this for cross-machine setups, or when
+you want explicit control over ports, HOME directories, TOFU pinning, and
+peer-card exchange. On a single Mac with two Claude Code windows, the
+[`famp-local`](#quick-start-local) wrapper above will do all of this for
+you.
 
 ```bash
 # 1. Build the CLI
@@ -148,28 +220,35 @@ flag — the pinned fingerprint is the trust anchor from then on.
 
 ## MCP Integration (Claude Code)
 
-FAMP includes an MCP server for use with Claude Code. Add to `.mcp.json`:
+For **local Claude Code on your Mac**, use
+[`scripts/famp-local wire <dir>`](#quick-start-local) — it generates a
+project-scoped `.mcp.json` in the target directory pointing at that
+repo's identity, using the absolute `famp` binary path so Claude's MCP
+spawner (which doesn't inherit login-shell PATH) can find it.
+
+For **manual setups**, the `.mcp.json` shape is:
 
 ```json
 {
   "mcpServers": {
-    "famp-alice": {
-      "command": "/path/to/famp",
+    "famp": {
+      "command": "/Users/you/.cargo/bin/famp",
       "args": ["mcp"],
-      "env": { "FAMP_HOME": "/tmp/famp-alice" }
+      "env": { "FAMP_HOME": "/path/to/identity/home" }
     }
   }
 }
 ```
 
 The MCP server exposes four tools:
-- `famp_send` — send signed envelopes
+- `famp_send` — send signed envelopes (request / deliver / terminal)
 - `famp_inbox` — list received messages
-- `famp_await` — wait for new messages
-- `famp_peers` — list/add peers
+- `famp_await` — block until new messages arrive (poll-free inter-agent dialogue)
+- `famp_peers` — list peers
 
 See [`.planning/HANDOFF-mcp-integration.md`](.planning/HANDOFF-mcp-integration.md)
-for detailed MCP setup instructions.
+for the detailed MCP setup document (pre-dates the `famp-local` wrapper;
+still useful for understanding what the wrapper does under the hood).
 
 ## Programmatic Examples
 
@@ -369,7 +448,13 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `v0.6`: foundation crates, shipped
 - `v0.7`: personal runtime, shipped
 - `v0.8`: usable from Claude Code (CLI + MCP), shipped
-- `v0.9+`: federation profile, next
+- `v0.9`: **local-first bus** — in design. UDS-backed broker replacing
+  the per-identity TLS listener mesh for same-host agents. See the
+  [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
+  The `famp-local` wrapper is pre-v0.9 scaffolding that validates the
+  UX before the broker lands.
+- `v1.0`: federation profile — after v0.9. Agent Cards, delegation,
+  provenance, cross-host via a `famp-gateway` process.
 
 See [`.planning/ROADMAP.md`](.planning/ROADMAP.md) for the current roadmap and
 [`.planning/MILESTONES.md`](.planning/MILESTONES.md) for milestone history.

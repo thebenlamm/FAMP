@@ -210,7 +210,27 @@ Conventions not yet established. Will populate as patterns emerge during develop
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+**Current (v0.8):** federation-first. One `FAMP_HOME` per identity;
+`famp listen` HTTPS daemon per identity; TOFU-pinned peers; every wire
+envelope Ed25519-signed over canonical JSON under the `FAMP-sig-v1\0`
+domain prefix (INV-10). 5-state task FSM (`famp-fsm`): REQUESTED →
+COMMITTED → {COMPLETED | FAILED | CANCELLED}, terminals absorbing.
+
+**v0.9 direction (in design):** collapse same-host agents onto a single
+UDS-backed broker; drop crypto on the local path; treat federation
+(cross-host) as a v1.0 gateway that wraps the bus. IRC-style channels,
+durable per-name mailboxes, stable MCP tool surface across v0.8 / v0.9 / v1.0.
+
+Full write-up in [`ARCHITECTURE.md`](ARCHITECTURE.md) and the design spec
+[`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
+Pre-v0.9 scaffolding lives in [`scripts/famp-local`](scripts/famp-local) —
+a bash wrapper validating the local-first UX before the broker lands.
+
+**When working here:** protocol-primitive crates (`famp-canonical`,
+`famp-crypto`, `famp-core`, `famp-fsm`, `famp-envelope`) are
+transport-neutral and reused across both v0.9 and v1.0. Transport crates
+(`famp-transport-http`, `famp-keyring`) are v1.0-federation internals —
+don't conflate them with the primitive layer.
 <!-- GSD:architecture-end -->
 
 <!-- GSD:workflow-start source:GSD defaults -->

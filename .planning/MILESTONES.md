@@ -1,5 +1,38 @@
 # Milestones
 
+## v0.9 Local-First Bus (In Design — 2026-04-17)
+
+**Status:** design committed; implementation paused pending ~2 weeks of
+pre-v0.9 scaffolding validation via [`scripts/famp-local`](../scripts/famp-local).
+
+**Re-scope rationale.** The original v0.9 slot was "Federation Profile"
+(Agent Cards, delegation, provenance, cross-host trust). During v0.8
+dogfooding it became clear that forcing same-host, same-UID agents to
+pay federation-grade costs (per-identity TLS certs, TOFU pinning, peer
+cards, separate HOME dirs) was the actual onboarding blocker — not
+federation features. v0.9 is re-scoped to introduce a **local bus**
+(UDS, zero-crypto, channels, single broker) that moves same-host traffic
+off TLS entirely. Federation primitives stay as v1.0 internals, wrapped
+by a `famp-gateway` process that bridges the local bus to remote
+FAMP-over-HTTPS.
+
+**Design:** [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](../docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
+
+**Four-phase plan (from spec):**
+
+1. `famp-bus` crate — types, codec, pure-state broker logic, proptest coverage.
+2. UDS wire + CLI surface + minimum-viable MCP rewire.
+3. Claude Code integration polish — `famp install-claude-code`, slash commands, README Quick Start rewrite.
+4. Federation CLI unwire — hard requirement: `e2e_two_daemons` refactored to library API, stays in CI; preserves federation code from mummification.
+
+**Pre-v0.9 scaffolding:** [`scripts/famp-local`](../scripts/famp-local)
+is a bash wrapper over v0.8 that compresses the 8-step federation
+onboarding into one command (`famp-local wire <dir>`). It validates the
+local-first UX before the broker ships. The wrapper becomes redundant
+when v0.9 lands.
+
+---
+
 ## v0.8 Usable from Claude Code (Shipped: 2026-04-15)
 
 **Phases completed:** 4 phases, 13 plans
