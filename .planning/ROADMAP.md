@@ -8,7 +8,8 @@
 - ✅ **v0.6 Foundation Crates** — Phases 1–3 (shipped 2026-04-13). Substrate shipped: `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements satisfied, 112/112 tests green. See [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md).
 - ✅ **v0.7 Personal Runtime** — Phases 1–4 (shipped 2026-04-14). Minimal usable library on two transports. 4/4 phases, 15/15 plans, 253/253 tests green.
 - ✅ **v0.8 Usable from Claude Code** — Phases 1–4 (shipped 2026-04-16). CLI + daemon + inbox + MCP server + streamlined onboarding (`setup`/`info`/`peer import`). 4/4 phases, 13/13 plans, 37/37 requirements, 366/366 tests green. See [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md).
-- 📋 **v0.9+ Federation Profile** — Identity & Cards, Causality, Negotiation, Delegation, Provenance, Extensions, Adversarial Conformance.
+- 📋 **v0.9 Local-First Bus** *(re-scoped 2026-04-17, in design)* — UDS-backed broker replacing the per-identity TLS listener mesh for same-host agents. Zero crypto on the local path; IRC-style channels; durable per-name mailboxes; stable MCP tool surface carried forward to v1.0. Pre-v0.9 scaffolding (`scripts/famp-local`) ships today to validate the UX. Design: [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](../docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
+- 📋 **v1.0 Federation Profile** — was v0.9+ until the re-scope. Cross-host FAMP-over-HTTPS via a `famp-gateway` wrapping the local bus. Agent Cards, causality & replay defense, negotiation, delegation, provenance, extensions, adversarial conformance + Level 2/3 badges.
 
 ## Phases
 
@@ -133,17 +134,38 @@ See [milestones/v0.8-phases/](milestones/v0.8-phases/) for full plan and summary
 
 </details>
 
-## Future Milestone Sketch (Federation Profile)
+## v0.9 Local-First Bus (re-scoped 2026-04-17)
 
-Rough ordering, not committed:
+The original v0.9 slot was "Identity & Cards" (first of the Federation Profile
+milestones below). During v0.8 dogfooding it became clear that forcing
+same-host, same-UID agents to pay federation-grade costs (per-identity TLS
+certs, TOFU pinning, peer cards, separate `FAMP_HOME` dirs) was the actual
+onboarding blocker — not any missing federation feature. v0.9 is re-scoped
+to introduce a local bus that moves same-host traffic off TLS entirely.
 
-- **v0.9 Identity & Cards** — Agent Card format, federation credential, capability declaration, pluggable trust store, `.well-known` distribution (TRANS-05), SPEC-04..06
-- **v0.10 Causality & Replay Defense** — freshness windows, bounded replay cache, idempotency-key scoping, supersession, cancellation-safe send path (TRANS-08), SPEC-07/08
-- **v0.11 Negotiation & Commitment** — propose/counter-propose, round limits, capability snapshot binding, conversation FSM
-- **v0.12 Delegation** — assist / subtask / transfer forms, transfer timeout, delegation ceiling
-- **v0.13 Provenance** — graph, canonicalization, redaction, signed terminal reports
-- **v0.14 Extensions** — critical/non-critical registry, INV-9 fail-closed
-- **v0.15 Adversarial Conformance + Level 2/3 Badges** — full CONF matrix, stateright model checking, conformance-badge automation, `famp` CLI
+Four phases per the [design spec](../docs/superpowers/specs/2026-04-17-local-first-bus-design.md):
+
+1. **`famp-bus` crate** — types, codec, pure-state broker logic, proptest coverage (library only, no wire).
+2. **UDS wire + CLI surface + minimum-viable MCP rewire.**
+3. **Claude Code integration polish** — `famp install-claude-code`, slash commands, 12-line README Quick Start.
+4. **Federation CLI unwire** — remove top-level `famp setup / listen / send / peer add`; refactor `e2e_two_daemons` to library API so federation CI stays alive on every commit.
+
+Implementation paused pending ~2 weeks of usage validation via
+[`scripts/famp-local`](../scripts/famp-local), the pre-v0.9 bash wrapper
+shipped as a stand-in for the broker. Federation primitives (`famp-transport-http`,
+`famp-keyring`) stay as v1.0 internals and will be wrapped by `famp-gateway`.
+
+## Future Milestone Sketch (v1.0 Federation Profile)
+
+Rough ordering, not committed. Was numbered v0.9–v0.15 before the re-scope.
+
+- **v1.0 Identity & Cards** — Agent Card format, federation credential, capability declaration, pluggable trust store, `.well-known` distribution (TRANS-05), SPEC-04..06. Also introduces `famp-gateway` bridging the v0.9 local bus to remote FAMP-over-HTTPS.
+- **v1.1 Causality & Replay Defense** — freshness windows, bounded replay cache, idempotency-key scoping, supersession, cancellation-safe send path (TRANS-08), SPEC-07/08
+- **v1.2 Negotiation & Commitment** — propose/counter-propose, round limits, capability snapshot binding, conversation FSM
+- **v1.3 Delegation** — assist / subtask / transfer forms, transfer timeout, delegation ceiling
+- **v1.4 Provenance** — graph, canonicalization, redaction, signed terminal reports
+- **v1.5 Extensions** — critical/non-critical registry, INV-9 fail-closed
+- **v1.6 Adversarial Conformance + Level 2/3 Badges** — full CONF matrix, stateright model checking, conformance-badge automation
 
 ## Progress Table
 
@@ -162,4 +184,4 @@ Rough ordering, not committed:
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 3/3 | Complete | 2026-04-15 |
 
 ---
-*Roadmap updated: 2026-04-16 — v0.8 Usable from Claude Code SHIPPED (4/4 phases, 13/13 plans, 37/37 requirements, 366/366 tests). Streamlined onboarding: `famp setup`, `famp info`, `famp peer import`. E2E-02 manual smoke test PASSED.*
+*Roadmap updated: 2026-04-17 — v0.9 re-scoped from "Federation Profile" to "Local-First Bus" after v0.8 onboarding friction surfaced during dogfooding. `scripts/famp-local` ships as pre-v0.9 scaffolding. Design spec committed. Federation primitives preserved as v1.0 internals with a Phase 4 CI-preservation requirement. v0.8 remains shipped (366/366 tests).*
