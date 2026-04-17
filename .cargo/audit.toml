@@ -1,0 +1,47 @@
+# cargo-audit configuration
+#
+# This file records deliberate, time-boxed decisions to tolerate specific
+# RustSec advisories. Each entry must include the advisory URL and a
+# reassessment date. Review every entry on its reassessment date and either
+# remediate (bump, migrate, remove) or renew the ignore with fresh rationale.
+#
+# Reassessment cadence: one quarter from the filing date.
+# Do NOT blanket-ignore by crate or severity.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0097 — rand 0.8.5 "unsound with a custom logger using rand::rng()"
+    # https://rustsec.org/advisories/RUSTSEC-2026-0097
+    #
+    # Reachability: NOT REACHABLE. The advisory concerns `rand::rng()`, which is
+    # the rand 0.9 API. Our code uses rand 0.8 and only calls
+    # `rand::rngs::OsRng.fill_bytes` (crates/famp/src/cli/init/mod.rs). We never
+    # call `rand::rng()` or install a custom logger RNG.
+    #
+    # Why we are not upgrading: rand 0.9 requires rand_core 0.9, which conflicts
+    # with ed25519-dalek 2.x's rand_core 0.6 pinning (documented in CLAUDE.md
+    # "Version compatibility notes"). An upgrade requires either a coordinated
+    # bump with ed25519-dalek or dropping rand-based keygen entropy plumbing.
+    #
+    # Filed:        2026-04-17
+    # Reassess by:  2026-07-17
+    "RUSTSEC-2026-0097",
+
+    # RUSTSEC-2025-0134 — rustls-pemfile 2.2.0 is unmaintained
+    # https://rustsec.org/advisories/RUSTSEC-2025-0134
+    #
+    # Reachability: N/A (unmaintained advisory, not a CVE). The crate still
+    # functions correctly; risk is that future bugs or vulnerabilities will
+    # not be patched upstream.
+    #
+    # Why we are not migrating yet: the recommended replacement is the `pem`
+    # module in `rustls-pki-types`. Migration touches
+    # crates/famp-transport-http/src/tls.rs (`rustls_pemfile::certs` and
+    # `rustls_pemfile::private_key` call sites) and warrants its own PR with
+    # TLS-loader regression tests, not a bundled dep bump.
+    #
+    # Tracked as: standalone migration PR
+    # Filed:        2026-04-17
+    # Reassess by:  2026-07-17
+    "RUSTSEC-2025-0134",
+]
