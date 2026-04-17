@@ -42,6 +42,11 @@ fn main() {
     let cli = famp::cli::Cli::parse();
     if let Err(e) = famp::cli::run(cli) {
         eprintln!("{e}");
+        let mut src = std::error::Error::source(&e);
+        while let Some(s) = src {
+            eprintln!("  caused by: {s}");
+            src = s.source();
+        }
         std::process::exit(1);
     }
 }
