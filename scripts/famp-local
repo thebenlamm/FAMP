@@ -1,0 +1,401 @@
+#!/usr/bin/env bash
+# famp-local — same-host onboarding wrapper for FAMP v0.8.
+#
+# Wraps `famp setup / listen / info / peer import / send / inbox` into a
+# small command surface optimised for two Claude Code windows on the same
+# laptop. This is explicit pre-v0.9 scaffolding: it does NOT replace v0.8,
+# it just hides the parts that don't matter for the same-UID use case
+# (port selection, HOME juggling, peer-card piping, TOFU first-contact).
+#
+# Intentional non-goals:
+#   * Channels / broadcast (use v0.9 for that)
+#   * Hot-reloading Claude Code MCP config (not possible; Claude reads at start)
+#   * Cross-host federation (v1.0)
+#
+# Usage: see `famp-local help`
+
+set -euo pipefail
+
+STATE_ROOT="${FAMP_LOCAL_ROOT:-$HOME/.famp-local}"
+FAMP_BIN="${FAMP_BIN:-famp}"
+BASE_PORT="${FAMP_LOCAL_BASE_PORT:-8443}"
+
+# ─── paths ─────────────────────────────────────────────────────────────
+
+home_for() { echo "$STATE_ROOT/agents/$1"; }
+pid_for()  { echo "$STATE_ROOT/agents/$1/daemon.pid"; }
+log_for()  { echo "$STATE_ROOT/agents/$1/daemon.log"; }
+
+# ─── helpers ───────────────────────────────────────────────────────────
+
+die() { printf 'famp-local: %s\n' "$*" >&2; exit 1; }
+note() { printf '  %s\n' "$*" >&2; }
+
+require_famp() {
+  command -v "$FAMP_BIN" >/dev/null 2>&1 \
+    || die "famp binary not found on PATH (set FAMP_BIN=... to override)"
+}
+
+# Return 0 if PID in $1 is alive, 1 otherwise.
+is_alive() {
+  local pid="$1"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+# Ports already handed out during this invocation, so a second call doesn't
+# collide with the first before the listener has actually bound. Written in
+# the parent shell — do NOT call next_free_port from a command substitution
+# `$(...)`, which runs in a subshell and can't mutate this array. Use the
+# CHOSEN_PORT out-variable instead.
+PORTS_RESERVED=()
+CHOSEN_PORT=""
+
+# Pick the lowest TCP port not currently in LISTEN state AND not already
+# handed out during this script run, starting from $BASE_PORT. Appends the
+# chosen port to PORTS_RESERVED and sets CHOSEN_PORT.
+next_free_port() {
+  local p=$BASE_PORT
+  local max=$((BASE_PORT + 100))
+  while [ "$p" -lt "$max" ]; do
+    local reserved=0
+    if [ "${#PORTS_RESERVED[@]}" -gt 0 ]; then
+      local t
+      for t in "${PORTS_RESERVED[@]}"; do
+        [ "$t" = "$p" ] && { reserved=1; break; }
+      done
+    fi
+    if [ "$reserved" = 0 ] && \
+       ! lsof -iTCP:"$p" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+      PORTS_RESERVED+=("$p")
+      CHOSEN_PORT="$p"
+      return 0
+    fi
+    p=$((p+1))
+  done
+  die "no free TCP port found in $BASE_PORT..$((max-1))"
+}
+
+# Treat an already-assigned port (from a previously-initialised agent) as
+# reserved so a fresh agent initialised in the same run doesn't steal it.
+reserve_port() {
+  local p="$1"
+  [ -n "$p" ] || return 0
+  PORTS_RESERVED+=("$p")
+}
+
+# Read the running port from an agent's config.toml (after `famp setup`).
+port_of() {
+  local home="$1"
+  awk -F'"' '/^listen_addr[[:space:]]*=/ { print $2 }' "$home/config.toml" \
+    | awk -F: '{print $NF}'
+}
+
+# List agent names currently registered under STATE_ROOT.
+list_agents() {
+  [ -d "$STATE_ROOT/agents" ] || return 0
+  ( cd "$STATE_ROOT/agents" && ls -1 2>/dev/null )
+}
+
+# ─── lifecycle ─────────────────────────────────────────────────────────
+
+ensure_agent() {
+  local name="$1"
+  local home; home="$(home_for "$name")"
+  if [ -f "$home/config.toml" ]; then
+    local existing_port; existing_port="$(port_of "$home")"
+    reserve_port "$existing_port"
+    note "$name: already initialised at $home (port $existing_port)"
+    return 0
+  fi
+  next_free_port
+  local port="$CHOSEN_PORT"
+  note "$name: initialising at $home (port $port)"
+  mkdir -p "$home"
+  "$FAMP_BIN" setup --name "$name" --home "$home" --port "$port" \
+    >/dev/null 2>&1
+}
+
+start_daemon() {
+  local name="$1"
+  local home; home="$(home_for "$name")"
+  local pidf; pidf="$(pid_for "$name")"
+  local logf; logf="$(log_for "$name")"
+
+  if [ -f "$pidf" ]; then
+    local existing; existing="$(cat "$pidf")"
+    if is_alive "$existing"; then
+      note "$name: daemon already running (pid $existing)"
+      return 0
+    else
+      note "$name: stale pid file (pid $existing dead), cleaning"
+      rm -f "$pidf"
+    fi
+  fi
+
+  FAMP_HOME="$home" nohup "$FAMP_BIN" listen >"$logf" 2>&1 &
+  local pid=$!
+  echo "$pid" > "$pidf"
+
+  # Give the listener a moment to bind before we try to connect.
+  local tries=0
+  local port; port="$(port_of "$home")"
+  while [ "$tries" -lt 20 ]; do
+    if lsof -iTCP:"$port" -sTCP:LISTEN -n -P >/dev/null 2>&1; then
+      note "$name: listening on 127.0.0.1:$port (pid $pid)"
+      return 0
+    fi
+    sleep 0.05
+    tries=$((tries+1))
+  done
+  die "$name: daemon failed to bind port $port within 1s; see $logf"
+}
+
+stop_daemon() {
+  local name="$1"
+  local pidf; pidf="$(pid_for "$name")"
+  [ -f "$pidf" ] || { note "$name: no pid file"; return 0; }
+
+  local pid; pid="$(cat "$pidf")"
+  if is_alive "$pid"; then
+    note "$name: stopping (pid $pid)"
+    kill -TERM "$pid" 2>/dev/null || true
+    local tries=0
+    while is_alive "$pid" && [ "$tries" -lt 40 ]; do
+      sleep 0.05; tries=$((tries+1))
+    done
+    if is_alive "$pid"; then
+      note "$name: SIGTERM ignored, escalating to SIGKILL"
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$pidf"
+}
+
+# ─── peer wiring ───────────────────────────────────────────────────────
+
+# Import $from's peer card into $to's keyring. Idempotent — v0.8's
+# `peer import` updates an existing row in place.
+pair_one_way() {
+  local from="$1" to="$2"
+  local from_home; from_home="$(home_for "$from")"
+  local to_home;   to_home="$(home_for "$to")"
+  FAMP_HOME="$from_home" "$FAMP_BIN" info \
+    | FAMP_HOME="$to_home" "$FAMP_BIN" peer import >/dev/null
+}
+
+# For N agents, exchange peer cards in every direction (N*(N-1) imports).
+exchange_peers() {
+  local agents=("$@")
+  local a b
+  for a in "${agents[@]}"; do
+    for b in "${agents[@]}"; do
+      [ "$a" = "$b" ] && continue
+      pair_one_way "$a" "$b"
+    done
+  done
+  note "peer cards exchanged across: ${agents[*]}"
+}
+
+# Compute the SHA-256 fingerprint (hex, lowercase) of the leaf cert at
+# $1 (PEM). This is the format `famp` pins in peers.toml.
+cert_fingerprint_sha256() {
+  openssl x509 -in "$1" -outform DER 2>/dev/null \
+    | shasum -a 256 \
+    | awk '{ print $1 }'
+}
+
+# Append `tls_fingerprint_sha256 = "<fp>"` into the peers.toml block for
+# alias $alias in file $peers_file. Replaces any existing pin for that
+# alias, so the operation is idempotent. Written in awk so we don't take
+# a toml-crate dependency.
+pin_peer_fingerprint() {
+  local peers_file="$1" alias="$2" fp="$3"
+  local tmp="${peers_file}.tmp"
+  awk -v target="$alias" -v fp="$fp" '
+    BEGIN { in_block = 0; matched = 0; printed_fp = 0; }
+    /^\[\[peers\]\]$/ {
+      if (in_block && matched && !printed_fp) {
+        print "tls_fingerprint_sha256 = \"" fp "\""
+      }
+      in_block = 1; matched = 0; printed_fp = 0;
+      print; next;
+    }
+    in_block && $0 ~ "^alias = \"" target "\"$" {
+      matched = 1; print; next;
+    }
+    in_block && matched && /^tls_fingerprint_sha256[[:space:]]*=/ {
+      # Replace existing pin in place.
+      print "tls_fingerprint_sha256 = \"" fp "\"";
+      printed_fp = 1; next;
+    }
+    { print }
+    END {
+      if (in_block && matched && !printed_fp) {
+        print "tls_fingerprint_sha256 = \"" fp "\""
+      }
+    }
+  ' "$peers_file" > "$tmp" && mv "$tmp" "$peers_file"
+}
+
+# Pre-pin every agent's fingerprint into every other agent's peers.toml
+# by reading the cert files directly. Skips TOFU entirely — honest, because
+# we trust the filesystem on same-UID loopback anyway.
+pin_all_fingerprints() {
+  local agents=("$@")
+  local from to fp
+  for from in "${agents[@]}"; do
+    for to in "${agents[@]}"; do
+      [ "$from" = "$to" ] && continue
+      fp="$(cert_fingerprint_sha256 "$(home_for "$to")/tls.cert.pem")"
+      pin_peer_fingerprint "$(home_for "$from")/peers.toml" "$to" "$fp"
+    done
+  done
+  note "TLS fingerprints pre-pinned from cert files (TOFU bypassed)"
+}
+
+# ─── subcommands ───────────────────────────────────────────────────────
+
+cmd_init() {
+  [ $# -ge 2 ] || die "init needs at least two names, e.g. 'famp-local init alice bob'"
+  local agents=("$@")
+
+  mkdir -p "$STATE_ROOT/agents"
+  local a
+  # Order matters: the listen daemon loads its keyring once at startup,
+  # so peers.toml MUST be fully populated (pubkeys + pins) before we
+  # `famp listen`. Otherwise bob's daemon has no record of alice and
+  # rejects her signed envelopes as HTTP 401 Unauthorized.
+  for a in "${agents[@]}"; do ensure_agent "$a"; done
+  exchange_peers       "${agents[@]}"
+  pin_all_fingerprints "${agents[@]}"
+  for a in "${agents[@]}"; do start_daemon  "$a"; done
+
+  echo
+  echo "✓ ${#agents[@]} agents ready: ${agents[*]}"
+  echo "  state:  $STATE_ROOT"
+  echo
+  echo "  Send from shell:"
+  echo "    famp-local send ${agents[0]} ${agents[1]} 'hello'"
+  echo
+  echo "  Register as Claude Code MCP servers:"
+  echo "    famp-local mcp-add ${agents[*]}"
+}
+
+cmd_send() {
+  [ $# -eq 3 ] || die "send <from> <to> <text>"
+  local from="$1" to="$2" text="$3"
+  local home; home="$(home_for "$from")"
+  [ -d "$home" ] || die "unknown agent: $from (run 'famp-local init $from' first)"
+  FAMP_HOME="$home" "$FAMP_BIN" send --to "$to" --new-task "$text"
+}
+
+cmd_inbox() {
+  [ $# -eq 1 ] || die "inbox <name>"
+  local name="$1"
+  local home; home="$(home_for "$name")"
+  [ -d "$home" ] || die "unknown agent: $name"
+  FAMP_HOME="$home" "$FAMP_BIN" inbox list
+}
+
+cmd_status() {
+  local found=0
+  local a
+  for a in $(list_agents); do
+    found=1
+    local pidf; pidf="$(pid_for "$a")"
+    local home; home="$(home_for "$a")"
+    local port; port="$(port_of "$home")"
+    if [ -f "$pidf" ]; then
+      local pid; pid="$(cat "$pidf")"
+      if is_alive "$pid"; then
+        printf '  %-16s running  pid=%s  port=%s  home=%s\n' "$a" "$pid" "$port" "$home"
+      else
+        printf '  %-16s stopped  (stale pid %s)  port=%s\n' "$a" "$pid" "$port"
+      fi
+    else
+      printf '  %-16s stopped                  port=%s\n' "$a" "$port"
+    fi
+  done
+  [ "$found" = 1 ] || echo "  (no agents — run 'famp-local init <name> <name>')"
+}
+
+cmd_stop() {
+  if [ $# -eq 0 ]; then
+    local a
+    for a in $(list_agents); do stop_daemon "$a"; done
+  else
+    for a in "$@"; do stop_daemon "$a"; done
+  fi
+}
+
+cmd_clean() {
+  cmd_stop
+  if [ -d "$STATE_ROOT" ]; then
+    note "removing $STATE_ROOT"
+    rm -rf "$STATE_ROOT"
+  fi
+  echo "✓ state cleaned"
+}
+
+# Register an agent as a user-scope Claude Code MCP server. Requires the
+# `claude` CLI (ships with Claude Code). Uses the absolute path to the
+# famp binary so Claude's MCP spawner doesn't need the user's PATH.
+cmd_mcp_add() {
+  [ $# -ge 1 ] || die "mcp-add <name> [<name>...]"
+  command -v claude >/dev/null 2>&1 \
+    || die "'claude' CLI not on PATH; install Claude Code or add manually to ~/.claude.json"
+  local famp_abs; famp_abs="$(command -v "$FAMP_BIN")"
+  local a home
+  for a in "$@"; do
+    home="$(home_for "$a")"
+    [ -d "$home" ] || die "unknown agent: $a (init it first)"
+    claude mcp remove --scope user "famp-$a" >/dev/null 2>&1 || true
+    claude mcp add    --scope user "famp-$a" "$famp_abs" mcp \
+      --env "FAMP_HOME=$home" >/dev/null
+    note "famp-$a registered → $famp_abs mcp  (FAMP_HOME=$home)"
+  done
+  echo
+  echo "✓ MCP servers registered. Restart Claude Code windows for them to pick up."
+}
+
+cmd_help() {
+  cat <<'EOF'
+famp-local — same-host onboarding wrapper for FAMP v0.8.
+
+COMMANDS
+  init <name> [<name>...]     Create N agents, start daemons, exchange pins.
+  send <from> <to> <text>     Send a new_task from one agent to another.
+  inbox <name>                List a name's inbox entries.
+  status                      Show all known agents and daemon state.
+  stop [<name>...]            Stop daemon(s); with no args, stops all.
+  clean                       Stop everything and wipe state dir.
+  mcp-add <name> [<name>...]  Register agent(s) as user-scope Claude Code MCP.
+  help                        Show this message.
+
+ENVIRONMENT
+  FAMP_BIN             Path to famp binary (default: 'famp' on PATH).
+  FAMP_LOCAL_ROOT      State dir (default: ~/.famp-local).
+  FAMP_LOCAL_BASE_PORT First port to try when auto-assigning (default: 8443).
+
+EXAMPLE
+  $ famp-local init alice bob
+  $ famp-local mcp-add alice bob
+  $ famp-local send alice bob 'ship it'
+  $ famp-local inbox bob
+EOF
+}
+
+# ─── dispatch ──────────────────────────────────────────────────────────
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+  init)    require_famp; cmd_init "$@" ;;
+  send)    require_famp; cmd_send "$@" ;;
+  inbox)   require_famp; cmd_inbox "$@" ;;
+  status)                 cmd_status "$@" ;;
+  stop)                   cmd_stop "$@" ;;
+  clean)                  cmd_clean "$@" ;;
+  mcp-add) require_famp; cmd_mcp_add "$@" ;;
+  help|-h|--help)         cmd_help ;;
+  *)       die "unknown command: $cmd (try 'famp-local help')" ;;
+esac
