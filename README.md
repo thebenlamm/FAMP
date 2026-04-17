@@ -75,15 +75,20 @@ Deferred to the federation-profile milestones (`v0.9+`):
 # 1. Install rustup (skip if already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 
-# 2. Enter the repo (rust-toolchain.toml auto-installs 1.89.0)
+# 2. Add cargo/rustup to the current shell's PATH
+#    (rustup's installer edits your shell profile, but that only takes effect
+#    in new shells — this line activates it here too)
+source "$HOME/.cargo/env"
+
+# 3. Enter the repo (rust-toolchain.toml auto-installs 1.89.0)
 cd FAMP
 rustc --version
 
-# 3. Install dev tools (one-time)
+# 4. Install dev tools (one-time)
 cargo install cargo-nextest --locked
 cargo install just --locked
 
-# 4. Verify the workspace
+# 5. Verify the workspace
 just ci
 ```
 
