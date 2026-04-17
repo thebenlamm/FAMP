@@ -20,6 +20,18 @@ STATE_ROOT="${FAMP_LOCAL_ROOT:-$HOME/.famp-local}"
 FAMP_BIN="${FAMP_BIN:-famp}"
 BASE_PORT="${FAMP_LOCAL_BASE_PORT:-8443}"
 
+# Absolute path to this script, for baking into ~/.zprofile — has to work
+# when the hook fires from a new login shell whose cwd isn't the repo.
+if [ -L "${BASH_SOURCE[0]}" ]; then
+  FAMP_LOCAL_SCRIPT="$(readlink "${BASH_SOURCE[0]}")"
+else
+  FAMP_LOCAL_SCRIPT="${BASH_SOURCE[0]}"
+fi
+case "$FAMP_LOCAL_SCRIPT" in
+  /*) ;;
+  *)  FAMP_LOCAL_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")" ;;
+esac
+
 # ─── paths ─────────────────────────────────────────────────────────────
 
 home_for() { echo "$STATE_ROOT/agents/$1"; }
@@ -40,6 +52,69 @@ require_famp() {
 is_alive() {
   local pid="$1"
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+# Normalise a user-supplied directory path: expand ~, make absolute, drop
+# trailing slash. Does NOT require the directory to exist — caller checks.
+resolve_dir() {
+  local dir="$1"
+  dir="${dir/#\~/$HOME}"
+  case "$dir" in
+    /*) ;;
+    *) dir="$PWD/$dir" ;;
+  esac
+  dir="${dir%/}"
+  printf '%s\n' "$dir"
+}
+
+# Enforce alphanumeric + underscore + hyphen on identity names. Matches
+# what v0.8 `famp setup --name` accepts without surprises.
+validate_identity_name() {
+  local n="$1"
+  case "$n" in
+    ''|*[!A-Za-z0-9_-]*) die "invalid identity name '$n' (allowed: A-Z a-z 0-9 _ -)" ;;
+  esac
+}
+
+# Space-separated list of identity names currently present under STATE_ROOT.
+# Empty string if none exist yet.
+list_existing_agents_inline() {
+  [ -d "$STATE_ROOT/agents" ] || { printf ''; return 0; }
+  ( cd "$STATE_ROOT/agents" && ls -1 2>/dev/null ) | tr '\n' ' '
+}
+
+# Rewrite the login-hook line in ~/.zprofile so it reflects the given
+# space-separated mesh list. If no managed block exists, strip any
+# pre-existing unmanaged `famp-local init` line first (from early hand-rolled
+# setups), then append the managed block. Managed block is delimited by the
+# marker comment so future rewrites can find-and-replace cleanly.
+ZPROFILE_MARKER="# FAMP local login hook (managed by famp-local)"
+update_zprofile_init() {
+  local mesh="$1"
+  local zp="$HOME/.zprofile"
+  local new_line="$FAMP_LOCAL_SCRIPT init $mesh >/dev/null 2>&1 || true"
+  touch "$zp"
+
+  local tmp; tmp="$(mktemp)"
+
+  if grep -Fq "$ZPROFILE_MARKER" "$zp"; then
+    # Managed block already exists — replace the line immediately after
+    # the marker.
+    awk -v marker="$ZPROFILE_MARKER" -v new_line="$new_line" '
+      { print }
+      $0 == marker { getline; print new_line }
+    ' "$zp" > "$tmp" && mv "$tmp" "$zp"
+  else
+    # No managed block yet. Strip any unmanaged `famp-local init` line that
+    # might be left over from the early hand-rolled setup, then append a
+    # fresh managed block.
+    grep -v 'famp-local init' "$zp" > "$tmp" || true
+    mv "$tmp" "$zp"
+    {
+      printf '\n%s\n' "$ZPROFILE_MARKER"
+      printf '%s\n' "$new_line"
+    } >> "$zp"
+  fi
 }
 
 # Ports already handed out during this invocation, so a second call doesn't
@@ -370,19 +445,145 @@ cmd_mcp_add() {
   echo "✓ MCP servers registered. Restart Claude Code windows for them to pick up."
 }
 
+cmd_wire() {
+  [ $# -ge 1 ] || die "wire <dir> [--as <name>] [--force]"
+  local dir="$1"; shift
+  local override_name="" force=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --as)    shift; [ $# -ge 1 ] || die "--as needs an identity name"
+               override_name="$1"; shift ;;
+      --force) force=1; shift ;;
+      *)       die "unknown flag: $1 (try 'famp-local help')" ;;
+    esac
+  done
+
+  dir="$(resolve_dir "$dir")"
+  [ -d "$dir" ] || die "directory does not exist: $dir"
+
+  local name
+  if [ -n "$override_name" ]; then
+    name="$override_name"
+  else
+    name="$(basename "$dir")"
+  fi
+  validate_identity_name "$name"
+
+  local mcp_file="$dir/.mcp.json"
+  if [ -f "$mcp_file" ] && [ "$force" != 1 ]; then
+    die "$mcp_file already exists (pass --force to overwrite)"
+  fi
+
+  # Build the full mesh: every existing agent + the target identity.
+  # Deduplicated so re-wiring a repo that's already in the mesh doesn't
+  # double-list it.
+  local existing; existing="$(list_existing_agents_inline)"
+  local mesh="$existing"
+  local found=0
+  for e in $existing; do
+    [ "$e" = "$name" ] && { found=1; break; }
+  done
+  if [ "$found" = 0 ]; then
+    mesh="$existing $name"
+  fi
+  # trim surrounding whitespace
+  # shellcheck disable=SC2086
+  mesh="$(echo $mesh)"
+
+  # init handles "create missing, start missing, idempotent for existing"
+  # and requires at least two agents. If the user is wiring their very
+  # first repo, auto-invent a second placeholder so init doesn't reject.
+  local mesh_count=0
+  for _ in $mesh; do mesh_count=$((mesh_count + 1)); done
+  if [ "$mesh_count" -lt 2 ]; then
+    die "need at least two identities to form a mesh; wire a second repo too, or pass a manual init"
+  fi
+
+  note "wiring: identity='$name', target=$dir"
+  note "mesh will be: $mesh"
+
+  # Running daemons cached their keyring at startup. If we added a new peer
+  # to their peers.toml without bouncing them, they'd reject signed
+  # envelopes from the new identity with HTTP 401. Stop first, then init
+  # rebuilds the keyring fresh on every daemon. Brief outage (<2s) for any
+  # existing sessions; acceptable for a dev workflow.
+  cmd_stop >/dev/null 2>&1 || true
+  # shellcheck disable=SC2086
+  cmd_init $mesh
+
+  require_famp
+  local famp_abs; famp_abs="$(command -v "$FAMP_BIN")"
+  local home; home="$(home_for "$name")"
+  cat > "$mcp_file" <<EOF
+{
+  "mcpServers": {
+    "famp": {
+      "command": "$famp_abs",
+      "args": ["mcp"],
+      "env": {
+        "FAMP_HOME": "$home"
+      }
+    }
+  }
+}
+EOF
+  note "wrote $mcp_file → identity '$name'"
+
+  update_zprofile_init "$mesh"
+  note "updated ~/.zprofile login hook (mesh: $mesh)"
+
+  echo
+  echo "✓ $dir wired as identity '$name'"
+  echo "  Restart the Claude Code window for that repo to load the MCP server."
+}
+
+cmd_unwire() {
+  [ $# -eq 1 ] || die "unwire <dir>"
+  local dir; dir="$(resolve_dir "$1")"
+  local mcp_file="$dir/.mcp.json"
+  [ -f "$mcp_file" ] || die "no .mcp.json at $mcp_file (nothing to unwire)"
+
+  # Pull identity name out of FAMP_HOME for the follow-up hint. Best-effort:
+  # if the user has edited the file we just print a generic hint.
+  local name=""
+  name="$(grep -o '"FAMP_HOME"[[:space:]]*:[[:space:]]*"[^"]*"' "$mcp_file" \
+          | sed 's|.*/||;s|"$||' || true)"
+
+  rm -f "$mcp_file"
+  note "removed $mcp_file"
+  echo
+  echo "✓ $dir unwired"
+  if [ -n "$name" ]; then
+    echo
+    echo "  Identity '$name' is still in the mesh and will keep starting at login."
+    echo "  To fully remove the identity (stop its daemon, delete its state):"
+    echo "    $FAMP_LOCAL_SCRIPT stop"
+    echo "    rm -rf $STATE_ROOT/agents/$name"
+    echo "    $FAMP_LOCAL_SCRIPT init <remaining names>"
+    echo "  Then edit ~/.zprofile to drop '$name' from the login hook."
+  fi
+}
+
 cmd_help() {
   cat <<'EOF'
 famp-local — same-host onboarding wrapper for FAMP v0.8.
 
 COMMANDS
-  init <name> [<name>...]     Create N agents, start daemons, exchange pins.
-  send <from> <to> <text>     Send a new_task from one agent to another.
-  inbox <name>                List a name's inbox entries.
-  status                      Show all known agents and daemon state.
-  stop [<name>...]            Stop daemon(s); with no args, stops all.
-  clean                       Stop everything and wipe state dir.
-  mcp-add <name> [<name>...]  Register agent(s) as user-scope Claude Code MCP.
-  help                        Show this message.
+  init <name> [<name>...]         Create N agents, start daemons, exchange pins.
+  wire <dir> [--as <name>] [--force]
+                                  Bring a directory into the mesh: ensure an
+                                  identity named <name> (default: basename of
+                                  <dir>) exists, drop a project-scoped
+                                  .mcp.json in <dir>, update ~/.zprofile.
+  unwire <dir>                    Remove .mcp.json from <dir>. Identity and
+                                  daemon stay — hint printed for full removal.
+  send <from> <to> <text>         Send a new_task from one agent to another.
+  inbox <name>                    List a name's inbox entries.
+  status                          Show all known agents and daemon state.
+  stop [<name>...]                Stop daemon(s); with no args, stops all.
+  clean                           Stop everything and wipe state dir.
+  mcp-add <name> [<name>...]      Register agent(s) as user-scope Claude Code MCP.
+  help                            Show this message.
 
 ENVIRONMENT
   FAMP_BIN             Path to famp binary (default: 'famp' on PATH).
@@ -391,9 +592,11 @@ ENVIRONMENT
 
 EXAMPLE
   $ famp-local init alice bob
-  $ famp-local mcp-add alice bob
+  $ famp-local wire ~/Workspace/MyRepo
+  $ famp-local wire ~/Workspace/God --as architect
   $ famp-local send alice bob 'ship it'
   $ famp-local inbox bob
+  $ famp-local unwire ~/Workspace/MyRepo
 EOF
 }
 
@@ -402,6 +605,8 @@ EOF
 cmd="${1:-help}"; shift || true
 case "$cmd" in
   init)    require_famp; cmd_init "$@" ;;
+  wire)    require_famp; cmd_wire "$@" ;;
+  unwire)                 cmd_unwire "$@" ;;
   send)    require_famp; cmd_send "$@" ;;
   inbox)   require_famp; cmd_inbox "$@" ;;
   status)                 cmd_status "$@" ;;
