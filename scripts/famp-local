@@ -173,14 +173,26 @@ stop_daemon() {
 
 # ─── peer wiring ───────────────────────────────────────────────────────
 
-# Import $from's peer card into $to's keyring. Idempotent — v0.8's
-# `peer import` updates an existing row in place.
+# Import $from's peer card into $to's keyring. v0.8's `famp peer import`
+# errors with `peer already exists` on a repeat rather than upserting, and
+# prints even its success message ("Peer imported successfully") to stderr.
+# Key on the exit code, not on stderr content: exit 0 = OK (informational
+# stderr is fine), non-zero = inspect stderr for the known-idempotent case.
 pair_one_way() {
   local from="$1" to="$2"
   local from_home; from_home="$(home_for "$from")"
   local to_home;   to_home="$(home_for "$to")"
-  FAMP_HOME="$from_home" "$FAMP_BIN" info \
-    | FAMP_HOME="$to_home" "$FAMP_BIN" peer import >/dev/null
+  local rc=0 err
+  err="$(FAMP_HOME="$from_home" "$FAMP_BIN" info \
+         | FAMP_HOME="$to_home" "$FAMP_BIN" peer import 2>&1 >/dev/null)" \
+    || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if printf '%s\n' "$err" | grep -q "peer already exists"; then
+      return 0   # expected on re-run; nothing to do
+    fi
+    printf '%s\n' "$err" >&2
+    return "$rc"
+  fi
 }
 
 # For N agents, exchange peer cards in every direction (N*(N-1) imports).
