@@ -83,13 +83,26 @@ FAMP_HOME=/tmp/famp-bob famp info | FAMP_HOME=/tmp/famp-alice famp peer import
 FAMP_HOME=/tmp/famp-alice famp listen &
 FAMP_HOME=/tmp/famp-bob famp listen &
 
-# 4. Configure MCP (.mcp.json)
-# See "MCP Configuration" section below
+# 4. First send — opt in to TOFU bootstrap
+#    First contact has no pinned TLS leaf hash for the peer, so it fails
+#    closed by default. Set FAMP_TOFU_BOOTSTRAP=1 for the very first send;
+#    after success the leaf hash is pinned in peers.toml and subsequent
+#    sends do not need the flag.
+FAMP_TOFU_BOOTSTRAP=1 FAMP_HOME=/tmp/famp-alice famp send \
+  --to bob --new-task "hello"
+
+# 5. Configure MCP (.mcp.json)
+# See "MCP Configuration" section below.
+# For MCP, set "FAMP_TOFU_BOOTSTRAP": "1" in env until the first send to
+# each peer succeeds, then remove it.
 ```
 
 ## Known Issues
 - Daemons must be started manually (`famp listen`)
 - No auto-discovery of local agents
+- First contact requires explicit TOFU opt-in (`FAMP_TOFU_BOOTSTRAP=1`).
+  The error kind `tofu_bootstrap_refused` surfaces if a send is attempted
+  against an unpinned peer without the env var.
 
 ## MCP Configuration
 
