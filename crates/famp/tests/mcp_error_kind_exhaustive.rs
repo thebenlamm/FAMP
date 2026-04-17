@@ -197,6 +197,14 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
                 got: "ab".to_string(),
             },
         ),
+        (
+            "PrincipalInvalid",
+            CliError::PrincipalInvalid {
+                path: path("/tmp/config.toml"),
+                value: "garbage".to_string(),
+                reason: "missing scheme".to_string(),
+            },
+        ),
     ]
 }
 

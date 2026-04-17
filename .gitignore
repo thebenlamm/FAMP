@@ -12,3 +12,6 @@ Cargo.lock.bak
 .idea/
 .vscode/
 .claude/worktrees/
+
+# Local Claude Code MCP server config (user-specific paths).
+.mcp.json

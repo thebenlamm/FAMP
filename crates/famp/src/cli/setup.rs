@@ -110,7 +110,17 @@ pub fn run_with_io(
 
     // 4. Update config.toml with port and principal
     let principal = format!("agent:localhost/{}", args.name);
-    update_config(&layout.config_toml, port, &principal)?;
+    if let Err(e) = update_config(&layout.config_toml, port, &principal) {
+        if matches!(e, CliError::TomlParse { .. }) {
+            writeln!(
+                err,
+                "hint: delete {} and rerun `famp setup` to regenerate it",
+                layout.config_toml.display()
+            )
+            .ok();
+        }
+        return Err(e);
+    }
     writeln!(err, "Updated config.toml").ok();
 
     // 5. Build and output peer card

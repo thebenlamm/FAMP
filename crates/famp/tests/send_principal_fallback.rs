@@ -54,10 +54,10 @@ async fn malformed_config_toml_is_a_hard_error() {
 
     let res = send_run_at(&home, send_args()).await;
     let err = res.expect_err("malformed config.toml must fail send, not silently fall back");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("toml parse failed"),
-        "expected TOML parse error, got: {msg}"
+    assert_eq!(
+        err.mcp_error_kind(),
+        "toml_parse",
+        "expected typed TomlParse error, got {err}"
     );
 }
 
@@ -77,10 +77,10 @@ async fn malformed_principal_field_is_a_hard_error() {
 
     let res = send_run_at(&home, send_args()).await;
     let err = res.expect_err("malformed principal must be hard-error, not silent fallback");
-    let msg = err.to_string();
-    assert!(
-        msg.contains("send failed"),
-        "expected send-failed wrapper, got: {msg}"
+    assert_eq!(
+        err.mcp_error_kind(),
+        "principal_invalid",
+        "expected typed PrincipalInvalid, got {err}"
     );
 }
 
@@ -91,15 +91,17 @@ async fn absent_principal_field_uses_fallback() {
     init_home_in_process(&home);
     add_dummy_peer(&home);
 
-    // Default config: no principal field. Send must NOT fail on load_self_principal;
-    // it will fail later on connect (port 1 has no listener), and that's fine —
-    // we just need to confirm the principal load itself succeeded.
+    // Default config: no principal field. Send must succeed past the
+    // principal load and then fail on the network connect (port 1 has no
+    // listener) or on the refused TOFU bootstrap (no pin, no opt-in).
+    // Either is fine — what matters is that the failure is NOT a config
+    // or principal error, which would mean the fallback path is broken.
     let res = send_run_at(&home, send_args()).await;
-    let err = res.expect_err("connect to 127.0.0.1:1 should fail");
-    let msg = err.to_string();
+    let err = res.expect_err("connect/bootstrap should fail with port 1");
+    let kind = err.mcp_error_kind();
     assert!(
-        !msg.contains("toml parse failed") && !msg.contains("invalid"),
-        "fallback path must not produce a config error, got: {msg}"
+        matches!(kind, "send_failed" | "tofu_bootstrap_refused"),
+        "fallback path produced unexpected error kind {kind}: {err}"
     );
 }
 

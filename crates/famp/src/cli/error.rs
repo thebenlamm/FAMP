@@ -119,6 +119,17 @@ pub enum CliError {
     )]
     TofuBootstrapRefused { alias: String, got: String },
 
+    /// A configured principal value (in `config.toml` or `peers.toml`) is
+    /// present but does not parse as a valid FAMP principal. Surfaced as a
+    /// hard failure so callers do not silently sign or address traffic
+    /// under a fallback identity.
+    #[error("invalid principal {value:?} in {}: {reason}", path.display())]
+    PrincipalInvalid {
+        path: PathBuf,
+        value: String,
+        reason: String,
+    },
+
     #[error("send args invalid: {reason}")]
     SendArgsInvalid { reason: String },
 

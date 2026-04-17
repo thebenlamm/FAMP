@@ -274,24 +274,29 @@ fn load_self_principal(layout: &IdentityLayout) -> Result<Principal, CliError> {
         })?;
 
     cfg.principal.map_or_else(
-        // Field genuinely absent → fallback.
+        // Field genuinely absent → fallback. The fallback string is a
+        // compile-time constant we know parses; the unwrap is a programmer
+        // assertion, not a user-facing failure mode.
         || {
             fallback
                 .parse()
-                .map_err(|err: famp_core::ParsePrincipalError| {
-                    CliError::SendFailed(Box::new(std::io::Error::other(format!(
-                        "fallback principal {fallback} failed to parse: {err}"
-                    ))))
-                })
+                .map_err(
+                    |err: famp_core::ParsePrincipalError| CliError::PrincipalInvalid {
+                        path: layout.config_toml.clone(),
+                        value: fallback.to_string(),
+                        reason: format!("internal fallback principal failed to parse: {err}"),
+                    },
+                )
         },
         // Field present → MUST parse cleanly; no silent fallback on garbage.
         |s| {
-            s.parse().map_err(|err: famp_core::ParsePrincipalError| {
-                CliError::SendFailed(Box::new(std::io::Error::other(format!(
-                    "configured principal {s:?} in {} is invalid: {err}",
-                    layout.config_toml.display()
-                ))))
-            })
+            s.parse().map_err(
+                |err: famp_core::ParsePrincipalError| CliError::PrincipalInvalid {
+                    path: layout.config_toml.clone(),
+                    value: s.clone(),
+                    reason: err.to_string(),
+                },
+            )
         },
     )
 }
@@ -307,9 +312,14 @@ fn resolve_peer_principal(peer: &PeerEntry) -> Result<Principal, CliError> {
         .clone()
         .unwrap_or_else(|| "agent:localhost/self".to_string());
     s.parse().map_err(|e: famp_core::ParsePrincipalError| {
-        CliError::SendFailed(Box::new(std::io::Error::other(format!(
-            "invalid peer principal {s}: {e}"
-        ))))
+        CliError::PrincipalInvalid {
+            // Caller-side label: not a real on-disk path, but identifies the
+            // source for the operator. peers.toml does not give us a
+            // per-entry path, so use a synthetic marker.
+            path: std::path::PathBuf::from(format!("peers.toml#{}", peer.alias)),
+            value: s.clone(),
+            reason: e.to_string(),
+        }
     })
 }
 
