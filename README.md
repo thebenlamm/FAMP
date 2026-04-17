@@ -116,8 +116,12 @@ FAMP_HOME=/tmp/famp-bob ./target/release/famp listen &
 
 # 5. Send a message from Alice to Bob
 #    First contact requires explicit TOFU opt-in (see "TLS trust" below).
+#    `--new-task "<summary>"` opens a fresh task; `send` prints the task UUID on success.
 FAMP_TOFU_BOOTSTRAP=1 FAMP_HOME=/tmp/famp-alice ./target/release/famp send \
-  --to bob --action new_task --body '{"task": "hello"}'
+  --to bob --new-task "hello from alice"
+
+# 6. Inspect Bob's inbox (newest-last; use `inbox ack` to advance the read cursor)
+FAMP_HOME=/tmp/famp-bob ./target/release/famp inbox list
 ```
 
 Each `famp setup` outputs a **peer card** — a JSON blob containing endpoint,
