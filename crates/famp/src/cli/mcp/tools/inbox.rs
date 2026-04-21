@@ -38,7 +38,7 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
         "list" => {
             let since = input["since"].as_u64();
             let mut buf = Vec::<u8>::new();
-            list::run_list(home, since, &mut buf)?;
+            list::run_list(home, since, /* include_terminal */ false, &mut buf)?;
 
             // Parse line-by-line into a JSON array. A malformed line is a
             // hard tool-call failure — silently mapping it to `null` (the

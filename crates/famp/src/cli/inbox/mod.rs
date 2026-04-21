@@ -46,7 +46,7 @@ pub async fn run(args: InboxArgs) -> Result<(), CliError> {
     match args.command {
         InboxCommand::List(list_args) => {
             let mut stdout = std::io::stdout();
-            list::run_list(&home, list_args.since, &mut stdout)
+            list::run_list(&home, list_args.since, false, &mut stdout)
         }
         InboxCommand::Ack(ack_args) => ack::run_ack(&home, ack_args.offset).await,
     }

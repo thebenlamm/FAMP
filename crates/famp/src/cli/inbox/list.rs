@@ -1,9 +1,12 @@
 //! `famp inbox list` — non-blocking dump via `read_from`.
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
 use serde_json::{json, Value};
+
+use famp_taskdir::{TaskDir, TaskDirError};
 
 use crate::cli::error::CliError;
 use crate::cli::paths;
@@ -38,13 +41,62 @@ pub fn extract_task_id_for_test(value: &Value) -> &str {
 /// Read every inbox entry at or past `since` and write one JSON line
 /// per entry to `out`, in the same locked shape as `famp await`.
 /// Does NOT advance the cursor.
-pub fn run_list(home: &Path, since: Option<u64>, out: &mut dyn Write) -> Result<(), CliError> {
+///
+/// # Filtering
+///
+/// By default (`include_terminal = false`) entries whose `task_id`
+/// maps to a taskdir record with `terminal == true` are omitted.
+///
+/// - Missing taskdir record → **fail-open**: entry is surfaced.
+/// - Corrupt taskdir record (TOML parse / IO error) → **fail-closed**:
+///   entry is hidden; a diagnostic is written to stderr via
+///   `eprintln!`. A corrupt record for a terminal task must not
+///   resurrect its history into `list` forever; operator visibility
+///   comes through stderr.
+///
+/// # Canonical completion signal
+///
+/// `list` is not the place to learn that a task just completed. Once
+/// the daemon flips a task's taskdir record to `terminal = true`, the
+/// closing deliver is hidden here. Agents that need real-time
+/// completion notifications MUST use `famp await`, which is
+/// deliberately unfiltered.
+pub fn run_list(
+    home: &Path,
+    since: Option<u64>,
+    include_terminal: bool,
+    out: &mut dyn Write,
+) -> Result<(), CliError> {
     let inbox_path = paths::inbox_jsonl_path(home);
     let entries =
         famp_inbox::read::read_from(&inbox_path, since.unwrap_or(0)).map_err(CliError::Inbox)?;
 
+    // Only open the taskdir when filtering. If it fails to open
+    // (e.g. fresh FAMP_HOME with no tasks dir), fall back to "filter
+    // disabled for this call" — equivalent to include_terminal=true.
+    // Opening a TaskDir mkdir -p's the root, so normal paths succeed.
+    let taskdir: Option<TaskDir> = if include_terminal {
+        None
+    } else {
+        match TaskDir::open(paths::tasks_dir(home)) {
+            Ok(td) => Some(td),
+            Err(err) => {
+                eprintln!("famp inbox list: taskdir unavailable, filter disabled: {err}");
+                None
+            }
+        }
+    };
+    let mut terminal_cache: HashMap<String, bool> = HashMap::new();
+
     for (value, end_offset) in entries {
         let task_id = extract_task_id(&value);
+        if let Some(ref td) = taskdir {
+            if task_id.is_empty() {
+                // Nothing to look up — fail-open.
+            } else if is_terminal_cached(td, task_id, &mut terminal_cache) {
+                continue;
+            }
+        }
         let from = value.get("from").and_then(Value::as_str).unwrap_or("");
         let class = value.get("class").and_then(Value::as_str).unwrap_or("");
         let body = value.get("body").cloned().unwrap_or(Value::Null);
@@ -62,4 +114,32 @@ pub fn run_list(home: &Path, since: Option<u64>, out: &mut dyn Write) -> Result<
         })?;
     }
     Ok(())
+}
+
+/// Cached taskdir lookup. Returns `true` if the entry should be hidden.
+///
+/// Rules:
+/// - `NotFound`        → `false` (fail-open; surface entry).
+/// - `Ok(rec)`         → `rec.terminal`.
+/// - any other error   → `true`  (fail-closed; hide entry + `eprintln`).
+fn is_terminal_cached(
+    td: &TaskDir,
+    task_id: &str,
+    cache: &mut HashMap<String, bool>,
+) -> bool {
+    if let Some(cached) = cache.get(task_id) {
+        return *cached;
+    }
+    let verdict = match td.read(task_id) {
+        Ok(rec) => rec.terminal,
+        Err(TaskDirError::NotFound { .. }) => false,
+        Err(other) => {
+            eprintln!(
+                "famp inbox list: hiding entry for task_id={task_id}: {other}",
+            );
+            true
+        }
+    };
+    cache.insert(task_id.to_string(), verdict);
+    verdict
 }

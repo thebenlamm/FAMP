@@ -37,7 +37,7 @@ async fn inbox_list_and_ack_honor_cursor() {
     // list (no --since) prints all three, in order, with strictly
     // increasing offsets that match byte boundaries.
     let mut buf = Vec::<u8>::new();
-    run_list(&home, None, &mut buf).unwrap();
+    run_list(&home, None, true, &mut buf).unwrap();
     let text = String::from_utf8(buf).unwrap();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 3, "list prints all three: {text}");
@@ -69,7 +69,7 @@ async fn inbox_list_and_ack_honor_cursor() {
 
     // list --since off2 prints exactly one entry (the third line).
     let mut buf = Vec::<u8>::new();
-    run_list(&home, Some(off2), &mut buf).unwrap();
+    run_list(&home, Some(off2), true, &mut buf).unwrap();
     let text = String::from_utf8(buf).unwrap();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 1, "expected one line past off2: {text}");
