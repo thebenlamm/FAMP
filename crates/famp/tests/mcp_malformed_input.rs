@@ -131,6 +131,49 @@ fn famp_inbox_fails_loudly_on_malformed_inbox_line() {
 }
 
 #[test]
+fn famp_inbox_list_rejects_non_bool_include_terminal() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let (mut child, mut stdin, mut stdout) = spawn_mcp(home.path());
+
+    // Send a tools/call with include_terminal as a string.
+    // The server must reject it with a tool-level error, not coerce.
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "famp_inbox",
+            "arguments": {
+                "action": "list",
+                "include_terminal": "true"
+            }
+        }
+    });
+    let mut body = serde_json::to_string(&req).unwrap();
+    body.push('\n');
+    stdin.write_all(body.as_bytes()).expect("write");
+    stdin.flush().expect("flush");
+
+    let resp = recv_msg(&mut stdout, Duration::from_secs(5));
+    // The error surfaces either as JSON-RPC error or as an
+    // isError=true tool result. Either way the message must name the
+    // field and the expected type so a caller can self-correct.
+    let text = resp.to_string();
+    assert!(
+        text.contains("include_terminal"),
+        "error must name the field: {resp}",
+    );
+    assert!(
+        text.to_lowercase().contains("boolean") || text.to_lowercase().contains("bool"),
+        "error must name the expected type: {resp}",
+    );
+
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn famp_inbox_list_returns_parsed_entries_for_well_formed_input() {
     // Positive-path coverage: confirms the new strict parser still produces
     // the expected `{ "entries": [...] }` shape when every line is valid.

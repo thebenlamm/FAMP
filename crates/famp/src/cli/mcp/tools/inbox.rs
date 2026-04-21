@@ -4,8 +4,9 @@
 //! ```json
 //! {
 //!   "action": "list" | "ack",
-//!   "since":  123,    // optional byte offset for list
-//!   "offset": 456     // required for ack
+//!   "since":  123,         // optional byte offset for list
+//!   "include_terminal": false, // optional bool for list; default false
+//!   "offset": 456          // required for ack
 //! }
 //! ```
 //!
@@ -37,8 +38,18 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
     match action {
         "list" => {
             let since = input["since"].as_u64();
+            let include_terminal = match input.get("include_terminal") {
+                None | Some(Value::Null) => false,
+                Some(Value::Bool(b)) => *b,
+                Some(_) => {
+                    return Err(CliError::SendArgsInvalid {
+                        reason: "famp_inbox: 'include_terminal' must be a boolean"
+                            .to_string(),
+                    });
+                }
+            };
             let mut buf = Vec::<u8>::new();
-            list::run_list(home, since, /* include_terminal */ false, &mut buf)?;
+            list::run_list(home, since, include_terminal, &mut buf)?;
 
             // Parse line-by-line into a JSON array. A malformed line is a
             // hard tool-call failure — silently mapping it to `null` (the

@@ -331,6 +331,127 @@ fn mcp_famp_peers_list_returns_entries() {
     assert_eq!(peers[0]["alias"], "alice");
 }
 
+// ── famp_inbox action=list: include_terminal round-trip ──────────────────────
+//
+// Spec 2026-04-20: `famp_inbox` action=list filters terminal tasks
+// unless include_terminal=true. These two tests assert the MCP
+// surface, driving the binary through its real stdio JSON-RPC loop.
+
+const TID_ACTIVE_MCP: &str = "01913000-0000-7000-8000-0000000000f1";
+const TID_DONE_MCP: &str = "01913000-0000-7000-8000-0000000000f2";
+
+/// Write a four-entry inbox fixture (two per task) + matching taskdir
+/// records (one active, one terminal) into `home`.
+fn seed_filter_fixture(home: &Path) {
+    use famp_taskdir::{TaskDir, TaskRecord};
+    let entries = [
+        serde_json::json!({
+            "id": TID_ACTIVE_MCP, "class": "request",
+            "from": "agent:localhost/a",
+            "causality": { "ref": TID_ACTIVE_MCP },
+            "body": { "text": "active-request" },
+        }),
+        serde_json::json!({
+            "id": "01913000-0000-7000-8000-0000000000e1", "class": "deliver",
+            "from": "agent:localhost/a",
+            "causality": { "ref": TID_ACTIVE_MCP },
+            "body": { "text": "active-deliver" },
+        }),
+        serde_json::json!({
+            "id": TID_DONE_MCP, "class": "request",
+            "from": "agent:localhost/a",
+            "causality": { "ref": TID_DONE_MCP },
+            "body": { "text": "done-request" },
+        }),
+        serde_json::json!({
+            "id": "01913000-0000-7000-8000-0000000000e2", "class": "deliver",
+            "from": "agent:localhost/a",
+            "causality": { "ref": TID_DONE_MCP },
+            "body": { "text": "done-deliver" },
+        }),
+    ];
+    let mut body = Vec::<u8>::new();
+    for e in &entries {
+        body.extend_from_slice(serde_json::to_string(e).unwrap().as_bytes());
+        body.push(b'\n');
+    }
+    std::fs::write(home.join("inbox.jsonl"), body).unwrap();
+
+    let dir = TaskDir::open(home.join("tasks")).unwrap();
+    dir.create(&TaskRecord::new_requested(
+        TID_ACTIVE_MCP.to_string(),
+        "a".to_string(),
+        "2026-04-20T00:00:00Z".to_string(),
+    ))
+    .unwrap();
+    let mut done = TaskRecord::new_requested(
+        TID_DONE_MCP.to_string(),
+        "a".to_string(),
+        "2026-04-20T00:00:00Z".to_string(),
+    );
+    done.state = "COMPLETED".to_string();
+    done.terminal = true;
+    dir.create(&done).unwrap();
+}
+
+fn call_inbox_list(h: &mut McpHarness, include_terminal: Option<bool>) -> serde_json::Value {
+    let mut args = serde_json::json!({ "action": "list" });
+    if let Some(b) = include_terminal {
+        args["include_terminal"] = serde_json::Value::Bool(b);
+    }
+    h.send(&serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": { "name": "famp_inbox", "arguments": args }
+    }));
+    h.recv()
+}
+
+/// Extract the `entries` array from a tools/call result. The MCP
+/// wrapper returns tool output in result.content[0].text as a JSON
+/// string; parse it back.
+fn entries_from_response(resp: &serde_json::Value) -> Vec<serde_json::Value> {
+    let text = resp["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no text in response: {resp}"));
+    let parsed: serde_json::Value = serde_json::from_str(text)
+        .unwrap_or_else(|_| panic!("tool output not JSON: {text}"));
+    parsed["entries"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no entries array: {parsed}"))
+        .clone()
+}
+
+#[test]
+fn famp_inbox_list_filters_terminal_by_default() {
+    let mut h = McpHarness::new();
+    seed_filter_fixture(h.home());
+    h.initialize();
+
+    let resp = call_inbox_list(&mut h, None);
+    let entries = entries_from_response(&resp);
+    assert_eq!(entries.len(), 2, "default filter: {resp}");
+    for e in &entries {
+        assert_eq!(e["task_id"].as_str().unwrap(), TID_ACTIVE_MCP);
+    }
+
+    drop(h);
+}
+
+#[test]
+fn famp_inbox_list_include_terminal_true_returns_all() {
+    let mut h = McpHarness::new();
+    seed_filter_fixture(h.home());
+    h.initialize();
+
+    let resp = call_inbox_list(&mut h, Some(true));
+    let entries = entries_from_response(&resp);
+    assert_eq!(entries.len(), 4, "include_terminal=true: {resp}");
+
+    drop(h);
+}
+
 /// Calling `famp_send` with an unknown peer alias returns `famp_error_kind == "peer_not_found"`.
 #[test]
 fn mcp_error_has_famp_error_kind() {
