@@ -6,8 +6,6 @@ name: nightly-full-corpus
 # sampled subset enforced by the `test-canonical` job in ci.yml.
 
 on:
-  schedule:
-    - cron: '0 6 * * *'
   push:
     tags:
       - 'v*'
