@@ -1,5 +1,17 @@
 //! `famp await` — block until a new inbox entry arrives past the cursor.
 //!
+//! # Relationship to `famp inbox list`
+//!
+//! `await` is deliberately unfiltered. `famp inbox list` filters out
+//! entries for tasks in a terminal FSM state by default (spec
+//! `2026-04-20-filter-terminal-tasks-from-inbox-list-design.md`), which
+//! means the closing `deliver` for a task you originated is NOT
+//! visible via `list` after the daemon flips the taskdir record.
+//!
+//! `await` IS the canonical real-time signal for task completion.
+//! Agents waiting for a task to close should `await`; `list` is for
+//! "what's still on my plate."
+//!
 //! Polls `inbox.jsonl` every 250 ms (matches REQUIREMENTS.md INBOX-03),
 //! reads every line past the current cursor via `famp_inbox::read::read_from`,
 //! and:

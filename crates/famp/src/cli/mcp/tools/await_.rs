@@ -12,6 +12,13 @@
 //! ```json
 //! { "offset": 123, "task_id": "...", "from": "...", "class": "...", "body": {...} }
 //! ```
+//!
+//! # Relationship to `famp_inbox`
+//!
+//! `famp_await` returns every new inbox entry as it arrives, including
+//! the terminal `deliver` that closes a task. `famp_inbox` `action=list`
+//! filters those out by default. An agent that needs to act on task
+//! completion MUST await; list is not a real-time stream.
 
 use std::path::Path;
 
