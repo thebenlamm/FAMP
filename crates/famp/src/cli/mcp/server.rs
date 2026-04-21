@@ -51,24 +51,25 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_await",
-            "description": "Wait for a new message to arrive. Use task_id to wait for a reply to a specific task you sent.",
+            "description": "Block until a new inbox message arrives. This is the canonical real-time signal — unlike famp_inbox list (which hides entries for tasks that have reached a terminal FSM state), famp_await delivers every message including the closing 'terminal' reply that finishes a task. USE THIS to detect when a task you sent via famp_send completes. Pass task_id to wait only for a reply to that specific task.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "timeout_seconds": { "type": "integer", "description": "Timeout in seconds (default 30)" },
-                    "task_id":         { "type": "string",  "description": "Wait for reply to this specific task" }
+                    "task_id":         { "type": "string",  "description": "Wait for reply to this specific task. Recommended when you know which task you're waiting on." }
                 }
             }
         },
         {
             "name": "famp_inbox",
-            "description": "List received messages. Each entry has a 'task_id' — use that task_id with famp_send (mode=deliver or terminal) to reply.",
+            "description": "List received messages (active work only) or advance the read cursor. Each list entry has a 'task_id' — use that with famp_send (mode=deliver or terminal) to reply. IMPORTANT: by default, list hides entries for tasks that have reached a terminal FSM state (COMPLETED, FAILED, CANCELLED) — it is the 'what's still on my plate' view. To observe task completion in real time, use famp_await instead. To see the full unfiltered log (e.g. for debugging), pass include_terminal=true.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "enum": ["list", "ack"], "description": "list=show messages, ack=mark as processed" },
-                    "since":  { "type": "integer", "description": "Byte offset to start from (default 0)" },
-                    "offset": { "type": "integer", "description": "Byte offset to ack up to" }
+                    "action":           { "type": "string",  "enum": ["list", "ack"], "description": "list=show messages, ack=mark as processed" },
+                    "since":            { "type": "integer", "description": "Byte offset to start from (default 0)" },
+                    "offset":           { "type": "integer", "description": "Byte offset to ack up to (required for action=ack)" },
+                    "include_terminal": { "type": "boolean", "description": "When action=list, include entries for tasks in a terminal FSM state. Default false. Use famp_await, not this flag, to observe completion in real time — this override is for full-history inspection." }
                 },
                 "required": ["action"]
             }
