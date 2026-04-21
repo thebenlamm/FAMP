@@ -93,7 +93,7 @@ pub fn run_list(
 - Cache miss → attempt `TaskDir::read(task_id)`:
   - `Ok(record)` → cache and return `record.terminal`.
   - `Err(NotFound)` → cache `false` and return `false` (**fail-open**: surface the entry).
-  - `Err(TomlParse | Io)` → **fail-closed**: cache `true`, hide the entry, log at `warn` with `task_id` and error detail. Rationale: a corrupt record for a terminal task must not resurrect its history into `list` forever; operator visibility comes through the warn log, not a silent unfilter.
+  - `Err(TomlParse | Io)` → **fail-closed**: cache `true`, hide the entry, emit a soft warning via `eprintln!("famp inbox list: hiding {task_id}: {err}")` (matches the existing `famp-taskdir::store::list` style — no `tracing` dep introduced for a single diagnostic). Rationale: a corrupt record for a terminal task must not resurrect its history into `list` forever; operator visibility comes through stderr, not a silent unfilter.
 
 ### Task-id extraction — audit required
 
@@ -167,7 +167,7 @@ When Alice sends a request to Bob and Bob replies with a terminal deliver:
 1. `list_hides_entries_for_terminal_tasks` — seed two taskdir records (`A: terminal=false`, `B: terminal=true`), write four inbox entries (two per task), assert only A's two come out.
 2. `list_include_terminal_returns_all` — same fixture, `include_terminal=true`, assert all four come out.
 3. `list_fail_open_on_missing_taskdir_record` — inbox entry for a `task_id` with no taskdir file; assert entry is surfaced.
-4. `list_fail_closed_on_corrupt_taskdir_record` — write an invalid TOML to `<taskdir>/<task_id>.toml`; assert entry is hidden; assert a warn-level log was emitted (captured via an in-test `tracing` subscriber matching the project's existing test style).
+4. `list_fail_closed_on_corrupt_taskdir_record` — write an invalid TOML to `<taskdir>/<task_id>.toml`; assert entry is hidden. Stderr capture is not required (matches how `famp-taskdir::store::list`'s `eprintln!` warnings go untested today); the assertion is on the filtered output.
 5. `list_caches_taskdir_reads` — use a wrapper that counts `TaskDir::read` calls; assert at most one read per distinct `task_id` per `run_list` invocation.
 6. `extract_task_id_exhaustive` — enumerate every `MessageClass` variant and assert the helper returns a non-empty `task_id` (or a documented empty-string for classes that carry none). Fails the build when a new class is added without handling.
 
