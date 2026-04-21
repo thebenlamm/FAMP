@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-15
+Last activity: 2026-04-21 - Completed quick task 260420-viu: Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b)
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -76,6 +76,7 @@ v0.8 Progress: [████████████████████] 10
 | 260414-f4i | famp-crypto rustdoc + README "How FAMP Signs a Message" + CONTRIBUTING.md (PR #3) | 2026-04-14 | c0c5311, 243fc19, 1b432c5 | [260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv](./quick/260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv/) |
 | 260414-fjo | PR #4 architectural cleanup: drop Signer/Verifier traits, remove 5 stub crates, add famp umbrella re-exports | 2026-04-14 | 9e5426f, 08c442a, e8ecf9f | [260414-fjo-pr-4-architectural-cleanup-drop-signer-v](./quick/260414-fjo-pr-4-architectural-cleanup-drop-signer-v/) |
 | 260414-g32 | PR #4.1 adversarial review followups: reword WeakKey doc, delete dead InvalidSigningInput variant, add is_weak() gate to CONTRIBUTING "Do Not Touch" list | 2026-04-14 | 278cb83 | [260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v](./quick/260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v/) |
+| 260420-viu | Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b) | 2026-04-21 | 42327a1 | [260420-viu-fail-open-on-invaliduuid-in-inbox-list-f](./quick/260420-viu-fail-open-on-invaliduuid-in-inbox-list-f/) |
 
 ## Session Continuity
 
