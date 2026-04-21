@@ -242,6 +242,37 @@ fn list_caches_taskdir_reads_within_one_call() {
     );
 }
 
+#[test]
+fn list_fail_open_on_malformed_task_id() {
+    use famp::cli::inbox::list::run_list;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().to_path_buf();
+
+    // An inbox entry whose causality.ref is not a valid UUID. The
+    // filter must surface it (fail-open), not swallow it. Matches
+    // the spec edge-case table: "unparseable task_id → surface."
+    let entries = vec![json!({
+        "id": "01913000-0000-7000-8000-0000000000d0",
+        "class": "deliver",
+        "from": "agent:localhost/a",
+        "causality": { "ref": "not-a-valid-uuid" },
+        "body": { "text": "malformed-ref" },
+    })];
+    write_inbox(&home, &entries);
+    // No taskdir records seeded — TaskDir::open still succeeds because
+    // it mkdir-p's the dir.
+
+    let mut buf = Vec::<u8>::new();
+    run_list(&home, None, /* include_terminal */ false, &mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    assert_eq!(
+        text.lines().count(),
+        1,
+        "malformed task_id must surface (fail-open): {text}",
+    );
+}
+
 // Silencers — match the convention in inbox_list_respects_cursor.rs.
 use axum as _;
 use base64 as _;

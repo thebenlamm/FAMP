@@ -118,10 +118,14 @@ pub fn run_list(
 
 /// Cached taskdir lookup. Returns `true` if the entry should be hidden.
 ///
+/// Caching the verdict also de-duplicates the fail-closed `eprintln!` —
+/// a corrupt taskdir record logs once per `run_list` call, not once per
+/// affected inbox entry.
+///
 /// Rules:
-/// - `NotFound`        → `false` (fail-open; surface entry).
-/// - `Ok(rec)`         → `rec.terminal`.
-/// - any other error   → `true`  (fail-closed; hide entry + `eprintln`).
+/// - `NotFound` / `InvalidUuid` → `false` (fail-open; surface entry).
+/// - `Ok(rec)`                   → `rec.terminal`.
+/// - any other error             → `true`  (fail-closed; hide entry + `eprintln`).
 fn is_terminal_cached(
     td: &TaskDir,
     task_id: &str,
@@ -132,7 +136,12 @@ fn is_terminal_cached(
     }
     let verdict = match td.read(task_id) {
         Ok(rec) => rec.terminal,
-        Err(TaskDirError::NotFound { .. }) => false,
+        // Fail-open per spec edge-case table: an unparseable or absent
+        // task_id is a property of the inbox entry, not evidence that a
+        // task has completed. InvalidUuid here means the entry's
+        // causality.ref (or id, for `request`) isn't a valid UUID —
+        // surface it and move on.
+        Err(TaskDirError::NotFound { .. } | TaskDirError::InvalidUuid { .. }) => false,
         Err(other) => {
             eprintln!(
                 "famp inbox list: hiding entry for task_id={task_id}: {other}",
