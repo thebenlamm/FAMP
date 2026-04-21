@@ -101,6 +101,49 @@ async fn await_one(
     .expect("await_one")
 }
 
+/// Assert `run_list` filter behavior on the originator after a task has
+/// reached COMPLETED.
+///
+/// - Default filter (`include_terminal=false`): **no** inbox entries for
+///   `task_id` are surfaced (the taskdir record is terminal, so `run_list`
+///   must hide them).
+/// - Override (`include_terminal=true`): entries for `task_id` remain
+///   visible. In this E2E the originator's inbound-only inbox holds the
+///   commit reply + two non-terminal delivers from the peer (3 entries),
+///   so we only need to assert ≥2.
+fn assert_list_filters_completed_task(home: &std::path::Path, task_id: &str) {
+    use famp::cli::inbox::list::run_list;
+
+    let mut filtered = Vec::<u8>::new();
+    run_list(home, None, /* include_terminal */ false, &mut filtered).unwrap();
+    let filtered_text = String::from_utf8(filtered).unwrap();
+    for line in filtered_text.lines() {
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        assert_ne!(
+            v["task_id"].as_str().unwrap(),
+            task_id,
+            "default filter must hide completed task entries: {line}",
+        );
+    }
+
+    let mut unfiltered = Vec::<u8>::new();
+    run_list(home, None, /* include_terminal */ true, &mut unfiltered).unwrap();
+    let unfiltered_text = String::from_utf8(unfiltered).unwrap();
+    let matching = unfiltered_text
+        .lines()
+        .filter(|l| {
+            serde_json::from_str::<serde_json::Value>(l).unwrap()["task_id"]
+                .as_str()
+                .unwrap()
+                == task_id
+        })
+        .count();
+    assert!(
+        matching >= 2,
+        "include_terminal=true surfaces the completed task's prior inbox entries: count={matching}",
+    );
+}
+
 /// Seed a COMMITTED task record on the receiver side.
 ///
 /// Phase 3/4 only creates local task records on the SENDER side (one-sided
@@ -281,6 +324,15 @@ async fn e2e_two_daemons_full_lifecycle() {
     // Bob's local record was seeded as COMMITTED (step 2b). The test does
     // not auto-advance Bob's record to COMPLETED (one-sided task ownership
     // is documented in 03-02-SUMMARY.md — this is acceptable for v0.8).
+
+    // ── Step 7: Post-completion `inbox list` filter assertions ───────────────
+    // After task is COMPLETED on the originator (A), calling `run_list` with
+    // the default filter must return zero entries for that task_id. With
+    // include_terminal=true, prior inbox entries for the task remain visible.
+    // The taskdir terminal flip is confirmed synchronously above
+    // (`rec.terminal` check after `send_terminal`), so no additional wait
+    // is needed before `run_list` observes the filter.
+    assert_list_filters_completed_task(&a_home, &task_id);
 
     // ── Teardown ─────────────────────────────────────────────────────────────
     daemons.teardown().await;
