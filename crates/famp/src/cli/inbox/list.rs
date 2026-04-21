@@ -10,8 +10,8 @@ use crate::cli::paths;
 
 /// Derive the `task_id` a given inbox entry refers to.
 ///
-/// - `class == "request"`: envelope's `id` field IS the task_id.
-/// - Any other class: `causality.ref` carries the task_id.
+/// - `class == "request"`: envelope's `id` field IS the `task_id`.
+/// - Any other class: `causality.ref` carries the `task_id`.
 ///
 /// Exhaustively covered by `tests/inbox_list_filters_terminal.rs` —
 /// adding a new `MessageClass` variant without updating this function
