@@ -310,7 +310,7 @@ No retention, no compaction, no rotation in v0.9. `famp mailbox rotate|compact` 
 ```
 famp register <name>                # registers + blocks (process = identity)
 famp send --to <name>|--channel <#name> [--new-task <text>|--task <uuid>|--terminal] [--body <text>]
-famp inbox list [--since <offset>]
+famp inbox list [--since <offset>] [--include-terminal]
 famp inbox ack [--offset <offset>]
 famp await [--timeout <dur>] [--task <uuid>]
 famp join <#channel>
@@ -331,7 +331,7 @@ Tools exposed over stdio JSON-RPC (identical to v0.8 envelope, new ops):
 |---|---|---|
 | `famp_register` | `name: str` | `{active: str, drained: [...], peers: [...]}` |
 | `famp_send` | `to: {kind:"agent"|"channel", name: str}`, envelope fields | `{task_id, delivered}` |
-| `famp_inbox` | `since: int?` | `{envelopes: [...], next_offset: int}` |
+| `famp_inbox` | `since: int?`, `include_terminal: bool?` (default `false`; when `false`, entries for tasks in a terminal FSM state are hidden — see v0.8 spec `2026-04-20-filter-terminal-tasks-from-inbox-list-design.md`) | `{envelopes: [...], next_offset: int}` |
 | `famp_await` | `timeout_ms: int`, `task: uuid?` | `{envelope}` \| `{timeout: true}` |
 | `famp_peers` | — | `{online: [...]}` |
 | `famp_join` | `channel: str` | `{channel, members, drained}` |

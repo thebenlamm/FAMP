@@ -19,6 +19,10 @@ all terminal absorbing.
 The Claude Code MCP server (`famp mcp`, stdio JSON-RPC) exposes
 `famp_send`, `famp_inbox`, `famp_await`, `famp_peers` as tools, each
 operating against the `FAMP_HOME` the MCP process was spawned with.
+`famp_inbox` action=list hides entries for tasks that reached a
+terminal FSM state (opt back in with `include_terminal: true`);
+`famp_await` stays unfiltered and is the canonical real-time signal
+for task completion.
 
 ## v0.9 direction — local-first bus (in design)
 

@@ -51,8 +51,8 @@ primitives.
   - `famp peer import` — import peer cards from other agents
   - `famp listen` — run the HTTPS daemon
   - `famp send` — send signed envelopes
-  - `famp inbox` — inspect received messages
-  - `famp await` — block until new messages arrive
+  - `famp inbox list` — inspect received messages (hides entries for terminal tasks by default; pass `--include-terminal` to see them)
+  - `famp await` — block until new messages arrive (unfiltered; canonical real-time signal, including task completion)
 - **MCP server** (`famp mcp`) for Claude Code integration
 - Two runnable examples:
   - same-process happy path
@@ -242,8 +242,8 @@ For **manual setups**, the `.mcp.json` shape is:
 
 The MCP server exposes four tools:
 - `famp_send` — send signed envelopes (request / deliver / terminal)
-- `famp_inbox` — list received messages
-- `famp_await` — block until new messages arrive (poll-free inter-agent dialogue)
+- `famp_inbox` — list received messages; `action=list` hides entries for terminal tasks by default (pass `include_terminal: true` to bypass)
+- `famp_await` — block until new messages arrive (poll-free inter-agent dialogue; unfiltered — the canonical real-time signal for task completion)
 - `famp_peers` — list peers
 
 See [`.planning/HANDOFF-mcp-integration.md`](.planning/HANDOFF-mcp-integration.md)
