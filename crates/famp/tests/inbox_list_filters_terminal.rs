@@ -48,6 +48,7 @@ fn extract_task_id_covers_every_message_class() {
 
 use famp_taskdir::{TaskDir, TaskRecord};
 use std::path::Path;
+use std::process::Command;
 
 fn write_inbox(home: &Path, lines: &[serde_json::Value]) {
     let mut body = Vec::<u8>::new();
@@ -270,6 +271,55 @@ fn list_fail_open_on_malformed_task_id() {
         text.lines().count(),
         1,
         "malformed task_id must surface (fail-open): {text}",
+    );
+}
+
+/// Drive the `famp` binary through the CLI subcommand to assert the
+/// flag is wired end-to-end (parsed, passed to `run_list`, reflected
+/// in stdout).
+#[test]
+fn cli_inbox_list_respects_include_terminal_flag() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().to_path_buf();
+
+    // Fresh identity — `famp init` creates keys + tasks dir.
+    let status = Command::new(env!("CARGO_BIN_EXE_famp"))
+        .args(["init"])
+        .env("FAMP_HOME", &home)
+        .status()
+        .expect("famp init");
+    assert!(status.success());
+
+    write_inbox(&home, &fixture_entries());
+    seed_taskdir(&home, TID_ACTIVE, "a", false);
+    seed_taskdir(&home, TID_DONE, "a", true);
+
+    // Default: filtered (2 lines).
+    let out = Command::new(env!("CARGO_BIN_EXE_famp"))
+        .args(["inbox", "list"])
+        .env("FAMP_HOME", &home)
+        .output()
+        .expect("famp inbox list");
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(
+        stdout.lines().count(),
+        2,
+        "default filter hides terminal task: {stdout}",
+    );
+
+    // --include-terminal: unfiltered (4 lines).
+    let out = Command::new(env!("CARGO_BIN_EXE_famp"))
+        .args(["inbox", "list", "--include-terminal"])
+        .env("FAMP_HOME", &home)
+        .output()
+        .expect("famp inbox list --include-terminal");
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(
+        stdout.lines().count(),
+        4,
+        "override returns every entry: {stdout}",
     );
 }
 

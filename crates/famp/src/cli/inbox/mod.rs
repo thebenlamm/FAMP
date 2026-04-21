@@ -32,6 +32,12 @@ pub enum InboxCommand {
 pub struct InboxListArgs {
     #[arg(long)]
     pub since: Option<u64>,
+    /// Include entries for tasks that have reached a terminal FSM state
+    /// (COMPLETED, FAILED, CANCELLED). Off by default: finished tasks
+    /// stay out of the active view. Use `famp await` for real-time
+    /// completion notifications.
+    #[arg(long)]
+    pub include_terminal: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -46,7 +52,12 @@ pub async fn run(args: InboxArgs) -> Result<(), CliError> {
     match args.command {
         InboxCommand::List(list_args) => {
             let mut stdout = std::io::stdout();
-            list::run_list(&home, list_args.since, false, &mut stdout)
+            list::run_list(
+                &home,
+                list_args.since,
+                list_args.include_terminal,
+                &mut stdout,
+            )
         }
         InboxCommand::Ack(ack_args) => ack::run_ack(&home, ack_args.offset).await,
     }
