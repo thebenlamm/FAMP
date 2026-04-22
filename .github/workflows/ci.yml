@@ -5,9 +5,9 @@ on:
     branches: ["**"]
   pull_request:
     branches: ["**"]
-  schedule:
-    # Daily advisory scan
-    - cron: "0 7 * * *"
+  # Daily advisory scan cron disabled — re-enable by restoring:
+  #   schedule:
+  #     - cron: "0 7 * * *"
 
 concurrency:
   group: ci-${{ github.ref }}
