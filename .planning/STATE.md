@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-21 - Completed quick task 260420-viu: Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b)
+Last activity: 2026-04-24 - Completed quick task 260424-7z5: Fix famp_send new_task body loss - scope instructions lift
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -77,6 +77,7 @@ v0.8 Progress: [████████████████████] 10
 | 260414-fjo | PR #4 architectural cleanup: drop Signer/Verifier traits, remove 5 stub crates, add famp umbrella re-exports | 2026-04-14 | 9e5426f, 08c442a, e8ecf9f | [260414-fjo-pr-4-architectural-cleanup-drop-signer-v](./quick/260414-fjo-pr-4-architectural-cleanup-drop-signer-v/) |
 | 260414-g32 | PR #4.1 adversarial review followups: reword WeakKey doc, delete dead InvalidSigningInput variant, add is_weak() gate to CONTRIBUTING "Do Not Touch" list | 2026-04-14 | 278cb83 | [260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v](./quick/260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v/) |
 | 260420-viu | Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b) | 2026-04-21 | 42327a1 | [260420-viu-fail-open-on-invaliduuid-in-inbox-list-f](./quick/260420-viu-fail-open-on-invaliduuid-in-inbox-list-f/) |
+| 260424-7z5 | Fix famp_send new_task body loss — scope instructions lift | 2026-04-24 | 526ac2c, fddc24d, 9f94d0c | [260424-7z5-fix-famp-send-new-task-body-loss-scope-i](./quick/260424-7z5-fix-famp-send-new-task-body-loss-scope-i/) |
 
 ## Session Continuity
 
@@ -93,3 +94,4 @@ v0.8 Progress: [████████████████████] 10
 
 ---
 *2026-04-14 — v0.8 roadmap defined. 4 phases: (1) Identity & CLI Foundation — CLI-01/07, IDENT-01..06; (2) Daemon & Inbox — CLI-02, DAEMON-01..05, INBOX-01..05; (3) Conversation CLI — CLI-03..06, CONV-01..05; (4) MCP Server & Same-Laptop E2E — MCP-01..06, E2E-01..03. 37/37 requirements mapped. Next: `/gsd:plan-phase 1`.*
+| 2026-04-21 | fast | Disable nightly cron on nightly-full-corpus workflow | ✅ |
