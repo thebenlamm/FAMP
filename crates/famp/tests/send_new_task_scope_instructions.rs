@@ -1,4 +1,4 @@
-//! Quick task 260424-7z5 — regression test for `famp_send` new_task body loss.
+//! Quick task 260424-7z5 — regression test for `famp_send` `new_task` body loss.
 //!
 //! Beta feedback (2026-04-24) reported that `famp send --new-task "<title>"
 //! --body "<prose>"` silently dropped the prose on the wire: receivers saw

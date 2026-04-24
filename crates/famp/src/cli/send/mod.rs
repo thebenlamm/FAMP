@@ -22,6 +22,7 @@
 use std::path::Path;
 
 use famp_core::{AuthorityScope, MessageId, Principal};
+use famp_envelope::body::request::REQUEST_SCOPE_INSTRUCTIONS_KEY;
 use famp_envelope::body::{request::RequestBody, AckBody, Bounds, DeliverBody, TerminalStatus};
 use famp_envelope::{Causality, Relation, SignedEnvelope, Timestamp, UnsignedEnvelope};
 use famp_taskdir::{TaskDir, TaskRecord};
@@ -147,13 +148,19 @@ pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcom
     // Build the envelope bytes.
     let (envelope_bytes, task_id) = match mode {
         SendMode::NewTask => {
-            let body_text = args
+            let summary = args
                 .new_task
                 .clone()
                 .ok_or_else(|| CliError::SendArgsInvalid {
-                    reason: "missing --new-task body".to_string(),
+                    reason: "missing --new-task summary".to_string(),
                 })?;
-            build_request_envelope(&signing_key, &from_principal, &to_principal, &body_text)?
+            build_request_envelope(
+                &signing_key,
+                &from_principal,
+                &to_principal,
+                &summary,
+                args.body.as_deref(),
+            )?
         }
         SendMode::DeliverNonTerminal | SendMode::DeliverTerminal => {
             let task_id = args.task.clone().ok_or_else(|| CliError::SendArgsInvalid {
@@ -331,6 +338,7 @@ fn build_request_envelope(
     from: &Principal,
     to: &Principal,
     summary: &str,
+    body: Option<&str>,
 ) -> Result<(Vec<u8>, String), CliError> {
     let id = MessageId::new_v7();
     let ts = now_timestamp();
@@ -346,8 +354,22 @@ fn build_request_envelope(
         confidence_floor: None,
         recursion_depth: Some(4),
     };
-    let body = RequestBody {
-        scope: serde_json::Value::Object(serde_json::Map::new()),
+    // PROVISIONAL convention (ADR 0001): prose body lands under
+    // scope.<REQUEST_SCOPE_INSTRUCTIONS_KEY>. Body-less sends preserve
+    // the pre-existing `scope:{}` shape so nothing else regresses.
+    let scope = body.map_or_else(
+        || serde_json::Value::Object(serde_json::Map::new()),
+        |text| {
+            let mut map = serde_json::Map::new();
+            map.insert(
+                REQUEST_SCOPE_INSTRUCTIONS_KEY.to_string(),
+                serde_json::Value::String(text.to_string()),
+            );
+            serde_json::Value::Object(map)
+        },
+    );
+    let request_body = RequestBody {
+        scope,
         bounds,
         natural_language_summary: Some(summary.to_string()),
     };
@@ -357,7 +379,7 @@ fn build_request_envelope(
         to.clone(),
         AuthorityScope::Advisory,
         ts,
-        body,
+        request_body,
     );
     let signed: SignedEnvelope<RequestBody> = unsigned
         .sign(sk)

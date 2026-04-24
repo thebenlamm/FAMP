@@ -6,8 +6,8 @@
 //!   "peer": "<alias>",
 //!   "mode": "new_task" | "deliver" | "terminal",
 //!   "task_id": "<uuid>",   // required for deliver / terminal
-//!   "title":   "<text>",   // used as new_task summary or body
-//!   "body":    "<text>"    // optional free-form body text
+//!   "title":   "<text>",   // new_task: natural-language summary (short)
+//!   "body":    "<text>"    // new_task: full task content (lands in scope.instructions)
 //! }
 //! ```
 //!
