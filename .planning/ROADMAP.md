@@ -196,5 +196,16 @@ Rough ordering, not committed. Was numbered v0.9–v0.15 before the re-scope.
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
+### Phase 999.2: Multi-listener lock semantics — concurrent `famp await` consumers (BACKLOG)
+
+**Goal:** [Captured for future planning]
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Surfaced 2026-04-24 during adversarial review of the Stop hook listener. If two processes (e.g., two Claude Code windows sharing the same cwd + `.famp-listen` sentinel, or just two shells) both call `famp await` against the same `FAMP_HOME`, what happens? Expected: serialize cleanly via `inbox.lock` so exactly one consumer gets each new entry; the other blocks and awaits the next. Feared: cursor race where both processes read the same entry (duplicate delivery) or one deadlocks. Test plan: spawn two concurrent `famp await` processes against the same FAMP_HOME, have a peer send one envelope, verify exactly one consumer receives it and the other continues blocking. Low near-term priority (single-listener is the current usage pattern) but important before encouraging multi-listener workflows.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
 ---
 *Roadmap updated: 2026-04-17 — v0.9 re-scoped from "Federation Profile" to "Local-First Bus" after v0.8 onboarding friction surfaced during dogfooding. `scripts/famp-local` ships as pre-v0.9 scaffolding. Design spec committed. Federation primitives preserved as v1.0 internals with a Phase 4 CI-preservation requirement. v0.8 remains shipped (366/366 tests).*
