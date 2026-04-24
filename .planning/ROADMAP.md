@@ -183,5 +183,18 @@ Rough ordering, not committed. Was numbered v0.9–v0.15 before the re-scope.
 | 3. Conversation CLI | v0.8 | 4/4 | Complete | 2026-04-14 |
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 3/3 | Complete | 2026-04-15 |
 
+## Backlog
+
+### Phase 999.1: `famp await` crash safety — cursor advance vs flush ordering (BACKLOG)
+
+**Goal:** [Captured for future planning]
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Surfaced 2026-04-24 while wiring a Claude Code Stop hook that blocks on `famp await --timeout 23h`. Open question: if the `famp await` process is SIGKILL'd (or its parent dies) after the inbox cursor has advanced but before stdout is flushed/consumed by the caller, is the entry lost? Verification test: run `famp await` in a subshell, SIGKILL immediately after a peer sends, then check whether `famp inbox list` still shows the entry. If lost, cursor should only advance after successful flush/ack. Low urgency (single-consumer listeners rarely crash mid-flush) but a real correctness concern for the protocol layer.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
 ---
 *Roadmap updated: 2026-04-17 — v0.9 re-scoped from "Federation Profile" to "Local-First Bus" after v0.8 onboarding friction surfaced during dogfooding. `scripts/famp-local` ships as pre-v0.9 scaffolding. Design spec committed. Federation primitives preserved as v1.0 internals with a Phase 4 CI-preservation requirement. v0.8 remains shipped (366/366 tests).*
