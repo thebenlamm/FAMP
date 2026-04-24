@@ -3,8 +3,16 @@ name: ci
 on:
   push:
     branches: ["**"]
+    paths-ignore:
+      - "docs/**"
+      - ".planning/**"
+      - "**/*.md"
   pull_request:
     branches: ["**"]
+    paths-ignore:
+      - "docs/**"
+      - ".planning/**"
+      - "**/*.md"
   # Daily advisory scan cron disabled — re-enable by restoring:
   #   schedule:
   #     - cron: "0 7 * * *"
