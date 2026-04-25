@@ -49,7 +49,20 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
     // `more_coming` is meaningful only in new_task mode (clap's `requires`
     // attribute enforces this on the CLI path; the MCP path can't lean on
     // clap, so we silently ignore it for deliver/terminal). Quick-260425-pc7.
-    let more_coming = input["more_coming"].as_bool().unwrap_or(false);
+    //
+    // Type-strict per the BL-02 / `famp_inbox_list_rejects_non_bool_include_terminal`
+    // precedent: silent coercion of `"true"` / `1` / `null` / `{}` to false
+    // is exactly the failure mode the project already chose to reject on
+    // sibling MCP tools. Mirror that contract here.
+    let more_coming = match input.get("more_coming") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(_) => {
+            return Err(CliError::SendArgsInvalid {
+                reason: "famp_send: 'more_coming' must be a boolean".to_string(),
+            });
+        }
+    };
 
     let args = match mode {
         "new_task" => SendArgs {

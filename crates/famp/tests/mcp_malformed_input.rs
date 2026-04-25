@@ -174,6 +174,50 @@ fn famp_inbox_list_rejects_non_bool_include_terminal() {
 }
 
 #[test]
+fn mcp_famp_send_rejects_non_bool_more_coming() {
+    // Symmetric with famp_inbox_list_rejects_non_bool_include_terminal:
+    // a non-bool `more_coming` (here: a string) must surface a tool-level
+    // error naming the field and the expected type, not silently coerce
+    // to `false`. Quick-260425-pc7 BL-02.
+    let home = tempfile::tempdir().expect("tempdir");
+    let (mut child, mut stdin, mut stdout) = spawn_mcp(home.path());
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "tools/call",
+        "params": {
+            "name": "famp_send",
+            "arguments": {
+                "peer": "self",
+                "mode": "new_task",
+                "title": "smoke",
+                "more_coming": "true"
+            }
+        }
+    });
+    let mut body = serde_json::to_string(&req).unwrap();
+    body.push('\n');
+    stdin.write_all(body.as_bytes()).expect("write");
+    stdin.flush().expect("flush");
+
+    let resp = recv_msg(&mut stdout, Duration::from_secs(5));
+    let text = resp.to_string();
+    assert!(
+        text.contains("more_coming"),
+        "error must name the field: {resp}",
+    );
+    assert!(
+        text.to_lowercase().contains("boolean") || text.to_lowercase().contains("bool"),
+        "error must name the expected type: {resp}",
+    );
+
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn famp_inbox_list_returns_parsed_entries_for_well_formed_input() {
     // Positive-path coverage: confirms the new strict parser still produces
     // the expected `{ "entries": [...] }` shape when every line is valid.
