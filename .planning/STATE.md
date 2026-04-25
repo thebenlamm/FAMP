@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-25 - Completed quick task 260425-pc7: Add scope.more_coming flag to new_task envelopes (T2.1, Gap G4); workspace tests + clippy green, all 8 daemons redeployed
+Last activity: 2026-04-25 - Completed quick task 260425-re1: README redeploy verification spot-check (T2.2) — closed the "how to verify a redeploy succeeded" gap
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -86,11 +86,13 @@ v0.8 Progress: [████████████████████] 10
 | 260425-m0f | Write scripts/redeploy-listeners.sh — safe rebuild + restart of all FAMP listeners (T1.3) | 2026-04-25 | af4c8e9, c018ed1 | Verified | [260425-m0f-write-scripts-redeploy-listeners-sh-safe](./quick/260425-m0f-write-scripts-redeploy-listeners-sh-safe/) |
 | 260425-of2 | Tighten MCP body schema docstring on famp_send (T1.2 / Fix B3) | 2026-04-25 | ccdb636, 1c6d4c5 | Verified | [260425-of2-t1-2-tighten-mcp-body-schema-docstring](./quick/260425-of2-t1-2-tighten-mcp-body-schema-docstring/) |
 | 260425-pc7 | Add scope.more_coming flag on new_task envelopes — sender signals "more briefing follows" (T2.1 / Gap G4) | 2026-04-25 | 0c00ade, 937c34a, 2f71fda, 2a386ba, 756208d, 70009d8 | Verified | [260425-pc7-add-more-coming-flag-to-new-task-envelop](./quick/260425-pc7-add-more-coming-flag-to-new-task-envelop/) |
+| 260425-re1 | README "Verifying a redeploy succeeded" subsection (T2.2 spot-check follow-up) | 2026-04-25 | 5f78651 | Verified | [260425-re1-t2-2-readme-redeploy-verification-spot-c](./quick/260425-re1-t2-2-readme-redeploy-verification-spot-c/) |
 
 ## Session Continuity
 
 ### Recent Activity
 
+- **2026-04-25:** Completed quick task 260425-re1: README "Verifying a redeploy succeeded" subsection (T2.2). Spot-check found 2/3 of resume-doc checklist already covered by 260425-m0f's README addition (daemon.pid path ✅, script link ✅), but the "how to verify a redeploy succeeded" item was missing. Added 6-line subsection pointing operators at four independent signals: script exit code + final "all N agent(s) cycled cleanly" line, per-agent summary table, fresh `listening on https://...` beacon in daemon.log via `tail -1`, and binary-timestamp check via `ls -l ~/.cargo/bin/famp`. README-only; no code touched. Commit `5f78651`.
 - **2026-04-25:** Completed quick task 260425-of2: Tighten MCP `body` schema docstring on `famp_send` (T1.2 / Fix B3). Replaced generic `"Message content"` description at `crates/famp/src/cli/mcp/server.rs:47` with explicit guidance that `body` is REQUIRED on `new_task` (title is summary only) and is the reply text on `deliver`/`terminal`. Added regression test `mcp_famp_send_body_description_flags_required_for_new_task` in `tests/mcp_stdio_tool_calls.rs` asserting positive substring `"REQUIRED for new_task"` AND negative substring `"Message content"` (catches accidental reverts). No new dev-deps. Workspace tests green; clippy clean. Commits `ccdb636` (RED) + `1c6d4c5` (GREEN).
 - **2026-04-25:** Completed quick task 260425-m0f: Write scripts/redeploy-listeners.sh — T1.3 safe daemon redeploy. Dirty-tree + in-flight-task guards, SIGTERM/SIGKILL cycling, daemon.log append, per-agent beacon verification, four flag modes (--dry-run, --force, --no-rebuild, interactive). shellcheck clean. README "Redeploying after daemon code changes" section added. 397/397 tests green, clippy clean. Commits af4c8e9 + c018ed1.
 - **2026-04-25:** Completed quick task 260425-lny: Fix B2-class FSM error suppression at send/mod.rs:514. Replaced `let _ = advance_terminal(...)` inside `tasks.update(...)` with `tasks.try_update(...)` + explicit `match` over `TryUpdateError` variants, mirroring `await_cmd/mod.rs` post-ho8 verbatim. Sentinel-discriminator TDD: RED test proves spurious write; GREEN fix proves no write on closure Err. Stash-pop sanity confirmed. 397/397 workspace tests green. Commits `22eacd3` (RED test) + `238e397` (GREEN fix).
