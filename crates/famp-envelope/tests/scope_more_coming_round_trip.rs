@@ -83,7 +83,7 @@ fn build_envelope_bytes(more_coming: Option<bool>) -> Vec<u8> {
     // Some(true)  → key set true   (round-trip path)
     // Some(false) → key omitted    (explicit-default backwards-compat path)
     // None        → key never set  (legacy sender path)
-    if let Some(true) = more_coming {
+    if more_coming == Some(true) {
         scope_map.insert(
             REQUEST_SCOPE_MORE_COMING_KEY.to_string(),
             serde_json::Value::Bool(true),

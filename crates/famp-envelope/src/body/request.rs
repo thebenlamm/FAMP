@@ -18,10 +18,11 @@ use serde::{Deserialize, Serialize};
 /// cross-agent exchanges.
 pub const REQUEST_SCOPE_INSTRUCTIONS_KEY: &str = "instructions";
 
-/// Key under `RequestBody.scope` where the sender signals "I'm not done
-/// briefing — wait for follow-up `deliver`s before treating this task
-/// as ready to commit." Mirrors the `body.interim` flag on `deliver`
-/// envelopes (see `body/deliver.rs`).
+/// Sender signal "more briefing follows" on `request` envelopes.
+///
+/// Means "I'm not done briefing — wait for follow-up `deliver`s before
+/// treating this task as ready to commit." Mirrors the `body.interim`
+/// flag on `deliver` envelopes (see `body/deliver.rs`).
 ///
 /// Default convention: **omit the key entirely when false.** This keeps
 /// canonical bytes byte-exact with pre-existing signed envelopes that
