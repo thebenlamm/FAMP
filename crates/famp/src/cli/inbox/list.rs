@@ -100,11 +100,24 @@ pub fn run_list(
         let from = value.get("from").and_then(Value::as_str).unwrap_or("");
         let class = value.get("class").and_then(Value::as_str).unwrap_or("");
         let body = value.get("body").cloned().unwrap_or(Value::Null);
+        // Quick-260425-pc7: hoist scope.more_coming to a top-level field
+        // on request envelopes so callers don't have to dig through
+        // body.scope to know whether the sender expects follow-up
+        // briefing before this task is ready to commit. Default false
+        // (key absent in legacy + non-flagging senders).
+        let more_coming = if class == "request" {
+            body.pointer("/scope/more_coming")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        } else {
+            false
+        };
         let shaped = json!({
             "offset": end_offset,
             "task_id": task_id,
             "from": from,
             "class": class,
+            "more_coming": more_coming,
             "body": body,
         });
         let line = serde_json::to_string(&shaped).unwrap_or_default();
