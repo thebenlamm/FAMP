@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-25 - Completed quick task 260425-lny: Fix B2-class FSM error suppression at send/mod.rs:514; 397/397 tests green
+Last activity: 2026-04-25 - Completed quick task 260425-m0f: Write scripts/redeploy-listeners.sh (T1.3 safe redeploy); 397/397 tests green
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -83,11 +83,13 @@ v0.8 Progress: [████████████████████] 10
 | 260425-kbx | Harden await commit-receipt RED test (sentinel discriminator) + tighten try_update rustdoc | 2026-04-25 | 004ea87, 36d6b72 |  | [260425-kbx-harden-await-commit-receipt-red-test-tig](./quick/260425-kbx-harden-await-commit-receipt-red-test-tig/) |
 | 260425-lg7 | Tighten try_update closure-Err guarantee bullet (round-3 honesty fix) | 2026-04-25 | cf29196 |  | [260425-lg7-tighten-try-update-closure-err-docstring](./quick/260425-lg7-tighten-try-update-closure-err-docstring/) |
 | 260425-lny | Fix B2-class FSM error suppression at send/mod.rs:514 | 2026-04-25 | 22eacd3, 238e397 |  | [260425-lny-fix-b2-class-bug-at-send-mod-rs-514-surf](./quick/260425-lny-fix-b2-class-bug-at-send-mod-rs-514-surf/) |
+| 260425-m0f | Write scripts/redeploy-listeners.sh — safe rebuild + restart of all FAMP listeners (T1.3) | 2026-04-25 | af4c8e9, c018ed1 |  | [260425-m0f-write-scripts-redeploy-listeners-sh-safe](./quick/260425-m0f-write-scripts-redeploy-listeners-sh-safe/) |
 
 ## Session Continuity
 
 ### Recent Activity
 
+- **2026-04-25:** Completed quick task 260425-m0f: Write scripts/redeploy-listeners.sh — T1.3 safe daemon redeploy. Dirty-tree + in-flight-task guards, SIGTERM/SIGKILL cycling, daemon.log append, per-agent beacon verification, four flag modes (--dry-run, --force, --no-rebuild, interactive). shellcheck clean. README "Redeploying after daemon code changes" section added. 397/397 tests green, clippy clean. Commits af4c8e9 + c018ed1.
 - **2026-04-25:** Completed quick task 260425-lny: Fix B2-class FSM error suppression at send/mod.rs:514. Replaced `let _ = advance_terminal(...)` inside `tasks.update(...)` with `tasks.try_update(...)` + explicit `match` over `TryUpdateError` variants, mirroring `await_cmd/mod.rs` post-ho8 verbatim. Sentinel-discriminator TDD: RED test proves spurious write; GREEN fix proves no write on closure Err. Stash-pop sanity confirmed. 397/397 workspace tests green. Commits `22eacd3` (RED test) + `238e397` (GREEN fix).
 - **2026-04-25:** Completed quick task 260425-gst: Fix await commit-receipt FSM error suppression (bug B2). Two `let _ =` swallowing errors from `advance_committed()` and `tasks.update()` replaced with explicit `match` + `eprintln!`. TDD: mtime-based test proves no spurious disk writes on FSM error. 391/391 workspace tests green. Commits `a31c1c0` (RED test) + `c69b4e9` (GREEN fix).
 - **2026-04-15:** **Plan 04-02 shipped — MCP stdio server + 4 tools.** Hand-rolled Content-Length-framed JSON-RPC server, exhaustive `CliError::mcp_error_kind()` (28 variants, no wildcard), `famp_send`/`famp_await`/`famp_inbox`/`famp_peers` tools, 4/4 subprocess integration tests pass. Commits `f2fb5ff` (Task 1) + `7005886` (Task 2). 353/354 workspace tests (1 pre-existing `send_new_task` failure). MCP-01..06 complete.
