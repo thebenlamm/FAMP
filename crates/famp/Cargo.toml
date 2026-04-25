@@ -51,6 +51,7 @@ famp-transport = { path = "../famp-transport", features = ["test-util"] }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "signal", "net"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 axum = "0.8"
+gag = "1.0.0"
 
 [[bin]]
 name = "famp"
