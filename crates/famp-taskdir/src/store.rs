@@ -135,10 +135,12 @@ impl TaskDir {
     ///   invoking `try_update`. This eliminates the in-process stale-snapshot
     ///   pattern (caller does `read` → mutate → `update(|_| cached.clone())`,
     ///   discarding the closure's input).
-    /// - **Closure errors prevent the disk write**: if the closure returns
-    ///   `Err(E)`, NO call to [`write_atomic_file`] occurs. The on-disk file
-    ///   is byte-identical to its pre-call state. The error is surfaced to
-    ///   the caller as [`TryUpdateError::Closure`].
+    /// - **Closure errors skip the write step**: if the closure returns
+    ///   `Err(E)`, `try_update` performs no call to [`write_atomic_file`] and
+    ///   returns immediately. The error is surfaced to the caller as
+    ///   [`TryUpdateError::Closure`]. (What the on-disk file's bytes are at
+    ///   that point is explicitly out of scope — see `# NOT guaranteed` below,
+    ///   which explains that this method takes no file lock.)
     /// - **`task_id` stability**: if the closure returns `Ok(record)` whose
     ///   `task_id` differs from the input, the call returns
     ///   [`TryUpdateError::Store`] wrapping
