@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-25 - Completed quick task 260425-gst: Fix await commit-receipt FSM error suppression (bug B2)
+Last activity: 2026-04-25 - Completed quick task 260425-ho8: Close lost-update race in await commit-receipt via try_update; 396/396 tests green
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -79,6 +79,7 @@ v0.8 Progress: [████████████████████] 10
 | 260420-viu | Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b) | 2026-04-21 | 42327a1 | [260420-viu-fail-open-on-invaliduuid-in-inbox-list-f](./quick/260420-viu-fail-open-on-invaliduuid-in-inbox-list-f/) |
 | 260424-7z5 | Fix famp_send new_task body loss — scope instructions lift | 2026-04-24 | 526ac2c, fddc24d, 9f94d0c | [260424-7z5-fix-famp-send-new-task-body-loss-scope-i](./quick/260424-7z5-fix-famp-send-new-task-body-loss-scope-i/) |
 | 260425-gst | Fix await commit-receipt FSM error suppression (bug B2) | 2026-04-25 | a31c1c0, c69b4e9 | [260425-gst-fix-famp-fsm-commit-receipt-error-suppre](./quick/260425-gst-fix-famp-fsm-commit-receipt-error-suppre/) |
+| 260425-ho8 | Close lost-update race in await commit-receipt via try_update; drop gag dep | 2026-04-25 | 6c35460, 1f66f4d, 65e5bb2 | [260425-ho8-fix-lost-update-race-in-await-commit-rec](./quick/260425-ho8-fix-lost-update-race-in-await-commit-rec/) |
 
 ## Session Continuity
 
