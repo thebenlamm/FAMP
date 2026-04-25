@@ -98,6 +98,7 @@ async fn first_contact_without_pin_or_opt_in_is_refused() {
             task: None,
             terminal: false,
             body: None,
+            more_coming: false,
         },
     )
     .await;

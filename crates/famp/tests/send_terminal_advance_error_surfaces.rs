@@ -119,6 +119,7 @@ async fn terminal_send_when_record_in_requested_does_not_rewrite_task_file() {
             task: None,
             terminal: false,
             body: None,
+            more_coming: false,
         },
     )
     .await
@@ -181,6 +182,7 @@ async fn terminal_send_when_record_in_requested_does_not_rewrite_task_file() {
             task: Some(task_id.clone()),
             terminal: true,
             body: Some("done".to_string()),
+            more_coming: false,
         },
     )
     .await;

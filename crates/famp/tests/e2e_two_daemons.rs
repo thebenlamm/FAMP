@@ -45,6 +45,7 @@ async fn send_new_task(home: &std::path::Path, to_alias: &str, summary: &str) ->
             task: None,
             terminal: false,
             body: None,
+            more_coming: false,
         },
     )
     .await
@@ -62,6 +63,7 @@ async fn send_deliver(home: &std::path::Path, to_alias: &str, task_id: &str, bod
             task: Some(task_id.to_string()),
             terminal: false,
             body: Some(body.to_string()),
+            more_coming: false,
         },
     )
     .await
@@ -78,6 +80,7 @@ async fn send_terminal(home: &std::path::Path, to_alias: &str, task_id: &str) {
             task: Some(task_id.to_string()),
             terminal: true,
             body: Some("done".to_string()),
+            more_coming: false,
         },
     )
     .await

@@ -83,6 +83,7 @@ async fn send_new_task_creates_record_and_hits_daemon() {
         task: None,
         terminal: false,
         body: None,
+        more_coming: false,
     };
     send_run_at(&home, args).await.expect("famp send");
 

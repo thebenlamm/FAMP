@@ -90,6 +90,7 @@ async fn send_new_task_body_lands_in_scope_instructions() {
         task: None,
         terminal: false,
         body: Some(body.to_string()),
+        more_coming: false,
     };
     send_run_at(&home, args).await.expect("famp send");
 

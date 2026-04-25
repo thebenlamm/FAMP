@@ -79,6 +79,7 @@ async fn terminal_send_locks_resend() {
             task: None,
             terminal: false,
             body: None,
+            more_coming: false,
         },
     )
     .await
@@ -119,6 +120,7 @@ async fn terminal_send_locks_resend() {
             task: Some(task_id.clone()),
             terminal: true,
             body: Some("done".to_string()),
+            more_coming: false,
         },
     )
     .await
@@ -145,6 +147,7 @@ async fn terminal_send_locks_resend() {
             task: Some(task_id.clone()),
             terminal: false,
             body: Some("should fail".to_string()),
+            more_coming: false,
         },
     )
     .await

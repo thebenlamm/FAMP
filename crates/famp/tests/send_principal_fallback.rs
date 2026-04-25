@@ -39,6 +39,7 @@ fn send_args() -> SendArgs {
         task: None,
         terminal: false,
         body: None,
+        more_coming: false,
     }
 }
 

@@ -22,7 +22,9 @@
 use std::path::Path;
 
 use famp_core::{AuthorityScope, MessageId, Principal};
-use famp_envelope::body::request::REQUEST_SCOPE_INSTRUCTIONS_KEY;
+use famp_envelope::body::request::{
+    REQUEST_SCOPE_INSTRUCTIONS_KEY, REQUEST_SCOPE_MORE_COMING_KEY,
+};
 use famp_envelope::body::{request::RequestBody, AckBody, Bounds, DeliverBody, TerminalStatus};
 use famp_envelope::{Causality, Relation, SignedEnvelope, Timestamp, UnsignedEnvelope};
 use famp_taskdir::{TaskDir, TaskRecord, TryUpdateError};
@@ -54,6 +56,13 @@ pub struct SendArgs {
     /// Optional freeform body text (used as `natural_language_summary`).
     #[arg(long)]
     pub body: Option<String>,
+    /// Signal "more briefing follows" on a `--new-task` envelope. The
+    /// receiver should wait for follow-up `deliver`s before treating
+    /// the task as ready to commit. Mirrors the `body.interim` flag on
+    /// `deliver` envelopes. Default false → key omitted, byte-exact
+    /// backwards-compat. Quick-260425-pc7 (T2.1).
+    #[arg(long, requires = "new_task")]
+    pub more_coming: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +169,7 @@ pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcom
                 &to_principal,
                 &summary,
                 args.body.as_deref(),
+                args.more_coming,
             )?
         }
         SendMode::DeliverNonTerminal | SendMode::DeliverTerminal => {
@@ -339,6 +349,7 @@ fn build_request_envelope(
     to: &Principal,
     summary: &str,
     body: Option<&str>,
+    more_coming: bool,
 ) -> Result<(Vec<u8>, String), CliError> {
     let id = MessageId::new_v7();
     let ts = now_timestamp();
@@ -357,17 +368,23 @@ fn build_request_envelope(
     // PROVISIONAL convention (ADR 0001): prose body lands under
     // scope.<REQUEST_SCOPE_INSTRUCTIONS_KEY>. Body-less sends preserve
     // the pre-existing `scope:{}` shape so nothing else regresses.
-    let scope = body.map_or_else(
-        || serde_json::Value::Object(serde_json::Map::new()),
-        |text| {
-            let mut map = serde_json::Map::new();
-            map.insert(
-                REQUEST_SCOPE_INSTRUCTIONS_KEY.to_string(),
-                serde_json::Value::String(text.to_string()),
-            );
-            serde_json::Value::Object(map)
-        },
-    );
+    //
+    // Quick-260425-pc7: scope.more_coming is sender-omitted when false
+    // to keep canonical bytes byte-exact with pre-flag envelopes.
+    let mut scope_map = serde_json::Map::new();
+    if let Some(text) = body {
+        scope_map.insert(
+            REQUEST_SCOPE_INSTRUCTIONS_KEY.to_string(),
+            serde_json::Value::String(text.to_string()),
+        );
+    }
+    if more_coming {
+        scope_map.insert(
+            REQUEST_SCOPE_MORE_COMING_KEY.to_string(),
+            serde_json::Value::Bool(true),
+        );
+    }
+    let scope = serde_json::Value::Object(scope_map);
     let request_body = RequestBody {
         scope,
         bounds,

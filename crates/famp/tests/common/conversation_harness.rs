@@ -149,6 +149,7 @@ pub async fn new_task(home: &Path, alias: &str, summary: &str) -> String {
             task: None,
             terminal: false,
             body: None,
+            more_coming: false,
         },
     )
     .await
@@ -173,6 +174,7 @@ pub async fn deliver(home: &Path, alias: &str, task_id: &str, terminal: bool, bo
             task: Some(task_id.to_string()),
             terminal,
             body: Some(body.to_string()),
+            more_coming: false,
         },
     )
     .await
@@ -195,6 +197,7 @@ pub async fn try_deliver(
             task: Some(task_id.to_string()),
             terminal,
             body: Some(body.to_string()),
+            more_coming: false,
         },
     )
     .await

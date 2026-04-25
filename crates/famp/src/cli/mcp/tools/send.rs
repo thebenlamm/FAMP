@@ -53,6 +53,7 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
             task: None,
             terminal: false,
             body: body_text,
+            more_coming: false,
         },
         "deliver" => SendArgs {
             to: peer,
@@ -62,6 +63,7 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
             })?),
             terminal: false,
             body: body_text,
+            more_coming: false,
         },
         "terminal" => SendArgs {
             to: peer,
@@ -71,6 +73,7 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
             })?),
             terminal: true,
             body: body_text,
+            more_coming: false,
         },
         other => {
             return Err(CliError::SendArgsInvalid {

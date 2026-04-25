@@ -78,6 +78,7 @@ async fn send_deliver_sequence_keeps_record_non_terminal() {
             task: None,
             terminal: false,
             body: None,
+            more_coming: false,
         },
     )
     .await
@@ -107,6 +108,7 @@ async fn send_deliver_sequence_keeps_record_non_terminal() {
                 task: Some(task_id.clone()),
                 terminal: false,
                 body: Some(format!("interim {i}")),
+                more_coming: false,
             },
         )
         .await
