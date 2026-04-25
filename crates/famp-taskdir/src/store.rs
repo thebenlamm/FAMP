@@ -124,25 +124,46 @@ impl TaskDir {
     ///
     /// This is the fallible sibling of [`Self::update`] for callers that need
     /// to run a `Result`-returning mutation (e.g. an FSM advance that can
-    /// return `Err`) atomically inside the same read+write critical section.
+    /// return `Err`) in the same call as the persist, so the closure operates
+    /// on a fresh-from-disk record rather than a caller-cached snapshot.
     ///
-    /// Contracts:
+    /// # Guaranteed
     ///
-    /// - **Atomic with respect to the read step**: the closure receives the
-    ///   on-disk record and the persisted bytes derive from the closure's
-    ///   returned record — NOT a stale snapshot from a separate [`Self::read`]
-    ///   call made before this method. No TOCTOU window between the read and
-    ///   the persist.
-    /// - **On `Err` from the closure, NO disk write occurs**; the original
-    ///   file is byte-identical to its pre-call state.
-    /// - **`task_id` must be stable**: if the closure returns `Ok(record)`
-    ///   whose `task_id` differs from the input, the call returns
-    ///   `TryUpdateError::Store(TaskDirError::TaskIdChanged { .. })` with no
-    ///   write — same invariant as [`Self::update`].
+    /// - **Closure receives a fresh-from-disk record**: the closure's input
+    ///   `TaskRecord` comes from this method's own internal [`Self::read`]
+    ///   call, NOT from a separate `read()` made by the caller before
+    ///   invoking `try_update`. This eliminates the in-process stale-snapshot
+    ///   pattern (caller does `read` → mutate → `update(|_| cached.clone())`,
+    ///   discarding the closure's input).
+    /// - **Closure errors prevent the disk write**: if the closure returns
+    ///   `Err(E)`, NO call to [`write_atomic_file`] occurs. The on-disk file
+    ///   is byte-identical to its pre-call state. The error is surfaced to
+    ///   the caller as [`TryUpdateError::Closure`].
+    /// - **`task_id` stability**: if the closure returns `Ok(record)` whose
+    ///   `task_id` differs from the input, the call returns
+    ///   [`TryUpdateError::Store`] wrapping
+    ///   [`TaskDirError::TaskIdChanged`] with no write — same invariant as
+    ///   [`Self::update`].
     ///
-    /// Reuses [`Self::read`], [`Self::path_for`], and [`write_atomic_file`]
-    /// — same atomicity/fsync/locking semantics as [`Self::update`]; no
-    /// duplicated code.
+    /// # NOT guaranteed
+    ///
+    /// - **No protection against concurrent external writers**: this method
+    ///   does NOT take a file lock and does NOT use compare-and-swap. A
+    ///   concurrent writer (another process, or another thread holding a
+    ///   different `TaskDir` handle) that modifies the same file between
+    ///   this method's internal `read` and its `write_atomic_file` will be
+    ///   silently overwritten. `try_update` closes the *in-process*
+    ///   stale-snapshot anti-pattern; it does not provide cross-writer
+    ///   linearizability.
+    /// - **No retry on conflict**: there is no detect-and-retry loop. If
+    ///   that semantic is needed in the future, add it as a separate API
+    ///   (e.g. `update_with_retry` or an explicit OS-level lock).
+    ///
+    /// # Implementation
+    ///
+    /// Reuses [`Self::read`], `Self::path_for`, and [`write_atomic_file`]
+    /// — same single-call atomicity (rename-into-place) as [`Self::update`];
+    /// no duplicated code.
     pub fn try_update<E, F>(
         &self,
         task_id: &str,
