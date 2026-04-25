@@ -167,6 +167,24 @@ while v0.9's proper socket-activated broker is in design. When v0.9 ships,
 the wrapper goes away and `famp-local wire` becomes a single-line install
 of the broker plus one MCP registration.
 
+## Redeploying after daemon code changes
+
+Edits to `crates/famp/` only reach running listeners after the binary at
+`~/.cargo/bin/famp` is rebuilt AND each daemon is restarted. Use:
+
+```bash
+scripts/redeploy-listeners.sh             # interactive: prompts before killing daemons
+scripts/redeploy-listeners.sh --dry-run   # show plan, take no action
+scripts/redeploy-listeners.sh --force     # skip the in-flight-task safety check
+scripts/redeploy-listeners.sh --no-rebuild # cycle daemons against the binary already on disk
+```
+
+The script refuses to run if `crates/famp/` has uncommitted changes or if
+any task TOML under `~/.famp-local/agents/*/tasks/*.toml` is in a
+non-terminal state (REQUESTED or COMMITTED), unless you pass `--force`.
+PID files live at `~/.famp-local/agents/<name>/daemon.pid`; logs at
+`~/.famp-local/agents/<name>/daemon.log` (appended, not truncated).
+
 ## Advanced: manual CLI (federation path)
 
 The raw federation-grade flow. Use this for cross-machine setups, or when
