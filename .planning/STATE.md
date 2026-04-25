@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-24 - Completed quick task 260424-7z5: Fix famp_send new_task body loss - scope instructions lift
+Last activity: 2026-04-25 - Completed quick task 260425-gst: Fix await commit-receipt FSM error suppression (bug B2)
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -78,11 +78,13 @@ v0.8 Progress: [████████████████████] 10
 | 260414-g32 | PR #4.1 adversarial review followups: reword WeakKey doc, delete dead InvalidSigningInput variant, add is_weak() gate to CONTRIBUTING "Do Not Touch" list | 2026-04-14 | 278cb83 | [260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v](./quick/260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v/) |
 | 260420-viu | Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b) | 2026-04-21 | 42327a1 | [260420-viu-fail-open-on-invaliduuid-in-inbox-list-f](./quick/260420-viu-fail-open-on-invaliduuid-in-inbox-list-f/) |
 | 260424-7z5 | Fix famp_send new_task body loss — scope instructions lift | 2026-04-24 | 526ac2c, fddc24d, 9f94d0c | [260424-7z5-fix-famp-send-new-task-body-loss-scope-i](./quick/260424-7z5-fix-famp-send-new-task-body-loss-scope-i/) |
+| 260425-gst | Fix await commit-receipt FSM error suppression (bug B2) | 2026-04-25 | a31c1c0, c69b4e9 | [260425-gst-fix-famp-fsm-commit-receipt-error-suppre](./quick/260425-gst-fix-famp-fsm-commit-receipt-error-suppre/) |
 
 ## Session Continuity
 
 ### Recent Activity
 
+- **2026-04-25:** Completed quick task 260425-gst: Fix await commit-receipt FSM error suppression (bug B2). Two `let _ =` swallowing errors from `advance_committed()` and `tasks.update()` replaced with explicit `match` + `eprintln!`. TDD: mtime-based test proves no spurious disk writes on FSM error. 391/391 workspace tests green. Commits `a31c1c0` (RED test) + `c69b4e9` (GREEN fix).
 - **2026-04-15:** **Plan 04-02 shipped — MCP stdio server + 4 tools.** Hand-rolled Content-Length-framed JSON-RPC server, exhaustive `CliError::mcp_error_kind()` (28 variants, no wildcard), `famp_send`/`famp_await`/`famp_inbox`/`famp_peers` tools, 4/4 subprocess integration tests pass. Commits `f2fb5ff` (Task 1) + `7005886` (Task 2). 353/354 workspace tests (1 pre-existing `send_new_task` failure). MCP-01..06 complete.
 - **2026-04-14:** **Plan 02-03 shipped — Phase 2 complete.** 5 integration test binaries lock DAEMON-01/02/03/04/05 + INBOX-02/04/05 at the OS-process boundary. Shared harness at `tests/common/listen_harness.rs` (spawn/sign/POST/read + ChildGuard). 298/298 workspace tests green. Commits `82776b9` (test: harness) + `4d14f0f` (test: 5 integration tests + stderr-drainer fix + SIGINT-race fix).
 - **2026-04-14:** **Plan 02-02 shipped** — `famp listen` daemon wired end-to-end. Custom Router reusing `FampSigVerifyLayer` + inbox-append handler returning 200 (durability receipt); SIGINT/SIGTERM shutdown; `PortInUse` mapping for `AddrInUse`. 293/293 workspace tests. Commits `f51b590` (feat) + `0dc56a7` (fix: non-blocking listener). CLI-02, DAEMON-01/02/03/04, INBOX-03 complete.
