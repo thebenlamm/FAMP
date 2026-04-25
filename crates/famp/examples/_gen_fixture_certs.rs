@@ -23,7 +23,6 @@ use famp_keyring as _;
 use famp_taskdir as _;
 use famp_transport as _;
 use famp_transport_http as _;
-use gag as _;
 use hex as _;
 use humantime as _;
 use rand as _;
