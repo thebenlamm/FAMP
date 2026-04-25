@@ -44,7 +44,7 @@ fn tool_descriptors() -> serde_json::Value {
                     "mode":    { "type": "string", "enum": ["new_task", "deliver", "terminal"], "description": "new_task=start conversation, deliver=interim reply, terminal=final reply" },
                     "task_id": { "type": "string", "description": "The task_id from the inbox entry you're replying to. REQUIRED for deliver/terminal modes." },
                     "title":   { "type": "string", "description": "Summary (for new_task mode)" },
-                    "body":    { "type": "string", "description": "Message content" }
+                    "body":    { "type": "string", "description": "Task body content (the actual instructions). REQUIRED for new_task to carry content; the title field is only a short summary. For deliver/terminal modes, this is the reply text." }
                 },
                 "required": ["peer", "mode"]
             }
