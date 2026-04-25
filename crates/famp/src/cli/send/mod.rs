@@ -104,6 +104,7 @@ pub async fn run_at(home: &Path, args: SendArgs) -> Result<(), CliError> {
 
 /// Structured entry — returns [`SendOutcome`] without printing. Used by the
 /// MCP tool wrapper so it can embed `task_id` in the JSON-RPC result.
+#[allow(clippy::too_many_lines)] // 103 lines after BL-01 guard; one linear path.
 pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcome, CliError> {
     let layout = load_identity(home)?;
     let signing_key = load_signing_key(&layout)?;

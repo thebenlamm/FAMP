@@ -54,7 +54,7 @@ const FIXED_TIMESTAMP: &str = "2026-04-25T00:00:00Z";
 const FIXTURE_BODY: &str = "Briefing part 1 of 2 — wait for follow-up deliver().";
 
 /// Build a request envelope with `scope.more_coming = true` for the
-/// round-trip test. The fixed UUIDv7 + timestamp make signing
+/// round-trip test. The fixed `UUIDv7` + timestamp make signing
 /// deterministic, but no other test compares two builds for equality
 /// any more — the real backwards-compat proof now reads the pinned
 /// on-disk fixture (see `legacy_fixture_decodes_without_more_coming_key`).
