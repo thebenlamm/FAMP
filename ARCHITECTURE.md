@@ -16,7 +16,7 @@ envelope, no exceptions (INV-10). Five message classes: `request`,
 (`famp-fsm`): REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED},
 all terminal absorbing.
 
-The Claude Code MCP server (`famp mcp`, stdio JSON-RPC) exposes
+The MCP server (`famp mcp`, stdio JSON-RPC) exposes
 `famp_send`, `famp_inbox`, `famp_await`, `famp_peers` as tools, each
 operating against the `FAMP_HOME` the MCP process was spawned with.
 `famp_inbox` action=list hides entries for tasks that reached a
@@ -65,11 +65,13 @@ Full v0.9 design:
 
 [`scripts/famp-local`](scripts/famp-local) is a bash wrapper over the v0.8
 CLI that compresses the 8-step federation flow into one command
-(`famp-local wire <dir>`) for same-host Claude Code agents. It auto-pins
-TLS fingerprints from disk (bypassing TOFU), manages daemon lifecycles
-with PID files, and drops project-scoped `.mcp.json` files. It exists to
-validate the local-first UX before the v0.9 broker ships; when the
-broker lands, the script becomes redundant.
+(`famp-local wire <dir>`) for same-host MCP clients. It auto-pins TLS
+fingerprints from disk (bypassing TOFU), manages daemon lifecycles with
+PID files, drops project-scoped `.mcp.json` files for Claude Code, and
+can register user-scope MCP entries for Codex. That Codex path is global
+per user (`~/.codex/config.toml`), not repo-scoped like Claude Code's
+`.mcp.json`. It exists to validate the local-first UX before the v0.9
+broker ships; when the broker lands, the script becomes redundant.
 
 ## When working in the codebase
 

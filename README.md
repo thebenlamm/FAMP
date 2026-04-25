@@ -1,13 +1,14 @@
 # FAMP — Federated Agent Messaging Protocol (Rust reference implementation)
 
-**Status:** `v0.8 Usable from Claude Code` — MCP integration complete
+**Status:** `v0.8 Usable from Claude Code; Codex supported via user-scope MCP registration`
 
 FAMP is a Rust implementation of the Federated Agent Messaging Protocol.
 
-**The fastest thing to try:** get two Claude Code windows on your Mac
+**The fastest thing to try:** get two Claude Code or Codex windows on your Mac
 exchanging signed messages, via the [`famp-local`](scripts/famp-local)
 wrapper shipped in this repo. See [Quick Start (local)](#quick-start-local)
-below — four commands, no cert wrangling, no peer-card piping.
+below — four commands for Claude Code, plus one Codex registration command;
+no cert wrangling, no peer-card piping.
 
 Under the hood it's a v0.5.1-spec-conformant stack: canonical JSON
 (RFC 8785), Ed25519 signatures with domain separation, typed identity
@@ -53,7 +54,7 @@ primitives.
   - `famp send` — send signed envelopes
   - `famp inbox list` — inspect received messages (hides entries for terminal tasks by default; pass `--include-terminal` to see them)
   - `famp await` — block until new messages arrive (unfiltered; canonical real-time signal, including task completion)
-- **MCP server** (`famp mcp`) for Claude Code integration
+- **MCP server** (`famp mcp`) for Claude Code and Codex
 - Two runnable examples:
   - same-process happy path
   - cross-machine HTTPS happy path
@@ -110,8 +111,8 @@ just ci
 
 ## Quick Start (local)
 
-Two Claude Code windows on the same Mac, exchanging signed messages,
-in four commands:
+Two Claude Code or Codex windows on the same Mac, exchanging signed messages.
+Claude Code is four commands; Codex adds one MCP registration command:
 
 ```bash
 # 1. Install the famp binary to ~/.cargo/bin
@@ -126,12 +127,16 @@ cargo install --path crates/famp
 scripts/famp-local wire ~/Workspace/RepoA
 scripts/famp-local wire ~/Workspace/RepoB
 
-# 3. Restart the Claude Code windows for RepoA and RepoB
-#    (MCP servers are loaded once at session start)
+# 3a. Claude Code: restart the windows for RepoA and RepoB
+#     (`famp-local wire` dropped a project-scoped .mcp.json)
+#
+# 3b. Codex: register both identities once, then restart the windows
+#     (global user-scope registration in ~/.codex/config.toml)
+scripts/famp-local mcp-add --client codex RepoA RepoB
 
-# 4. In either window, ask Claude to send a message:
+# 4. In either window, ask the agent to send a message:
 #    "send a message to RepoB saying hello"
-#    Claude picks up the `famp_send` / `famp_inbox` / `famp_await`
+#    The MCP client picks up the `famp_send` / `famp_inbox` / `famp_await`
 #    MCP tools and the message lands on the other side.
 ```
 
@@ -145,13 +150,15 @@ Full CLI:
 
 | Command | What it does |
 |---|---|
-| `famp-local wire <dir> [--as <name>] [--force]` | Add a directory to the mesh and drop a project-scoped `.mcp.json` |
+| `famp-local wire <dir> [--as <name>] [--force]` | Add a directory to the mesh and drop a project-scoped `.mcp.json` for Claude Code |
 | `famp-local unwire <dir>` | Remove `.mcp.json` from a directory (identity and daemon stay) |
-| `famp-local send <from> <to> <text>` | CLI-level send without going through Claude |
+| `famp-local send <from> <to> <text>` | CLI-level send without going through the MCP client |
 | `famp-local inbox <name>` | List a name's inbox entries |
 | `famp-local status` | Show all known identities and daemon state |
 | `famp-local stop [<name>...]` | Stop daemon(s); with no args, stops all |
 | `famp-local clean` | Stop everything and wipe `~/.famp-local` |
+| `famp-local mcp-add [--client <target>] <name>...` | Register user-scope MCP servers for Claude Code, Codex, or both |
+| `famp-local mcp-remove [--client <target>] <name>...` | Remove user-scope MCP server registrations |
 
 `famp-local` is a bash wrapper around the v0.8 CLI — see
 [`scripts/famp-local`](scripts/famp-local). It exists to compress the raw
@@ -164,7 +171,7 @@ of the broker plus one MCP registration.
 
 The raw federation-grade flow. Use this for cross-machine setups, or when
 you want explicit control over ports, HOME directories, TOFU pinning, and
-peer-card exchange. On a single Mac with two Claude Code windows, the
+peer-card exchange. On a single Mac with two Claude Code or Codex windows, the
 [`famp-local`](#quick-start-local) wrapper above will do all of this for
 you.
 
@@ -218,13 +225,34 @@ Use this only when you trust the path between you and the peer (typically
 loopback or a brand-new private link). Subsequent sends do not need the
 flag — the pinned fingerprint is the trust anchor from then on.
 
-## MCP Integration (Claude Code)
+## MCP Integration (Claude Code and Codex)
 
 For **local Claude Code on your Mac**, use
 [`scripts/famp-local wire <dir>`](#quick-start-local) — it generates a
 project-scoped `.mcp.json` in the target directory pointing at that
 repo's identity, using the absolute `famp` binary path so Claude's MCP
 spawner (which doesn't inherit login-shell PATH) can find it.
+
+For **local Codex on your Mac**, use the same `wire` step to create the
+identity and daemons, then register the identity with:
+
+```bash
+scripts/famp-local mcp-add --client codex <name>
+```
+
+That uses `codex mcp add ...` under the hood and writes a user-scope MCP
+entry into `~/.codex/config.toml`.
+
+Important difference from Claude Code: Codex registration is **global per
+user**, not repo-scoped. After you register `famp-alice` and `famp-bob`,
+every Codex window can see both MCP servers. In Codex, the identity you
+use is the MCP server name you select, not the repo you opened.
+
+To remove a Codex registration later:
+
+```bash
+scripts/famp-local mcp-remove --client codex <name>
+```
 
 For **manual setups**, the `.mcp.json` shape is:
 
@@ -447,7 +475,7 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `v0.5.1`: spec fork, shipped
 - `v0.6`: foundation crates, shipped
 - `v0.7`: personal runtime, shipped
-- `v0.8`: usable from Claude Code (CLI + MCP), shipped
+- `v0.8`: usable from Claude Code, with Codex support via user-scope MCP registration, shipped
 - `v0.9`: **local-first bus** — in design. UDS-backed broker replacing
   the per-identity TLS listener mesh for same-host agents. See the
   [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).

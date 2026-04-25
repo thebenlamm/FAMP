@@ -1,5 +1,9 @@
 # `famp_inbox list` — Filter Terminal Tasks
 
+> Historical note: this v0.8 design doc uses Claude Code as the example MCP
+> client. The filter semantics apply equally to other MCP clients, including
+> Codex.
+
 - **Date:** 2026-04-20
 - **Status:** Design (awaiting approval)
 - **Author:** Ben Lamm + Claude
@@ -28,7 +32,7 @@ pub fn run_list(home: &Path, since: Option<u64>, out: &mut dyn Write) -> Result<
 }
 ```
 
-Every `request`, `commit`, and `deliver` envelope ever written to the inbox is returned on every `list` call from `since=0`. A Claude Code agent running a session with ten prior conversations sees thirty+ envelopes for work that closed days ago.
+Every `request`, `commit`, and `deliver` envelope ever written to the inbox is returned on every `list` call from `since=0`. An MCP client agent running a session with ten prior conversations sees thirty+ envelopes for work that closed days ago.
 
 `famp-taskdir` already tracks per-task FSM state in `<home>/tasks/<task_id>.toml`, with a denormalized `terminal: bool` field maintained by the daemon on every transition. The data needed to filter is present; the filter is not.
 

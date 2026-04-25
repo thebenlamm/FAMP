@@ -2,14 +2,14 @@
 # famp-local — same-host onboarding wrapper for FAMP v0.8.
 #
 # Wraps `famp setup / listen / info / peer import / send / inbox` into a
-# small command surface optimised for two Claude Code windows on the same
+# small command surface optimised for two MCP-capable agent windows on the same
 # laptop. This is explicit pre-v0.9 scaffolding: it does NOT replace v0.8,
 # it just hides the parts that don't matter for the same-UID use case
 # (port selection, HOME juggling, peer-card piping, TOFU first-contact).
 #
 # Intentional non-goals:
 #   * Channels / broadcast (use v0.9 for that)
-#   * Hot-reloading Claude Code MCP config (not possible; Claude reads at start)
+#   * Hot-reloading MCP client config (clients read at start)
 #   * Cross-host federation (v1.0)
 #
 # Usage: see `famp-local help`
@@ -362,10 +362,11 @@ cmd_init() {
   echo "  state:  $STATE_ROOT"
   echo
   echo "  Send from shell:"
-  echo "    famp-local send ${agents[0]} ${agents[1]} 'hello'"
+  echo "    $FAMP_LOCAL_SCRIPT send ${agents[0]} ${agents[1]} 'hello'"
   echo
-  echo "  Register as Claude Code MCP servers:"
-  echo "    famp-local mcp-add ${agents[*]}"
+  echo "  Register as MCP servers:"
+  echo "    $FAMP_LOCAL_SCRIPT mcp-add ${agents[*]}                 # Claude Code"
+  echo "    $FAMP_LOCAL_SCRIPT mcp-add --client codex ${agents[*]} # Codex (global in ~/.codex/config.toml)"
 }
 
 cmd_send() {
@@ -424,25 +425,121 @@ cmd_clean() {
   echo "✓ state cleaned"
 }
 
-# Register an agent as a user-scope Claude Code MCP server. Requires the
-# `claude` CLI (ships with Claude Code). Uses the absolute path to the
-# famp binary so Claude's MCP spawner doesn't need the user's PATH.
+# Register one or more agents as user-scope MCP servers for Claude Code,
+# Codex, or both. Uses the absolute path to the famp binary so the client
+# MCP spawner doesn't need the user's PATH.
 cmd_mcp_add() {
-  [ $# -ge 1 ] || die "mcp-add <name> [<name>...]"
-  command -v claude >/dev/null 2>&1 \
-    || die "'claude' CLI not on PATH; install Claude Code or add manually to ~/.claude.json"
+  local client="claude"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --client)
+        shift; [ $# -ge 1 ] || die "--client needs one of: claude, codex, both"
+        client="$1"; shift ;;
+      --client=*)
+        client="${1#--client=}"; shift ;;
+      --*)
+        die "unknown flag: $1 (try 'famp-local help')" ;;
+      *)
+        break ;;
+    esac
+  done
+
+  [ $# -ge 1 ] || die "mcp-add [--client claude|codex|both] <name> [<name>...]"
+
+  case "$client" in
+    claude|codex|both) ;;
+    *) die "invalid client '$client' (expected: claude, codex, both)" ;;
+  esac
+
   local famp_abs; famp_abs="$(command -v "$FAMP_BIN")"
   local a home
+
   for a in "$@"; do
     home="$(home_for "$a")"
     [ -d "$home" ] || die "unknown agent: $a (init it first)"
-    claude mcp remove --scope user "famp-$a" >/dev/null 2>&1 || true
-    claude mcp add    --scope user "famp-$a" "$famp_abs" mcp \
-      --env "FAMP_HOME=$home" >/dev/null
-    note "famp-$a registered → $famp_abs mcp  (FAMP_HOME=$home)"
   done
+
+  if [ "$client" = "claude" ] || [ "$client" = "both" ]; then
+    command -v claude >/dev/null 2>&1 \
+      || die "'claude' CLI not on PATH; install Claude Code or use --client codex"
+    for a in "$@"; do
+      home="$(home_for "$a")"
+      claude mcp remove --scope user "famp-$a" >/dev/null 2>&1 || true
+      claude mcp add    --scope user "famp-$a" "$famp_abs" mcp \
+        --env "FAMP_HOME=$home" >/dev/null
+      note "Claude: famp-$a registered → $famp_abs mcp  (FAMP_HOME=$home)"
+    done
+  fi
+
+  if [ "$client" = "codex" ] || [ "$client" = "both" ]; then
+    command -v codex >/dev/null 2>&1 \
+      || die "'codex' CLI not on PATH; install Codex or use --client claude"
+    for a in "$@"; do
+      home="$(home_for "$a")"
+      codex mcp remove "famp-$a" >/dev/null 2>&1 || true
+      codex mcp add "famp-$a" --env "FAMP_HOME=$home" -- "$famp_abs" mcp >/dev/null
+      note "Codex:  famp-$a registered → $famp_abs mcp  (FAMP_HOME=$home)"
+    done
+  fi
+
   echo
-  echo "✓ MCP servers registered. Restart Claude Code windows for them to pick up."
+  case "$client" in
+    claude) echo "✓ MCP servers registered. Restart Claude Code windows for them to pick up." ;;
+    codex)  echo "✓ MCP servers registered. Restart Codex windows for them to pick up." ;;
+    both)   echo "✓ MCP servers registered. Restart Claude Code and Codex windows for them to pick up." ;;
+  esac
+}
+
+# Remove one or more user-scope MCP registrations for Claude Code, Codex,
+# or both. Does not delete FAMP state; only unregisters the MCP servers.
+cmd_mcp_remove() {
+  local client="both"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --client)
+        shift; [ $# -ge 1 ] || die "--client needs one of: claude, codex, both"
+        client="$1"; shift ;;
+      --client=*)
+        client="${1#--client=}"; shift ;;
+      --*)
+        die "unknown flag: $1 (try 'famp-local help')" ;;
+      *)
+        break ;;
+    esac
+  done
+
+  [ $# -ge 1 ] || die "mcp-remove [--client claude|codex|both] <name> [<name>...]"
+
+  case "$client" in
+    claude|codex|both) ;;
+    *) die "invalid client '$client' (expected: claude, codex, both)" ;;
+  esac
+
+  local a
+  if [ "$client" = "claude" ] || [ "$client" = "both" ]; then
+    command -v claude >/dev/null 2>&1 \
+      || die "'claude' CLI not on PATH; install Claude Code or use --client codex"
+    for a in "$@"; do
+      claude mcp remove --scope user "famp-$a" >/dev/null 2>&1 || true
+      note "Claude: removed MCP server famp-$a"
+    done
+  fi
+
+  if [ "$client" = "codex" ] || [ "$client" = "both" ]; then
+    command -v codex >/dev/null 2>&1 \
+      || die "'codex' CLI not on PATH; install Codex or use --client claude"
+    for a in "$@"; do
+      codex mcp remove "famp-$a" >/dev/null 2>&1 || true
+      note "Codex:  removed MCP server famp-$a"
+    done
+  fi
+
+  echo
+  case "$client" in
+    claude) echo "✓ Claude Code MCP servers removed. Restart Claude Code windows if they are open." ;;
+    codex)  echo "✓ Codex MCP servers removed. Restart Codex windows if they are open." ;;
+    both)   echo "✓ MCP servers removed from Claude Code and Codex. Restart any open windows." ;;
+  esac
 }
 
 cmd_wire() {
@@ -534,7 +631,10 @@ EOF
 
   echo
   echo "✓ $dir wired as identity '$name'"
-  echo "  Restart the Claude Code window for that repo to load the MCP server."
+  echo "  Claude Code: restart the window for that repo to load .mcp.json."
+  echo "  Codex: run '$FAMP_LOCAL_SCRIPT mcp-add --client codex $name' once."
+  echo "         Codex registration is global in ~/.codex/config.toml, not repo-scoped."
+  echo "         After that, restart the Codex window and use the MCP server named 'famp-$name'."
 }
 
 cmd_unwire() {
@@ -556,6 +656,9 @@ cmd_unwire() {
   if [ -n "$name" ]; then
     echo
     echo "  Identity '$name' is still in the mesh and will keep starting at login."
+    echo "  If you registered it with Codex, unregister it separately:"
+    echo "    $FAMP_LOCAL_SCRIPT mcp-remove --client codex $name"
+    echo
     echo "  To fully remove the identity (stop its daemon, delete its state):"
     echo "    $FAMP_LOCAL_SCRIPT stop"
     echo "    rm -rf $STATE_ROOT/agents/$name"
@@ -582,7 +685,12 @@ COMMANDS
   status                          Show all known agents and daemon state.
   stop [<name>...]                Stop daemon(s); with no args, stops all.
   clean                           Stop everything and wipe state dir.
-  mcp-add <name> [<name>...]      Register agent(s) as user-scope Claude Code MCP.
+  mcp-add [--client <target>] <name> [<name>...]
+                                  Register agent(s) as user-scope MCP servers.
+                                  target = claude | codex | both
+  mcp-remove [--client <target>] <name> [<name>...]
+                                  Remove user-scope MCP server registrations.
+                                  target = claude | codex | both
   help                            Show this message.
 
 ENVIRONMENT
@@ -613,6 +721,7 @@ case "$cmd" in
   stop)                   cmd_stop "$@" ;;
   clean)                  cmd_clean "$@" ;;
   mcp-add) require_famp; cmd_mcp_add "$@" ;;
+  mcp-remove)            cmd_mcp_remove "$@" ;;
   help|-h|--help)         cmd_help ;;
   *)       die "unknown command: $cmd (try 'famp-local help')" ;;
 esac

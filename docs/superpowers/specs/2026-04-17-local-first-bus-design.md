@@ -1,5 +1,10 @@
 # FAMP v0.9 — Local-First Bus
 
+> Historical note: this 2026-04-17 design doc predates Codex integration
+> in the v0.8 wrapper. References to Claude Code here describe the primary
+> MCP client used during design; current v0.8 docs also cover Codex, whose
+> MCP registration is user-scoped in `~/.codex/config.toml`.
+
 - **Date:** 2026-04-17
 - **Status:** Design (awaiting approval)
 - **Author:** Ben Lamm + Claude

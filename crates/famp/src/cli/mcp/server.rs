@@ -2,7 +2,7 @@
 //!
 //! ## Wire format
 //!
-//! Claude Code's stdio transport uses newline-delimited JSON (NDJSON):
+//! The MCP client's stdio transport uses newline-delimited JSON (NDJSON):
 //! one JSON object per line, terminated by `\n`.
 //!
 //! ## Handled methods
