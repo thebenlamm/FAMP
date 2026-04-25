@@ -185,6 +185,16 @@ non-terminal state (REQUESTED or COMMITTED), unless you pass `--force`.
 PID files live at `~/.famp-local/agents/<name>/daemon.pid`; logs at
 `~/.famp-local/agents/<name>/daemon.log` (appended, not truncated).
 
+### Verifying a redeploy succeeded
+
+The script prints a per-agent summary table on completion (`STOP`, `RESTART`,
+`PID`, `LOG` columns) followed by a final `all N agent(s) cycled cleanly`
+line; non-zero exit means at least one daemon failed to come back. To
+spot-check independently: `tail -1 ~/.famp-local/agents/<name>/daemon.log`
+should show a fresh `listening on https://127.0.0.1:<port>` line, and
+`ls -l ~/.cargo/bin/famp` should show a binary timestamp at or after the
+rebuild.
+
 ## Advanced: manual CLI (federation path)
 
 The raw federation-grade flow. Use this for cross-machine setups, or when
