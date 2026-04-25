@@ -75,7 +75,10 @@ famp send --help | grep more-coming                             # visible
 
 - [x] Existing signed envelopes (no `more_coming` key) still
       decode + `verify_strict` cleanly — proven by
-      `more_coming_default_false_is_byte_exact_with_legacy`
+      `decode_provisional_scope_instructions_vector` (the on-disk
+      pre-pc7 fixture) and the symmetric
+      `legacy_fixture_decodes_without_more_coming_key` regression
+      test added under BL-03
 - [x] New envelopes with `more_coming: true` round-trip with the
       flag set — proven by `more_coming_true_round_trips`
 - [x] `famp send --new-task --more-coming` accepts the flag and
