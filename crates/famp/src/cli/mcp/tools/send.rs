@@ -7,7 +7,8 @@
 //!   "mode": "new_task" | "deliver" | "terminal",
 //!   "task_id": "<uuid>",   // required for deliver / terminal
 //!   "title":   "<text>",   // new_task: natural-language summary (short)
-//!   "body":    "<text>"    // new_task: full task content (lands in scope.instructions)
+//!   "body":    "<text>",   // new_task: full task content (lands in scope.instructions)
+//!   "more_coming": true    // new_task only: signal more briefing follows
 //! }
 //! ```
 //!
@@ -45,6 +46,10 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
     let title = input["title"].as_str().map(str::to_string);
     let body_text = input["body"].as_str().map(str::to_string);
     let task_id_str = input["task_id"].as_str().map(str::to_string);
+    // `more_coming` is meaningful only in new_task mode (clap's `requires`
+    // attribute enforces this on the CLI path; the MCP path can't lean on
+    // clap, so we silently ignore it for deliver/terminal). Quick-260425-pc7.
+    let more_coming = input["more_coming"].as_bool().unwrap_or(false);
 
     let args = match mode {
         "new_task" => SendArgs {
@@ -53,7 +58,7 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
             task: None,
             terminal: false,
             body: body_text,
-            more_coming: false,
+            more_coming,
         },
         "deliver" => SendArgs {
             to: peer,
