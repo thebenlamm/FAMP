@@ -132,6 +132,17 @@ pub async fn run_at_structured(home: &Path, args: SendArgs) -> Result<SendOutcom
         }
     };
 
+    // Belt-and-suspenders guard for `--more-coming`: clap-derive's
+    // `requires = "new_task"` does not fire when `--task` is also present
+    // (clap evaluates `conflicts_with` before `requires`), so the flag
+    // would otherwise reach the deliver path and be silently dropped.
+    // Quick-260425-pc7 BL-01.
+    if args.more_coming && !matches!(mode, SendMode::NewTask) {
+        return Err(CliError::SendArgsInvalid {
+            reason: "--more-coming is only valid with --new-task".to_string(),
+        });
+    }
+
     // Check if existing task is terminal (if it exists locally).
     // If the task doesn't exist, we'll create it on-demand when sending the reply.
     // This happens when replying to a request we *received* (not originated).
