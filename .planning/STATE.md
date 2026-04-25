@@ -68,18 +68,18 @@ v0.8 Progress: [████████████████████] 10
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260414-cme | Remove obsolete wave2_impl feature gate from famp-canonical | 2026-04-14 | a77cfe1 | [260414-cme-remove-obsolete-wave2-impl-feature-gate-](./quick/260414-cme-remove-obsolete-wave2-impl-feature-gate-/) |
-| 260414-ecp | Wire UnsupportedVersion error on envelope decode (PR #2) | 2026-04-14 | 8d14341 | [260414-ecp-wire-unsupportedversion-error-on-envelop](./quick/260414-ecp-wire-unsupportedversion-error-on-envelop/) |
-| 260414-esi | Seal famp field visibility + cover adversarial gaps (PR #2.1) | 2026-04-14 | 2e9cf92, bf4c70a | [260414-esi-seal-famp-field-visibility-and-cover-adv](./quick/260414-esi-seal-famp-field-visibility-and-cover-adv/) |
-| 260414-f4i | famp-crypto rustdoc + README "How FAMP Signs a Message" + CONTRIBUTING.md (PR #3) | 2026-04-14 | c0c5311, 243fc19, 1b432c5 | [260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv](./quick/260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv/) |
-| 260414-fjo | PR #4 architectural cleanup: drop Signer/Verifier traits, remove 5 stub crates, add famp umbrella re-exports | 2026-04-14 | 9e5426f, 08c442a, e8ecf9f | [260414-fjo-pr-4-architectural-cleanup-drop-signer-v](./quick/260414-fjo-pr-4-architectural-cleanup-drop-signer-v/) |
-| 260414-g32 | PR #4.1 adversarial review followups: reword WeakKey doc, delete dead InvalidSigningInput variant, add is_weak() gate to CONTRIBUTING "Do Not Touch" list | 2026-04-14 | 278cb83 | [260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v](./quick/260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v/) |
-| 260420-viu | Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b) | 2026-04-21 | 42327a1 | [260420-viu-fail-open-on-invaliduuid-in-inbox-list-f](./quick/260420-viu-fail-open-on-invaliduuid-in-inbox-list-f/) |
-| 260424-7z5 | Fix famp_send new_task body loss — scope instructions lift | 2026-04-24 | 526ac2c, fddc24d, 9f94d0c | [260424-7z5-fix-famp-send-new-task-body-loss-scope-i](./quick/260424-7z5-fix-famp-send-new-task-body-loss-scope-i/) |
-| 260425-gst | Fix await commit-receipt FSM error suppression (bug B2) | 2026-04-25 | a31c1c0, c69b4e9 | [260425-gst-fix-famp-fsm-commit-receipt-error-suppre](./quick/260425-gst-fix-famp-fsm-commit-receipt-error-suppre/) |
-| 260425-ho8 | Close lost-update race in await commit-receipt via try_update; drop gag dep | 2026-04-25 | 6c35460, 1f66f4d, 65e5bb2 | [260425-ho8-fix-lost-update-race-in-await-commit-rec](./quick/260425-ho8-fix-lost-update-race-in-await-commit-rec/) |
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 260414-cme | Remove obsolete wave2_impl feature gate from famp-canonical | 2026-04-14 | a77cfe1 |  | [260414-cme-remove-obsolete-wave2-impl-feature-gate-](./quick/260414-cme-remove-obsolete-wave2-impl-feature-gate-/) |
+| 260414-ecp | Wire UnsupportedVersion error on envelope decode (PR #2) | 2026-04-14 | 8d14341 |  | [260414-ecp-wire-unsupportedversion-error-on-envelop](./quick/260414-ecp-wire-unsupportedversion-error-on-envelop/) |
+| 260414-esi | Seal famp field visibility + cover adversarial gaps (PR #2.1) | 2026-04-14 | 2e9cf92, bf4c70a |  | [260414-esi-seal-famp-field-visibility-and-cover-adv](./quick/260414-esi-seal-famp-field-visibility-and-cover-adv/) |
+| 260414-f4i | famp-crypto rustdoc + README "How FAMP Signs a Message" + CONTRIBUTING.md (PR #3) | 2026-04-14 | c0c5311, 243fc19, 1b432c5 |  | [260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv](./quick/260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv/) |
+| 260414-fjo | PR #4 architectural cleanup: drop Signer/Verifier traits, remove 5 stub crates, add famp umbrella re-exports | 2026-04-14 | 9e5426f, 08c442a, e8ecf9f |  | [260414-fjo-pr-4-architectural-cleanup-drop-signer-v](./quick/260414-fjo-pr-4-architectural-cleanup-drop-signer-v/) |
+| 260414-g32 | PR #4.1 adversarial review followups: reword WeakKey doc, delete dead InvalidSigningInput variant, add is_weak() gate to CONTRIBUTING "Do Not Touch" list | 2026-04-14 | 278cb83 |  | [260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v](./quick/260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v/) |
+| 260420-viu | Fail-open on InvalidUuid in inbox list filter (follow-up to 974cc4b) | 2026-04-21 | 42327a1 |  | [260420-viu-fail-open-on-invaliduuid-in-inbox-list-f](./quick/260420-viu-fail-open-on-invaliduuid-in-inbox-list-f/) |
+| 260424-7z5 | Fix famp_send new_task body loss — scope instructions lift | 2026-04-24 | 526ac2c, fddc24d, 9f94d0c |  | [260424-7z5-fix-famp-send-new-task-body-loss-scope-i](./quick/260424-7z5-fix-famp-send-new-task-body-loss-scope-i/) |
+| 260425-gst | Fix await commit-receipt FSM error suppression (bug B2) | 2026-04-25 | a31c1c0, c69b4e9 |  | [260425-gst-fix-famp-fsm-commit-receipt-error-suppre](./quick/260425-gst-fix-famp-fsm-commit-receipt-error-suppre/) |
+| 260425-ho8 | Close lost-update race in await commit-receipt via try_update; drop gag dep | 2026-04-25 | 6c35460, 1f66f4d, 65e5bb2 | Verified | [260425-ho8-fix-lost-update-race-in-await-commit-rec](./quick/260425-ho8-fix-lost-update-race-in-await-commit-rec/) |
 
 ## Session Continuity
 
