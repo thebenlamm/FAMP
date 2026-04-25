@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-25 - Completed quick task 260425-ho8: Close lost-update race in await commit-receipt via try_update; 396/396 tests green
+Last activity: 2026-04-25 - Completed quick task 260425-kbx: Harden await commit-receipt RED test with sentinel discriminator + tighten try_update rustdoc; 396/396 tests green
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -80,6 +80,7 @@ v0.8 Progress: [████████████████████] 10
 | 260424-7z5 | Fix famp_send new_task body loss — scope instructions lift | 2026-04-24 | 526ac2c, fddc24d, 9f94d0c |  | [260424-7z5-fix-famp-send-new-task-body-loss-scope-i](./quick/260424-7z5-fix-famp-send-new-task-body-loss-scope-i/) |
 | 260425-gst | Fix await commit-receipt FSM error suppression (bug B2) | 2026-04-25 | a31c1c0, c69b4e9 |  | [260425-gst-fix-famp-fsm-commit-receipt-error-suppre](./quick/260425-gst-fix-famp-fsm-commit-receipt-error-suppre/) |
 | 260425-ho8 | Close lost-update race in await commit-receipt via try_update; drop gag dep | 2026-04-25 | 6c35460, 1f66f4d, 65e5bb2 | Verified | [260425-ho8-fix-lost-update-race-in-await-commit-rec](./quick/260425-ho8-fix-lost-update-race-in-await-commit-rec/) |
+| 260425-kbx | Harden await commit-receipt RED test (sentinel discriminator) + tighten try_update rustdoc | 2026-04-25 | 004ea87, 36d6b72 |  | [260425-kbx-harden-await-commit-receipt-red-test-tig](./quick/260425-kbx-harden-await-commit-receipt-red-test-tig/) |
 
 ## Session Continuity
 
