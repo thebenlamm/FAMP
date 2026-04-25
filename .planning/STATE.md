@@ -83,7 +83,7 @@ v0.8 Progress: [████████████████████] 10
 | 260425-kbx | Harden await commit-receipt RED test (sentinel discriminator) + tighten try_update rustdoc | 2026-04-25 | 004ea87, 36d6b72 |  | [260425-kbx-harden-await-commit-receipt-red-test-tig](./quick/260425-kbx-harden-await-commit-receipt-red-test-tig/) |
 | 260425-lg7 | Tighten try_update closure-Err guarantee bullet (round-3 honesty fix) | 2026-04-25 | cf29196 |  | [260425-lg7-tighten-try-update-closure-err-docstring](./quick/260425-lg7-tighten-try-update-closure-err-docstring/) |
 | 260425-lny | Fix B2-class FSM error suppression at send/mod.rs:514 | 2026-04-25 | 22eacd3, 238e397 |  | [260425-lny-fix-b2-class-bug-at-send-mod-rs-514-surf](./quick/260425-lny-fix-b2-class-bug-at-send-mod-rs-514-surf/) |
-| 260425-m0f | Write scripts/redeploy-listeners.sh — safe rebuild + restart of all FAMP listeners (T1.3) | 2026-04-25 | af4c8e9, c018ed1 |  | [260425-m0f-write-scripts-redeploy-listeners-sh-safe](./quick/260425-m0f-write-scripts-redeploy-listeners-sh-safe/) |
+| 260425-m0f | Write scripts/redeploy-listeners.sh — safe rebuild + restart of all FAMP listeners (T1.3) | 2026-04-25 | af4c8e9, c018ed1 | Verified | [260425-m0f-write-scripts-redeploy-listeners-sh-safe](./quick/260425-m0f-write-scripts-redeploy-listeners-sh-safe/) |
 
 ## Session Continuity
 
