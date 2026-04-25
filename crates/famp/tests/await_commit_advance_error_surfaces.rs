@@ -1,40 +1,50 @@
-//! TDD test for bug B2 (2026-04-25 pressure test): silent error suppression in
+//! TDD test for the lost-update race + error-suppression in
 //! `await_cmd::run_at`'s commit-receipt handling.
 //!
-//! Pre-fix: two `let _ =` discard errors from `advance_committed()` and
-//! `tasks.update()`. This test exercises the `IllegalTransition` path
-//! (record already COMMITTED, another commit envelope arrives).
+//! ## History
 //!
-//! ## What changed between pre-fix and post-fix?
+//! **Bug B2 (quick-260425-gst, commit c69b4e9):** two `let _ =` discarded
+//! errors from `advance_committed()` and `tasks.update()`. The c69b4e9 fix
+//! replaced them with explicit `match` + `eprintln!`, surfacing errors.
+//! However, it reintroduced a TOCTOU window: the FSM advance moved OUTSIDE
+//! the `TaskDir::update` closure, and the closure ignored the fresh-from-disk
+//! record (`|_| record.clone()`). Any concurrent write between the initial
+//! `tasks.read(...)` and the subsequent `tasks.update(...)` would be silently
+//! overwritten.
 //!
-//! Pre-fix buggy code (lines 163-172):
-//! ```rust
-//! if tasks.read(task_id_str).is_ok() {
-//!     let _ = tasks.update(task_id_str, |mut r| {
-//!         let _ = advance_committed(&mut r);  // Err ignored; r unchanged
-//!         r
-//!     });  // update IS called unconditionally — rewrites the TOML even on error
-//! }
-//! ```
+//! **Lost-update race fix (quick-260425-ho8):** replaced the racy
+//! read → advance → `update(|_| clone)` pattern with a single
+//! `tasks.try_update(task_id, |mut r| advance_committed(&mut r).map(|_| r))`
+//! call. The FSM advance now lives INSIDE the closure, operating on the
+//! fresh record that `try_update` reads from disk — atomic with the persist.
+//! On closure `Err` (e.g. `IllegalTransition`), `try_update` performs NO disk
+//! write. Errors continue to surface via `eprintln!`.
 //!
-//! The unconditional `tasks.update(...)` call writes back the record (even
-//! though its state didn't change), changing the file's mtime.
+//! ## What this test proves
 //!
-//! Post-fix: `tasks.update` is only called when `advance_committed` returns
-//! `Ok`. When it returns `Err` (`IllegalTransition`), we skip the update entirely
-//! and log an `eprintln!` instead. The file is NOT rewritten; mtime is unchanged.
+//! The test exercises the `IllegalTransition` path: the on-disk record is
+//! already `COMMITTED`, so a second arriving commit envelope triggers
+//! `advance_committed → Err(IllegalTransition)`.
 //!
-//! ## Observable: mtime
+//! - **Pre-fix (bug B2):** the unconditional `tasks.update(...)` call rewrites
+//!   the TOML even though the state didn't change, mutating the file bytes.
+//! - **Post-c69b4e9:** the `Err` arm skips `tasks.update`, but the stale
+//!   snapshot pattern (`|_| record.clone()`) is still present and would
+//!   overwrite a concurrent write on the `Ok` arm.
+//! - **Post-ho8:** `try_update` skips the persist on closure `Err` — the
+//!   file bytes are byte-identical to their pre-call state. Additionally,
+//!   the closure receives the FRESH record from disk on the `Ok` arm, closing
+//!   the TOCTOU window.
 //!
-//! The test records the task file's mtime before calling `await_run_at`, then
-//! checks it after:
+//! ## Observable: byte equality (not mtime)
 //!
-//! - Pre-fix → mtime HAS changed (spurious `tasks.update` call) → assertion FAILS (RED).
-//! - Post-fix → mtime unchanged (update correctly skipped) → assertion PASSES (GREEN).
-//!
-//! This mtime assertion is more reliable than stderr capture (which is tricky
-//! with the Rust test harness's own stderr redirection) and directly proves
-//! the invariant we care about: no spurious disk writes on FSM error.
+//! The test snapshots the raw file bytes BEFORE calling `await_run_at` and
+//! asserts byte-equality AFTER. This is:
+//! - **Immune to filesystem mtime granularity** (macOS APFS mtime is 1 ns
+//!   but the test can still race in CI with 1-second HFS+ images; byte
+//!   comparison has no clock dependency at all).
+//! - **Directly proves both failure modes** of the pre-fix code: a spurious
+//!   write (B2 path) changes bytes; a lost-update write also changes bytes.
 //!
 //! ## Why no daemon?
 //!
@@ -48,20 +58,19 @@
 mod common;
 
 use std::io::Write as _;
-use std::time::Duration;
 
 use common::conversation_harness::setup_home;
 use famp::cli::await_cmd::{run_at as await_run_at, AwaitArgs};
 use famp_taskdir::{TaskDir, TaskRecord};
 
 #[tokio::test(flavor = "current_thread")]
-async fn commit_arrival_when_record_already_committed_does_not_spuriously_update_task_file() {
+async fn commit_arrival_when_record_already_committed_does_not_modify_task_file_bytes() {
     let tmp = setup_home();
     let home = tmp.path();
 
     // 1. Create a task record already in COMMITTED state. This means any
     //    arriving commit envelope triggers IllegalTransition inside
-    //    advance_committed() — the exact error path we want to surface.
+    //    advance_committed() — the exact error path we want to exercise.
     let task_id = uuid::Uuid::now_v7().to_string();
     let record = TaskRecord::new_committed(
         task_id.clone(),
@@ -72,21 +81,13 @@ async fn commit_arrival_when_record_already_committed_does_not_spuriously_update
     let tasks = TaskDir::open(&tasks_dir).unwrap();
     tasks.create(&record).expect("create task record");
 
-    // Small sleep so mtime-based checks are reliable (filesystem mtime
-    // resolution is typically 1s on macOS HFS+ / APFS, 1ns on ext4).
-    // We only need to distinguish "file was rewritten" from "file unchanged",
-    // so 10ms is more than enough for a monotonic mtime check.
-    tokio::time::sleep(Duration::from_millis(10)).await;
-
-    // Record the task file's mtime BEFORE calling await_run_at.
+    // 2. Snapshot the task file bytes BEFORE calling await_run_at.
+    //    Byte equality is clock-independent — no sleep needed.
     let task_file = tasks_dir.join(format!("{task_id}.toml"));
-    let mtime_before = std::fs::metadata(&task_file)
-        .expect("task file exists")
-        .modified()
-        .expect("mtime available");
+    let bytes_before = std::fs::read(&task_file).expect("read task file before await");
 
-    // 2. Inject a synthetic commit-class envelope into inbox.jsonl so
-    //    find_match will pick it up and the commit-receipt branch fires.
+    // 3. Inject a synthetic commit-class envelope into inbox.jsonl so
+    //    find_match picks it up and the commit-receipt branch fires.
     //
     //    The raw envelope format (see poll::find_match docs): for non-request
     //    classes, task_id is extracted from `causality["ref"]`. The shaped
@@ -111,7 +112,7 @@ async fn commit_arrival_when_record_already_committed_does_not_spuriously_update
     writeln!(inbox_file, "{}", serde_json::to_string(&line).unwrap()).expect("write inbox line");
     drop(inbox_file);
 
-    // 3. Run await_run_at. The commit envelope triggers the FSM branch;
+    // 4. Run await_run_at. The commit envelope triggers the FSM branch;
     //    advance_committed returns Err(IllegalTransition) because the record
     //    is already COMMITTED.
     let mut out: Vec<u8> = Vec::new();
@@ -126,24 +127,21 @@ async fn commit_arrival_when_record_already_committed_does_not_spuriously_update
     .await
     .expect("await_run_at should succeed (not crash on FSM error)");
 
-    // 4. Assertions.
+    // 5. Assertions.
     //
     // a) await_run_at returned Ok above — loop continues on FSM error, does not crash.
 
-    // b) The task file's mtime must be UNCHANGED. If mtime changed, it means
-    //    the buggy `tasks.update` was called spuriously even though the FSM
-    //    transition failed. Pre-fix: mtime HAS changed → FAILS (RED).
-    //    Post-fix: update is skipped on FSM error → mtime unchanged → PASSES.
-    let mtime_after = std::fs::metadata(&task_file)
-        .expect("task file still exists after await")
-        .modified()
-        .expect("mtime available");
-
+    // b) The task file bytes must be byte-identical. If bytes changed, a spurious
+    //    write occurred: either the old B2 bug (unconditional update on FSM Err)
+    //    or the lost-update race (stale snapshot overwrite). Both failure modes
+    //    mutate the file; byte equality catches both.
+    //    Pre-fix: bytes CHANGE → assertion FAILS (RED).
+    //    Post-fix: try_update skips persist on closure Err → bytes UNCHANGED → PASSES.
+    let bytes_after = std::fs::read(&task_file).expect("read task file after await");
     assert_eq!(
-        mtime_before, mtime_after,
-        "task file must NOT be rewritten on FSM error: mtime changed, \
-         indicating advance_committed's Err was swallowed and tasks.update \
-         was called spuriously (bug B2)"
+        bytes_before, bytes_after,
+        "task file bytes must NOT change on FSM error: spurious write detected \
+         (lost-update race or swallowed error) — quick-260425-ho8"
     );
 
     // c) On-disk state must be COMMITTED (unchanged — no double-write, no corruption).
@@ -169,7 +167,6 @@ use famp_keyring as _;
 use famp_taskdir as _;
 use famp_transport as _;
 use famp_transport_http as _;
-use gag as _;
 use hex as _;
 use humantime as _;
 use rand as _;

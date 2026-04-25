@@ -49,7 +49,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use famp_inbox::{read::read_from, InboxCursor, InboxLock};
-use famp_taskdir::TaskDir;
+use famp_taskdir::{TaskDir, TaskDirError, TryUpdateError};
 
 use crate::cli::error::{parse_duration, CliError};
 use crate::cli::send::fsm_glue::advance_committed;
@@ -164,28 +164,29 @@ pub async fn run_at(
                 let tasks_dir = paths::tasks_dir(home);
                 match TaskDir::open(&tasks_dir) {
                     Ok(tasks) => {
-                        // No matching local record — not our task; nothing to advance.
-                        // An Err from tasks.read is silently skipped (matches the
-                        // prior `if tasks.read(...).is_ok()` behavior — a commit
-                        // envelope for someone else's task is not an error here).
-                        if let Ok(mut record) = tasks.read(task_id_str) {
-                            // Run the FSM advance OUTSIDE the update closure so we
-                            // can observe the result. TaskDir::update's closure is
-                            // FnOnce(TaskRecord) -> TaskRecord with no Result, so
-                            // an in-closure error has nowhere to go.
-                            match advance_committed(&mut record) {
-                                Ok(_) => {
-                                    if let Err(e) = tasks.update(task_id_str, |_| record.clone()) {
-                                        eprintln!(
-                                            "famp await: failed to persist commit-advance for task {task_id_str}: {e}"
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "famp await: advance_committed failed for task {task_id_str}: {e}"
-                                    );
-                                }
+                        // Atomic read-modify-write: try_update reads fresh from disk,
+                        // hands the FRESH record to the closure, and only persists if
+                        // the closure returns Ok. No TOCTOU window between the read
+                        // and the FSM advance — the closure operates on whatever the
+                        // store hands it, NOT on a stale snapshot from a separate
+                        // read() call.
+                        match tasks.try_update(task_id_str, |mut record| {
+                            advance_committed(&mut record).map(|_| record)
+                        }) {
+                            // Happy path: persisted REQUESTED → COMMITTED.
+                            // NotFound: commit envelope for a task we don't own locally —
+                            // not an error. Matches prior behavior where a
+                            // `tasks.read(...).is_ok()` guard silently skipped this.
+                            Ok(_) | Err(TryUpdateError::Store(TaskDirError::NotFound { .. })) => {}
+                            Err(TryUpdateError::Closure(e)) => {
+                                eprintln!(
+                                    "famp await: advance_committed failed for task {task_id_str}: {e}"
+                                );
+                            }
+                            Err(TryUpdateError::Store(e)) => {
+                                eprintln!(
+                                    "famp await: failed to persist commit-advance for task {task_id_str}: {e}"
+                                );
                             }
                         }
                     }

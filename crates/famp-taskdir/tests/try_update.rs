@@ -57,9 +57,7 @@ fn try_update_closure_err_does_not_write() {
     let task_file = dir.path().join(format!("{task_id}.toml"));
     let bytes_before = std::fs::read(&task_file).expect("read before try_update");
 
-    let result = store.try_update(&task_id, |_r| {
-        Err::<TaskRecord, &str>("boom")
-    });
+    let result = store.try_update(&task_id, |_r| Err::<TaskRecord, &str>("boom"));
 
     assert!(
         matches!(result, Err(TryUpdateError::Closure("boom"))),
@@ -113,9 +111,12 @@ fn try_update_not_found_skips_closure() {
     let store = TaskDir::open(dir.path()).unwrap();
     let task_id = fresh_task_id(); // valid UUID but no file on disk
 
-    let result = store.try_update(&task_id, |_: TaskRecord| -> Result<TaskRecord, std::io::Error> {
-        panic!("closure must not run when read fails (NotFound)");
-    });
+    let result = store.try_update(
+        &task_id,
+        |_: TaskRecord| -> Result<TaskRecord, std::io::Error> {
+            panic!("closure must not run when read fails (NotFound)");
+        },
+    );
 
     assert!(
         matches!(
@@ -132,9 +133,12 @@ fn try_update_invalid_uuid_skips_closure() {
     let dir = TempDir::new().unwrap();
     let store = TaskDir::open(dir.path()).unwrap();
 
-    let result = store.try_update("not-a-uuid", |_: TaskRecord| -> Result<TaskRecord, std::io::Error> {
-        panic!("closure must not run when UUID is invalid");
-    });
+    let result = store.try_update(
+        "not-a-uuid",
+        |_: TaskRecord| -> Result<TaskRecord, std::io::Error> {
+            panic!("closure must not run when UUID is invalid");
+        },
+    );
 
     assert!(
         matches!(
