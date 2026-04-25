@@ -25,7 +25,7 @@ use famp_core::{AuthorityScope, MessageId, Principal};
 use famp_envelope::body::request::REQUEST_SCOPE_INSTRUCTIONS_KEY;
 use famp_envelope::body::{request::RequestBody, AckBody, Bounds, DeliverBody, TerminalStatus};
 use famp_envelope::{Causality, Relation, SignedEnvelope, Timestamp, UnsignedEnvelope};
-use famp_taskdir::{TaskDir, TaskRecord};
+use famp_taskdir::{TaskDir, TaskRecord, TryUpdateError};
 
 use crate::cli::config::{read_peers, write_peers_atomic, PeerEntry};
 use crate::cli::error::CliError;
@@ -509,13 +509,19 @@ fn persist_post_send(
         }
         SendMode::DeliverTerminal => {
             // Try to update existing record; if not found, create one.
-            match tasks.update(task_id, |mut r| {
+            //
+            // Mirrors await_cmd/mod.rs's commit-receipt branch (post quick-260425-ho8):
+            // try_update runs the FSM advance INSIDE the closure on a fresh-from-disk
+            // record, persists only on Ok, and surfaces Err via eprintln. This closes
+            // the B2-class "let _ = advance(...); let _ = update(...)" anti-pattern
+            // that swallowed errors AND produced spurious writes on FSM Err.
+            // (quick-260425-lny.)
+            match tasks.try_update(task_id, |mut r| {
                 r.last_send_at = Some(now_s.clone());
-                let _ = fsm_glue::advance_terminal(&mut r);
-                r
+                fsm_glue::advance_terminal(&mut r).map(|_| r)
             }) {
                 Ok(_) => {}
-                Err(famp_taskdir::TaskDirError::NotFound { .. }) => {
+                Err(TryUpdateError::Store(famp_taskdir::TaskDirError::NotFound { .. })) => {
                     // Create and immediately mark terminal for this received task.
                     let mut rec = TaskRecord::new_committed(
                         task_id.to_string(),
@@ -527,7 +533,16 @@ fn persist_post_send(
                     fsm_glue::advance_terminal(&mut rec)?;
                     tasks.create(&rec)?;
                 }
-                Err(e) => return Err(CliError::TaskDir(e)),
+                Err(TryUpdateError::Closure(e)) => {
+                    eprintln!(
+                        "famp send: advance_terminal failed for task {task_id}: {e}"
+                    );
+                }
+                Err(TryUpdateError::Store(e)) => {
+                    eprintln!(
+                        "famp send: failed to persist terminal-advance for task {task_id}: {e}"
+                    );
+                }
             }
         }
     }
