@@ -206,6 +206,40 @@ fn mcp_initialize_lists_four_tools() {
     }
 }
 
+/// The `famp_send` tool's `body` parameter description must explicitly call
+/// out that it is REQUIRED for `new_task` mode (so MCP clients understand
+/// that the title field alone won't carry content). Regression guard for
+/// the body-loss class of bugs (see quick task 260424-7z5).
+#[test]
+fn mcp_famp_send_body_description_flags_required_for_new_task() {
+    let mut h = McpHarness::new();
+    h.initialize();
+
+    h.send(&serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/list"
+    }));
+    let resp = h.recv();
+    let tools = resp["result"]["tools"].as_array().expect("tools array");
+    let send_tool = tools
+        .iter()
+        .find(|t| t["name"] == "famp_send")
+        .expect("famp_send tool present");
+    let body_desc = send_tool["inputSchema"]["properties"]["body"]["description"]
+        .as_str()
+        .expect("body.description string");
+
+    assert!(
+        body_desc.contains("REQUIRED for new_task"),
+        "body description must flag REQUIRED for new_task, got: {body_desc:?}"
+    );
+    assert!(
+        !body_desc.contains("Message content"),
+        "body description must not regress to generic 'Message content', got: {body_desc:?}"
+    );
+}
+
 /// `famp_send` with mode `new_task` returns a 36-char `task_id` UUID and a `state`.
 ///
 /// Starts an in-process `famp listen` daemon on an ephemeral port so that
