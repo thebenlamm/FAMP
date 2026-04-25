@@ -47,17 +47,18 @@ const PUBLIC: [u8; 32] = [
     0x0e, 0xe1, 0x72, 0xf3, 0xda, 0xa6, 0x23, 0x25, 0xaf, 0x02, 0x1a, 0x68, 0xf7, 0x07, 0x51, 0x1a,
 ];
 
-const FIXED_MESSAGE_ID: &str = "019f0000-0000-7000-8000-00000000pc70";
 const FIXED_TIMESTAMP: &str = "2026-04-25T00:00:00Z";
 const FIXTURE_BODY: &str = "Briefing part 1 of 2 — wait for follow-up deliver().";
 
 fn build_envelope_bytes(more_coming: Option<bool>) -> Vec<u8> {
     let sk = FampSigningKey::from_bytes(SECRET);
-    // Use a fixed UUID and timestamp so byte-exact comparison is
-    // meaningful across the two parallel builds.
+    // Fixed UUIDv7 + timestamp so byte-exact comparison across the two
+    // parallel builds is meaningful. The literal below IS the fixed id;
+    // the `pc7` task tag lives in the surrounding test-file name, not in
+    // the UUID (UUIDv7 hex must be valid hex — `pc70` would not parse).
     let id: MessageId = "019f0000-0000-7000-8000-000000000001"
         .parse()
-        .expect("FIXED_MESSAGE_ID is a valid UUIDv7");
+        .expect("hardcoded fixture UUIDv7");
     let from: Principal = "agent:example.test/alice".parse().unwrap();
     let to: Principal = "agent:example.test/bob".parse().unwrap();
     let ts = Timestamp(FIXED_TIMESTAMP.to_string());
@@ -123,9 +124,6 @@ fn more_coming_true_round_trips() {
             .and_then(|v| v.as_str()),
         Some(FIXTURE_BODY),
     );
-    // Suppress dead-code lint on FIXED_MESSAGE_ID — it documents the
-    // intended fixed-id origin even if not used directly.
-    let _ = FIXED_MESSAGE_ID;
 }
 
 #[test]
