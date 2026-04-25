@@ -18,6 +18,21 @@ use serde::{Deserialize, Serialize};
 /// cross-agent exchanges.
 pub const REQUEST_SCOPE_INSTRUCTIONS_KEY: &str = "instructions";
 
+/// Key under `RequestBody.scope` where the sender signals "I'm not done
+/// briefing — wait for follow-up `deliver`s before treating this task
+/// as ready to commit." Mirrors the `body.interim` flag on `deliver`
+/// envelopes (see `body/deliver.rs`).
+///
+/// Default convention: **omit the key entirely when false.** This keeps
+/// canonical bytes byte-exact with pre-existing signed envelopes that
+/// pre-date this field, so `verify_strict` continues to pass on legacy
+/// fixtures. Sender helpers MUST only insert the key when the caller
+/// explicitly opts in to `true`.
+///
+/// PROVISIONAL — addresses Gap G4 (orchestrator starvation). Quick
+/// task 260425-pc7.
+pub const REQUEST_SCOPE_MORE_COMING_KEY: &str = "more_coming";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestBody {
