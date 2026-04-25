@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-25 - Completed quick task 260425-of2: Tighten MCP body schema docstring (T1.2); workspace tests green
+Last activity: 2026-04-25 - Completed quick task 260425-pc7: Add scope.more_coming flag to new_task envelopes (T2.1, Gap G4); workspace tests + clippy green, all 8 daemons redeployed
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -85,6 +85,7 @@ v0.8 Progress: [████████████████████] 10
 | 260425-lny | Fix B2-class FSM error suppression at send/mod.rs:514 | 2026-04-25 | 22eacd3, 238e397 |  | [260425-lny-fix-b2-class-bug-at-send-mod-rs-514-surf](./quick/260425-lny-fix-b2-class-bug-at-send-mod-rs-514-surf/) |
 | 260425-m0f | Write scripts/redeploy-listeners.sh — safe rebuild + restart of all FAMP listeners (T1.3) | 2026-04-25 | af4c8e9, c018ed1 | Verified | [260425-m0f-write-scripts-redeploy-listeners-sh-safe](./quick/260425-m0f-write-scripts-redeploy-listeners-sh-safe/) |
 | 260425-of2 | Tighten MCP body schema docstring on famp_send (T1.2 / Fix B3) | 2026-04-25 | ccdb636, 1c6d4c5 | Verified | [260425-of2-t1-2-tighten-mcp-body-schema-docstring](./quick/260425-of2-t1-2-tighten-mcp-body-schema-docstring/) |
+| 260425-pc7 | Add scope.more_coming flag on new_task envelopes — sender signals "more briefing follows" (T2.1 / Gap G4) | 2026-04-25 | 0c00ade, 937c34a, 2f71fda, 2a386ba, 756208d, 70009d8 | Verified | [260425-pc7-add-more-coming-flag-to-new-task-envelop](./quick/260425-pc7-add-more-coming-flag-to-new-task-envelop/) |
 
 ## Session Continuity
 
