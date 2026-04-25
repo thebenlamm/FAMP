@@ -43,8 +43,7 @@ pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
                 Some(Value::Bool(b)) => *b,
                 Some(_) => {
                     return Err(CliError::SendArgsInvalid {
-                        reason: "famp_inbox: 'include_terminal' must be a boolean"
-                            .to_string(),
+                        reason: "famp_inbox: 'include_terminal' must be a boolean".to_string(),
                     });
                 }
             };

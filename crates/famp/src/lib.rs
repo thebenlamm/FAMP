@@ -22,11 +22,11 @@
 #[cfg(test)]
 use axum as _;
 use base64 as _;
-#[cfg(test)]
-use gag as _;
 use ed25519_dalek as _;
 use famp_transport as _;
 use famp_transport_http as _;
+#[cfg(test)]
+use gag as _;
 use rand as _;
 #[cfg(test)]
 use reqwest as _;

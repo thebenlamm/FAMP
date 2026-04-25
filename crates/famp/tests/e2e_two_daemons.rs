@@ -127,7 +127,13 @@ fn assert_list_filters_completed_task(home: &std::path::Path, task_id: &str) {
     }
 
     let mut unfiltered = Vec::<u8>::new();
-    run_list(home, None, /* include_terminal */ true, &mut unfiltered).unwrap();
+    run_list(
+        home,
+        None,
+        /* include_terminal */ true,
+        &mut unfiltered,
+    )
+    .unwrap();
     let unfiltered_text = String::from_utf8(unfiltered).unwrap();
     let matching = unfiltered_text
         .lines()

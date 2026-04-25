@@ -126,11 +126,7 @@ pub fn run_list(
 /// - `NotFound` / `InvalidUuid` → `false` (fail-open; surface entry).
 /// - `Ok(rec)`                   → `rec.terminal`.
 /// - any other error             → `true`  (fail-closed; hide entry + `eprintln`).
-fn is_terminal_cached(
-    td: &TaskDir,
-    task_id: &str,
-    cache: &mut HashMap<String, bool>,
-) -> bool {
+fn is_terminal_cached(td: &TaskDir, task_id: &str, cache: &mut HashMap<String, bool>) -> bool {
     if let Some(cached) = cache.get(task_id) {
         return *cached;
     }
@@ -143,9 +139,7 @@ fn is_terminal_cached(
         // surface it and move on.
         Err(TaskDirError::NotFound { .. } | TaskDirError::InvalidUuid { .. }) => false,
         Err(other) => {
-            eprintln!(
-                "famp inbox list: hiding entry for task_id={task_id}: {other}",
-            );
+            eprintln!("famp inbox list: hiding entry for task_id={task_id}: {other}",);
             true
         }
     };

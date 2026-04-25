@@ -16,11 +16,20 @@ use serde_json::json;
 #[test]
 fn extract_task_id_covers_every_message_class() {
     let cases: &[(MessageClass, &str)] = &[
-        (MessageClass::Request, "01913000-0000-7000-8000-00000000000a"),
+        (
+            MessageClass::Request,
+            "01913000-0000-7000-8000-00000000000a",
+        ),
         (MessageClass::Commit, "01913000-0000-7000-8000-00000000000b"),
-        (MessageClass::Deliver, "01913000-0000-7000-8000-00000000000c"),
+        (
+            MessageClass::Deliver,
+            "01913000-0000-7000-8000-00000000000c",
+        ),
         (MessageClass::Ack, "01913000-0000-7000-8000-00000000000d"),
-        (MessageClass::Control, "01913000-0000-7000-8000-00000000000e"),
+        (
+            MessageClass::Control,
+            "01913000-0000-7000-8000-00000000000e",
+        ),
     ];
 
     for (class, expected_tid) in cases {
@@ -39,8 +48,7 @@ fn extract_task_id_covers_every_message_class() {
         };
         let extracted = extract_task_id_for_test(&value);
         assert_eq!(
-            extracted,
-            *expected_tid,
+            extracted, *expected_tid,
             "class={class} extracted={extracted:?} expected={expected_tid:?}",
         );
     }
@@ -300,7 +308,11 @@ fn cli_inbox_list_respects_include_terminal_flag() {
         .env("FAMP_HOME", &home)
         .output()
         .expect("famp inbox list");
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(
         stdout.lines().count(),
@@ -314,7 +326,11 @@ fn cli_inbox_list_respects_include_terminal_flag() {
         .env("FAMP_HOME", &home)
         .output()
         .expect("famp inbox list --include-terminal");
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(
         stdout.lines().count(),
@@ -346,8 +362,8 @@ use serde as _;
 use sha2 as _;
 use thiserror as _;
 use time as _;
-use toml as _;
 use tokio as _;
+use toml as _;
 use tower as _;
 use tower_http as _;
 use url as _;

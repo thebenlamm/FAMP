@@ -23,6 +23,7 @@ use clap as _;
 use famp_inbox as _;
 use famp_taskdir as _;
 use famp_transport_http as _;
+use gag as _;
 use hex as _;
 use humantime as _;
 use rcgen as _;

@@ -6,8 +6,6 @@
 // else the lib pulls in transitively.
 use axum as _;
 use base64 as _;
-#[cfg(test)]
-use gag as _;
 use ed25519_dalek as _;
 use famp_canonical as _;
 use famp_core as _;
@@ -19,6 +17,8 @@ use famp_keyring as _;
 use famp_taskdir as _;
 use famp_transport as _;
 use famp_transport_http as _;
+#[cfg(test)]
+use gag as _;
 use hex as _;
 use humantime as _;
 use rand as _;

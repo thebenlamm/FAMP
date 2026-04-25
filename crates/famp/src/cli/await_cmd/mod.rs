@@ -162,12 +162,37 @@ pub async fn run_at(
             let task_id_str = value.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
             if class == "commit" && !task_id_str.is_empty() {
                 let tasks_dir = paths::tasks_dir(home);
-                if let Ok(tasks) = TaskDir::open(&tasks_dir) {
-                    if tasks.read(task_id_str).is_ok() {
-                        let _ = tasks.update(task_id_str, |mut r| {
-                            let _ = advance_committed(&mut r);
-                            r
-                        });
+                match TaskDir::open(&tasks_dir) {
+                    Ok(tasks) => {
+                        // No matching local record — not our task; nothing to advance.
+                        // An Err from tasks.read is silently skipped (matches the
+                        // prior `if tasks.read(...).is_ok()` behavior — a commit
+                        // envelope for someone else's task is not an error here).
+                        if let Ok(mut record) = tasks.read(task_id_str) {
+                            // Run the FSM advance OUTSIDE the update closure so we
+                            // can observe the result. TaskDir::update's closure is
+                            // FnOnce(TaskRecord) -> TaskRecord with no Result, so
+                            // an in-closure error has nowhere to go.
+                            match advance_committed(&mut record) {
+                                Ok(_) => {
+                                    if let Err(e) = tasks.update(task_id_str, |_| record.clone()) {
+                                        eprintln!(
+                                            "famp await: failed to persist commit-advance for task {task_id_str}: {e}"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "famp await: advance_committed failed for task {task_id_str}: {e}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "famp await: failed to open task dir while handling commit for {task_id_str}: {e}"
+                        );
                     }
                 }
             }

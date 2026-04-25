@@ -415,8 +415,8 @@ fn entries_from_response(resp: &serde_json::Value) -> Vec<serde_json::Value> {
     let text = resp["result"]["content"][0]["text"]
         .as_str()
         .unwrap_or_else(|| panic!("no text in response: {resp}"));
-    let parsed: serde_json::Value = serde_json::from_str(text)
-        .unwrap_or_else(|_| panic!("tool output not JSON: {text}"));
+    let parsed: serde_json::Value =
+        serde_json::from_str(text).unwrap_or_else(|_| panic!("tool output not JSON: {text}"));
     parsed["entries"]
         .as_array()
         .unwrap_or_else(|| panic!("no entries array: {parsed}"))
