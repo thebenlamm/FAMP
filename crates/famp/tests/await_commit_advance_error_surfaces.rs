@@ -36,15 +36,28 @@
 //!   the closure receives the FRESH record from disk on the `Ok` arm, closing
 //!   the TOCTOU window.
 //!
-//! ## Observable: byte equality (not mtime)
+//! ## Observable: sentinel survival (not just byte equality)
 //!
-//! The test snapshots the raw file bytes BEFORE calling `await_run_at` and
-//! asserts byte-equality AFTER. This is:
-//! - **Immune to filesystem mtime granularity** (macOS APFS mtime is 1 ns
-//!   but the test can still race in CI with 1-second HFS+ images; byte
-//!   comparison has no clock dependency at all).
-//! - **Directly proves both failure modes** of the pre-fix code: a spurious
-//!   write (B2 path) changes bytes; a lost-update write also changes bytes.
+//! The pre-260425-kbx version of this test snapshotted file bytes before
+//! and after `await_run_at` and asserted byte equality. That assertion
+//! was insufficient to discriminate the bug it claims to test: under the
+//! pre-c69b4e9 bug, `tasks.update` was called with `|_| record.clone()`
+//! after `advance_committed` returned `Err` — but the cloned record was
+//! UNMODIFIED, so `toml::to_string(&record)` produced byte-identical
+//! output to the original on-disk TOML. Byte equality would PASS under
+//! the old buggy code.
+//!
+//! The fix (quick-260425-kbx): inject a TRAILING TOML COMMENT into the
+//! task file out-of-band before invoking `await_run_at`. TOML comments
+//! are valid input (deserialization unaffected) but `toml::to_string`
+//! does NOT preserve them on round-trip. Therefore:
+//!
+//! - **No write occurred**: sentinel comment SURVIVES → test PASSES.
+//! - **Any write occurred** (benign re-serialize OR buggy spurious
+//!   write): sentinel comment is CLOBBERED → test FAILS.
+//!
+//! This is a strict discrimination test: it FAILS under the pre-c69b4e9
+//! racy/buggy code path even when bytes would otherwise be identical.
 //!
 //! ## Why no daemon?
 //!
@@ -63,8 +76,13 @@ use common::conversation_harness::setup_home;
 use famp::cli::await_cmd::{run_at as await_run_at, AwaitArgs};
 use famp_taskdir::{TaskDir, TaskRecord};
 
+// Sentinel string for `commit_arrival_when_record_already_committed_does_not_rewrite_task_file`.
+// Must be a module-level const to satisfy clippy::items_after_statements.
+// See test body for explanation of why a TOML comment sentinel discriminates the bug.
+const SENTINEL: &str = "\n# TEST_SENTINEL_DO_NOT_REWRITE\n";
+
 #[tokio::test(flavor = "current_thread")]
-async fn commit_arrival_when_record_already_committed_does_not_modify_task_file_bytes() {
+async fn commit_arrival_when_record_already_committed_does_not_rewrite_task_file() {
     let tmp = setup_home();
     let home = tmp.path();
 
@@ -81,10 +99,39 @@ async fn commit_arrival_when_record_already_committed_does_not_modify_task_file_
     let tasks = TaskDir::open(&tasks_dir).unwrap();
     tasks.create(&record).expect("create task record");
 
-    // 2. Snapshot the task file bytes BEFORE calling await_run_at.
-    //    Byte equality is clock-independent — no sleep needed.
+    // 2. Inject an out-of-band sentinel into the task file. This sentinel
+    //    is a trailing TOML COMMENT line — it lives in the file bytes but
+    //    is NOT part of the TaskRecord struct, so any future serde_toml
+    //    re-serialization will omit it. Survival of this sentinel after
+    //    `await_run_at` runs is a discriminating proof of "no write".
+    //
+    //    Why a comment line specifically: TOML allows trailing comments;
+    //    `toml::from_str` parses TaskRecord from the body just fine; the
+    //    sentinel does NOT affect deserialization. But `toml::to_string(&record)`
+    //    has no knowledge of comments and emits clean serialized output
+    //    without it. So:
+    //      - No write → sentinel survives (PASS).
+    //      - Any write (whether benign re-serialize or buggy spurious
+    //        write) → sentinel clobbered (FAIL).
     let task_file = tasks_dir.join(format!("{task_id}.toml"));
-    let bytes_before = std::fs::read(&task_file).expect("read task file before await");
+    {
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&task_file)
+            .expect("open task file for sentinel append");
+        f.write_all(SENTINEL.as_bytes())
+            .expect("append sentinel to task file");
+    }
+
+    // Sanity: confirm the sentinel is present pre-await, and the record
+    // still parses (sentinel is a valid TOML comment).
+    let pre = std::fs::read_to_string(&task_file).expect("read pre-await");
+    assert!(
+        pre.contains("TEST_SENTINEL_DO_NOT_REWRITE"),
+        "sentinel must be present BEFORE await_run_at runs (test setup integrity check)"
+    );
+    let _parse_check: TaskRecord =
+        toml::from_str(&pre).expect("sentinel must not break TOML parsing");
 
     // 3. Inject a synthetic commit-class envelope into inbox.jsonl so
     //    find_match picks it up and the commit-receipt branch fires.
@@ -104,17 +151,20 @@ async fn commit_arrival_when_record_already_committed_does_not_modify_task_file_
         "causality": { "ref": task_id },
         "body": {}
     });
-    let mut inbox_file = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(&inbox_path)
-        .expect("open inbox.jsonl for append");
-    writeln!(inbox_file, "{}", serde_json::to_string(&line).unwrap()).expect("write inbox line");
-    drop(inbox_file);
+    {
+        let mut inbox_file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&inbox_path)
+            .expect("open inbox.jsonl for append");
+        writeln!(inbox_file, "{}", serde_json::to_string(&line).unwrap())
+            .expect("write inbox line");
+    }
 
     // 4. Run await_run_at. The commit envelope triggers the FSM branch;
     //    advance_committed returns Err(IllegalTransition) because the record
-    //    is already COMMITTED.
+    //    is already COMMITTED. Under the post-ho8 `try_update` wiring, no
+    //    disk write occurs.
     let mut out: Vec<u8> = Vec::new();
     await_run_at(
         home,
@@ -127,28 +177,28 @@ async fn commit_arrival_when_record_already_committed_does_not_modify_task_file_
     .await
     .expect("await_run_at should succeed (not crash on FSM error)");
 
-    // 5. Assertions.
-    //
-    // a) await_run_at returned Ok above — loop continues on FSM error, does not crash.
+    // 5. Assertions — sentinel survival is the discriminating proof.
 
-    // b) The task file bytes must be byte-identical. If bytes changed, a spurious
-    //    write occurred: either the old B2 bug (unconditional update on FSM Err)
-    //    or the lost-update race (stale snapshot overwrite). Both failure modes
-    //    mutate the file; byte equality catches both.
-    //    Pre-fix: bytes CHANGE → assertion FAILS (RED).
-    //    Post-fix: try_update skips persist on closure Err → bytes UNCHANGED → PASSES.
-    let bytes_after = std::fs::read(&task_file).expect("read task file after await");
-    assert_eq!(
-        bytes_before, bytes_after,
-        "task file bytes must NOT change on FSM error: spurious write detected \
-         (lost-update race or swallowed error) — quick-260425-ho8"
+    // 5a. await_run_at returned Ok above — loop continues on FSM error.
+
+    // 5b. The sentinel must still be present. If a write occurred (whether
+    //     the OLD bug-class re-serialization or any future spurious write),
+    //     the sentinel comment would be gone because serde_toml does not
+    //     preserve TOML comments.
+    let post = std::fs::read_to_string(&task_file).expect("read post-await");
+    assert!(
+        post.contains("TEST_SENTINEL_DO_NOT_REWRITE"),
+        "sentinel was clobbered: a write occurred during await commit-receipt \
+         handling when the FSM advance returned Err. Bytes pre/post:\n\
+         ---PRE---\n{pre}\n---POST---\n{post}\n--- \
+         (quick-260425-kbx — RED guard for try_update closure-Err contract)"
     );
 
-    // c) On-disk state must be COMMITTED (unchanged — no double-write, no corruption).
+    // 5c. On-disk state must be COMMITTED (record must still parse + value unchanged).
     let rec = TaskDir::open(&tasks_dir).unwrap().read(&task_id).unwrap();
     assert_eq!(
         rec.state, "COMMITTED",
-        "state must be unchanged on FSM error (no double-write)"
+        "state must be unchanged on FSM error (no double-write, no corruption)"
     );
 }
 
