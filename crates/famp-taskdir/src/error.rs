@@ -42,3 +42,20 @@ pub enum TaskDirError {
     #[error("update mutated task_id from {original} to {next}; identity must be stable")]
     TaskIdChanged { original: String, next: String },
 }
+
+/// Error type for [`crate::TaskDir::try_update`].
+///
+/// Wraps either a closure-returned `E` (no disk write occurred) or a
+/// [`TaskDirError`] from the underlying read/validate/write path.
+/// Variants are narrow per CLAUDE.md ("phase-appropriate error enums").
+#[derive(Debug, thiserror::Error)]
+pub enum TryUpdateError<E> {
+    /// The closure returned an error — the atomic write was NOT performed.
+    /// The on-disk file is byte-identical to its pre-call state.
+    #[error("update closure failed")]
+    Closure(#[source] E),
+
+    /// Underlying store error (read, task_id-stability check, or write).
+    #[error(transparent)]
+    Store(#[from] TaskDirError),
+}

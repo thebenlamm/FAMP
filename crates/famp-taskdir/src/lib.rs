@@ -11,6 +11,6 @@ pub mod error;
 pub mod record;
 pub mod store;
 
-pub use error::TaskDirError;
+pub use error::{TaskDirError, TryUpdateError};
 pub use record::TaskRecord;
 pub use store::TaskDir;

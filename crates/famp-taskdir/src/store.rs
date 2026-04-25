@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::atomic::write_atomic_file;
-use crate::error::TaskDirError;
+use crate::error::{TaskDirError, TryUpdateError};
 use crate::record::TaskRecord;
 
 /// Directory-backed task record store.
@@ -116,6 +116,64 @@ impl TaskDir {
         write_atomic_file(&path, body.as_bytes()).map_err(|source| TaskDirError::Io {
             path: path.clone(),
             source,
+        })?;
+        Ok(next)
+    }
+
+    /// Read → fallible-mutate → atomic write. Returns the persisted record.
+    ///
+    /// This is the fallible sibling of [`Self::update`] for callers that need
+    /// to run a `Result`-returning mutation (e.g. an FSM advance that can
+    /// return `Err`) atomically inside the same read+write critical section.
+    ///
+    /// Contracts:
+    ///
+    /// - **Atomic with respect to the read step**: the closure receives the
+    ///   on-disk record and the persisted bytes derive from the closure's
+    ///   returned record — NOT a stale snapshot from a separate [`Self::read`]
+    ///   call made before this method. No TOCTOU window between the read and
+    ///   the persist.
+    /// - **On `Err` from the closure, NO disk write occurs**; the original
+    ///   file is byte-identical to its pre-call state.
+    /// - **`task_id` must be stable**: if the closure returns `Ok(record)`
+    ///   whose `task_id` differs from the input, the call returns
+    ///   `TryUpdateError::Store(TaskDirError::TaskIdChanged { .. })` with no
+    ///   write — same invariant as [`Self::update`].
+    ///
+    /// Reuses [`Self::read`], [`Self::path_for`], and [`write_atomic_file`]
+    /// — same atomicity/fsync/locking semantics as [`Self::update`]; no
+    /// duplicated code.
+    pub fn try_update<E, F>(
+        &self,
+        task_id: &str,
+        mutate: F,
+    ) -> Result<TaskRecord, TryUpdateError<E>>
+    where
+        F: FnOnce(TaskRecord) -> Result<TaskRecord, E>,
+    {
+        // Read fails → Store error; closure is never invoked.
+        let current = self.read(task_id)?;
+        // Closure error → no write; caller distinguishes via TryUpdateError::Closure.
+        let next = mutate(current).map_err(TryUpdateError::Closure)?;
+        // task_id stability (same invariant as update()).
+        if next.task_id != task_id {
+            return Err(TryUpdateError::Store(TaskDirError::TaskIdChanged {
+                original: task_id.to_string(),
+                next: next.task_id,
+            }));
+        }
+        let path = self.path_for(task_id)?;
+        let body = toml::to_string(&next).map_err(|source| {
+            TryUpdateError::Store(TaskDirError::TomlSerialize {
+                task_id: next.task_id.clone(),
+                source,
+            })
+        })?;
+        write_atomic_file(&path, body.as_bytes()).map_err(|source| {
+            TryUpdateError::Store(TaskDirError::Io {
+                path: path.clone(),
+                source,
+            })
         })?;
         Ok(next)
     }
