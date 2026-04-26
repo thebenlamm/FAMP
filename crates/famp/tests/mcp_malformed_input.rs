@@ -13,17 +13,24 @@ use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
+/// Spawn `famp mcp` with a fresh `local_root` containing one initialized
+/// identity 'alice'. After 01-03 the server starts unbound; callers that
+/// need to use messaging tools must perform initialize + `famp_register` first.
 fn spawn_mcp(home: &Path) -> (Child, ChildStdin, ChildStdout) {
+    // Set up local_root/agents/alice/ with famp init.
+    let agent_home = home.join("agents").join("alice");
+    std::fs::create_dir_all(&agent_home).expect("create agent dir");
     let status = Command::new(env!("CARGO_BIN_EXE_famp"))
         .args(["init"])
-        .env("FAMP_HOME", home)
+        .env("FAMP_HOME", &agent_home)
         .status()
         .expect("famp init");
     assert!(status.success(), "famp init failed: {status}");
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
         .args(["mcp"])
-        .env("FAMP_HOME", home)
+        .env("FAMP_LOCAL_ROOT", home)
+        .env_remove("FAMP_HOME")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -32,6 +39,33 @@ fn spawn_mcp(home: &Path) -> (Child, ChildStdin, ChildStdout) {
     let stdin = child.stdin.take().expect("stdin");
     let stdout = child.stdout.take().expect("stdout");
     (child, stdin, stdout)
+}
+
+/// Perform initialize + `famp_register` as 'alice' so that messaging tools
+/// are reachable. Consumes exactly 2 responses from stdout.
+fn initialize_and_register(stdin: &mut ChildStdin, stdout: &mut ChildStdout) {
+    let init = serde_json::json!({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+    });
+    let mut body = serde_json::to_string(&init).unwrap();
+    body.push('\n');
+    stdin.write_all(body.as_bytes()).expect("write init");
+    stdin.flush().expect("flush init");
+    let _ = recv_msg(stdout, Duration::from_secs(5));
+
+    let reg = serde_json::json!({
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": { "name": "famp_register", "arguments": { "identity": "alice" } }
+    });
+    let mut body2 = serde_json::to_string(&reg).unwrap();
+    body2.push('\n');
+    stdin.write_all(body2.as_bytes()).expect("write register");
+    stdin.flush().expect("flush register");
+    let reg_resp = recv_msg(stdout, Duration::from_secs(5));
+    assert!(
+        reg_resp.get("result").is_some(),
+        "famp_register failed: {reg_resp}"
+    );
 }
 
 fn recv_msg(stdout: &mut ChildStdout, timeout: Duration) -> serde_json::Value {
@@ -140,11 +174,14 @@ fn famp_inbox_list_rejects_non_bool_include_terminal() {
     let home = tempfile::tempdir().expect("tempdir");
     let (mut child, mut stdin, mut stdout) = spawn_mcp(home.path());
 
+    // After 01-03 the server starts unbound; register before using inbox.
+    initialize_and_register(&mut stdin, &mut stdout);
+
     // Send a tools/call with include_terminal as a string.
     // The server must reject it with a tool-level error, not coerce.
     let req = serde_json::json!({
         "jsonrpc": "2.0",
-        "id": 2,
+        "id": 10,
         "method": "tools/call",
         "params": {
             "name": "famp_inbox",
@@ -187,9 +224,12 @@ fn mcp_famp_send_rejects_non_bool_more_coming() {
     let home = tempfile::tempdir().expect("tempdir");
     let (mut child, mut stdin, mut stdout) = spawn_mcp(home.path());
 
+    // After 01-03 the server starts unbound; register before using famp_send.
+    initialize_and_register(&mut stdin, &mut stdout);
+
     let req = serde_json::json!({
         "jsonrpc": "2.0",
-        "id": 3,
+        "id": 10,
         "method": "tools/call",
         "params": {
             "name": "famp_send",

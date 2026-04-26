@@ -39,20 +39,15 @@ fn spawn_unbound() -> (
     BufReader<std::process::ChildStdout>,
     tempfile::TempDir,
 ) {
-    let home = tempfile::tempdir().unwrap();
-    // famp init satisfies resolve_famp_home; the suppression env var
-    // prevents mcp::mod::run from seeding the binding.
-    let status = Command::new(env!("CARGO_BIN_EXE_famp"))
-        .args(["init"])
-        .env("FAMP_HOME", home.path())
-        .status()
-        .expect("famp init");
-    assert!(status.success());
+    // After 01-03 the server starts unbound by default; no env-var seam needed.
+    // An empty local_root (no agents sub-dir) means no identity is registrable,
+    // but the server starts fine — the gating test never calls famp_register.
+    let local_root = tempfile::tempdir().unwrap();
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
         .args(["mcp"])
-        .env("FAMP_HOME", home.path())
-        .env("FAMP_TEST_SUPPRESS_BINDING_SEED", "1")
+        .env("FAMP_LOCAL_ROOT", local_root.path())
+        .env_remove("FAMP_HOME")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -60,7 +55,7 @@ fn spawn_unbound() -> (
         .expect("spawn famp mcp");
     let stdin = child.stdin.take().unwrap();
     let stdout = BufReader::new(child.stdout.take().unwrap());
-    (child, stdin, stdout, home)
+    (child, stdin, stdout, local_root)
 }
 
 fn assert_not_registered(resp: &serde_json::Value, tool_name: &str) {

@@ -55,23 +55,32 @@ struct McpHarness {
     child: Child,
     stdin: ChildStdin,
     stdout: ChildStdout,
+    /// After 01-03 this is the `FAMP_LOCAL_ROOT` (backing-store root), not the
+    /// per-identity agent home. Use `agent_home()` when you need the path that
+    /// was passed to `famp init` (i.e. `local_root/agents/alice/`).
     home: tempfile::TempDir,
 }
 
 impl McpHarness {
-    /// Spawn `famp mcp` with a fresh initialized FAMP home.
+    /// Spawn `famp mcp` with a fresh `local_root` containing one pre-initialized
+    /// identity 'alice', then perform the initialize handshake and register as
+    /// alice so that the existing test bodies (which use the four messaging
+    /// tools) keep working without modification.
     fn new() -> Self {
-        let home = tempfile::tempdir().expect("tempdir");
+        let local_root = tempfile::tempdir().expect("tempdir");
+        let agent_home = local_root.path().join("agents").join("alice");
+        std::fs::create_dir_all(&agent_home).expect("create agent dir");
         let status = Command::new(env!("CARGO_BIN_EXE_famp"))
             .args(["init"])
-            .env("FAMP_HOME", home.path())
+            .env("FAMP_HOME", &agent_home)
             .status()
             .expect("famp init");
         assert!(status.success(), "famp init failed: {status}");
 
         let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
             .args(["mcp"])
-            .env("FAMP_HOME", home.path())
+            .env("FAMP_LOCAL_ROOT", local_root.path())
+            .env_remove("FAMP_HOME")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -80,22 +89,60 @@ impl McpHarness {
 
         let stdin = child.stdin.take().expect("stdin");
         let stdout = child.stdout.take().expect("stdout");
-        Self {
+        let mut h = Self {
             child,
             stdin,
             stdout,
-            home,
-        }
+            home: local_root,
+        };
+
+        // Perform the MCP initialize handshake and register as alice so that
+        // callers who invoke h.initialize() again will just get a second
+        // (idempotent) initialize response, and the session is already bound.
+        send_msg(
+            &mut h.stdin,
+            &serde_json::json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
+            }),
+        );
+        let _ = recv_msg(&mut h.stdout, Duration::from_secs(5));
+
+        send_msg(
+            &mut h.stdin,
+            &serde_json::json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": { "name": "famp_register", "arguments": { "identity": "alice" } }
+            }),
+        );
+        let reg = recv_msg(&mut h.stdout, Duration::from_secs(5));
+        assert!(reg.get("result").is_some(), "register as alice failed: {reg}");
+
+        h
     }
 
-    /// Spawn `famp mcp` reusing an already-initialized `TempDir` home.
+    /// Spawn `famp mcp` reusing an already-initialized `TempDir` as the
+    /// backing store for identity 'alice'. The provided `home` dir is
+    /// placed (via symlink) at `local_root/agents/alice/` so the MCP
+    /// server can resolve the identity without copying files.
+    /// The caller retains ownership of `home` to keep it alive.
     ///
-    /// The caller retains ownership of the `TempDir` to keep it alive for the
-    /// duration of the test; the harness holds only the path string.
+    /// Returns `(child, stdin, stdout)` without performing the initialize
+    /// handshake — the caller is responsible for initialize + `famp_register`.
     fn with_home(home: &tempfile::TempDir) -> (Child, ChildStdin, ChildStdout) {
+        // Build a local_root with alice's home symlinked at agents/alice/.
+        let local_root = tempfile::tempdir().expect("tempdir for local_root");
+        let agents_dir = local_root.path().join("agents");
+        std::fs::create_dir_all(&agents_dir).expect("create agents dir");
+        // Symlink local_root/agents/alice -> home so the listener and MCP
+        // server share the same inode tree without file copying.
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(home.path(), agents_dir.join("alice"))
+            .expect("symlink alice -> home");
+
         let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
             .args(["mcp"])
-            .env("FAMP_HOME", home.path())
+            .env("FAMP_LOCAL_ROOT", local_root.path())
+            .env_remove("FAMP_HOME")
             // The MCP test exercises the real `famp send` code path, which
             // hits an unknown TLS leaf on first contact. Production now
             // refuses that without an explicit opt-in; tests opt in.
@@ -107,6 +154,9 @@ impl McpHarness {
             .expect("spawn famp mcp");
         let stdin = child.stdin.take().expect("stdin");
         let stdout = child.stdout.take().expect("stdout");
+        // Keep local_root alive by leaking it — it will be cleaned up when the
+        // test process exits.
+        std::mem::forget(local_root);
         (child, stdin, stdout)
     }
 
@@ -118,11 +168,18 @@ impl McpHarness {
         recv_msg(&mut self.stdout, Duration::from_secs(10))
     }
 
-    fn home(&self) -> &Path {
-        self.home.path()
+    /// Returns the agent home (`local_root/agents/alice/`) — the directory
+    /// where inbox, tasks, peers.toml and key.ed25519 live.
+    fn home(&self) -> std::path::PathBuf {
+        self.home.path().join("agents").join("alice")
     }
 
     /// Perform the MCP initialize handshake.
+    ///
+    /// Note: `McpHarness::new()` already performs the initialize + register
+    /// sequence during construction. Calling this again is idempotent (the
+    /// MCP server accepts re-initialize) and is kept here so existing test
+    /// bodies that call `h.initialize()` continue to compile.
     fn initialize(&mut self) {
         self.send(&serde_json::json!({
             "jsonrpc": "2.0",
@@ -148,7 +205,7 @@ impl McpHarness {
         }));
     }
 
-    /// Read the self pubkey (base64url) from `FAMP_HOME/key.ed25519`.
+    /// Read the self pubkey (base64url) from the agent's `key.ed25519`.
     fn self_pubkey_b64(&self) -> String {
         let key_bytes = std::fs::read(self.home().join("key.ed25519")).expect("key file");
         let key: [u8; 32] = key_bytes.try_into().expect("32 bytes");
@@ -160,7 +217,7 @@ impl McpHarness {
     /// Add a peer to `peers.toml` via the CLI entry point.
     fn add_peer(&self, alias: &str, endpoint: &str, pubkey_b64: &str, principal: Option<&str>) {
         famp::cli::peer::add::run_add_at(
-            self.home(),
+            &self.home(),
             alias.to_string(),
             endpoint.to_string(),
             pubkey_b64.to_string(),
@@ -169,6 +226,7 @@ impl McpHarness {
         .expect("peer add");
     }
 }
+
 
 impl Drop for McpHarness {
     fn drop(&mut self) {
@@ -179,7 +237,7 @@ impl Drop for McpHarness {
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
-/// `famp mcp` responds to initialize and advertises exactly four tools.
+/// `famp mcp` responds to initialize and advertises exactly six tools.
 #[test]
 fn mcp_initialize_lists_four_tools() {
     let mut h = McpHarness::new();
@@ -197,8 +255,8 @@ fn mcp_initialize_lists_four_tools() {
         .map(|t| t["name"].as_str().expect("tool name"))
         .collect();
 
-    assert_eq!(names.len(), 4, "expected exactly 4 tools, got: {names:?}");
-    for expected in &["famp_send", "famp_await", "famp_inbox", "famp_peers"] {
+    assert_eq!(names.len(), 6, "expected exactly 6 tools, got: {names:?}");
+    for expected in &["famp_send", "famp_await", "famp_inbox", "famp_peers", "famp_register", "famp_whoami"] {
         assert!(
             names.contains(expected),
             "missing tool {expected}, got: {names:?}"
@@ -294,6 +352,22 @@ fn mcp_famp_send_new_task_returns_structured() {
             "jsonrpc": "2.0",
             "method": "notifications/initialized"
         }),
+    );
+
+    // Register as alice before using any messaging tool (required after 01-03).
+    send_msg(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": { "name": "famp_register", "arguments": { "identity": "alice" } }
+        }),
+    );
+    let reg_resp = recv_msg(&mut stdout, Duration::from_secs(5));
+    assert!(
+        reg_resp.get("result").is_some(),
+        "famp_register failed: {reg_resp}"
     );
 
     // Call famp_send new_task.
@@ -460,7 +534,7 @@ fn entries_from_response(resp: &serde_json::Value) -> Vec<serde_json::Value> {
 #[test]
 fn famp_inbox_list_filters_terminal_by_default() {
     let mut h = McpHarness::new();
-    seed_filter_fixture(h.home());
+    seed_filter_fixture(&h.home());
     h.initialize();
 
     let resp = call_inbox_list(&mut h, None);
@@ -476,7 +550,7 @@ fn famp_inbox_list_filters_terminal_by_default() {
 #[test]
 fn famp_inbox_list_include_terminal_true_returns_all() {
     let mut h = McpHarness::new();
-    seed_filter_fixture(h.home());
+    seed_filter_fixture(&h.home());
     h.initialize();
 
     let resp = call_inbox_list(&mut h, Some(true));
