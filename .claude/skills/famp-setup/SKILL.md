@@ -1,127 +1,179 @@
+# Skill: famp-setup
+
+Set up FAMP (Federated Agent Messaging Protocol) on a Mac so that two or more
+Claude Code or Codex windows can exchange signed messages as distinct FAMP
+identities.
+
 ---
-name: famp-setup
-description: Set up FAMP identity for Claude Code MCP integration. Creates identity, selects port, outputs peer card for sharing with other agents.
+
+## Key model: one MCP server config per client, identity chosen per window
+
+As of v0.8.x, the `famp mcp` server starts **unbound**. The `.mcp.json` (or
+Codex equivalent) does **not** contain `FAMP_HOME` or any identity marker.
+Each Claude Code or Codex window calls `famp_register` once at session start
+to pick an identity.
+
+Identity backing store: `$FAMP_LOCAL_ROOT/agents/<name>/` (default
+`~/.famp-local/agents/<name>/`). Each identity directory is created by
+`famp-local wire` or `famp-local init`; it must contain a readable
+`config.toml`.
+
 ---
 
-# FAMP Setup for Claude Code
+## Recommended path: famp-local wrapper
 
-One-command setup for FAMP MCP integration with Claude Code.
+`scripts/famp-local` compresses the 8-step federation flow into one command.
 
-## What This Does
-
-1. Creates a FAMP identity (Ed25519 keypair, TLS cert)
-2. Selects an available port (auto-detects conflicts)
-3. Configures the agent with a unique principal
-4. Outputs a peer card for sharing with other agents
-
-## Invocation
-
-```
-/famp-setup                    — Set up default agent named "self"
-/famp-setup alice              — Set up agent named "alice"
-/famp-setup --connect          — Set up and connect to another agent
-```
-
-## Workflow
-
-### Step 1: Check Current State
-
-First, check if this session already has FAMP configured:
+### Step 1 — Wire each repo directory
 
 ```bash
-ls -la $FAMP_HOME 2>/dev/null || echo "No FAMP_HOME set"
+scripts/famp-local wire ~/Workspace/RepoA
+scripts/famp-local wire ~/Workspace/RepoB
+# Override identity name if the repo basename doesn't fit:
+scripts/famp-local wire ~/Workspace/God --as architect
 ```
 
-If FAMP_HOME is set and initialized, use `famp info` to show the existing peer card.
-If not configured, proceed to Step 2.
+`wire` creates the identity (if new), starts a daemon, exchanges peer cards
+with existing agents, and drops a project-scoped `.mcp.json` in the target
+directory. The `.mcp.json` contains only `command` + `args` — no `FAMP_HOME`.
 
-### Step 2: Determine Agent Name
+### Step 2 — Restart the client window
 
-If the user provided a name (e.g., `/famp-setup alice`), use it.
-Otherwise, ask using AskUserQuestion:
+Claude Code: restart the window for that repo. The new `.mcp.json` is picked
+up on restart.
 
-> What name should this agent use? (e.g., "alice", "bob", "main")
-> This will be used for the principal (agent:localhost/<name>) and suggested alias.
-
-### Step 3: Run Setup
-
-Execute the setup command:
+Codex (user-scope registration): run once, then restart:
 
 ```bash
-# Build if needed (run from the FAMP repo root)
-cargo build --release 2>&1 | tail -3
-
-# Run setup with explicit home to avoid conflicts
-./target/release/famp setup --name <NAME> --home /tmp/famp-<NAME>
+scripts/famp-local mcp-add --client codex RepoA RepoB
 ```
 
-### Step 4: Configure MCP (if needed)
+### Step 3 — Register in every new window (required before messaging)
 
-Check if `.mcp.json` exists in the project root. If so, offer to add this agent:
+In each Claude Code or Codex window after it opens, call `famp_register`:
+
+```text
+register as RepoA
+```
+
+Or directly via the MCP tool:
+
+```json
+{ "tool": "famp_register", "arguments": { "identity": "RepoA" } }
+```
+
+Until `famp_register` succeeds, `famp_send`, `famp_inbox`, `famp_await`, and
+`famp_peers` all return a typed `not_registered` error.
+
+Use `famp_whoami` to confirm the binding:
+
+```json
+{ "identity": "RepoA", "source": "explicit" }
+```
+
+### Step 4 — Send messages
+
+```text
+send a message to RepoB saying hello
+```
+
+The window's MCP client invokes `famp_send`; the message arrives at `RepoB`'s
+inbox. The receiving window polls with `famp_await` or `famp_inbox`.
+
+---
+
+## Minimal manual .mcp.json (no wrapper)
+
+If you are not using `scripts/famp-local`:
 
 ```json
 {
   "mcpServers": {
-    "famp-<NAME>": {
-      "command": "<absolute-path-to>/FAMP/target/release/famp",
-      "args": ["mcp"],
-      "env": { "FAMP_HOME": "/tmp/famp-<NAME>" }
+    "famp": {
+      "command": "/absolute/path/to/famp",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-Tell the user they need to restart Claude Code for MCP changes to take effect.
+Do **not** add `FAMP_HOME` to the `env` block — that pattern was removed in
+v0.8.x. Identity is chosen at runtime via `famp_register`.
 
-### Step 5: Share Peer Card
+Optional: set `FAMP_LOCAL_ROOT` to point at a non-default backing store:
 
-The setup command outputs a peer card JSON. Tell the user:
-
-> **Your peer card (share this with other agents):**
-> ```json
-> <peer card output>
-> ```
->
-> To connect with another agent:
-> 1. Get their peer card JSON
-> 2. Run: `echo '<their-card>' | FAMP_HOME=/tmp/famp-<NAME> famp peer import`
-
-### Step 6: Start Daemon (optional)
-
-Ask if the user wants to start the daemon now:
-
-```bash
-FAMP_HOME=/tmp/famp-<NAME> ./target/release/famp listen &
+```json
+{
+  "mcpServers": {
+    "famp": {
+      "command": "/absolute/path/to/famp",
+      "args": ["mcp"],
+      "env": { "FAMP_LOCAL_ROOT": "/path/to/custom-root" }
+    }
+  }
+}
 ```
 
-Note: The daemon must be running for other agents to send messages to this one.
+---
 
-## Connect Mode (--connect)
+## Federation CLI (manual, cross-machine)
 
-If invoked with `--connect`, after setup:
+These commands still use `FAMP_HOME` per identity — that has not changed. Use
+this path for cross-machine setups or when you need explicit control over
+ports, keypairs, and TOFU pinning.
 
-1. Ask for the other agent's peer card JSON
-2. Import it: `echo '<card>' | FAMP_HOME=/tmp/famp-<NAME> famp peer import`
-3. Show how to send a test message via MCP
+```bash
+# Create two identities with separate HOME dirs
+famp setup --name alice --home /tmp/famp-alice --port 8443
+famp setup --name bob   --home /tmp/famp-bob   --port 8444
+
+# Exchange peer cards
+FAMP_HOME=/tmp/famp-alice famp info | FAMP_HOME=/tmp/famp-bob famp peer import
+FAMP_HOME=/tmp/famp-bob   famp info | FAMP_HOME=/tmp/famp-alice famp peer import
+
+# Start daemons
+FAMP_HOME=/tmp/famp-alice famp listen &
+FAMP_HOME=/tmp/famp-bob   famp listen &
+
+# Send (TOFU bootstrap required on first contact)
+FAMP_TOFU_BOOTSTRAP=1 FAMP_HOME=/tmp/famp-alice famp send \
+  --to bob --new-task "hello from alice"
+
+# Read Bob's inbox
+FAMP_HOME=/tmp/famp-bob famp inbox list
+```
+
+After initial TOFU pinning, subsequent sends drop the `FAMP_TOFU_BOOTSTRAP=1`
+flag. The fingerprint in `peers.toml` is the trust anchor from that point on.
+
+---
+
+## MCP six-tool surface
+
+| Tool | When to call | Notes |
+|---|---|---|
+| `famp_register` | **First, every new window** | Binds session to identity; idempotent |
+| `famp_whoami` | Debug / confirm binding | Never errors; returns `null` if unregistered |
+| `famp_send` | Send a message | Requires prior `famp_register` |
+| `famp_inbox` | List active inbox entries | Filters terminal tasks by default |
+| `famp_await` | Wait for next message (real-time) | Use this to detect task completion |
+| `famp_peers` | List or add peers | Requires prior `famp_register` |
+
+---
 
 ## Troubleshooting
 
-### Port Already in Use
+**`not_registered` on first tool call** — run `famp_register` with the
+identity name, then retry. Re-running `scripts/famp-local wire <dir>` migrates
+old `.mcp.json` files that still had `FAMP_HOME` (pre-v0.8.x wired repos).
 
-If setup fails with port conflict, specify a port explicitly:
-```bash
-./target/release/famp setup --name <NAME> --home /tmp/famp-<NAME> --port 8444
-```
+**`unknown_identity` from `famp_register`** — the `~/.famp-local/agents/<name>/`
+directory doesn't exist or is missing `config.toml`. Wire the repo first:
+`scripts/famp-local wire <dir> --as <name>`.
 
-### MCP Not Working
+**Two windows, same identity** — both windows register as the same name and
+share the same inbox. Concurrent `famp_await` calls: the second returns
+`LockHeld { pid }` — this is expected v0.8 behavior.
 
-1. Check the daemon is running: `ps aux | grep "famp listen"`
-2. Check MCP config is correct in `.mcp.json`
-3. Restart Claude Code after MCP config changes
-
-### Peer Import Failed
-
-Ensure the peer card JSON is valid:
-```bash
-echo '{"alias":"bob","endpoint":"https://127.0.0.1:8443","pubkey":"...","principal":"agent:localhost/bob"}' | jq .
-```
+**Daemon not running** — `scripts/famp-local status` shows daemon state.
+Restart with `scripts/famp-local stop && scripts/famp-local init <names>`.
