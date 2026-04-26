@@ -138,6 +138,19 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
             },
         ),
         (
+            "PeerCardInvalid",
+            CliError::PeerCardInvalid {
+                reason: "missing pubkey".to_string(),
+            },
+        ),
+        (
+            "InvalidAgentName",
+            CliError::InvalidAgentName {
+                name: "bad name".to_string(),
+                reason: "contains whitespace".to_string(),
+            },
+        ),
+        (
             "TaskNotFound",
             CliError::TaskNotFound {
                 task_id: "abc".to_string(),
@@ -243,6 +256,17 @@ fn all_variant_kinds() -> Vec<(&'static str, String)> {
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
+// NOTE on test name vs. actual scope: this test only verifies that every
+// variant *present in the fixture lists* (variants_a / variants_b /
+// variants_c) returns a non-empty mcp_error_kind() string. It does NOT
+// statically verify that every CliError variant in the source is present
+// in the fixture — Rust has no zero-cost reflection that would let us
+// enumerate enum variants at runtime. Compile-time exhaustiveness for the
+// match itself is enforced inside `mcp_error_kind()` (no `_ =>` arm), so
+// adding a CliError variant without an arm is a build failure. Adding a
+// variant without a fixture row, however, is silent — verified manually.
+// (tey LOW-2 honesty fix; PeerCardInvalid + InvalidAgentName fixture rows
+// added the same patch.)
 #[test]
 fn every_variant_has_mcp_kind() {
     for (variant, kind) in all_variant_kinds() {
