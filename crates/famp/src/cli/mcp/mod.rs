@@ -17,6 +17,7 @@
 
 pub mod error_kind;
 pub mod server;
+pub mod session;
 pub mod tools;
 
 use crate::cli::error::CliError;
