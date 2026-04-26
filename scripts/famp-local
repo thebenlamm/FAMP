@@ -712,6 +712,13 @@ ENVIRONMENT
   FAMP_LOCAL_ROOT      State dir (default: ~/.famp-local).
   FAMP_LOCAL_BASE_PORT First port to try when auto-assigning (default: 8443).
 
+MCP USAGE
+  After 'wire <dir>', restart the Claude Code or Codex window for that repo.
+  In every new window, register the identity before sending messages:
+    "register as <name>"   (or call famp_register with identity=<name>)
+  Without this step, famp_send / famp_inbox / famp_await / famp_peers
+  return a typed 'not_registered' error.
+
 EXAMPLE
   $ famp-local init alice bob
   $ famp-local wire ~/Workspace/MyRepo
