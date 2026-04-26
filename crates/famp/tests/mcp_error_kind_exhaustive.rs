@@ -138,19 +138,6 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
             },
         ),
         (
-            "PeerCardInvalid",
-            CliError::PeerCardInvalid {
-                reason: "missing pubkey".to_string(),
-            },
-        ),
-        (
-            "InvalidAgentName",
-            CliError::InvalidAgentName {
-                name: "bad name".to_string(),
-                reason: "contains whitespace".to_string(),
-            },
-        ),
-        (
             "TaskNotFound",
             CliError::TaskNotFound {
                 task_id: "abc".to_string(),
@@ -221,13 +208,25 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
     ]
 }
 
-/// Variants added after the original split — kept separate so neither
+/// Variants kept out of the original split so neither
 /// `variants_a` nor `variants_b` exceeds the 100-line `clippy::pedantic`
 /// threshold. Same precedent as the original `_a`/`_b` split (see comment
-/// on `variants_a` above). Currently holds the rz6 additions
-/// (`FsmTransition`, `InvalidTaskState`).
+/// on `variants_a` above).
 fn variants_c() -> Vec<(&'static str, CliError)> {
     vec![
+        (
+            "PeerCardInvalid",
+            CliError::PeerCardInvalid {
+                reason: "missing pubkey".to_string(),
+            },
+        ),
+        (
+            "InvalidAgentName",
+            CliError::InvalidAgentName {
+                name: "bad name".to_string(),
+                reason: "contains whitespace".to_string(),
+            },
+        ),
         (
             "FsmTransition",
             CliError::FsmTransition(famp_fsm::TaskFsmError::IllegalTransition {
