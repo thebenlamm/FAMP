@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-04-14 with v0.8 Current Milestone sectio
 Phase: 04 (mcp-server-e2e) — COMPLETE
 Plan: 3/3 complete
 Status: All v0.8 phases shipped
-Last activity: 2026-04-25 - Completed quick task 260425-sl0: Filed three Tier-3 backlog items (999.3 heartbeat, 999.4 user_attention, 999.5 spec-by-path deferral to v1.0)
+Last activity: 2026-04-25 - Completed quick task 260425-so2: Absorbed cargo fmt drift in send/mod.rs — closes the resume-doc punch list
 
 ```
 v0.8 Progress: [████████████████████] 100% (4/4 phases)
@@ -89,11 +89,13 @@ v0.8 Progress: [████████████████████] 10
 | 260425-re1 | README "Verifying a redeploy succeeded" subsection (T2.2 spot-check follow-up) | 2026-04-25 | 5f78651 | Verified | [260425-re1-t2-2-readme-redeploy-verification-spot-c](./quick/260425-re1-t2-2-readme-redeploy-verification-spot-c/) |
 | 260425-rz6 | Fix CliError::Envelope masking FSM transition errors — add FsmTransition + InvalidTaskState variants (adversarial review bonus) | 2026-04-25 | e749af7, 7932389, 33747bc | Verified | [260425-rz6-fix-clierror-envelope-masking-fsm-transi](./quick/260425-rz6-fix-clierror-envelope-masking-fsm-transi/) |
 | 260425-sl0 | File three Tier-3 backlog items as Phase 999.3/4/5 (heartbeat, user_attention, spec-by-path deferral to v1.0) — T3.x | 2026-04-25 | 6bce7e2 | Verified | [260425-sl0-t3-x-file-three-backlog-items-999-3-999-](./quick/260425-sl0-t3-x-file-three-backlog-items-999-3-999-/) |
+| 260425-so2 | Absorb cargo fmt drift in send/mod.rs (closes resume-doc punch list) | 2026-04-25 | 0807ef9 | Verified | [260425-so2-absorb-format-drift-in-send-mod-rs-after](./quick/260425-so2-absorb-format-drift-in-send-mod-rs-after/) |
 
 ## Session Continuity
 
 ### Recent Activity
 
+- **2026-04-25:** Completed quick task 260425-so2: Absorbed `cargo fmt` drift in `crates/famp/src/cli/send/mod.rs` (line-collapse on a `use` import and an `eprintln!`, both stylistic, both introduced during today's pc7/lny/rz6 commits). `cargo fmt --all -- --check` now exits 0 from a clean tree. Pure formatting; no semantic change. Commit `0807ef9`. **This closes the resume-doc punch list — all 12 items shipped today.**
 - **2026-04-25:** Completed quick task 260425-sl0: Filed three Tier-3 backlog items (T3.x) into ROADMAP.md as Phase 999.3 (`heartbeat` envelope class — G3 work-in-progress visibility), 999.4 (`user_attention` envelope class — G5 human-in-loop primitive), and 999.5 (spec-by-path tracking — G2, **deferred to v1.0 federation gateway, NOT promoted independently**). Each entry carries Goal/Context/Plans matching the existing 999.1/999.2 template and references the resume doc evidence trail. Filings only — no code, no tests. Commit `6bce7e2`.
 - **2026-04-25:** Completed quick task 260425-rz6: Fix `CliError::Envelope` masking FSM transition errors (adversarial review bonus). Three error categories were being shoehorned into the `Envelope` variant in `crates/famp/src/cli/send/fsm_glue.rs` (parse_state failure, advance_committed FSM step, advance_terminal FSM step) — top-line stderr said `"envelope encode/sign failed"` even when nothing failed to encode/sign, and MCP `famp_error_kind` returned `"envelope_error"` for FSM rejections (real API mismatch for MCP consumers). Added two new variants: `FsmTransition(#[from] famp_fsm::TaskFsmError)` → `"fsm_transition_illegal"` and `InvalidTaskState { value }` → `"invalid_task_state"`. Drops the `.map_err(|e| CliError::Envelope(Box::new(e)))` boilerplate at the three sites; legitimate Envelope mappings in `send/mod.rs:415,418,481,482` left untouched. Workspace tests green; clippy clean. CLI-only — no daemon redeploy required. Commits `e749af7` (RED) + `7932389` (GREEN) + `33747bc` (exhaustive coverage).
 - **2026-04-25:** Completed quick task 260425-re1: README "Verifying a redeploy succeeded" subsection (T2.2). Spot-check found 2/3 of resume-doc checklist already covered by 260425-m0f's README addition (daemon.pid path ✅, script link ✅), but the "how to verify a redeploy succeeded" item was missing. Added 6-line subsection pointing operators at four independent signals: script exit code + final "all N agent(s) cycled cleanly" line, per-agent summary table, fresh `listening on https://...` beacon in daemon.log via `tail -1`, and binary-timestamp check via `ls -l ~/.cargo/bin/famp`. README-only; no code touched. Commit `5f78651`.
