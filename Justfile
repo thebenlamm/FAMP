@@ -50,6 +50,12 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
+# Install the repo-local git hooks (fast pre-commit fmt-check, mirrors CI).
+# One-time per clone. Bypass with `git commit --no-verify` if needed.
+install-hooks:
+    git config core.hooksPath .githooks
+    @echo "✓ git hooks installed (.githooks/) — pre-commit will run cargo fmt --check"
+
 # Run `cargo audit` for RustSec advisories
 audit:
     cargo audit

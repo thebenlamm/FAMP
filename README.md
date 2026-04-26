@@ -111,7 +111,10 @@ rustc --version
 cargo install cargo-nextest --locked
 cargo install just --locked
 
-# 5. Verify the workspace
+# 5. Install repo-local git hooks (pre-commit fmt-check, mirrors CI)
+just install-hooks
+
+# 6. Verify the workspace
 just ci
 ```
 

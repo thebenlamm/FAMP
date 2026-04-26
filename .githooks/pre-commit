@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# FAMP pre-commit hook — fast CI-parity gate.
+#
+# Mirrors the `fmt-check` GitHub Actions job. Heavier checks
+# (clippy, tests, audit, spec-lint) are intentionally NOT run here —
+# run `just ci` before pushing for full parity.
+#
+# Bypass with `git commit --no-verify` only if you have a real reason.
+
+set -euo pipefail
+
+# Skip when no Rust files are staged — keeps doc-only commits fast.
+if ! git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.rs$'; then
+    exit 0
+fi
+
+# Some shells (e.g. GUI git clients) don't inherit ~/.cargo/bin on PATH.
+if ! command -v cargo >/dev/null 2>&1; then
+    if [ -x "$HOME/.cargo/bin/cargo" ]; then
+        export PATH="$HOME/.cargo/bin:$PATH"
+    else
+        echo "pre-commit: cargo not found on PATH; cannot run fmt-check" >&2
+        echo "  install rustup or remove core.hooksPath to bypass" >&2
+        exit 1
+    fi
+fi
+
+if ! cargo fmt --all -- --check; then
+    echo
+    echo "✗ pre-commit: rustfmt diff detected (this would fail CI fmt-check)."
+    echo "  Fix:  just fmt   # or: cargo fmt --all"
+    echo "  Then re-stage and commit again."
+    exit 1
+fi
