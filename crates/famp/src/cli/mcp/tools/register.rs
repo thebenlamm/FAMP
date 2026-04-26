@@ -21,7 +21,7 @@ use serde_json::Value;
 use crate::cli::error::CliError;
 use crate::cli::mcp::session::{self, BindingSource, IdentityBinding};
 
-/// Validate that `name` matches the regex `[A-Za-z0-9_-]+` (one or more
+/// Validate that `name` matches the pattern `[A-Za-z0-9_-]+` (one or more
 /// chars from the allowed set, no other chars).
 fn validate_identity_name(name: &str) -> Result<(), CliError> {
     if name.is_empty() {
