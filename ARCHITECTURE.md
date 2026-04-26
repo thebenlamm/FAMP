@@ -16,13 +16,24 @@ envelope, no exceptions (INV-10). Five message classes: `request`,
 (`famp-fsm`): REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED},
 all terminal absorbing.
 
-The MCP server (`famp mcp`, stdio JSON-RPC) exposes
-`famp_send`, `famp_inbox`, `famp_await`, `famp_peers` as tools, each
-operating against the `FAMP_HOME` the MCP process was spawned with.
-`famp_inbox` action=list hides entries for tasks that reached a
-terminal FSM state (opt back in with `include_terminal: true`);
-`famp_await` stays unfiltered and is the canonical real-time signal
-for task completion.
+The MCP server (`famp mcp`, stdio JSON-RPC) exposes six tools:
+`famp_register`, `famp_whoami`, `famp_send`, `famp_inbox`, `famp_await`,
+`famp_peers`. The server starts **unbound** — identity is not read from
+`FAMP_HOME` at startup. Each window calls `famp_register` once at session
+start to bind an identity by name; the name resolves to
+`$FAMP_LOCAL_ROOT/agents/<name>/` (default `~/.famp-local/agents/<name>/`).
+Pre-registration calls to `famp_send`, `famp_inbox`, `famp_await`, and
+`famp_peers` return a typed `not_registered` error. `famp_whoami` reports
+the current binding and never errors. `famp_inbox` action=list hides
+entries for tasks that reached a terminal FSM state (opt back in with
+`include_terminal: true`); `famp_await` stays unfiltered and is the
+canonical real-time signal for task completion.
+
+Note: the federation transport side (`famp listen`, `famp setup`,
+`famp send`, `famp peer import`) still reads `FAMP_HOME` per identity —
+each identity's keypair, TLS cert, and durable inbox live under that
+directory. The bifurcation (MCP session-bound; federation `FAMP_HOME`-based)
+is intentional and collapses when v0.9's local bus replaces the transport.
 
 ## v0.9 direction — local-first bus (in design)
 
@@ -41,9 +52,15 @@ The v0.9 re-scope introduces a **local bus**:
   broadcast.
 - Durable per-name mailboxes (reuses `famp-inbox` format) so offline
   recipients queue rather than fail.
-- Stable MCP tool surface (`famp_register`, `famp_send`, `famp_inbox`,
-  `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) —
-  the same surface that will gain transparent remote routing in v1.0.
+- Stable MCP tool surface — v0.9 inherits `famp_register`, `famp_whoami`,
+  `famp_send`, `famp_inbox`, `famp_await`, `famp_peers` unchanged from
+  v0.8.x (where `famp_register` and `famp_whoami` first shipped as part
+  of the session-bound identity bridge phase). v0.9 adds `famp_join` and
+  `famp_leave` for IRC-style channel support; the register/whoami contract
+  is not altered. The full v0.9 surface:
+  `famp_register`, `famp_whoami`, `famp_send`, `famp_inbox`, `famp_await`,
+  `famp_peers`, `famp_join`, `famp_leave` — the same contract that will
+  gain transparent remote routing in v1.0.
 
 **Layer split:**
 
