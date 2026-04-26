@@ -19,7 +19,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0 OR MIT"
-repository = "https://github.com/benlamm/FAMP"
+repository = "https://github.com/thebenlamm/FAMP"
 authors = ["FAMP contributors"]
 
 [workspace.dependencies]

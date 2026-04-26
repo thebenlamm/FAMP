@@ -15,3 +15,20 @@ Cargo.lock.bak
 
 # Local Claude Code MCP server config (user-specific paths).
 .mcp.json
+
+# Maintainer's private working artifacts. The curated public history
+# lives in docs/history/. See docs/history/README.md for what stays
+# public and why.
+.planning/
+.codebase-review/
+learned-rules.md
+HANDOFF-*.md
+
+# Defensive: never commit secrets, keystores, or per-identity FAMP_HOME state
+.env
+.env.*
+*.pem
+!crates/famp/tests/fixtures/**/*.pem
+signing.key
+identity.json
+FAMP_HOME/

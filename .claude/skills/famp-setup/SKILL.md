@@ -48,8 +48,8 @@ Otherwise, ask using AskUserQuestion:
 Execute the setup command:
 
 ```bash
-# Build if needed
-cd /home/ubuntu/Workspace/FAMP && cargo build --release 2>&1 | tail -3
+# Build if needed (run from the FAMP repo root)
+cargo build --release 2>&1 | tail -3
 
 # Run setup with explicit home to avoid conflicts
 ./target/release/famp setup --name <NAME> --home /tmp/famp-<NAME>
@@ -63,7 +63,7 @@ Check if `.mcp.json` exists in the project root. If so, offer to add this agent:
 {
   "mcpServers": {
     "famp-<NAME>": {
-      "command": "/home/ubuntu/Workspace/FAMP/target/release/famp",
+      "command": "<absolute-path-to>/FAMP/target/release/famp",
       "args": ["mcp"],
       "env": { "FAMP_HOME": "/tmp/famp-<NAME>" }
     }

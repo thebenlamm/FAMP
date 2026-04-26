@@ -1,6 +1,14 @@
 # FAMP — Federated Agent Messaging Protocol (Rust reference implementation)
 
+[![CI](https://github.com/thebenlamm/FAMP/actions/workflows/ci.yml/badge.svg)](https://github.com/thebenlamm/FAMP/actions/workflows/ci.yml)
+[![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
+[![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](rust-toolchain.toml)
+
 **Status:** `v0.8 Usable from Claude Code; Codex supported via user-scope MCP registration`
+
+> **On the version numbers:** FAMP v0.5.1 is the protocol spec; v0.6 / v0.7 / v0.8 are
+> implementation milestones (all shipped); v0.9 (local-first bus) is in design and v1.0
+> (federation profile) follows. The library version in `Cargo.toml` is `0.1.0` pre-release.
 
 FAMP is a Rust implementation of the Federated Agent Messaging Protocol.
 
@@ -302,10 +310,6 @@ The MCP server exposes four tools:
 - `famp_await` — block until new messages arrive (poll-free inter-agent dialogue; unfiltered — the canonical real-time signal for task completion)
 - `famp_peers` — list peers
 
-See [`.planning/HANDOFF-mcp-integration.md`](.planning/HANDOFF-mcp-integration.md)
-for the detailed MCP setup document (pre-dates the `famp-local` wrapper;
-still useful for understanding what the wrapper does under the hood).
-
 ## Programmatic Examples
 
 Run the in-process happy path:
@@ -512,8 +516,9 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `v1.0`: federation profile — after v0.9. Agent Cards, delegation,
   provenance, cross-host via a `famp-gateway` process.
 
-See [`.planning/ROADMAP.md`](.planning/ROADMAP.md) for the current roadmap and
-[`.planning/MILESTONES.md`](.planning/MILESTONES.md) for milestone history.
+See [`docs/history/ROADMAP.md`](docs/history/ROADMAP.md) for the curated
+roadmap snapshot and [`docs/history/MILESTONES.md`](docs/history/MILESTONES.md)
+for milestone history.
 
 ## License
 

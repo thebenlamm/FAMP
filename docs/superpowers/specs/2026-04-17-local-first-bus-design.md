@@ -32,7 +32,7 @@ The v0.8 onboarding for two local agents was observed on 2026-04-16 to require:
 7. `FAMP_TOFU_BOOTSTRAP=1 FAMP_HOME=/tmp/famp-alice famp send --to bob --new-task "hello"`
 8. `FAMP_HOME=/tmp/famp-bob famp inbox list`
 
-Eight steps, two HOME dirs, two daemons, one environment-variable opt-in for first contact, two cert fingerprints to pin. Every step is justified by the federation threat model. None of them is justified for `uid=501 / host=benlamm-mbp` talking to `uid=501 / host=benlamm-mbp`.
+Eight steps, two HOME dirs, two daemons, one environment-variable opt-in for first contact, two cert fingerprints to pin. Every step is justified by the federation threat model. None of them is justified for `uid=501 / host=local` talking to `uid=501 / host=local`.
 
 The friction is not a bug. It is the federation tax applied where no federation exists.
 
@@ -50,8 +50,8 @@ The friction is not a bug. It is the federation tax applied where no federation 
 
 Federation in v1.0 is scoped to real, named use cases. The plumb-line check (Architect):
 
-- **Bucket A — Personal multi-device.** Ben's macbook + devbox. Two hosts, same human, legitimate federation-level trust boundary at the network layer.
-- **Bucket B — A specific collaborator.** Dr Ben Sofer.
+- **Bucket A — Personal multi-device.** Maintainer's macbook + devbox. Two hosts, same human, legitimate federation-level trust boundary at the network layer.
+- **Bucket B — A specific external collaborator.** Identity TBD; one named real-world interop partner.
 - **Buckets C / D — speculative.** No named humans. Not counted.
 
 Federation earning its name in v1.0 means: **bucket A works for daily use, bucket B works for at least one real interop session.** If neither is actively used within a readiness window after v0.9 ships, the "Federated" name is reconsidered.
@@ -483,7 +483,7 @@ Eight user-visible lines. If Phase 3 cannot land this, the design is too heavy a
 ## Open product questions (resolve before v0.9.0 tag)
 
 1. **Product name** (Option Z TBD). Decide before v0.9 tag.
-2. **v1.0 readiness trigger.** Current placeholder: "Ben uses bucket A daily OR Dr Sofer ready to interop." Make concrete before v0.9 ships so the trigger can fire unambiguously.
+2. **v1.0 readiness trigger.** Current placeholder: "maintainer uses bucket A daily OR named external collaborator ready to interop." Make concrete before v0.9 ships so the trigger can fire unambiguously.
 3. **Whether to rename binary at v0.9 or v0.9.1.** Coordinate with product name decision.
 4. **Slash-command naming bikeshed** — `/famp-msg` vs `/famp-send` vs `/famp-dm`. Defer to Phase 3.
 
