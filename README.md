@@ -73,8 +73,6 @@ primitives.
 - UDS-backed broker with socket-activated lifecycle
 - IRC-style channels / broadcast primitive (`#name`)
 - Zero-crypto same-host path (filesystem is the trust boundary)
-- `famp_register` MCP tool so windows pick their identity at session start
-  instead of via pre-configured `FAMP_HOME` env vars
 - See the full [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
 
 **v1.0 — Federation Profile** (after v0.9):
@@ -263,52 +261,89 @@ flag — the pinned fingerprint is the trust anchor from then on.
 
 ## MCP Integration (Claude Code and Codex)
 
-For **local Claude Code on your Mac**, use
-[`scripts/famp-local wire <dir>`](#quick-start-local) — it generates a
-project-scoped `.mcp.json` in the target directory pointing at that
-repo's identity, using the absolute `famp` binary path so Claude's MCP
-spawner (which doesn't inherit login-shell PATH) can find it.
+FAMP ships an MCP stdio server (`famp mcp`) that exposes six tools:
+`famp_register`, `famp_whoami`, `famp_send`, `famp_await`, `famp_inbox`,
+`famp_peers`. The model: **one MCP server config per client; the
+window picks an identity at runtime via `famp_register`.**
 
-For **local Codex on your Mac**, use the same `wire` step to create the
-identity and daemons, then register the identity with:
+### Onboarding (recommended path)
 
-```bash
-scripts/famp-local mcp-add --client codex <name>
+1. **Wire a repo once with the bundled wrapper:**
+   ```sh
+   scripts/famp-local wire ./my-repo --as alice
+   ```
+   This writes `./my-repo/.mcp.json` pointing at `famp mcp`. Note: the
+   `.mcp.json` carries no `FAMP_HOME` — identity is chosen per window.
+
+2. **In every new Claude Code (or Codex) window opened in that repo:**
+   ```text
+   register as alice
+   ```
+   (Or any identity initialized under `~/.famp-local/agents/<name>/`.)
+
+3. **Confirm the binding:**
+   ```text
+   famp_whoami
+   ```
+   Returns `{ "identity": "alice", "source": "explicit" }`.
+
+4. **Multi-window dogfooding:** open a second window in the same repo,
+   register as a different identity, and the two windows act as two
+   FAMP peers. Messaging tools (`famp_send`, `famp_await`, etc.) refuse
+   with a typed `not_registered` error until you call `famp_register`.
+
+### Codex (one server, runtime identity)
+
+```sh
+scripts/famp-local mcp-add --client codex alice bob
 ```
+Registers `famp-alice` and `famp-bob` user-scope. After this lands,
+you still call `register as <name>` per Codex window — the per-server
+names are now just two ways to reach the same `famp mcp` binary; the
+binding happens inside the session.
 
-That uses `codex mcp add ...` under the hood and writes a user-scope MCP
-entry into `~/.codex/config.toml`.
+<details>
+<summary>Why this changed (v0.8.x to v0.9 trajectory)</summary>
 
-Important difference from Claude Code: Codex registration is **global per
-user**, not repo-scoped. After you register `famp-alice` and `famp-bob`,
-every Codex window can see both MCP servers. In Codex, the identity you
-use is the MCP server name you select, not the repo you opened.
+Pre-v0.8.x, every Claude Code window in a repo inherited the same
+`FAMP_HOME` from `.mcp.json`, so two windows in one repo could only
+act as the same FAMP identity — wrong abstraction for same-host
+multi-agent dogfooding.
 
-To remove a Codex registration later:
+v0.8.x adopts the **session-bound identity model** ([spec](docs/superpowers/specs/2026-04-25-session-bound-identity-selection.md)):
+the MCP server starts unbound, the window picks identity at runtime
+via `famp_register`, and per-window state is process-scoped (one
+`famp mcp` subprocess per window).
 
-```bash
-scripts/famp-local mcp-remove --client codex <name>
-```
+This is a **pull-forward of the v0.9 MCP contract** onto the v0.8
+transport. v0.9 (the [local-first bus](docs/superpowers/specs/2026-04-17-local-first-bus-design.md))
+replaces the transport entirely; the `famp_register` / `famp_whoami`
+tool surface stays the same, so anything you wire today is forward-compatible.
 
-For **manual setups**, the `.mcp.json` shape is:
+Auto-migration: re-running `scripts/famp-local wire <dir>` against a
+previously-wired repo rewrites the `.mcp.json` to drop `FAMP_HOME` in
+place. No standalone migrate command.
+</details>
+
+### Manual MCP server config
+
+If you don't use the wrapper, the minimal `.mcp.json` is:
 
 ```json
 {
   "mcpServers": {
     "famp": {
-      "command": "/Users/you/.cargo/bin/famp",
-      "args": ["mcp"],
-      "env": { "FAMP_HOME": "/path/to/identity/home" }
+      "command": "/absolute/path/to/famp",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-The MCP server exposes four tools:
-- `famp_send` — send signed envelopes (request / deliver / terminal)
-- `famp_inbox` — list received messages; `action=list` hides entries for terminal tasks by default (pass `include_terminal: true` to bypass)
-- `famp_await` — block until new messages arrive (poll-free inter-agent dialogue; unfiltered — the canonical real-time signal for task completion)
-- `famp_peers` — list peers
+Optional: set `FAMP_LOCAL_ROOT` in the environment to override the
+default `~/.famp-local` backing-store directory. Identity directories
+live at `$FAMP_LOCAL_ROOT/agents/<name>/`; each must contain a readable
+`config.toml` (created by `famp init` against that dir).
 
 ## Programmatic Examples
 
