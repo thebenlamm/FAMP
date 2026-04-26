@@ -208,10 +208,35 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
     ]
 }
 
+/// Variants added after the original split — kept separate so neither
+/// `variants_a` nor `variants_b` exceeds the 100-line `clippy::pedantic`
+/// threshold. Same precedent as the original `_a`/`_b` split (see comment
+/// on `variants_a` above). Currently holds the rz6 additions
+/// (`FsmTransition`, `InvalidTaskState`).
+fn variants_c() -> Vec<(&'static str, CliError)> {
+    vec![
+        (
+            "FsmTransition",
+            CliError::FsmTransition(famp_fsm::TaskFsmError::IllegalTransition {
+                from: famp_fsm::TaskState::Requested,
+                class: famp_core::MessageClass::Deliver,
+                terminal_status: Some(famp_core::TerminalStatus::Completed),
+            }),
+        ),
+        (
+            "InvalidTaskState",
+            CliError::InvalidTaskState {
+                value: "BOGUS".to_string(),
+            },
+        ),
+    ]
+}
+
 fn all_variant_kinds() -> Vec<(&'static str, String)> {
     variants_a()
         .into_iter()
         .chain(variants_b())
+        .chain(variants_c())
         .map(|(name, err)| (name, err.mcp_error_kind().to_string()))
         .collect()
 }
