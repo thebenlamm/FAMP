@@ -33,7 +33,7 @@
 )]
 
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tempfile::TempDir;
@@ -186,5 +186,108 @@ pub async fn spawn_two_daemons() -> TwoDaemons {
         b_shutdown,
         a_principal: ALICE_PRINCIPAL.to_string(),
         b_principal: BOB_PRINCIPAL.to_string(),
+    }
+}
+
+// ── shared-local-root variant ─────────────────────────────────────────────────
+
+/// Like [`TwoDaemons`] but agent homes are `PathBuf`s under a shared
+/// `FAMP_LOCAL_ROOT/agents/<name>/` directory instead of independent
+/// `TempDir`s. Used by the Phase 1 session-bound MCP E2E tests so that
+/// two `famp mcp` subprocesses can share the same `local_root`.
+pub struct TwoDaemonsLocal {
+    /// Path to `<local_root>/agents/alice`.
+    pub a_home: PathBuf,
+    /// Path to `<local_root>/agents/bob`.
+    pub b_home: PathBuf,
+    pub a_addr: SocketAddr,
+    pub b_addr: SocketAddr,
+    a_handle: JoinHandle<()>,
+    b_handle: JoinHandle<()>,
+    a_shutdown: oneshot::Sender<()>,
+    b_shutdown: oneshot::Sender<()>,
+}
+
+impl TwoDaemonsLocal {
+    /// Signal shutdown to both daemons and await both join handles (2s timeout
+    /// per daemon).
+    pub async fn teardown(self) {
+        let _ = self.a_shutdown.send(());
+        let _ = self.b_shutdown.send(());
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.a_handle).await;
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.b_handle).await;
+    }
+}
+
+/// Spawn two daemons with distinct principals and mutual peer registration,
+/// with their agent homes laid out under `<local_root>/agents/{alice,bob}/`
+/// instead of independent `TempDir`s.
+///
+/// The caller owns the `TempDir` (or equivalent) backing `local_root` for
+/// the duration of the test.
+///
+/// Setup sequence mirrors [`spawn_two_daemons`]:
+/// 1. Create `<local_root>/agents/{alice,bob}/` and init each via `famp init`.
+/// 2. Bind two ephemeral listeners.
+/// 3. Write distinct `config.toml` principals.
+/// 4. Mutual peer registration.
+/// 5. Spawn both daemons.
+pub async fn spawn_two_daemons_under_local_root(local_root: &Path) -> TwoDaemonsLocal {
+    // 1. Create and init both agent homes under local_root.
+    let a_home = local_root.join("agents").join("alice");
+    let b_home = local_root.join("agents").join("bob");
+    std::fs::create_dir_all(&a_home).unwrap();
+    std::fs::create_dir_all(&b_home).unwrap();
+
+    init_home_in_process(&a_home);
+    init_home_in_process(&b_home);
+
+    // 2. Bind ephemeral listeners now so both addrs are known before `peer_add`.
+    let a_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    a_listener.set_nonblocking(true).unwrap();
+    let a_addr: SocketAddr = a_listener.local_addr().unwrap();
+
+    let b_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    b_listener.set_nonblocking(true).unwrap();
+    let b_addr: SocketAddr = b_listener.local_addr().unwrap();
+
+    // 3. Write distinct principals into each config.toml.
+    write_config_principal(&a_home, ALICE_PRINCIPAL);
+    write_config_principal(&b_home, BOB_PRINCIPAL);
+
+    // 4. Mutual peer registration.
+    let b_pubkey = pubkey_b64(&b_home);
+    peer_add_run_at(
+        &a_home,
+        "bob".to_string(),
+        format!("https://{b_addr}"),
+        b_pubkey.clone(),
+        Some(BOB_PRINCIPAL.to_string()),
+    )
+    .expect("peer_add B into A");
+
+    let a_pubkey = pubkey_b64(&a_home);
+    peer_add_run_at(
+        &b_home,
+        "alice".to_string(),
+        format!("https://{a_addr}"),
+        a_pubkey.clone(),
+        Some(ALICE_PRINCIPAL.to_string()),
+    )
+    .expect("peer_add A into B");
+
+    // 5. Spawn daemons.
+    let (a_addr, a_handle, a_shutdown) = spawn_one(&a_home, a_listener).await;
+    let (b_addr, b_handle, b_shutdown) = spawn_one(&b_home, b_listener).await;
+
+    TwoDaemonsLocal {
+        a_home,
+        b_home,
+        a_addr,
+        b_addr,
+        a_handle,
+        b_handle,
+        a_shutdown,
+        b_shutdown,
     }
 }

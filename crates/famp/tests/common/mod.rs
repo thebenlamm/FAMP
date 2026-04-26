@@ -30,6 +30,7 @@
 
 pub mod conversation_harness;
 pub mod listen_harness;
+pub mod mcp_harness;
 pub mod two_daemon_harness;
 
 pub use listen_harness::{
