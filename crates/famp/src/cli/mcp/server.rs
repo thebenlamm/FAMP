@@ -15,9 +15,6 @@
 //! | `tools/call`            | Dispatches to the right tool handler |
 //! | anything else           | JSON-RPC `-32601 Method not found`   |
 
-use std::path::PathBuf;
-use std::sync::Arc;
-
 use tokio::io::{stdin, stdout};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -148,9 +145,21 @@ fn error_response(
 }
 
 fn cli_error_response(id: &serde_json::Value, err: &CliError) -> serde_json::Value {
+    // Per CONTEXT.md: NotRegistered carries a stable hint string in
+    // `details.hint` so MCP clients render an actionable message.
+    // Other variants pass `details: {}` for now; future plans may
+    // expand this match if other variants need typed payloads.
+    let kind = err.mcp_error_kind();
+    let details = match kind {
+        "not_registered" => serde_json::json!({
+            "hint": "Call famp_register with an identity name first. \
+                     Use famp_whoami to inspect current binding."
+        }),
+        _ => serde_json::json!({}),
+    };
     let data = serde_json::json!({
-        "famp_error_kind": err.mcp_error_kind(),
-        "details": {}
+        "famp_error_kind": kind,
+        "details": details,
     });
     error_response(id, -32_000, &err.to_string(), &data)
 }
@@ -219,8 +228,7 @@ where
 // ── main server loop ──────────────────────────────────────────────────────────
 
 /// Run the stdio MCP server until stdin is closed.
-pub async fn run(home: PathBuf) -> Result<(), CliError> {
-    let home = Arc::new(home);
+pub async fn run() -> Result<(), CliError> {
     let mut reader = BufReader::new(stdin());
     let mut out = stdout();
 
@@ -289,7 +297,7 @@ pub async fn run(home: PathBuf) -> Result<(), CliError> {
                     .cloned()
                     .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
 
-                let call_result = dispatch_tool(&home, &name, &input).await;
+                let call_result = dispatch_tool(&name, &input).await;
                 match call_result {
                     Ok(ref value) => ok_response(&id, &tool_result(value)),
                     Err(ref e) => cli_error_response(&id, e),
@@ -321,15 +329,21 @@ pub async fn run(home: PathBuf) -> Result<(), CliError> {
 // ── tool dispatcher ───────────────────────────────────────────────────────────
 
 async fn dispatch_tool(
-    home: &std::path::Path,
     name: &str,
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, CliError> {
+    // Per CONTEXT.md "Pre-registration tool gating": all four messaging
+    // tools refuse with NotRegistered when the session is unbound.
+    // famp_register / famp_whoami arrive in 01-03 and short-circuit
+    // before reaching the binding check.
+    let Some(binding) = crate::cli::mcp::session::current().await else {
+        return Err(CliError::NotRegistered);
+    };
     match name {
-        "famp_send" => tools::send::call(home, input).await,
-        "famp_await" => tools::await_::call(home, input).await,
-        "famp_inbox" => tools::inbox::call(home, input).await,
-        "famp_peers" => tools::peers::call(home, input),
+        "famp_send" => tools::send::call(&binding, input).await,
+        "famp_await" => tools::await_::call(&binding, input).await,
+        "famp_inbox" => tools::inbox::call(&binding, input).await,
+        "famp_peers" => tools::peers::call(&binding, input),
         other => Err(CliError::SendArgsInvalid {
             reason: format!("unknown tool '{other}'"),
         }),

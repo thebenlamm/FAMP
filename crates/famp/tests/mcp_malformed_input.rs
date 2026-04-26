@@ -111,12 +111,17 @@ fn famp_inbox_fails_loudly_on_malformed_inbox_line() {
     let inbox_path = home.path().join("inbox.jsonl");
     std::fs::write(&inbox_path, b"{\"this is not\": valid json\n").expect("write inbox");
 
+    let binding = famp::cli::mcp::session::IdentityBinding {
+        identity: "test".to_string(),
+        home: home.path().to_path_buf(),
+        source: famp::cli::mcp::session::BindingSource::Explicit,
+    };
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap();
     let result = rt.block_on(async {
-        famp::cli::mcp::tools::inbox::call(home.path(), &serde_json::json!({ "action": "list" }))
+        famp::cli::mcp::tools::inbox::call(&binding, &serde_json::json!({ "action": "list" }))
             .await
     });
     // The result must be a hard error of some flavour — never an Ok value
@@ -228,6 +233,11 @@ fn famp_inbox_list_returns_parsed_entries_for_well_formed_input() {
     famp::cli::init::run_at(home.path(), false, &mut out, &mut err).expect("init");
 
     // Empty inbox: list should succeed with an empty entries array.
+    let binding = famp::cli::mcp::session::IdentityBinding {
+        identity: "test".to_string(),
+        home: home.path().to_path_buf(),
+        source: famp::cli::mcp::session::BindingSource::Explicit,
+    };
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -235,7 +245,7 @@ fn famp_inbox_list_returns_parsed_entries_for_well_formed_input() {
     let value = rt
         .block_on(async {
             famp::cli::mcp::tools::inbox::call(
-                home.path(),
+                &binding,
                 &serde_json::json!({ "action": "list" }),
             )
             .await
