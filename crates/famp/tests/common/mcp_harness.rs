@@ -94,6 +94,10 @@ impl Harness {
             .args(["mcp"])
             .env("FAMP_LOCAL_ROOT", local_root)
             .env_remove("FAMP_HOME")
+            // TOFU bootstrap enabled for tests: the first-contact TLS
+            // fingerprint is accepted so `famp_send` works in integration
+            // tests without pre-pinning. Mirrors mcp_stdio_tool_calls::with_home.
+            .env("FAMP_TOFU_BOOTSTRAP", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

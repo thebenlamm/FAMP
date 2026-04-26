@@ -52,7 +52,7 @@ use famp_inbox::{read::read_from, InboxCursor, InboxLock};
 use famp_taskdir::{TaskDir, TaskDirError, TryUpdateError};
 
 use crate::cli::error::{parse_duration, CliError};
-use crate::cli::send::fsm_glue::advance_committed;
+use crate::cli::send::fsm_glue::{advance_committed, advance_terminal};
 use crate::cli::{home, paths};
 
 pub mod poll;
@@ -193,6 +193,49 @@ pub async fn run_at(
                     Err(e) => {
                         eprintln!(
                             "famp await: failed to open task dir while handling commit for {task_id_str}: {e}"
+                        );
+                    }
+                }
+            }
+
+            // Phase 1 (01-05): if this is a terminal deliver (class == "deliver" &&
+            // body.interim == false), advance the local task record COMMITTED →
+            // COMPLETED. Mirrors the commit-receipt branch above. This is the
+            // await-side FSM advance that drives COMPLETED on the originator when
+            // the peer sends a terminal deliver back to us.
+            let is_terminal_deliver = class == "deliver"
+                && !task_id_str.is_empty()
+                && value
+                    .get("body")
+                    .and_then(|b| b.get("interim"))
+                    .and_then(serde_json::Value::as_bool)
+                    == Some(false);
+            if is_terminal_deliver {
+                let tasks_dir = paths::tasks_dir(home);
+                match TaskDir::open(&tasks_dir) {
+                    Ok(tasks) => {
+                        match tasks.try_update(task_id_str, |mut record| {
+                            advance_terminal(&mut record).map(|_| record)
+                        }) {
+                            // Happy path: persisted COMMITTED → COMPLETED.
+                            // NotFound: terminal deliver for a task we don't own locally
+                            // (e.g. we are the receiver, not the originator) — not an error.
+                            Ok(_) | Err(TryUpdateError::Store(TaskDirError::NotFound { .. })) => {}
+                            Err(TryUpdateError::Closure(e)) => {
+                                eprintln!(
+                                    "famp await: advance_terminal failed for task {task_id_str}: {e}"
+                                );
+                            }
+                            Err(TryUpdateError::Store(e)) => {
+                                eprintln!(
+                                    "famp await: failed to persist terminal-advance for task {task_id_str}: {e}"
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "famp await: failed to open task dir while handling terminal for {task_id_str}: {e}"
                         );
                     }
                 }
