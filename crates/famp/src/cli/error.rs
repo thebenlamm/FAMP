@@ -105,16 +105,23 @@ pub enum CliError {
     /// re-commit a task already in COMMITTED), not an envelope encode/sign
     /// problem. The inner `TaskFsmError`'s Display carries the detail
     /// (`"illegal transition: cannot apply class=… terminal_status=…
-    /// from state=…"`) and surfaces via `std::error::Error::source`
-    /// chaining; the top-line here intentionally stays short so it does
-    /// not duplicate the inner message.
-    #[error("illegal task state transition")]
+    /// from state=…"`) and is interpolated into the top-line here via
+    /// `{0}` so direct `eprintln!("{e}")` sites (e.g. `await_cmd/mod.rs`,
+    /// `send/mod.rs`) surface the full reason in one line without needing
+    /// to walk `std::error::Error::source` themselves. The detail still
+    /// also appears as a `caused by:` line via the main-binary chain
+    /// walk; the redundancy is operator-friendly.
+    #[error("illegal task state transition: {0}")]
     FsmTransition(#[from] famp_fsm::TaskFsmError),
 
     /// On-disk task state string (in the `TaskRecord.state` field) does
     /// not parse to a known `TaskState`. Distinct from `Envelope` — the
     /// failure is on-disk record corruption, not anything envelope-related.
-    #[error("invalid task state on disk: {value}")]
+    /// The value is debug-quoted (`{value:?}`) so a corrupted state
+    /// containing newlines, ANSI escapes, or other control bytes cannot
+    /// inject misleading lines into stderr. Matches the `PrincipalInvalid`
+    /// precedent below.
+    #[error("invalid task state on disk: {value:?}")]
     InvalidTaskState { value: String },
 
     #[error("tls fingerprint mismatch for peer {alias}: pinned={pinned}, got={got}")]

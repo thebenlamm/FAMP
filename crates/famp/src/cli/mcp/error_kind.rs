@@ -4,6 +4,8 @@
 //! `CliError` variant is added without an arm here, the compiler fails the build
 //! (T-04-13 mitigation). This is the compile-time gate described in the plan.
 
+use famp_fsm::TaskFsmError;
+
 use crate::cli::error::CliError::{
     AlreadyInitialized, AwaitTimeout, CertgenFailed, Envelope, FsmTransition, HomeCreateFailed,
     HomeHasNoParent, HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName,
@@ -48,7 +50,15 @@ impl crate::cli::error::CliError {
             SendFailed(_) => "send_failed",
             TaskDir(_) => "taskdir_error",
             Envelope(_) => "envelope_error",
-            FsmTransition(_) => "fsm_transition_illegal",
+            // Nested exhaustive match: the kind string is committed to a
+            // SPECIFIC `TaskFsmError` variant, not the FSM-error category as
+            // a whole. Without this, adding a new `TaskFsmError` variant
+            // would silently get misclassified as `"fsm_transition_illegal"`.
+            // Compiler now forces a deliberate kind-string decision per FSM
+            // variant. (tey LOW-1.)
+            FsmTransition(inner) => match inner {
+                TaskFsmError::IllegalTransition { .. } => "fsm_transition_illegal",
+            },
             InvalidTaskState { .. } => "invalid_task_state",
             TlsFingerprintMismatch { .. } => "tls_fingerprint_mismatch",
             TofuBootstrapRefused { .. } => "tofu_bootstrap_refused",
