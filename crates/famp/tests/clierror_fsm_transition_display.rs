@@ -45,6 +45,39 @@ fn fsm_transition_failure_surfaces_correct_top_line_display() {
         "expected top-line Display to start with \"illegal task state transition\", \
          got: {top_line:?}"
     );
+    // tey strengthening (MED-1): direct `eprintln!("{e}")` sites at
+    // await_cmd/mod.rs:183 and send/mod.rs:564 print only the top-line; if
+    // the inner TaskFsmError detail isn't interpolated here, those operator
+    // logs lose class/from/terminal_status. Asserting `class=` proves the
+    // inner Display ("illegal transition: cannot apply class=... ...") is
+    // included via `{0}` interpolation, not just the bare category top-line.
+    assert!(
+        top_line.contains("class="),
+        "expected top-line Display to interpolate the inner TaskFsmError \
+         detail (look for `class=`), got: {top_line:?}"
+    );
+}
+
+#[test]
+fn clierror_invalid_task_state_debug_quotes_value() {
+    // tey MED-2: a corrupted on-disk task state string can contain newlines,
+    // ANSI escapes, or other control bytes. Raw `{value}` interpolation
+    // injects them into stderr verbatim. `{value:?}` debug-quotes them
+    // (matching the `PrincipalInvalid` precedent at error.rs:127), which is
+    // the safe default for an on-disk corruption diagnostic.
+    let err = CliError::InvalidTaskState {
+        value: "BAD\nSTATE".to_string(),
+    };
+    let rendered = format!("{err}");
+    assert!(
+        rendered.contains("\\n"),
+        "expected debug-escaped newline (`\\n`) in rendered output, got: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains('\n'),
+        "expected NO raw newline in rendered output (would mean we're \
+         interpolating raw `{{value}}`), got: {rendered:?}"
+    );
 }
 
 #[test]
