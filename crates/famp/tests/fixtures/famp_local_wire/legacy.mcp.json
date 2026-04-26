@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "famp": {
+      "command": "/usr/local/bin/famp",
+      "args": ["mcp"],
+      "env": {
+        "FAMP_HOME": "/Users/example/.famp-local/agents/alice"
+      }
+    }
+  }
+}
