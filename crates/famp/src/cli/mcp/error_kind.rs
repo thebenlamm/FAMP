@@ -9,10 +9,11 @@ use famp_fsm::TaskFsmError;
 use crate::cli::error::CliError::{
     AlreadyInitialized, AwaitTimeout, CertgenFailed, Envelope, FsmTransition, HomeCreateFailed,
     HomeHasNoParent, HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName,
-    InvalidDuration, InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed, PeerCardInvalid,
-    PeerDuplicate, PeerEndpointInvalid, PeerNotFound, PeerPubkeyInvalid, PortInUse,
-    PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal, Tls,
-    TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse, TomlSerialize,
+    InvalidDuration, InvalidIdentityName, InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed,
+    NotRegistered, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid, PeerNotFound,
+    PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir,
+    TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse,
+    TomlSerialize, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -69,6 +70,9 @@ impl crate::cli::error::CliError {
             KeyringBuildFailed { .. } => "keyring_build_failed",
             PeerCardInvalid { .. } => "peer_card_invalid",
             InvalidAgentName { .. } => "invalid_agent_name",
+            NotRegistered => "not_registered",
+            UnknownIdentity { .. } => "unknown_identity",
+            InvalidIdentityName { .. } => "invalid_identity_name",
         }
     }
 }

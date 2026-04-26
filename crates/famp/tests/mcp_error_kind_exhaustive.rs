@@ -241,6 +241,23 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                 value: "BOGUS".to_string(),
             },
         ),
+        (
+            "NotRegistered",
+            CliError::NotRegistered,
+        ),
+        (
+            "UnknownIdentity",
+            CliError::UnknownIdentity {
+                name: "alice".to_string(),
+            },
+        ),
+        (
+            "InvalidIdentityName",
+            CliError::InvalidIdentityName {
+                name: "bad name".to_string(),
+                reason: "must match [A-Za-z0-9_-]+".to_string(),
+            },
+        ),
     ]
 }
 

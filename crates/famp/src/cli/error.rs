@@ -169,6 +169,28 @@ pub enum CliError {
     /// operating with a narrowed trust set (T-04-01 mitigated).
     #[error("keyring build failed for peer '{alias}': {reason}")]
     KeyringBuildFailed { alias: String, reason: String },
+
+    /// MCP session is not bound to an identity. Returned by every messaging
+    /// tool (`famp_send`, `famp_await`, `famp_inbox`, `famp_peers`) when
+    /// `famp_register` has not been called in the current session. The
+    /// stable hint is surfaced by the MCP layer via the error data.details
+    /// field — see `cli::mcp::server::cli_error_response`.
+    #[error("MCP session is not registered to an identity; call famp_register first")]
+    NotRegistered,
+
+    /// `famp_register` was called with an identity name that does not
+    /// resolve to a directory under `$FAMP_LOCAL_ROOT/agents/<name>/`,
+    /// or that directory is missing a readable `config.toml`. The name is
+    /// echoed back so the caller can correct it.
+    #[error("unknown identity '{name}': no agent directory under $FAMP_LOCAL_ROOT/agents")]
+    UnknownIdentity { name: String },
+
+    /// `famp_register` was called with an identity name that fails the
+    /// `[A-Za-z0-9_-]+` validation regex. Distinct from `InvalidAgentName`
+    /// (which guards `famp init` arg parsing) — this variant is specific
+    /// to the MCP register tool's identity-name input.
+    #[error("invalid identity name '{name}': {reason}")]
+    InvalidIdentityName { name: String, reason: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the
