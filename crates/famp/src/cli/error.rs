@@ -100,6 +100,23 @@ pub enum CliError {
     #[error("envelope encode/sign failed")]
     Envelope(#[source] Box<dyn std::error::Error + Send + Sync>),
 
+    /// FSM transition refused by `famp-fsm`. Distinct from `Envelope` —
+    /// the failure is a protocol-state violation (e.g. attempting to
+    /// re-commit a task already in COMMITTED), not an envelope encode/sign
+    /// problem. The inner `TaskFsmError`'s Display carries the detail
+    /// (`"illegal transition: cannot apply class=… terminal_status=…
+    /// from state=…"`) and surfaces via `std::error::Error::source`
+    /// chaining; the top-line here intentionally stays short so it does
+    /// not duplicate the inner message.
+    #[error("illegal task state transition")]
+    FsmTransition(#[from] famp_fsm::TaskFsmError),
+
+    /// On-disk task state string (in the `TaskRecord.state` field) does
+    /// not parse to a known `TaskState`. Distinct from `Envelope` — the
+    /// failure is on-disk record corruption, not anything envelope-related.
+    #[error("invalid task state on disk: {value}")]
+    InvalidTaskState { value: String },
+
     #[error("tls fingerprint mismatch for peer {alias}: pinned={pinned}, got={got}")]
     TlsFingerprintMismatch {
         alias: String,

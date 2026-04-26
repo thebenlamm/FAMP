@@ -50,9 +50,9 @@ fn parse_state(s: &str) -> Result<TaskState, CliError> {
         "COMPLETED" => Ok(TaskState::Completed),
         "FAILED" => Ok(TaskState::Failed),
         "CANCELLED" => Ok(TaskState::Cancelled),
-        other => Err(CliError::Envelope(Box::new(std::io::Error::other(
-            format!("unknown task state: {other}"),
-        )))),
+        other => Err(CliError::InvalidTaskState {
+            value: other.to_string(),
+        }),
     }
 }
 
@@ -60,18 +60,17 @@ fn parse_state(s: &str) -> Result<TaskState, CliError> {
 /// `MessageClass::Commit` envelope. Returns the new `TaskState`.
 ///
 /// Precondition: `record.state == "REQUESTED"`. An FSM in any other state
-/// will return `TaskFsmError::IllegalTransition` mapped to `CliError::Envelope`.
+/// will return `TaskFsmError::IllegalTransition` surfaced as
+/// `CliError::FsmTransition`.
 ///
 /// Called by `await_cmd` when a commit-class inbox entry matches a local task.
 pub fn advance_committed(record: &mut TaskRecord) -> Result<TaskState, CliError> {
     let current = parse_state(&record.state)?;
     let mut fsm = TaskFsm::resume(current);
-    let next = fsm
-        .step(TaskTransitionInput {
-            class: MessageClass::Commit,
-            terminal_status: None,
-        })
-        .map_err(|e| CliError::Envelope(Box::new(e)))?;
+    let next = fsm.step(TaskTransitionInput {
+        class: MessageClass::Commit,
+        terminal_status: None,
+    })?;
     record.state = state_to_str(next).to_string();
     record.terminal = is_terminal(next);
     Ok(next)
@@ -81,19 +80,18 @@ pub fn advance_committed(record: &mut TaskRecord) -> Result<TaskState, CliError>
 /// Returns the new `TaskState`.
 ///
 /// Precondition: `record.state == "COMMITTED"`. An FSM in any other state
-/// returns `TaskFsmError::IllegalTransition` mapped to `CliError::Envelope`.
-/// In particular, calling this when the record is still in REQUESTED will
-/// now correctly error — the caller must wait for the commit reply first
-/// (which `famp await` handles via `advance_committed`).
+/// returns `TaskFsmError::IllegalTransition` surfaced as
+/// `CliError::FsmTransition`. In particular, calling this when the record
+/// is still in REQUESTED will now correctly error — the caller must wait
+/// for the commit reply first (which `famp await` handles via
+/// `advance_committed`).
 pub fn advance_terminal(record: &mut TaskRecord) -> Result<TaskState, CliError> {
     let current = parse_state(&record.state)?;
     let mut fsm = TaskFsm::resume(current);
-    let next = fsm
-        .step(TaskTransitionInput {
-            class: MessageClass::Deliver,
-            terminal_status: Some(TerminalStatus::Completed),
-        })
-        .map_err(|e| CliError::Envelope(Box::new(e)))?;
+    let next = fsm.step(TaskTransitionInput {
+        class: MessageClass::Deliver,
+        terminal_status: Some(TerminalStatus::Completed),
+    })?;
     record.state = state_to_str(next).to_string();
     record.terminal = is_terminal(next);
     Ok(next)

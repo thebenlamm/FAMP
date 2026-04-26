@@ -5,12 +5,12 @@
 //! (T-04-13 mitigation). This is the compile-time gate described in the plan.
 
 use crate::cli::error::CliError::{
-    AlreadyInitialized, AwaitTimeout, CertgenFailed, Envelope, HomeCreateFailed, HomeHasNoParent,
-    HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, Io,
-    KeygenFailed, KeyringBuildFailed, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
-    PeerNotFound, PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed,
-    TaskDir, TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused,
-    TomlParse, TomlSerialize,
+    AlreadyInitialized, AwaitTimeout, CertgenFailed, Envelope, FsmTransition, HomeCreateFailed,
+    HomeHasNoParent, HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName,
+    InvalidDuration, InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed, PeerCardInvalid,
+    PeerDuplicate, PeerEndpointInvalid, PeerNotFound, PeerPubkeyInvalid, PortInUse,
+    PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal, Tls,
+    TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse, TomlSerialize,
 };
 
 impl crate::cli::error::CliError {
@@ -48,6 +48,8 @@ impl crate::cli::error::CliError {
             SendFailed(_) => "send_failed",
             TaskDir(_) => "taskdir_error",
             Envelope(_) => "envelope_error",
+            FsmTransition(_) => "fsm_transition_illegal",
+            InvalidTaskState { .. } => "invalid_task_state",
             TlsFingerprintMismatch { .. } => "tls_fingerprint_mismatch",
             TofuBootstrapRefused { .. } => "tofu_bootstrap_refused",
             PrincipalInvalid { .. } => "principal_invalid",
