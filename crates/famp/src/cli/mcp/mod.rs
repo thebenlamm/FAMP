@@ -1,4 +1,4 @@
-//! `famp mcp` — stdio JSON-RPC server exposing four FAMP tools.
+//! `famp mcp` — stdio JSON-RPC server exposing six FAMP tools.
 //!
 //! This module is a thin adapter layer. No business logic lives here;
 //! all tool implementations call existing `cli::{send, await_cmd, inbox, peer}`
@@ -20,8 +20,9 @@ pub mod server;
 pub mod session;
 pub mod tools;
 
+use std::path::PathBuf;
+
 use crate::cli::error::CliError;
-use crate::cli::home;
 
 /// CLI args for `famp mcp`. No subcommands — the server runs until stdin closes.
 #[derive(clap::Args, Debug)]
@@ -29,32 +30,26 @@ pub struct McpArgs {}
 
 /// Production entry point.
 ///
-/// **Transitional behavior (this plan only).** Resolves `FAMP_HOME` and
-/// pre-seeds the session binding so existing E2E tests
-/// (`mcp_stdio_tool_calls.rs`, `e2e_two_daemons.rs`) keep passing
-/// through wave 2. Plan 01-03 deletes the seeding line entirely; from
-/// that point forward `FAMP_HOME` is no longer honored at MCP startup
-/// and clients MUST call `famp_register`. **B-strict, no grace
-/// period** — this comment block disappears in 01-03.
+/// Reads `FAMP_LOCAL_ROOT` (the backing-store directory under which
+/// per-identity agent dirs live) with default `$HOME/.famp-local`.
+/// **Does NOT read `FAMP_HOME`** — under variant **B-strict** the MCP
+/// server starts unbound and clients must call `famp_register` before
+/// using any messaging tool. See
+/// `.planning/phases/01-session-bound-mcp-identity/01-CONTEXT.md`.
 pub async fn run(_args: McpArgs) -> Result<(), CliError> {
-    let home = home::resolve_famp_home()?;
-    // TRANSITIONAL — removed in 01-03.
-    let identity = home
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-    let binding = crate::cli::mcp::session::IdentityBinding {
-        identity,
-        home,
-        source: crate::cli::mcp::session::BindingSource::Explicit,
-    };
-    // TEST-ONLY SEAM (also removed in 01-03 alongside the rest of the seed):
-    // FAMP_TEST_SUPPRESS_BINDING_SEED=1 makes the server start in an
-    // unbound state so 01-02's gating tests can exercise NotRegistered
-    // without rewriting the harness for a no-FAMP_HOME-allowed mode.
-    if std::env::var_os("FAMP_TEST_SUPPRESS_BINDING_SEED").is_none() {
-        let _prev = crate::cli::mcp::session::set(binding).await;
+    let local_root = resolve_local_root()?;
+    server::run(local_root).await
+}
+
+/// Resolve `FAMP_LOCAL_ROOT` with default `$HOME/.famp-local`.
+fn resolve_local_root() -> Result<PathBuf, CliError> {
+    if let Some(v) = std::env::var_os("FAMP_LOCAL_ROOT") {
+        let p = PathBuf::from(v);
+        if p.as_os_str().is_empty() {
+            return Err(CliError::HomeNotSet);
+        }
+        return Ok(p);
     }
-    server::run().await
+    let home = std::env::var_os("HOME").ok_or(CliError::HomeNotSet)?;
+    Ok(PathBuf::from(home).join(".famp-local"))
 }

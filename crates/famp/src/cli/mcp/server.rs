@@ -86,6 +86,25 @@ fn tool_descriptors() -> serde_json::Value {
                 },
                 "required": ["action"]
             }
+        },
+        {
+            "name": "famp_register",
+            "description": "Bind this MCP session to a FAMP identity by name. CALL THIS FIRST in every new window — without it, famp_send/famp_await/famp_inbox/famp_peers all return a typed 'not_registered' error. The identity name must match an existing agent under $FAMP_LOCAL_ROOT/agents/<name>/ (default ~/.famp-local/agents/<name>/) and that directory must contain a readable config.toml. Idempotent: registering as the same identity twice is a no-op success. Always wins: registering as a different identity replaces the binding deterministically.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "identity": { "type": "string", "description": "Identity name (matches [A-Za-z0-9_-]+). Resolves to $FAMP_LOCAL_ROOT/agents/<identity>/." }
+                },
+                "required": ["identity"]
+            }
+        },
+        {
+            "name": "famp_whoami",
+            "description": "Return the current session's identity binding. Use this to debug session binding — for example, to confirm a famp_register call took effect, or to discover whether a window is still unregistered. Returns { identity: string|null, source: \"explicit\"|\"unregistered\" }; never errors.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
         }
     ])
 }
@@ -228,7 +247,12 @@ where
 // ── main server loop ──────────────────────────────────────────────────────────
 
 /// Run the stdio MCP server until stdin is closed.
-pub async fn run() -> Result<(), CliError> {
+///
+/// `local_root` is the backing-store directory under which per-identity
+/// agent dirs live (typically `$FAMP_LOCAL_ROOT` / `~/.famp-local`).
+/// It is threaded into `dispatch_tool` so `famp_register` can resolve
+/// identity names without reading any environment variable at call time.
+pub async fn run(local_root: std::path::PathBuf) -> Result<(), CliError> {
     let mut reader = BufReader::new(stdin());
     let mut out = stdout();
 
@@ -297,7 +321,7 @@ pub async fn run() -> Result<(), CliError> {
                     .cloned()
                     .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
 
-                let call_result = dispatch_tool(&name, &input).await;
+                let call_result = dispatch_tool(&local_root, &name, &input).await;
                 match call_result {
                     Ok(ref value) => ok_response(&id, &tool_result(value)),
                     Err(ref e) => cli_error_response(&id, e),
@@ -329,13 +353,19 @@ pub async fn run() -> Result<(), CliError> {
 // ── tool dispatcher ───────────────────────────────────────────────────────────
 
 async fn dispatch_tool(
+    local_root: &std::path::Path,
     name: &str,
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, CliError> {
-    // Per CONTEXT.md "Pre-registration tool gating": all four messaging
-    // tools refuse with NotRegistered when the session is unbound.
-    // famp_register / famp_whoami arrive in 01-03 and short-circuit
-    // before reaching the binding check.
+    // Pre-binding tools: famp_register and famp_whoami work at any time.
+    match name {
+        "famp_register" => return tools::register::call(local_root, input).await,
+        "famp_whoami" => return tools::whoami::call(input).await,
+        _ => {}
+    }
+
+    // Binding-required tools: refuse with NotRegistered if the session
+    // has not yet called famp_register. CONTEXT.md "Pre-registration tool gating".
     let Some(binding) = crate::cli::mcp::session::current().await else {
         return Err(CliError::NotRegistered);
     };
