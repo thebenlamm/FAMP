@@ -216,6 +216,12 @@ envelope Ed25519-signed over canonical JSON under the `FAMP-sig-v1\0`
 domain prefix (INV-10). 5-state task FSM (`famp-fsm`): REQUESTED →
 COMMITTED → {COMPLETED | FAILED | CANCELLED}, terminals absorbing.
 
+Note: as of v0.8.x (the session-bound MCP identity bridge phase), the
+`famp mcp` server reads identity from session state via `famp_register`,
+not from `FAMP_HOME`. The federation transport (`famp listen`, `famp send`,
+etc.) still uses `FAMP_HOME` per identity. v0.9's local-bus rework collapses
+this distinction.
+
 **v0.9 direction (in design):** collapse same-host agents onto a single
 UDS-backed broker; drop crypto on the local path; treat federation
 (cross-host) as a v1.0 gateway that wraps the bus. IRC-style channels,
