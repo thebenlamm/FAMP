@@ -22,9 +22,7 @@
 use std::path::Path;
 
 use famp_core::{AuthorityScope, MessageId, Principal};
-use famp_envelope::body::request::{
-    REQUEST_SCOPE_INSTRUCTIONS_KEY, REQUEST_SCOPE_MORE_COMING_KEY,
-};
+use famp_envelope::body::request::{REQUEST_SCOPE_INSTRUCTIONS_KEY, REQUEST_SCOPE_MORE_COMING_KEY};
 use famp_envelope::body::{request::RequestBody, AckBody, Bounds, DeliverBody, TerminalStatus};
 use famp_envelope::{Causality, Relation, SignedEnvelope, Timestamp, UnsignedEnvelope};
 use famp_taskdir::{TaskDir, TaskRecord, TryUpdateError};
@@ -563,9 +561,7 @@ fn persist_post_send(
                     tasks.create(&rec)?;
                 }
                 Err(TryUpdateError::Closure(e)) => {
-                    eprintln!(
-                        "famp send: advance_terminal failed for task {task_id}: {e}"
-                    );
+                    eprintln!("famp send: advance_terminal failed for task {task_id}: {e}");
                 }
                 Err(TryUpdateError::Store(e)) => {
                     eprintln!(
