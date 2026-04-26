@@ -155,8 +155,7 @@ fn famp_inbox_fails_loudly_on_malformed_inbox_line() {
         .build()
         .unwrap();
     let result = rt.block_on(async {
-        famp::cli::mcp::tools::inbox::call(&binding, &serde_json::json!({ "action": "list" }))
-            .await
+        famp::cli::mcp::tools::inbox::call(&binding, &serde_json::json!({ "action": "list" })).await
     });
     // The result must be a hard error of some flavour — never an Ok value
     // containing a `null` entry, which was the pre-fix degradation mode.
@@ -284,11 +283,8 @@ fn famp_inbox_list_returns_parsed_entries_for_well_formed_input() {
         .unwrap();
     let value = rt
         .block_on(async {
-            famp::cli::mcp::tools::inbox::call(
-                &binding,
-                &serde_json::json!({ "action": "list" }),
-            )
-            .await
+            famp::cli::mcp::tools::inbox::call(&binding, &serde_json::json!({ "action": "list" }))
+                .await
         })
         .expect("empty inbox list should succeed");
     assert!(

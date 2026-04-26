@@ -115,7 +115,10 @@ fn generate_self_signed_cert_pem(cn: &str) -> String {
         .stderr(std::process::Stdio::null())
         .status()
         .expect("openssl must be on PATH; macOS and Linux CI both ship it");
-    assert!(status.success(), "openssl self-signed cert generation failed");
+    assert!(
+        status.success(),
+        "openssl self-signed cert generation failed"
+    );
     std::fs::read_to_string(&cert_path).unwrap()
 }
 
@@ -154,8 +157,7 @@ fn wire_rewrites_legacy_mcp_json_in_place() {
     let repo = stub.join("repo");
     std::fs::create_dir_all(&repo).unwrap();
     let legacy = std::fs::read_to_string(
-        workspace_root()
-            .join("crates/famp/tests/fixtures/famp_local_wire/legacy.mcp.json"),
+        workspace_root().join("crates/famp/tests/fixtures/famp_local_wire/legacy.mcp.json"),
     )
     .unwrap();
     std::fs::write(repo.join(".mcp.json"), legacy).unwrap();

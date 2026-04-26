@@ -115,7 +115,10 @@ impl McpHarness {
             }),
         );
         let reg = recv_msg(&mut h.stdout, Duration::from_secs(5));
-        assert!(reg.get("result").is_some(), "register as alice failed: {reg}");
+        assert!(
+            reg.get("result").is_some(),
+            "register as alice failed: {reg}"
+        );
 
         h
     }
@@ -227,7 +230,6 @@ impl McpHarness {
     }
 }
 
-
 impl Drop for McpHarness {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -256,7 +258,14 @@ fn mcp_initialize_lists_four_tools() {
         .collect();
 
     assert_eq!(names.len(), 6, "expected exactly 6 tools, got: {names:?}");
-    for expected in &["famp_send", "famp_await", "famp_inbox", "famp_peers", "famp_register", "famp_whoami"] {
+    for expected in &[
+        "famp_send",
+        "famp_await",
+        "famp_inbox",
+        "famp_peers",
+        "famp_register",
+        "famp_whoami",
+    ] {
         assert!(
             names.contains(expected),
             "missing tool {expected}, got: {names:?}"

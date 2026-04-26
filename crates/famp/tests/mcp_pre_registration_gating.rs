@@ -59,9 +59,9 @@ fn spawn_unbound() -> (
 }
 
 fn assert_not_registered(resp: &serde_json::Value, tool_name: &str) {
-    let err = resp.get("error").unwrap_or_else(|| {
-        panic!("{tool_name}: expected error response, got: {resp}")
-    });
+    let err = resp
+        .get("error")
+        .unwrap_or_else(|| panic!("{tool_name}: expected error response, got: {resp}"));
     assert_eq!(err["code"].as_i64().unwrap(), -32000, "{tool_name}: code");
     let kind = err["data"]["famp_error_kind"].as_str().unwrap_or("");
     assert_eq!(kind, "not_registered", "{tool_name}: famp_error_kind");

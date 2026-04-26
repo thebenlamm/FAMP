@@ -30,7 +30,10 @@ fn register_valid_identity_succeeds() {
 #[test]
 fn register_invalid_name_returns_invalid_identity_name() {
     let mut h = Harness::with_agents(&[]);
-    let r = h.tool_call("famp_register", &serde_json::json!({ "identity": "foo bar" }));
+    let r = h.tool_call(
+        "famp_register",
+        &serde_json::json!({ "identity": "foo bar" }),
+    );
     assert_eq!(Harness::error_kind(&r), "invalid_identity_name");
 }
 
@@ -53,7 +56,10 @@ fn register_idempotent_same_identity() {
     let mut h = Harness::with_agents(&["alice"]);
     let _ = h.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
     let r = h.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
-    assert!(r.get("result").is_some(), "second register must succeed: {r}");
+    assert!(
+        r.get("result").is_some(),
+        "second register must succeed: {r}"
+    );
     let body = Harness::ok_content(&r);
     assert_eq!(body["identity"], "alice");
 }
@@ -82,10 +88,7 @@ fn tools_list_returns_six_tools() {
     let mut h = Harness::with_agents(&[]);
     let r = h.call("tools/list", &serde_json::json!({}));
     let tools = r["result"]["tools"].as_array().expect("tools array");
-    let names: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert_eq!(names.len(), 6, "expected 6 tools, got: {names:?}");
     for expected in [
         "famp_send",

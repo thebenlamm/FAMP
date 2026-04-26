@@ -52,7 +52,9 @@ fn assert_bob_inbox_has_task(win_b: &mut Harness, task_id: &str) {
     let body = Harness::ok_content(&resp);
     let entries = body["entries"].as_array().expect("entries array");
     assert!(
-        entries.iter().any(|e| e["task_id"].as_str() == Some(task_id)),
+        entries
+            .iter()
+            .any(|e| e["task_id"].as_str() == Some(task_id)),
         "bob inbox missing task_id {task_id}; entries: {entries:?}"
     );
 }
@@ -102,16 +104,24 @@ async fn two_windows_register_as_different_identities_and_full_lifecycle() {
     assert_eq!(w_b["identity"], "bob", "win_b whoami: {w_b}");
 
     // ── Step 2: alice opens a new task to bob ──────────────────────────────────
-    let send_resp = win_a.tool_call("famp_send", &serde_json::json!({
-        "peer": "bob", "mode": "new_task", "title": "hello", "body": "hello bob"
-    }));
+    let send_resp = win_a.tool_call(
+        "famp_send",
+        &serde_json::json!({
+            "peer": "bob", "mode": "new_task", "title": "hello", "body": "hello bob"
+        }),
+    );
     let task_id = Harness::ok_content(&send_resp)["task_id"]
-        .as_str().expect("task_id").to_string();
+        .as_str()
+        .expect("task_id")
+        .to_string();
 
     // ── Step 3: alice awaits auto-commit ───────────────────────────────────────
-    let aw = Harness::ok_content(&win_a.tool_call("famp_await", &serde_json::json!({
-        "timeout_seconds": 10, "task_id": task_id
-    })));
+    let aw = Harness::ok_content(&win_a.tool_call(
+        "famp_await",
+        &serde_json::json!({
+            "timeout_seconds": 10, "task_id": task_id
+        }),
+    ));
     assert_eq!(aw["class"], "commit", "alice expected commit, got: {aw}");
 
     // ── Step 4: seed COMMITTED on bob's side (one-sided task ownership) ────────
@@ -121,31 +131,48 @@ async fn two_windows_register_as_different_identities_and_full_lifecycle() {
     assert_bob_inbox_has_task(&mut win_b, &task_id);
 
     // ── Step 6: bob sends a non-terminal deliver to alice ─────────────────────
-    let r = win_b.tool_call("famp_send", &serde_json::json!({
-        "peer": "alice", "mode": "deliver", "task_id": task_id, "body": "ack"
-    }));
+    let r = win_b.tool_call(
+        "famp_send",
+        &serde_json::json!({
+            "peer": "alice", "mode": "deliver", "task_id": task_id, "body": "ack"
+        }),
+    );
     assert!(r.get("result").is_some(), "win_b deliver failed: {r}");
 
     // ── Step 7: alice awaits deliver ──────────────────────────────────────────
-    let ad = Harness::ok_content(&win_a.tool_call("famp_await", &serde_json::json!({
-        "timeout_seconds": 10, "task_id": task_id
-    })));
+    let ad = Harness::ok_content(&win_a.tool_call(
+        "famp_await",
+        &serde_json::json!({
+            "timeout_seconds": 10, "task_id": task_id
+        }),
+    ));
     assert_eq!(ad["class"], "deliver", "alice expected deliver, got: {ad}");
 
     // ── Step 8: bob sends terminal ────────────────────────────────────────────
-    let r = win_b.tool_call("famp_send", &serde_json::json!({
-        "peer": "alice", "mode": "terminal", "task_id": task_id, "body": "done"
-    }));
+    let r = win_b.tool_call(
+        "famp_send",
+        &serde_json::json!({
+            "peer": "alice", "mode": "terminal", "task_id": task_id, "body": "done"
+        }),
+    );
     assert!(r.get("result").is_some(), "win_b terminal failed: {r}");
 
     // ── Step 9: alice awaits terminal deliver ─────────────────────────────────
-    let at = Harness::ok_content(&win_a.tool_call("famp_await", &serde_json::json!({
-        "timeout_seconds": 10, "task_id": task_id
-    })));
-    assert_eq!(at["class"], "deliver", "alice expected terminal deliver: {at}");
+    let at = Harness::ok_content(&win_a.tool_call(
+        "famp_await",
+        &serde_json::json!({
+            "timeout_seconds": 10, "task_id": task_id
+        }),
+    ));
     assert_eq!(
-        at["body"]["interim"].as_bool(), Some(false),
-        "terminal deliver must have interim=false, got: {}", at["body"]
+        at["class"], "deliver",
+        "alice expected terminal deliver: {at}"
+    );
+    assert_eq!(
+        at["body"]["interim"].as_bool(),
+        Some(false),
+        "terminal deliver must have interim=false, got: {}",
+        at["body"]
     );
 
     // ── Step 10: alice's task record must be COMPLETED ────────────────────────

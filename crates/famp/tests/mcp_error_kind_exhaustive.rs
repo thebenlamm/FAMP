@@ -241,10 +241,7 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                 value: "BOGUS".to_string(),
             },
         ),
-        (
-            "NotRegistered",
-            CliError::NotRegistered,
-        ),
+        ("NotRegistered", CliError::NotRegistered),
         (
             "UnknownIdentity",
             CliError::UnknownIdentity {

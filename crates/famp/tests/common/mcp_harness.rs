@@ -34,10 +34,16 @@ pub fn send_msg(stdin: &mut ChildStdin, msg: &serde_json::Value) {
 }
 
 /// Read one newline-delimited JSON-RPC message from `stdout` within `timeout`.
-pub fn recv_msg<R: std::io::Read>(reader: &mut BufReader<R>, timeout: Duration) -> serde_json::Value {
+pub fn recv_msg<R: std::io::Read>(
+    reader: &mut BufReader<R>,
+    timeout: Duration,
+) -> serde_json::Value {
     let deadline = std::time::Instant::now() + timeout;
     loop {
-        assert!(std::time::Instant::now() < deadline, "timed out waiting for MCP response");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out waiting for MCP response"
+        );
         let mut line = String::new();
         let n = reader.read_line(&mut line).unwrap();
         assert!(n > 0, "stdout closed unexpectedly");
