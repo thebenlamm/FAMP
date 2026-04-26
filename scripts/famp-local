@@ -589,7 +589,24 @@ cmd_wire() {
   local mesh_count=0
   for _ in $mesh; do mesh_count=$((mesh_count + 1)); done
   if [ "$mesh_count" -lt 2 ]; then
-    die "need at least two identities to form a mesh; wire a second repo too, or pass a manual init"
+    # First-call bootstrap: invent a neutral placeholder so cmd_init's
+    # ≥2-agent precondition is satisfied. 'bootstrap' was chosen for being
+    # short, neutral, and evocative of "first peer to get the mesh going" —
+    # it's deliberately unlikely to collide with real workload identities
+    # like 'main', 'default', 'local', or repo basenames. If the user
+    # actually picked 'bootstrap' as their --as name, fall back to
+    # 'bootstrap2' so the two mesh entries stay distinct.
+    local placeholder
+    if [ "$name" = "bootstrap" ]; then
+      placeholder="bootstrap2"
+    else
+      placeholder="bootstrap"
+    fi
+    validate_identity_name "$placeholder"
+    mesh="$mesh $placeholder"
+    # shellcheck disable=SC2086,SC2116
+    mesh="$(echo $mesh)"
+    note "first-time bootstrap: auto-inventing placeholder identity '$placeholder' so the mesh has two members; safe to leave or unwire later"
   fi
 
   note "wiring: identity='$name', target=$dir"
