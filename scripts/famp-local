@@ -465,9 +465,8 @@ cmd_mcp_add() {
     for a in "$@"; do
       home="$(home_for "$a")"
       claude mcp remove --scope user "famp-$a" >/dev/null 2>&1 || true
-      claude mcp add    --scope user "famp-$a" "$famp_abs" mcp \
-        --env "FAMP_HOME=$home" >/dev/null
-      note "Claude: famp-$a registered → $famp_abs mcp  (FAMP_HOME=$home)"
+      claude mcp add    --scope user "famp-$a" "$famp_abs" mcp >/dev/null
+      note "Claude: famp-$a registered → $famp_abs mcp  (run 'register as $a' in window)"
     done
   fi
 
@@ -477,8 +476,8 @@ cmd_mcp_add() {
     for a in "$@"; do
       home="$(home_for "$a")"
       codex mcp remove "famp-$a" >/dev/null 2>&1 || true
-      codex mcp add "famp-$a" --env "FAMP_HOME=$home" -- "$famp_abs" mcp >/dev/null
-      note "Codex:  famp-$a registered → $famp_abs mcp  (FAMP_HOME=$home)"
+      codex mcp add "famp-$a" -- "$famp_abs" mcp >/dev/null
+      note "Codex:  famp-$a registered → $famp_abs mcp  (run 'register as $a' in window)"
     done
   fi
 
@@ -567,9 +566,6 @@ cmd_wire() {
   validate_identity_name "$name"
 
   local mcp_file="$dir/.mcp.json"
-  if [ -f "$mcp_file" ] && [ "$force" != 1 ]; then
-    die "$mcp_file already exists (pass --force to overwrite)"
-  fi
 
   # Build the full mesh: every existing agent + the target identity.
   # Deduplicated so re-wiring a repo that's already in the mesh doesn't
@@ -611,30 +607,50 @@ cmd_wire() {
   require_famp
   local famp_abs; famp_abs="$(command -v "$FAMP_BIN")"
   local home; home="$(home_for "$name")"
-  cat > "$mcp_file" <<EOF
-{
+  # Note: $home is computed but no longer written into the .mcp.json — it is only
+  # used downstream for update_zprofile_init and the README hint.
+  # Per .planning/phases/01-session-bound-mcp-identity/01-CONTEXT.md variant
+  # B-strict: every new MCP-launched window must call famp_register itself.
+
+  # Build the desired-state contents into a variable so the same string is used
+  # for both the byte-exact comparison AND the write — guarantees compare and
+  # writer agree (mitigates T-04-01).
+  local desired_template
+  desired_template="$(printf '{
   "mcpServers": {
     "famp": {
-      "command": "$famp_abs",
-      "args": ["mcp"],
-      "env": {
-        "FAMP_HOME": "$home"
-      }
+      "command": "%s",
+      "args": ["mcp"]
     }
   }
-}
-EOF
-  note "wrote $mcp_file → identity '$name'"
+}' "$famp_abs")"
+
+  if [ -f "$mcp_file" ]; then
+    # Idempotent: if the on-disk file already matches the desired template,
+    # no-op (skip the write). Otherwise rewrite in place — this is the
+    # auto-migration path for repos previously wired with FAMP_HOME in env.
+    # --force is honored for cosmetic re-rendering of an already-migrated file.
+    if [ "$force" = 1 ] || ! printf '%s\n' "$desired_template" | cmp -s - "$mcp_file"; then
+      printf '%s\n' "$desired_template" > "$mcp_file"
+      note "rewrote $mcp_file → identity '$name' (auto-migration: dropped FAMP_HOME)"
+    else
+      note "$mcp_file already on the new template (no change)"
+    fi
+  else
+    printf '%s\n' "$desired_template" > "$mcp_file"
+    note "wrote $mcp_file → identity '$name'"
+  fi
 
   update_zprofile_init "$mesh"
   note "updated ~/.zprofile login hook (mesh: $mesh)"
 
   echo
-  echo "✓ $dir wired as identity '$name'"
-  echo "  Claude Code: restart the window for that repo to load .mcp.json."
-  echo "  Codex: run '$FAMP_LOCAL_SCRIPT mcp-add --client codex $name' once."
-  echo "         Codex registration is global in ~/.codex/config.toml, not repo-scoped."
-  echo "         After that, restart the Codex window and use the MCP server named 'famp-$name'."
+  echo "✓ $dir wired (mesh: $mesh)"
+  echo "  In every new Claude Code window opened in $dir, run:"
+  echo "    register as $name"
+  echo "  In Codex, after '$FAMP_LOCAL_SCRIPT mcp-add --client codex $name', run:"
+  echo "    register as $name"
+  echo "  Use 'famp_whoami' to confirm the binding inside any window."
 }
 
 cmd_unwire() {
@@ -643,11 +659,9 @@ cmd_unwire() {
   local mcp_file="$dir/.mcp.json"
   [ -f "$mcp_file" ] || die "no .mcp.json at $mcp_file (nothing to unwire)"
 
-  # Pull identity name out of FAMP_HOME for the follow-up hint. Best-effort:
-  # if the user has edited the file we just print a generic hint.
-  local name=""
-  name="$(grep -o '"FAMP_HOME"[[:space:]]*:[[:space:]]*"[^"]*"' "$mcp_file" \
-          | sed 's|.*/||;s|"$||' || true)"
+  # Pre-migration .mcp.json files contained FAMP_HOME, post-migration files do
+  # not. Either way, the dir name is enough for the hint.
+  local name; name="$(basename "$dir")"
 
   rm -f "$mcp_file"
   note "removed $mcp_file"
