@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # redeploy-listeners.sh — safe rebuild + restart of all FAMP listener daemons.
 #
-# WHY THIS EXISTS (parent plan T1.3, ok-now-analyze-and-toasty-waffle.md):
-#   Five quick-task fixes (gst/ho8/kbx/lg7/lny) shipped code changes that
-#   could not reach the live listeners (agent-a/b/c) because there was no
-#   documented redeploy path.  The stale ~/.cargo/bin/famp silently masked
-#   every fix.  This script is the missing operational piece.
+# WHY THIS EXISTS:
+#   A series of fixes shipped code changes that could not reach the live
+#   listener daemons because there was no documented redeploy path.
+#   The stale ~/.cargo/bin/famp silently masked every fix.  This script
+#   is the missing operational piece.
 #
 # WHAT THIS SCRIPT DOES:
 #   1. Refuses to rebuild from a dirty crates/famp/ tree (footgun guard).

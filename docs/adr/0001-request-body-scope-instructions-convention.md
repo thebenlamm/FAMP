@@ -8,9 +8,8 @@
 
 The v0.5.1 envelope spec types `RequestBody.scope` as
 `serde_json::Value` (arbitrary JSON) without prescribing a shape.
-In practice, first beta usage (see
-`/Users/benlamm/Workspace/zed/scratchpad/famp-beta-feedback.md`,
-2026-04-24) revealed that senders want to attach prose task content
+In practice, first beta usage (recorded in maintainer feedback notes
+on 2026-04-24) revealed that senders want to attach prose task content
 to a new task, and the implementation was silently dropping it:
 `build_request_envelope` hardcoded `scope: {}` and the NewTask arm
 never read `args.body`. Receivers saw `scope:{}` and had no way to
