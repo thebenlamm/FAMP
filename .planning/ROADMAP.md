@@ -207,5 +207,41 @@ Plans:
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
+### Phase 999.3: `heartbeat` envelope class — work-in-progress visibility (BACKLOG)
+
+**Goal:** Define and ship a low-bandwidth `heartbeat` envelope class so a long-running worker can periodically signal "still alive, working on `<one-liner>`" without the originator having to poll. Eliminates the failure mode where 8–15 minute silent gaps in a multi-agent task look indistinguishable from a crashed daemon.
+
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Surfaced 2026-04-25 during the first 3-agent pressure test (Lampert × Ha Pharma deck cycle). Symptom: agent-a starved 21 minutes watching agent-b silently work on a Magnus-pressure-tested artifact, then Ben intervened thinking it was stuck. Today there is no protocol-level signal between "actively working" and "crashed mid-task." Proposal: new envelope class `heartbeat` carrying `{ task_id, working_on: <≤120 char string>, ts }`; sender emits at most every N minutes (default 5) or on demand from a hypothetical `famp_status` MCP tool; receiver-side, the originator's `famp_await` surfaces "agent-b heartbeat at HH:MM, working on: ..." rather than rendering silence as suspicious. Sized as substrate work because it touches `famp-envelope` (new MessageClass) and `famp-fsm` (heartbeat is non-state-advancing — does not consume a slot in the 5-state FSM, but the inbox surface treats it like a deliver). Evidence: `~/.claude/plans/ok-now-analyze-and-toasty-waffle.md` § G3 / T3.1.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.4: `user_attention` envelope class — human-in-loop primitive (BACKLOG)
+
+**Goal:** Define and ship a `user_attention` envelope class so a worker can explicitly mark a task as "blocked pending human input" — distinct from `REQUESTED`, `COMMITTED`, or any of the three terminal states. The inbox surface and orchestrator must render this as a first-class human-action signal, not just another deliver.
+
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Surfaced 2026-04-25 during the same 3-agent pressure test. Symptom: agent-c (Magnus, on call) said "this needs Ben" during round-2 escalation; agent-b had no FAMP-native primitive to forward the blocked-on-human state to agent-a (the orchestrator) in a way that would surface differently from a normal reply. Workaround used: a prose-tagged deliver, indistinguishable from any other reply. Proposal: new envelope class `user_attention` carrying `{ task_id, reason: <markdown blob explaining what input is needed>, suggested_actions?: Vec<string> }`; receiver-side, `famp_inbox list` and `famp_await` MUST flag these distinctly (e.g., a separate column or icon). Open design question: does this advance the FSM (new state `BLOCKED_HUMAN`?) or is it a non-state-advancing signal layered on COMMITTED? Likely the latter — keeps the 5-state FSM intact and matches the heartbeat (999.3) pattern. Evidence: `~/.claude/plans/ok-now-analyze-and-toasty-waffle.md` § G5 / T3.2.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.5: Spec-by-path tracking — `~/Workspace/...` paths in messages (BACKLOG, deferred to v1.0)
+
+**Goal:** Track the spec-by-path gap explicitly so it isn't forgotten before v1.0. The gap is already covered structurally by the v1.0 federation gateway design — this entry exists so there is a discoverable link from the pressure-test findings to the federation work, and so v1.0 planning explicitly verifies the gap is closed.
+
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Surfaced 2026-04-25 during the first 3-agent pressure test. Symptom: agent-b sent absolute filesystem paths (`~/Workspace/FAMP/...`, `~/Workspace/Lampert/...`) inside envelope bodies because the protocol has no native way to address a spec/artifact by content-id or by federation-resolvable URL. Today this works only because all three agents are co-resident on the same Mac with the same `$HOME`. The moment any agent runs cross-host, every such reference is dead. v0.9 (local-first bus, in design at `docs/superpowers/specs/2026-04-17-local-first-bus-design.md`) does NOT address this — it's a same-host design. v1.0's federation gateway is the right home for content-addressable refs (or signed-URL refs) because that's the layer where cross-host trust + transport already exists. **Action for v1.0 planning:** when scoping the federation gateway, include an explicit requirement that an envelope can carry a portable artifact reference (sha256-id or signed URL) and the receiver can dereference it without trusting the sender's filesystem. Evidence: `~/.claude/plans/ok-now-analyze-and-toasty-waffle.md` § G2 / T3.3.
+
+Plans:
+- [ ] TBD — to be folded into v1.0 federation gateway scope, NOT promoted independently. (Surface during /gsd:new-milestone for v1.0.)
+
 ---
 *Roadmap updated: 2026-04-17 — v0.9 re-scoped from "Federation Profile" to "Local-First Bus" after v0.8 onboarding friction surfaced during dogfooding. `scripts/famp-local` ships as pre-v0.9 scaffolding. Design spec committed. Federation primitives preserved as v1.0 internals with a Phase 4 CI-preservation requirement. v0.8 remains shipped (366/366 tests).*
