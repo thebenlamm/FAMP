@@ -21,17 +21,17 @@
 //! { "ok": true }
 //! ```
 
-use std::path::Path;
-
 use serde_json::Value;
 
 use crate::cli::config::read_peers;
 use crate::cli::error::CliError;
+use crate::cli::mcp::session::IdentityBinding;
 use crate::cli::paths;
 use crate::cli::peer::add::run_add_at;
 
 /// Dispatch a `famp_peers` tool call.
-pub fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
+pub fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, CliError> {
+    let home = binding.home.as_path();
     let action = input["action"]
         .as_str()
         .ok_or_else(|| CliError::SendArgsInvalid {

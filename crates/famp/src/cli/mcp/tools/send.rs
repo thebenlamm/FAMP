@@ -17,18 +17,18 @@
 //! { "task_id": "<uuid>", "state": "<state>" }
 //! ```
 
-use std::path::Path;
-
 use serde_json::Value;
 
 use crate::cli::error::CliError;
+use crate::cli::mcp::session::IdentityBinding;
 use crate::cli::send::{run_at_structured, SendArgs};
 
 /// Dispatch a `famp_send` tool call.
 ///
 /// `input` is the `arguments` object from the MCP `tools/call` request.
 /// Returns a JSON value suitable for embedding in the MCP content array.
-pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
+pub async fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, CliError> {
+    let home = binding.home.as_path();
     let peer = input["peer"]
         .as_str()
         .ok_or_else(|| CliError::SendArgsInvalid {

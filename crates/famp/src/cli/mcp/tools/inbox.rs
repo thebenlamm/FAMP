@@ -20,15 +20,15 @@
 //! { "ok": true }
 //! ```
 
-use std::path::Path;
-
 use serde_json::Value;
 
 use crate::cli::error::CliError;
 use crate::cli::inbox::{ack, list};
+use crate::cli::mcp::session::IdentityBinding;
 
 /// Dispatch a `famp_inbox` tool call.
-pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
+pub async fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, CliError> {
+    let home = binding.home.as_path();
     let action = input["action"]
         .as_str()
         .ok_or_else(|| CliError::SendArgsInvalid {

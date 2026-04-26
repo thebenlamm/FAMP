@@ -20,15 +20,15 @@
 //! filters those out by default. An agent that needs to act on task
 //! completion MUST await; list is not a real-time stream.
 
-use std::path::Path;
-
 use serde_json::Value;
 
 use crate::cli::await_cmd::{run_at_structured, AwaitArgs};
 use crate::cli::error::CliError;
+use crate::cli::mcp::session::IdentityBinding;
 
 /// Dispatch a `famp_await` tool call.
-pub async fn call(home: &Path, input: &Value) -> Result<Value, CliError> {
+pub async fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, CliError> {
+    let home = binding.home.as_path();
     let timeout_secs = input["timeout_seconds"].as_u64().unwrap_or(30);
     let timeout = format!("{timeout_secs}s");
     let task = input["task_id"].as_str().map(str::to_string);
