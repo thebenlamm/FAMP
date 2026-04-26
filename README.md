@@ -140,7 +140,14 @@ scripts/famp-local wire ~/Workspace/RepoB
 #     (global user-scope registration in ~/.codex/config.toml)
 scripts/famp-local mcp-add --client codex RepoA RepoB
 
-# 4. In either window, ask the agent to send a message:
+# 4. In each window, register the identity once:
+#    In the RepoA window:  "register as RepoA"
+#    In the RepoB window:  "register as RepoB"
+#    (Or call `famp_register` directly with identity=RepoA / RepoB.)
+#    Skipping this step means famp_send and the other messaging tools
+#    will return a typed `not_registered` error.
+
+# 5. Now send a message:
 #    "send a message to RepoB saying hello"
 #    The MCP client picks up the `famp_send` / `famp_inbox` / `famp_await`
 #    MCP tools and the message lands on the other side.
