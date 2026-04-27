@@ -81,7 +81,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   5. Carry-forward debt addressed: TD-4 (broker auto-creates `REQUESTED` task record on inbound request, eliminating the v0.8 receiver-side test seed) is naturally absorbed by the broker state-machine design; TD-7 (Nyquist `VALIDATION.md` for v0.8 phases 02-04 + bridge) is either backfilled in this phase or formally deferred per project policy.
 **Plans:** 3 plans
 - [x] 01-01-PLAN.md — `famp-bus` crate scaffold + types + codec + InMemoryMailbox + four TDD-RED gates (TDD-01 GREEN; TDD-02/03/04 RED-first scaffolds)
-- [ ] 01-02-PLAN.md — Pure `Broker` actor + dispatch + TDD-02/03/04 GREEN + five proptest properties PROP-01..05 GREEN
+- [x] 01-02-PLAN.md — Pure `Broker` actor + dispatch + TDD-02/03/04 GREEN + five proptest properties PROP-01..05 GREEN
 - [ ] 01-03-PLAN.md — Atomic v0.5.2 bump (single commit): `MessageClass::AuditLog` + body schema + `Relation::Audits` + `AnySignedEnvelope::AuditLog` dispatch + `BusEnvelope<B>` sibling type (BUS-11) + `AnyBusEnvelope` 6-arm dispatch + `UnexpectedSignature` + `FAMP_SPEC_VERSION` flip + T5 doc-comment removal + vector_1 fixture + `just check-spec-version-coherence` CI guard
 
 ### Phase 2: UDS wire + CLI + MV-MCP rewire + `famp-local hook add`

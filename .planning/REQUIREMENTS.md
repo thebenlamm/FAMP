@@ -20,9 +20,9 @@
 - [x] **BUS-04**: `Target` enum with variants `Agent { name }` and `Channel { name }`; channel names regex-validated `^#[a-z0-9][a-z0-9_-]{0,31}$`
 - [x] **BUS-05**: `BusErrorKind` enum exhaustive (no wildcard, compile-checked match downstream): `NotRegistered`, `NameTaken`, `ChannelNameInvalid`, `NotJoined`, `EnvelopeInvalid`, `EnvelopeTooLarge`, `TaskNotFound`, `BrokerProtoMismatch`, `BrokerUnreachable`, `Internal`
 - [x] **BUS-06**: Length-prefixed (4-byte big-endian) canonical-JSON frame codec; max frame size 16 MiB; sync (no tokio)
-- [ ] **BUS-07**: Pure broker state machine `Broker::handle(from: ClientId, msg: BusMessage) -> Vec<Out>` with no I/O — testable without UDS or runtime
-- [ ] **BUS-08**: Hello handshake required as first frame; bus_proto version negotiation with additive-compatibility intent for v2+ brokers
-- [ ] **BUS-09**: Single-threaded actor model — one tokio task owns broker state, mpsc inbox, no `RwLock` / `Mutex<HashMap>` on broker state
+- [x] **BUS-07**: Pure broker state machine `Broker::handle(from: ClientId, msg: BusMessage) -> Vec<Out>` with no I/O — testable without UDS or runtime
+- [x] **BUS-08**: Hello handshake required as first frame; bus_proto version negotiation with additive-compatibility intent for v2+ brokers
+- [x] **BUS-09**: Single-threaded actor model — one tokio task owns broker state, mpsc inbox, no `RwLock` / `Mutex<HashMap>` on broker state
 - [x] **BUS-10**: In-memory mailbox impl for tests
 - [ ] **BUS-11**: `Envelope` reuse — bus uses existing `famp_envelope::Envelope` unchanged; `sig` field MUST be `None` on the bus
 
@@ -35,11 +35,11 @@
 
 ### PROP — Property-test coverage (proptest, beyond TDD gates)
 
-- [ ] **PROP-01**: DM fan-in ordering — N senders → 1 recipient, per-sender order preserved
-- [ ] **PROP-02**: Channel fan-out — 1 sender → M joined subscribers each receive exactly the set sent, no dupes
-- [ ] **PROP-03**: Join/leave idempotency — repeated joins/leaves don't corrupt member sets or channel mailboxes
-- [ ] **PROP-04**: Drain completeness — offline-then-online sequences deliver all queued envelopes in order
-- [ ] **PROP-05**: PID-table uniqueness — arbitrary alive/dead PID mixes preserve name uniqueness invariant
+- [x] **PROP-01**: DM fan-in ordering — N senders → 1 recipient, per-sender order preserved
+- [x] **PROP-02**: Channel fan-out — 1 sender → M joined subscribers each receive exactly the set sent, no dupes
+- [x] **PROP-03**: Join/leave idempotency — repeated joins/leaves don't corrupt member sets or channel mailboxes
+- [x] **PROP-04**: Drain completeness — offline-then-online sequences deliver all queued envelopes in order
+- [x] **PROP-05**: PID-table uniqueness — arbitrary alive/dead PID mixes preserve name uniqueness invariant
 
 ### AUDIT — `audit_log` MessageClass (v0.5.2 spec amendment, lagged constant)
 
@@ -134,7 +134,7 @@
 
 - [ ] **CARRY-01** (TD-1): `[[profile.default.test-groups]]` pinned for listen-subprocess tests (max-threads = 4) before listen subprocess tests proliferate further. Address in Phase 4 alongside `e2e_two_daemons` refactor.
 - [ ] **CARRY-02** (TD-3): REQUIREMENTS.md INBOX-01 wording rewritten to match raw-bytes-per-line implementation OR a structured wrapper added. Address in Phase 2 alongside CLI inbox rework.
-- [ ] **CARRY-03** (TD-4): Broker auto-creates `REQUESTED` task record on inbound request (eliminates receiver-side test seed). Naturally absorbed by Phase 1 broker state-machine design.
+- [x] **CARRY-03** (TD-4): Broker auto-creates `REQUESTED` task record on inbound request (eliminates receiver-side test seed). Naturally absorbed by Phase 1 broker state-machine design.
 - [x] **CARRY-04** (TD-7): Backfill Nyquist `VALIDATION.md` for v0.8 phases 02-04 + bridge phase, OR formally defer per project policy. Address inside Phase 1's TDD-gates pass.
 
 ---
@@ -181,27 +181,27 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | BUS-04 | Phase 1 | Complete |
 | BUS-05 | Phase 1 | Complete |
 | BUS-06 | Phase 1 | Complete |
-| BUS-07 | Phase 1 | Pending |
-| BUS-08 | Phase 1 | Pending |
-| BUS-09 | Phase 1 | Pending |
+| BUS-07 | Phase 1 | Complete |
+| BUS-08 | Phase 1 | Complete |
+| BUS-09 | Phase 1 | Complete |
 | BUS-10 | Phase 1 | Complete |
 | BUS-11 | Phase 1 | Pending |
 | TDD-01 | Phase 1 | Complete |
 | TDD-02 | Phase 1 | Complete |
 | TDD-03 | Phase 1 | Complete |
 | TDD-04 | Phase 1 | Complete |
-| PROP-01 | Phase 1 | Pending |
-| PROP-02 | Phase 1 | Pending |
-| PROP-03 | Phase 1 | Pending |
-| PROP-04 | Phase 1 | Pending |
-| PROP-05 | Phase 1 | Pending |
+| PROP-01 | Phase 1 | Complete |
+| PROP-02 | Phase 1 | Complete |
+| PROP-03 | Phase 1 | Complete |
+| PROP-04 | Phase 1 | Complete |
+| PROP-05 | Phase 1 | Complete |
 | AUDIT-01 | Phase 1 | Pending |
 | AUDIT-02 | Phase 1 | Pending |
 | AUDIT-03 | Phase 1 | Pending |
 | AUDIT-04 | Phase 1 | Pending |
 | AUDIT-05 | Phase 1 | Pending |
 | AUDIT-06 | Phase 1 | Pending |
-| CARRY-03 | Phase 1 | Pending |
+| CARRY-03 | Phase 1 | Complete |
 | CARRY-04 | Phase 1 | Complete |
 | BROKER-01 | Phase 2 | Pending |
 | BROKER-02 | Phase 2 | Pending |
