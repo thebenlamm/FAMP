@@ -37,6 +37,7 @@ esac
 home_for() { echo "$STATE_ROOT/agents/$1"; }
 pid_for()  { echo "$STATE_ROOT/agents/$1/daemon.pid"; }
 log_for()  { echo "$STATE_ROOT/agents/$1/daemon.log"; }
+wires_file() { echo "$STATE_ROOT/wires.tsv"; }
 
 # ─── helpers ───────────────────────────────────────────────────────────
 
@@ -74,6 +75,70 @@ validate_identity_name() {
   case "$n" in
     ''|*[!A-Za-z0-9_-]*) die "invalid identity name '$n' (allowed: A-Z a-z 0-9 _ -)" ;;
   esac
+}
+
+# Print the canonical absolute path of $1 to stdout. Returns non-zero if $1
+# does not exist. Prefer GNU/BSD `realpath` when available, fall back to
+# `cd "$dir" && pwd -P` for portability across the bash versions famp-local
+# already targets. Callers that need to branch on missing-path MUST inspect
+# the exit code rather than `die` — this helper stays composable so
+# cmd_identity_of can write its own error messages.
+realpath_of() {
+  local p="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$p" 2>/dev/null
+  else
+    ( cd "$p" 2>/dev/null && pwd -P )
+  fi
+}
+
+# ─── wires.tsv registry (T3) ───────────────────────────────────────────
+#
+# On-disk wire registry at $STATE_ROOT/wires.tsv. Tab-separated, no header,
+# one `<canonical_dir>\t<identity>` row per wired directory. Used by
+# `identity-of` so hook scripts can resolve cwd → identity without a
+# positional arg. Locking is intentional last-writer-wins (no flock):
+# single-user/single-machine v0.8.x dev tooling, race window is microseconds.
+
+# wires_write_row CANONICAL_DIR IDENTITY
+# Idempotent: if a row already exists for CANONICAL_DIR, replace it.
+# Creates the file (with parent dir) on first write.
+wires_write_row() {
+  local cdir="$1" id="$2"
+  local wf; wf="$(wires_file)"
+  mkdir -p "$(dirname "$wf")"
+  touch "$wf"
+  # Strip any existing row for this canonical dir (exact match on first
+  # column), then append the fresh row. Preserves file order otherwise.
+  local tmp; tmp="$(mktemp)"
+  awk -F'\t' -v cdir="$cdir" '$1 != cdir' "$wf" > "$tmp"
+  printf '%s\t%s\n' "$cdir" "$id" >> "$tmp"
+  mv "$tmp" "$wf"
+}
+
+# wires_remove_row CANONICAL_DIR
+# Silent no-op if the registry doesn't exist or the row is absent.
+wires_remove_row() {
+  local cdir="$1"
+  local wf; wf="$(wires_file)"
+  [ -f "$wf" ] || return 0
+  local tmp; tmp="$(mktemp)"
+  awk -F'\t' -v cdir="$cdir" '$1 != cdir' "$wf" > "$tmp"
+  mv "$tmp" "$wf"
+}
+
+# wires_lookup CANONICAL_DIR
+# Print the identity for an exact-match canonical_dir on stdout, exit 0.
+# Exit 1 (silent) if not found or registry absent. Caller uses the exit
+# code to branch — do not `die` here, this helper composes into cmd_identity_of.
+wires_lookup() {
+  local cdir="$1"
+  local wf; wf="$(wires_file)"
+  [ -f "$wf" ] || return 1
+  local id
+  id="$(awk -F'\t' -v cdir="$cdir" '$1 == cdir { print $2; found=1; exit } END { exit !found }' "$wf")" || return 1
+  [ -n "$id" ] || return 1
+  printf '%s\n' "$id"
 }
 
 # Space-separated list of identity names currently present under STATE_ROOT.
@@ -621,6 +686,15 @@ cmd_wire() {
   # shellcheck disable=SC2086
   cmd_init $mesh
 
+  # T3: record the canonical-dir → identity binding so `identity-of` can
+  # resolve cwd → identity for hook scripts (drops a positional arg from
+  # Sofer's plumbing). Idempotent — re-wiring with --force or a new --as
+  # replaces the row.
+  local wire_canonical
+  wire_canonical="$(realpath_of "$dir")" || wire_canonical="$dir"
+  wires_write_row "$wire_canonical" "$name"
+  note "registered $wire_canonical → $name in $(wires_file)"
+
   require_famp
   local famp_abs; famp_abs="$(command -v "$FAMP_BIN")"
   local home; home="$(home_for "$name")"
@@ -682,6 +756,13 @@ cmd_unwire() {
 
   rm -f "$mcp_file"
   note "removed $mcp_file"
+
+  # T3: clear the registry row so `identity-of` no longer resolves to this
+  # repo. Silent no-op if the row is absent (matches unwire's tolerant style).
+  local unwire_canonical
+  unwire_canonical="$(realpath_of "$dir")" || unwire_canonical="$dir"
+  wires_remove_row "$unwire_canonical"
+
   echo
   echo "✓ $dir unwired"
   if [ -n "$name" ]; then
@@ -698,6 +779,66 @@ cmd_unwire() {
   fi
 }
 
+cmd_identity_of() {
+  [ $# -eq 1 ] || die "identity-of <dir>"
+  local input="$1"
+  [ -d "$input" ] || die "directory does not exist: $input"
+
+  # Single canonicalization at function entry (CONTEXT.md decision 5).
+  # The walk below is pure parent-of string ops on this canonical form —
+  # never realpath each ancestor (that risks symlink edge cases mid-walk).
+  local canonical
+  canonical="$(realpath_of "$input")" \
+    || die "directory does not exist: $input"
+  [ -d "$canonical" ] || die "directory does not exist: $canonical"
+
+  # Walk up. Track the highest ancestor that has a .mcp.json — used for
+  # lazy backfill if no registry hit is found by the time we reach /.
+  local cursor="$canonical"
+  local highest_mcp_ancestor=""
+  while [ "$cursor" != "/" ] && [ -n "$cursor" ]; do
+    # Belt-and-suspenders: registry membership AND .mcp.json presence both
+    # required at the matching ancestor (CONTEXT.md decision 6). Stale rows
+    # whose .mcp.json was deleted out-of-band silently self-skip.
+    if [ -f "$cursor/.mcp.json" ]; then
+      highest_mcp_ancestor="$cursor"
+      local hit
+      if hit="$(wires_lookup "$cursor")"; then
+        printf '%s\n' "$hit"
+        return 0
+      fi
+    fi
+    cursor="$(dirname "$cursor")"
+  done
+
+  # No registry hit. Try lazy backfill on the highest .mcp.json ancestor
+  # (CONTEXT.md decision 2): basename-unambiguous match against existing
+  # agents under $STATE_ROOT/agents/. For Sofer-style explicit-`--as` wires
+  # (basename(dir) != identity), the basename heuristic correctly misses
+  # and we hard-fail with a re-wire hint — guesses in shell pipelines are
+  # bugs.
+  if [ -n "$highest_mcp_ancestor" ]; then
+    local bn; bn="$(basename "$highest_mcp_ancestor")"
+    local existing; existing="$(list_existing_agents_inline)"
+    local match_count=0 match=""
+    local e
+    for e in $existing; do
+      if [ "$e" = "$bn" ]; then
+        match="$e"
+        match_count=$((match_count + 1))
+      fi
+    done
+    if [ "$match_count" -eq 1 ]; then
+      wires_write_row "$highest_mcp_ancestor" "$match"
+      printf '%s\n' "$match"
+      return 0
+    fi
+    die "directory not in wire registry (ancestor $highest_mcp_ancestor has .mcp.json but basename '$bn' does not unambiguously match an existing agent). Run: famp-local wire --as <name> from inside the wired repo to register it."
+  fi
+
+  die "directory not in wire registry. Run: famp-local wire --as <name> from inside the wired repo to register it."
+}
+
 cmd_help() {
   cat <<'EOF'
 famp-local — same-host onboarding wrapper for FAMP v0.8.
@@ -711,6 +852,10 @@ COMMANDS
                                   .mcp.json in <dir>, update ~/.zprofile.
   unwire <dir>                    Remove .mcp.json from <dir>. Identity and
                                   daemon stay — hint printed for full removal.
+  identity-of <dir>               Print the identity wired to <dir> (or any
+                                  subdirectory of a wired repo). Exits non-zero
+                                  with a re-wire hint if not found. Designed
+                                  for hook scripts: IDENTITY=$(famp-local identity-of "$PWD")
   send <from> <to> <text>         Send a new_task from one agent to another.
   inbox <name>                    List a name's inbox entries.
   status                          Show all known agents and daemon state.
@@ -742,6 +887,7 @@ EXAMPLE
   $ famp-local wire ~/Workspace/God --as architect
   $ famp-local send alice bob 'ship it'
   $ famp-local inbox bob
+  $ IDENTITY=$(famp-local identity-of "$PWD")
   $ famp-local unwire ~/Workspace/MyRepo
 EOF
 }
@@ -755,6 +901,7 @@ case "$cmd" in
   unwire)                 cmd_unwire "$@" ;;
   send)    require_famp; cmd_send "$@" ;;
   inbox)   require_famp; cmd_inbox "$@" ;;
+  identity-of)            cmd_identity_of "$@" ;;
   status)                 cmd_status "$@" ;;
   stop)                   cmd_stop "$@" ;;
   clean)                  cmd_clean "$@" ;;
