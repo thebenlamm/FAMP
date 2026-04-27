@@ -12,7 +12,7 @@ A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.
 - **Tech stack**: Rust (stable, latest). `ed25519-dalek` for signatures, `serde` + custom canonicalizer for RFC 8785 JCS, `proptest` + `stateright` for state-machine model checking, `axum` or `hyper` for HTTP transport reference.
 - **Tech stack (deferred)**: No Python/TS bindings in v1; keep FFI surface clean but unwired.
 - **Transport**: HTTP/1.1 + JSON over TLS as reference wire; in-process `MemoryTransport` for tests. Other transports live behind the `Transport` trait.
-- **Conformance target**: Level 2 + Level 3 in one milestone. Level 1-only is explicitly not a release target.
+- **Conformance target**: Staged conformance is supported — each milestone tags conformance level achieved; vector pack ships in v1.0 alongside federation gateway.
 - **Spec fidelity**: v0.5.1 fork is the authority for this implementation. All diffs from v0.5 documented with reviewer rationale.
 - **Security**: Every message signed (INV-10); unsigned messages rejected. Ed25519 non-negotiable. Domain separation prefix added in v0.5.1 fork.
 - **Developer onboarding**: Rust toolchain install is Phase 0; assume zero prior Rust experience.
@@ -226,6 +226,14 @@ this distinction.
 UDS-backed broker; drop crypto on the local path; treat federation
 (cross-host) as a v1.0 gateway that wraps the bus. IRC-style channels,
 durable per-name mailboxes, stable MCP tool surface across v0.8 / v0.9 / v1.0.
+
+**v1.0 readiness trigger (named):** v1.0 federation milestone fires
+when Sofer (or a named equivalent) runs FAMP from a different machine
+and exchanges a signed envelope. If 4 weeks pass after v0.9.0 ships
+with no movement on this trigger, federation framing is reconsidered.
+Concrete forcing function for the local-case-black-hole risk; the
+conformance vector pack ships at the same trigger (deferred from
+v0.5.1 wrap, see `.planning/WRAP-V0-5-1-PLAN.md` DEFERRED banner).
 
 Full write-up in [`ARCHITECTURE.md`](ARCHITECTURE.md) and the design spec
 [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
