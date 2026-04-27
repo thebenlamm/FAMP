@@ -73,8 +73,11 @@ resolve_dir() {
 validate_identity_name() {
   local n="$1"
   case "$n" in
-    ''|*[!A-Za-z0-9_-]*) die "invalid identity name '$n' (allowed: A-Z a-z 0-9 _ -)" ;;
+    ''|*[!A-Za-z0-9._-]*) die "invalid identity name '$n' (allowed: A-Z a-z 0-9 . _ -)" ;;
   esac
+  # Match the Rust protocol validator (famp-core identity::validate_name_or_instance_id, D-05/D-06):
+  # name MUST be ≤ 64 bytes. Fail-fast at the wrapper instead of letting the daemon reject later.
+  [ "${#n}" -le 64 ] || die "invalid identity name '$n' (length ${#n} exceeds 64 bytes)"
 }
 
 # Print the canonical absolute path of $1 to stdout. Returns non-zero if $1
