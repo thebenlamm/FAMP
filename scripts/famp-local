@@ -571,7 +571,9 @@ EOF
   local f bytes lines
   for f in "${inboxes[@]}"; do
     bytes=$(wc -c < "$f" | tr -d ' ')
-    lines=$(wc -l < "$f" | tr -d ' ')
+    # awk NR counts records correctly even when the final line lacks a
+    # trailing newline; `wc -l` would undercount in that case.
+    lines=$(awk 'END{print NR}' "$f")
     total_msgs=$((total_msgs + lines))
     printf '  %8s bytes  %6s msgs  %s\n' "$bytes" "$lines" "$f"
   done
@@ -1019,7 +1021,8 @@ EOF
 
   local inbox_msgs=0
   if [ -f "$home/inbox.jsonl" ]; then
-    inbox_msgs="$(wc -l < "$home/inbox.jsonl" 2>/dev/null | tr -d ' ')"
+    # awk NR — see cmd_clear comment; tolerates missing trailing newline.
+    inbox_msgs="$(awk 'END{print NR}' "$home/inbox.jsonl" 2>/dev/null || echo 0)"
     [ -n "$inbox_msgs" ] || inbox_msgs=0
   fi
 
