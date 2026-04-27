@@ -946,8 +946,8 @@ famp-local doctor [<dir>]
 
 Check whether <dir> (default: $PWD) is set up for FAMP. Read-only; reports
 identity, daemon status, and inbox count if wired. Exits 0 for every
-diagnosis (✓ wired / ⚠ partial / ⚠ stale / ✗ not wired); only malformed
-input (missing dir, too many args, unknown flag) returns non-zero.
+diagnosis (✓ wired / ⚠ stale / ✗ not wired); only malformed input
+(missing dir, too many args, unknown flag) returns non-zero.
 EOF
         return 0 ;;
       --*)
@@ -965,87 +965,68 @@ EOF
   canonical="$(realpath_of "$input")" || die "directory does not exist: $input"
   [ -d "$canonical" ] || die "directory does not exist: $canonical"
 
-  # Two-line state envelope from wire_resolve_dir.
-  local resolved state payload
-  resolved="$(wire_resolve_dir "$canonical")"
-  state="$(printf '%s\n' "$resolved" | sed -n '1p')"
-  payload="$(printf '%s\n' "$resolved" | sed -n '2p')"
+  # Read the input dir's own .mcp.json. No walk-up — .mcp.json is shared
+  # with Claude Code / Codex / etc., so an unrelated .mcp.json in $HOME
+  # would otherwise produce false positives. Only count it as a FAMP wire
+  # if it contains a FAMP_HOME entry.
+  local mcp="$canonical/.mcp.json"
+  if [ ! -f "$mcp" ] || ! grep -q '"FAMP_HOME"' "$mcp"; then
+    printf '✗ %s is not set up for FAMP\n' "$canonical"
+    printf '\n'
+    if [ -f "$mcp" ]; then
+      printf '  .mcp.json exists but contains no FAMP server entry\n'
+    else
+      printf '  no .mcp.json in this directory\n'
+    fi
+    printf '\n'
+    printf '  to set this folder up:\n'
+    printf '    famp-local wire .\n'
+    return 0
+  fi
 
-  case "$state" in
-    NONE)
-      printf '✗ %s is not set up for FAMP\n' "$canonical"
-      printf '\n'
-      printf '  no .mcp.json found here or in any parent directory\n'
-      printf '\n'
-      printf '  to set this folder up:\n'
-      printf '    famp-local wire .\n'
-      return 0
-      ;;
-    PARTIAL)
-      local ancestor="$payload"
-      printf '⚠ %s is partially set up\n' "$canonical"
-      printf '\n'
-      printf '  .mcp.json exists at: %s\n' "$ancestor"
-      printf '  registry row:        missing — wires.tsv has no entry for this directory\n'
-      printf '\n'
-      printf '  this can happen if .mcp.json was committed by another tool, or if the\n'
-      printf '  registry was cleared. to fix:\n'
-      printf '    famp-local wire .              (re-registers using basename as identity)\n'
-      printf '    famp-local wire . --as <name>  (specify identity explicitly)\n'
-      return 0
-      ;;
-    WIRED)
-      local ancestor identity
-      ancestor="$(printf '%s\n' "$payload" | awk -F'\t' '{print $1}')"
-      identity="$(printf '%s\n' "$payload" | awk -F'\t' '{print $2}')"
-      local home; home="$(home_for "$identity")"
-      if [ ! -d "$home" ]; then
-        # Registry says X but agent dir is gone.
-        printf '⚠ %s registry is stale\n' "$canonical"
-        printf '\n'
-        printf '  registry says identity: %s\n' "$identity"
-        printf '  but %s does not exist\n' "$home"
-        printf '\n'
-        printf '  to fix:\n'
-        printf '    famp-local init %s          (recreate the identity)\n' "$identity"
-        printf '    famp-local unwire %s        (remove the stale registry row)\n' "$ancestor"
-        return 0
-      fi
+  local famp_home identity
+  famp_home="$(awk -F'"' '/"FAMP_HOME"/ { print $4 }' "$mcp")"
+  [ -n "$famp_home" ] || die "could not parse FAMP_HOME from $mcp"
+  identity="$(basename "$famp_home")"
 
-      # Healthy registry row + agent dir exists. Inspect daemon + inbox.
-      local pidf; pidf="$(pid_for "$identity")"
-      local port; port="$(port_of "$home" 2>/dev/null || true)"
-      local daemon_line
-      if [ -f "$pidf" ]; then
-        local pid; pid="$(cat "$pidf" 2>/dev/null || true)"
-        if [ -n "$pid" ] && is_alive "$pid"; then
-          daemon_line="running (pid $pid, port ${port:-unknown})"
-        else
-          daemon_line="stopped — start it with: famp-local init $identity"
-        fi
-      else
-        daemon_line="stopped — start it with: famp-local init $identity"
-      fi
+  local home; home="$(home_for "$identity")"
+  if [ ! -d "$home" ]; then
+    printf '⚠ %s identity is missing\n' "$canonical"
+    printf '\n'
+    printf '  .mcp.json points to identity: %s\n' "$identity"
+    printf '  but %s does not exist\n' "$home"
+    printf '\n'
+    printf '  to fix:\n'
+    printf '    famp-local init %s          (recreate the identity)\n' "$identity"
+    return 0
+  fi
 
-      local inbox_msgs=0
-      if [ -f "$home/inbox.jsonl" ]; then
-        inbox_msgs="$(wc -l < "$home/inbox.jsonl" 2>/dev/null | tr -d ' ')"
-        [ -n "$inbox_msgs" ] || inbox_msgs=0
-      fi
+  local pidf; pidf="$(pid_for "$identity")"
+  local port; port="$(port_of "$home" 2>/dev/null || true)"
+  local daemon_line
+  if [ -f "$pidf" ]; then
+    local pid; pid="$(cat "$pidf" 2>/dev/null || true)"
+    if [ -n "$pid" ] && is_alive "$pid"; then
+      daemon_line="running (pid $pid, port ${port:-unknown})"
+    else
+      daemon_line="stopped — start it with: famp-local init $identity"
+    fi
+  else
+    daemon_line="stopped — start it with: famp-local init $identity"
+  fi
 
-      printf '✓ %s is set up for FAMP\n' "$canonical"
-      printf '\n'
-      printf '  identity:  %s\n' "$identity"
-      printf '  home:      %s\n' "$home"
-      printf '  wired at:  %s  (.mcp.json + registry)\n' "$ancestor"
-      printf '  daemon:    %s\n' "$daemon_line"
-      printf '  inbox:     %s messages\n' "$inbox_msgs"
-      return 0
-      ;;
-    *)
-      die "internal error: wire_resolve_dir returned unexpected state '$state'"
-      ;;
-  esac
+  local inbox_msgs=0
+  if [ -f "$home/inbox.jsonl" ]; then
+    inbox_msgs="$(wc -l < "$home/inbox.jsonl" 2>/dev/null | tr -d ' ')"
+    [ -n "$inbox_msgs" ] || inbox_msgs=0
+  fi
+
+  printf '✓ %s is set up for FAMP\n' "$canonical"
+  printf '\n'
+  printf '  identity:  %s\n' "$identity"
+  printf '  home:      %s\n' "$home"
+  printf '  daemon:    %s\n' "$daemon_line"
+  printf '  inbox:     %s messages\n' "$inbox_msgs"
 }
 
 cmd_identity_of() {
