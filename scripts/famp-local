@@ -959,10 +959,11 @@ cmd_doctor() {
         cat <<'EOF'
 famp-local doctor [<dir>]
 
-Check whether <dir> (default: $PWD) is set up for FAMP. Read-only; reports
-identity, daemon status, and inbox count if wired. Exits 0 for every
-diagnosis (✓ wired / ⚠ stale / ✗ not wired); only malformed input
-(missing dir, too many args, unknown flag) returns non-zero.
+Check whether <dir> (default: $PWD) is set up for FAMP. Walks up from <dir>
+looking for an .mcp.json with a FAMP server entry; reports identity (from
+wires.tsv), daemon status, and inbox count when wired. Exits 0 for every
+diagnosis; only malformed input (missing dir, too many args, unknown flag)
+returns non-zero.
 EOF
         return 0 ;;
       --*)
