@@ -1,6 +1,6 @@
-# FAMP — Federated Agent Messaging Protocol, v0.5.1
+# FAMP — Federated Agent Messaging Protocol, v0.5.2
 
-*Reviewer-audited revision of v0.5*
+*Reviewer-audited revision of v0.5; v0.5.2 amendment introduces non-FSM-firing `audit_log` MessageClass.*
 
 ---
 
@@ -17,12 +17,22 @@ capitals, as shown here.
 ## Spec-version constant
 
 ```
-FAMP_SPEC_VERSION = "0.5.1"
+FAMP_SPEC_VERSION = "0.5.2"
 ```
 
 Implementations MUST emit this exact string, case-sensitive, in any envelope
 header or Agent Card field that references the spec version. A message with
 a mismatched version is rejected with `unsupported_version`.
+
+> **Reference-implementation note (non-normative).** The Rust reference
+> implementation in `crates/famp-envelope/src/version.rs` intentionally
+> retains the constant value `"0.5.1"` until v0.9 Phase 1 ships the
+> `MessageClass::AuditLog` impl. During this gap the wire `famp` field
+> continues to declare `"0.5.1"` exactly; conformance therefore means
+> "v0.5.1 wire vocabulary, v0.5.2 spec text." This note is editorial; the
+> normative version constant for v0.5.2 conformance is `"0.5.2"`, and any
+> second implementer targeting v0.5.2 conformance MUST emit `"0.5.2"` on
+> the wire and reject `"0.5.1"` per §19.
 
 ---
 
@@ -822,6 +832,14 @@ Extensions MUST NOT define body fields named `interim`, `scope_subset`,
 `target`, or `terminal_status`. The v0.5 claim that 'no body inspection is
 required' is retracted; the whitelist is the normative replacement.
 
+**Non-FSM-firing classes (normative).** The MessageClasses `ack` and
+`audit_log` are not FSM-observable: their envelopes MUST NOT cause any
+state transition in either the conversation FSM or the task FSM. Receivers
+store these classes via the inbox/dispatcher metadata path only. The
+`audit_log` class introduces a new causality `rel` value `"audits"`; see
+§8a.6. `audit_log` additionally MUST NOT generate any reply envelope (see
+§8a.6); `ack` semantics for the other classes are unaffected.
+
 ## §8a Body schemas
 
 Body schemas are defined inline in this specification as field-per-line
@@ -925,6 +943,63 @@ The `transfer_commit_race` target value is introduced by §12.3a
 | `transfer_deadline` | string (RFC 3339) | REQUIRED iff `form = transfer` | Default 5 minutes from envelope `ts`. Per §12.3 item 5 and §12.3a tiebreak. |
 | `natural_language_summary` | string | SHOULD | Human-readable. |
 
+### §8a.6 `audit_log` body
+
+**`audit_log` body** (additionalProperties: false)
+
+| Field | JSON type | Req/Opt | Constraint notes |
+|---|---|---|---|
+| `event` | string | REQUIRED | Short, snake_case identifier of what happened (e.g. `"tool_call"`, `"file_edit"`, `"hook_fired"`). MUST be 1..=128 UTF-8 bytes after canonicalization. |
+| `subject` | string | OPTIONAL | What the event was about (e.g. a file path, a tool name, a principal). MUST be ≤ 1024 UTF-8 bytes after canonicalization when present. |
+| `details` | object | OPTIONAL | Free-form structured payload. Canonicalized per §4a (RFC 8785 JCS) — no escape valves; same `arbitrary_precision`/`preserve_order` prohibitions apply per §4a.0.4. |
+
+**Semantics (normative).**
+
+- `audit_log` is a **fire-and-forget** MessageClass. The receiver **MUST**
+  store the envelope (durably, via the same inbox path used for other
+  classes) and **MUST NOT** emit any reply envelope — in particular, no
+  `ack` is generated. Senders MUST NOT presume delivery confirmation; an
+  `audit_log` is observability, not communication.
+- `audit_log` is **not FSM-observable** (see §7.3a). It MUST NOT cause any
+  task or conversation state transition.
+- **Causality (OPTIONAL).** When the `audit_log` is *about* a specific
+  prior envelope, the sender SHOULD include `causality: { rel: "audits",
+  ref: <uuid> }`. The new `rel` value `"audits"` is introduced by this
+  amendment and is distinct from the existing `"acknowledges"` value. When
+  the audit is ambient (e.g., `"daemon_started"`, `"cache_flushed"`),
+  `causality` is omitted and the envelope is `scope: "standalone"`.
+- **Signature.** Signature semantics are unchanged — INV-10 still applies:
+  every `audit_log` envelope is Ed25519-signed over canonical JSON under
+  the §7.1a domain prefix `b"FAMP-sig-v1\x00"`. Verification follows
+  §7.1c.8 verbatim.
+
+**Worked example (informative).** A minimal `audit_log` envelope, ambient
+(no causality):
+
+```json
+{
+  "famp": "0.5.2",
+  "id": "01938a4f-1b2c-7c00-8000-000000000001",
+  "ts": "2026-04-27T00:00:00Z",
+  "from": "agent:localhost/sofer",
+  "to": "agent:localhost/observer",
+  "class": "audit_log",
+  "scope": "standalone",
+  "body": {
+    "event": "tool_call",
+    "subject": "famp_send",
+    "details": { "duration_ms": 42, "ok": true }
+  }
+}
+```
+
+Canonical JSON output follows §4a key sort and number rules verbatim; this
+amendment introduces no new canonicalization behavior. The signing input
+is `b"FAMP-sig-v1\x00" || canonical_json(envelope_minus_sig)` per §7.1a;
+the produced 64-byte Ed25519 signature is base64url-unpadded per §7.1b. No
+worked byte-exact vector is included in v0.5.2 — vectors are deferred per
+the v1.0 conformance pack (PROJECT.md "Vector pack defers to v1.0").
+
 **Closing note.** Validation note: implementations MUST use
 `deny_unknown_fields` (or language-equivalent strict decoding) for every
 body schema. A body field not listed in the schema above is rejected at
@@ -958,9 +1033,9 @@ L2, and L3 as defined in v0.5 §19.
 
 **Spec-version emission (normative, all levels).** All conformance levels
 (L1, L2, L3) **REQUIRE** implementations to emit
-`FAMP_SPEC_VERSION = "0.5.1"` exactly (see top-of-doc Spec-version constant
+`FAMP_SPEC_VERSION = "0.5.2"` exactly (see top-of-doc Spec-version constant
 and §D-29). Messages whose envelope `famp` field holds any value other than
-the exact string `"0.5.1"` **MUST** be rejected with error class
+the exact string `"0.5.2"` **MUST** be rejected with error class
 `unsupported_version`. A partial-match, prefix-match, or semver-range
 comparison is non-conformant.
 
@@ -970,6 +1045,18 @@ for every vector in the test suite.
 
 Level 1-only implementations are **not** a v0.5.1 release target per
 PROJECT.md; the minimum conformance target is L2 + L3.
+
+**`audit_log` support (normative, all levels).** All conformance levels
+(L1, L2, L3) **REQUIRE** receivers to accept and durably store `audit_log`
+envelopes per §8a.6, and **MUST NOT** emit any reply envelope (including
+`ack`) in response. Senders MAY emit `audit_log` envelopes at any
+conformance level. The new `audit_log` MessageClass and the new `"audits"`
+causality `rel` value are part of the v0.5.2 conformance vocabulary;
+v0.5.1-only implementations that reject `audit_log` as `unknown_class` are
+**not** v0.5.2-conformant. The existing reference implementation (Rust
+crates) operates against this paragraph's contract once v0.9 Phase 1 ships;
+until then it is v0.5.1-conformant only (see top-of-doc
+reference-implementation note).
 
 ---
 
@@ -995,17 +1082,26 @@ v0.5, the following dispositions apply in v0.5.1:
   schemas). The `deliver` body is pinned to the inline schema in §8a.3
   with `additionalProperties: false`; extensions live in the
   envelope-level `extensions` map only.
+- **Q7 — `audit_log` retention, rotation, and quota.** *Open in v0.5.2.*
+  The §8a.6 schema pins envelope shape but says nothing about how long
+  receivers MUST retain stored `audit_log` envelopes, nor about per-sender
+  or per-event-type rate limits. v1.0 (federation gateway) MUST resolve
+  this before audit traffic crosses trust boundaries. Until then,
+  retention/rotation policy is implementation-defined and SHOULD be
+  documented per deployment.
 
 Questions Q4, Q5, and any other v0.5 entries retain their v0.5 dispositions
 unless otherwise noted in the Changelog.
 
 ---
 
-## v0.5.1 Changelog
+## v0.5.2 Changelog
 
 Each entry below cites the reviewer finding that drove the change. Entries
-are stable references of the form `v0.5.1-Δnn`. The full catalog covers
-Δ01 through Δ28; entries are grouped by subsystem, not strictly numeric.
+are stable references of the form `v0.5.1-Δnn` (v0.5.1 catalog) and
+`v0.5.2-Δnn` (v0.5.2 catalog). The full catalog covers Δ01 through Δ33;
+entries are grouped by subsystem, not strictly numeric. v0.5.2 adds Δ29
+through Δ33 (audit_log MessageClass amendment).
 
 - `v0.5.1-Δ01 — top-of-doc Spec-version constant — PITFALLS P14 (spec drift) — Add FAMP_SPEC_VERSION = "0.5.1" block; mandate envelope famp field = "0.5.1" exact; mismatches rejected as unsupported_version. Satisfies SPEC-20 at document level.`
 - `v0.5.1-Δ02 — front matter — editorial — Bump title to "FAMP v0.5.1" with subtitle "Reviewer-audited revision of v0.5".`
@@ -1036,3 +1132,8 @@ are stable references of the form `v0.5.1-Δnn`. The full catalog covers
 - `v0.5.1-Δ26 — §19 Conformance Levels — CONTEXT D-29 — Amend §19 to require all levels (L1, L2, L3) emit FAMP_SPEC_VERSION = "0.5.1" exactly; reject mismatches as unsupported_version. Ties level hierarchy to the version constant.`
 - `v0.5.1-Δ27 — §23 Open Questions — editorial / CONTEXT deferred items — Mark Q1 (multi-party commitment), Q2 (streaming deliver), Q3 (cross-federation delegation) as deferred to post-v0.5.1 per CONTEXT.md; mark Q6 (deliver body structure) as RESOLVED by Δ24 (§8a Body schemas).`
 - `v0.5.1-Δ28 — bottom of doc (this section) — editorial — Consolidated catalog of all 28 structural deltas from v0.5 to v0.5.1 with reviewer-finding citations; normative record of every change. Satisfies SPEC-01.`
+- `v0.5.2-Δ29 — top-of-doc Spec-version constant + §19 — v0.9 prep sprint T5 / Sofer field report 2026-04-26 — Bump FAMP_SPEC_VERSION 0.5.1 → 0.5.2; reject mismatches as unsupported_version. Reference-implementation note acknowledges Rust constant lag until v0.9 Phase 1.`
+- `v0.5.2-Δ30 — §8a.6 — v0.9 prep sprint T5 / Sofer field report — New audit_log MessageClass body schema: event (REQUIRED), subject (OPTIONAL), details (OPTIONAL). additionalProperties: false. Worked envelope example included. Signature semantics unchanged (INV-10, §7.1a).`
+- `v0.5.2-Δ31 — §7.3a + §8a.6 — v0.9 prep sprint T5 — audit_log declared non-FSM-firing (sibling to ack); receivers MUST store, MUST NOT emit ack reply. Forbids "improvement" via auto-acknowledge.`
+- `v0.5.2-Δ32 — §6 / §8a.6 — v0.9 prep sprint T5 — New causality rel value "audits" introduced (distinct from existing "acknowledges"); OPTIONAL on audit_log; omitted for ambient audits (scope: standalone).`
+- `v0.5.2-Δ33 — §23 Open Questions — v0.9 prep sprint T5 — Q7 filed: audit_log retention/rotation/quota deferred to v1.0 federation gateway; v0.5.2 leaves implementation-defined.`
