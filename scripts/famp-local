@@ -585,12 +585,20 @@ EOF
   fi
 
   if [ "$assume_yes" -eq 0 ]; then
-    local reply
+    # No tty AND no readable stdin → can't prompt. Fail fast with a hint
+    # instead of hanging or silently aborting under set -e. Common when
+    # invoked from /famp-clear in a Claude Code session with no tty.
+    if [ ! -t 0 ] && [ ! -r /dev/tty ]; then
+      die "no tty available for confirmation prompt; pass --yes to skip the prompt or --dry-run to preview"
+    fi
+    local reply=""
     printf 'Clear %d inboxes (%d messages)? [y/N] ' "${#inboxes[@]}" "$total_msgs"
+    # `|| reply=""` so a closed-stdin read failure under set -e doesn't
+    # abort the function before the case decides what to do.
     if [ -r /dev/tty ]; then
-      read -r reply </dev/tty
+      read -r reply </dev/tty 2>/dev/null || reply=""
     else
-      read -r reply
+      read -r reply 2>/dev/null || reply=""
     fi
     case "$reply" in
       y|Y) ;;
