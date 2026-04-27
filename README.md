@@ -118,6 +118,29 @@ just install-hooks
 just ci
 ```
 
+## When NOT to Use FAMP
+
+FAMP is dev-time coordination between agents. It is not a production data-sync layer.
+
+The misuse case that comes up first: pointing it at customer-facing workflows. The question that surfaces it:
+
+> *"Could I use FAMP to sync between two of my production sites — when a customer takes an action on one, automatically update state on the other?"*
+
+**No.** FAMP delivery requires an open Claude Code (or Codex) window actively reading the inbox. Close the window, the inbox stalls. There is no autonomous daemon servicing scheduled work; there's just a Rust process signing envelopes on behalf of whichever agent is currently using it.
+
+What FAMP is good at:
+- Two windows on the same Mac asking each other questions across loaded repo contexts
+- Hook-driven notifications between agents working on related codebases — audit logs, migration coordination, cross-site refactor sync
+- Judgment-tier coordination: *"I need agent-B's read on this before I touch X"*
+
+What needs a real backend, not FAMP:
+- Calendar sync between two production sites
+- Customer-state replication
+- Background jobs that must run while no one is at a keyboard
+- Anything where availability is part of the contract
+
+Rule of thumb: **if the use case survives a closed laptop, FAMP is not the right layer.** Use a database, a queue, a webhook, or whatever your platform's actual sync primitive is. FAMP coordinates the agents working on those systems — not the systems themselves.
+
 ## Quick Start (local)
 
 Two Claude Code or Codex windows on the same Mac, exchanging signed messages.
