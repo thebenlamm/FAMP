@@ -980,29 +980,67 @@ EOF
   canonical="$(realpath_of "$input")" || die "directory does not exist: $input"
   [ -d "$canonical" ] || die "directory does not exist: $canonical"
 
-  # Read the input dir's own .mcp.json. No walk-up — .mcp.json is shared
-  # with Claude Code / Codex / etc., so an unrelated .mcp.json in $HOME
-  # would otherwise produce false positives. Only count it as a FAMP wire
-  # if it contains a FAMP_HOME entry.
-  local mcp="$canonical/.mcp.json"
-  if [ ! -f "$mcp" ] || ! grep -q '"FAMP_HOME"' "$mcp"; then
+  # Walk up looking for an .mcp.json that contains a FAMP server entry
+  # (`"famp"` key under mcpServers). The walk handles "I'm in a subdir of
+  # a wired repo" naturally; the FAMP-content gate prevents false positives
+  # from unrelated MCP configs (e.g. ~/.mcp.json holding llm-conclave/khai/etc.).
+  # Closest ancestor wins (break on first hit, not last).
+  local cursor="$canonical"
+  local mcp_ancestor=""
+  while [ "$cursor" != "/" ] && [ -n "$cursor" ]; do
+    if [ -f "$cursor/.mcp.json" ] && grep -q '"famp"' "$cursor/.mcp.json"; then
+      mcp_ancestor="$cursor"
+      break
+    fi
+    cursor="$(dirname "$cursor")"
+  done
+
+  if [ -z "$mcp_ancestor" ]; then
     printf '✗ %s is not set up for FAMP\n' "$canonical"
     printf '\n'
-    if [ -f "$mcp" ]; then
-      printf '  .mcp.json exists but contains no FAMP server entry\n'
-    else
-      printf '  no .mcp.json in this directory\n'
-    fi
+    printf '  no FAMP-wired .mcp.json found here or in any parent\n'
     printf '\n'
     printf '  to set this folder up:\n'
     printf '    famp-local wire .\n'
     return 0
   fi
 
-  local famp_home identity
-  famp_home="$(awk -F'"' '/"FAMP_HOME"/ { print $4 }' "$mcp")"
-  [ -n "$famp_home" ] || die "could not parse FAMP_HOME from $mcp"
-  identity="$(basename "$famp_home")"
+  # Resolve identity. Try sources in order:
+  #   1. wires.tsv registry (current/preferred path)
+  #   2. legacy FAMP_HOME parse (pre-migration .mcp.json)
+  #   3. lazy backfill via basename match against existing agent dirs
+  local identity=""
+  identity="$(wires_lookup "$mcp_ancestor" 2>/dev/null || true)"
+
+  if [ -z "$identity" ] && grep -q '"FAMP_HOME"' "$mcp_ancestor/.mcp.json"; then
+    local famp_home
+    famp_home="$(awk -F'"' '/"FAMP_HOME"/ { print $4; exit }' "$mcp_ancestor/.mcp.json")"
+    [ -n "$famp_home" ] && identity="$(basename "$famp_home")"
+  fi
+
+  if [ -z "$identity" ]; then
+    local bn; bn="$(basename "$mcp_ancestor")"
+    local existing; existing="$(list_existing_agents_inline)"
+    local match_count=0 match=""
+    local e
+    for e in $existing; do
+      if [ "$e" = "$bn" ]; then
+        match="$e"; match_count=$((match_count + 1))
+      fi
+    done
+    [ "$match_count" -eq 1 ] && identity="$match"
+  fi
+
+  if [ -z "$identity" ]; then
+    printf '⚠ %s is wired but identity cannot be resolved\n' "$canonical"
+    printf '\n'
+    printf '  FAMP-wired .mcp.json at: %s\n' "$mcp_ancestor"
+    printf '  but no registry row, no FAMP_HOME, and no basename match\n'
+    printf '\n'
+    printf '  to fix:\n'
+    printf '    famp-local wire %s --as <name>\n' "$mcp_ancestor"
+    return 0
+  fi
 
   local home; home="$(home_for "$identity")"
   if [ ! -d "$home" ]; then
@@ -1041,6 +1079,9 @@ EOF
   printf '\n'
   printf '  identity:  %s\n' "$identity"
   printf '  home:      %s\n' "$home"
+  if [ "$mcp_ancestor" != "$canonical" ]; then
+    printf '  wired at:  %s  (parent of cwd)\n' "$mcp_ancestor"
+  fi
   printf '  daemon:    %s\n' "$daemon_line"
   printf '  inbox:     %s messages\n' "$inbox_msgs"
 }
