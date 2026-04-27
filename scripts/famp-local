@@ -493,6 +493,113 @@ cmd_clean() {
   echo "✓ state cleaned"
 }
 
+# Truncate inbox.jsonl files in place (preserving inode/permissions, so any
+# `famp listen` holding the file open keeps reading the same inode). Default
+# scope is all local agent inboxes under $STATE_ROOT/agents/*/inbox.jsonl.
+# --all also includes ~/.famp/inbox.jsonl and ~/.famp-echo/inbox.jsonl when
+# those exist. --agent <name> restricts scope to a single agent. --dry-run
+# previews the table without modifying anything. --yes skips confirmation.
+cmd_clear() {
+  local mode="default"
+  local agent=""
+  local dry_run=0
+  local assume_yes=0
+  local FAMP_HOME_DEFAULT="$HOME/.famp"
+  local FAMP_HOME_ECHO="$HOME/.famp-echo"
+  local inboxes=()
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --all)
+        [ "$mode" = "single" ] && die "--all and --agent are mutually exclusive"
+        mode="all"; shift ;;
+      --agent)
+        shift; [ $# -ge 1 ] || die "--agent needs a name"
+        [ "$mode" = "all" ] && die "--all and --agent are mutually exclusive"
+        mode="single"; agent="$1"; shift ;;
+      --agent=*)
+        [ "$mode" = "all" ] && die "--all and --agent are mutually exclusive"
+        mode="single"; agent="${1#--agent=}"; shift ;;
+      --dry-run)
+        dry_run=1; shift ;;
+      --yes|-y)
+        assume_yes=1; shift ;;
+      --help|-h)
+        cat <<'EOF'
+famp-local clear [--all] [--agent <name>] [--dry-run] [--yes]
+
+Truncate inbox.jsonl files in place (inode-preserving). Default scope is all
+local agent inboxes. --all additionally clears ~/.famp/inbox.jsonl and
+~/.famp-echo/inbox.jsonl when present. --agent <name> clears a single agent.
+--dry-run previews the table without modifying any file. --yes skips the
+confirmation prompt.
+EOF
+        return 0 ;;
+      --*)
+        die "unknown flag: $1 (try 'famp-local help')" ;;
+      *)
+        die "unexpected positional arg: $1 (try 'famp-local help')" ;;
+    esac
+  done
+
+  if [ "$mode" = "single" ]; then
+    local dir; dir="$(home_for "$agent")"
+    [ -d "$dir" ] || die "no such agent: $agent"
+    local f="$dir/inbox.jsonl"
+    [ -f "$f" ] && inboxes+=("$f")
+  else
+    local d
+    for d in "$STATE_ROOT"/agents/*/; do
+      [ -d "$d" ] || continue
+      local f="${d%/}/inbox.jsonl"
+      [ -f "$f" ] && inboxes+=("$f")
+    done
+    if [ "$mode" = "all" ]; then
+      [ -f "$FAMP_HOME_DEFAULT/inbox.jsonl" ] && inboxes+=("$FAMP_HOME_DEFAULT/inbox.jsonl")
+      [ -f "$FAMP_HOME_ECHO/inbox.jsonl" ] && inboxes+=("$FAMP_HOME_ECHO/inbox.jsonl")
+    fi
+  fi
+
+  if [ "${#inboxes[@]}" -eq 0 ]; then
+    echo "no inboxes to clear"
+    return 0
+  fi
+
+  local total_msgs=0
+  local f bytes lines
+  for f in "${inboxes[@]}"; do
+    bytes=$(wc -c < "$f" | tr -d ' ')
+    lines=$(wc -l < "$f" | tr -d ' ')
+    total_msgs=$((total_msgs + lines))
+    printf '  %8s bytes  %6s msgs  %s\n' "$bytes" "$lines" "$f"
+  done
+  printf '  --\n  %d inboxes, %d messages\n' "${#inboxes[@]}" "$total_msgs"
+
+  if [ "$dry_run" -eq 1 ]; then
+    echo "(dry run — no files modified)"
+    return 0
+  fi
+
+  if [ "$assume_yes" -eq 0 ]; then
+    local reply
+    printf 'Clear %d inboxes (%d messages)? [y/N] ' "${#inboxes[@]}" "$total_msgs"
+    if [ -r /dev/tty ]; then
+      read -r reply </dev/tty
+    else
+      read -r reply
+    fi
+    case "$reply" in
+      y|Y) ;;
+      *) echo "aborted"; return 0 ;;
+    esac
+  fi
+
+  for f in "${inboxes[@]}"; do
+    : > "$f"
+  done
+  printf '✓ cleared %d inboxes (%d messages)\n' "${#inboxes[@]}" "$total_msgs"
+}
+
 # Register one or more agents as user-scope MCP servers for Claude Code,
 # Codex, or both. Uses the absolute path to the famp binary so the client
 # MCP spawner doesn't need the user's PATH.
@@ -864,6 +971,11 @@ COMMANDS
   status                          Show all known agents and daemon state.
   stop [<name>...]                Stop daemon(s); with no args, stops all.
   clean                           Stop everything and wipe state dir.
+  clear [--all] [--agent <name>] [--dry-run] [--yes]
+                                  Truncate inbox.jsonl files. Default scope is
+                                  all local agent inboxes; --all also clears
+                                  ~/.famp/inbox.jsonl and ~/.famp-echo/inbox.jsonl.
+                                  --agent <name> clears one. --dry-run previews.
   mcp-add [--client <target>] <name> [<name>...]
                                   Register agent(s) as user-scope MCP servers.
                                   target = claude | codex | both
@@ -908,6 +1020,7 @@ case "$cmd" in
   status)                 cmd_status "$@" ;;
   stop)                   cmd_stop "$@" ;;
   clean)                  cmd_clean "$@" ;;
+  clear)                  cmd_clear "$@" ;;
   mcp-add) require_famp; cmd_mcp_add "$@" ;;
   mcp-remove)            cmd_mcp_remove "$@" ;;
   help|-h|--help)         cmd_help ;;
