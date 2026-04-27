@@ -195,6 +195,7 @@ Full CLI:
 | `famp-local inbox <name>` | List a name's inbox entries |
 | `famp-local status` | Show all known identities and daemon state |
 | `famp-local stop [<name>...]` | Stop daemon(s); with no args, stops all |
+| `famp-local clear [--all] [--agent <name>] [--dry-run] [--yes]` | Truncate inbox.jsonl files in place. Default scope is all local agent inboxes; `--all` also clears `~/.famp/inbox.jsonl` and `~/.famp-echo/inbox.jsonl`. Inboxes are truncated (not deleted) so a running `famp listen` keeps its file descriptor valid. |
 | `famp-local clean` | Stop everything and wipe `~/.famp-local` |
 | `famp-local mcp-add [--client <target>] <name>...` | Register user-scope MCP servers for Claude Code, Codex, or both |
 | `famp-local mcp-remove [--client <target>] <name>...` | Remove user-scope MCP server registrations |
