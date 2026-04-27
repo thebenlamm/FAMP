@@ -24,6 +24,7 @@ use famp_envelope as _;
 #[cfg(test)]
 use proptest as _;
 
+pub mod broker;
 pub mod codec;
 pub mod env;
 pub mod error;
@@ -31,6 +32,7 @@ pub mod liveness;
 pub mod mailbox;
 pub mod proto;
 
+pub use broker::{Broker, BrokerInput, Out};
 pub use codec::{encode_frame, try_decode_frame, FrameError, LEN_PREFIX_BYTES, MAX_FRAME_BYTES};
 pub use env::BrokerEnv;
 pub use error::BusErrorKind;
