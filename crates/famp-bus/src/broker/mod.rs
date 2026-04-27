@@ -15,7 +15,7 @@ pub enum BrokerInput {
     Tick,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Out {
     Reply(ClientId, BusReply),
     AppendMailbox {

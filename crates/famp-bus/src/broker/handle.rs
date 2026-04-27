@@ -147,7 +147,7 @@ fn send<E: BrokerEnv>(
 
     match to {
         Target::Agent { name } => send_agent(broker, client, name, envelope, line),
-        Target::Channel { name } => send_channel(broker, client, name, envelope, line),
+        Target::Channel { name } => send_channel(broker, client, name, &envelope, line),
     }
 }
 
@@ -180,7 +180,7 @@ fn send_channel<E: BrokerEnv>(
     broker: &mut Broker<E>,
     sender: ClientId,
     name: String,
-    envelope: serde_json::Value,
+    envelope: &serde_json::Value,
     line: Vec<u8>,
 ) -> Vec<Out> {
     let members = broker
@@ -191,7 +191,7 @@ fn send_channel<E: BrokerEnv>(
         .unwrap_or_default();
     let mut out = Vec::new();
     for member in &members {
-        if let Some(waiting) = waiting_client_for_name(broker, member, &envelope) {
+        if let Some(waiting) = waiting_client_for_name(broker, member, envelope) {
             broker.state.pending_awaits.remove(&waiting);
             out.push(Out::Reply(
                 waiting,
@@ -202,14 +202,15 @@ fn send_channel<E: BrokerEnv>(
             out.push(Out::UnparkAwait { client: waiting });
         }
     }
+    let task_id = task_id_from(envelope);
     out.push(Out::AppendMailbox {
-        target: MailboxName::Channel(name.clone()),
+        target: MailboxName::Channel(name),
         line,
     });
     out.push(Out::Reply(
         sender,
         BusReply::SendOk {
-            task_id: task_id_from(&envelope),
+            task_id,
             delivered: members
                 .into_iter()
                 .map(|member| Delivered {
@@ -222,7 +223,7 @@ fn send_channel<E: BrokerEnv>(
     out
 }
 
-fn inbox<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, since: Option<u64>) -> Vec<Out> {
+fn inbox<E: BrokerEnv>(broker: &Broker<E>, client: ClientId, since: Option<u64>) -> Vec<Out> {
     let Some(name) = registered_name(broker, client) else {
         return vec![err(
             client,
@@ -292,7 +293,7 @@ fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String)
         .channels
         .entry(channel.clone())
         .or_default()
-        .insert(name.clone());
+        .insert(name);
     if let Some(state) = broker.state.clients.get_mut(&client) {
         state.joined.insert(channel.clone());
     }

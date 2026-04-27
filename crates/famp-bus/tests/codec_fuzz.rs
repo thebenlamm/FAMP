@@ -65,9 +65,10 @@ fn rejects_zero_length_frame() {
 
 #[test]
 fn rejects_too_large_frame_before_payload_allocation() {
-    let oversized = ((MAX_FRAME_BYTES + 1) as u32).to_be_bytes();
+    let oversized_len = u32::try_from(MAX_FRAME_BYTES + 1).unwrap();
+    let oversized = oversized_len.to_be_bytes();
     let err = try_decode_frame::<BusMessage>(&oversized).unwrap_err();
-    assert!(matches!(err, FrameError::FrameTooLarge(n) if n == (MAX_FRAME_BYTES + 1) as u32));
+    assert!(matches!(err, FrameError::FrameTooLarge(n) if n == oversized_len));
 }
 
 #[test]

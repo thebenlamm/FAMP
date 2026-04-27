@@ -15,11 +15,11 @@ impl TestEnv {
         Self::default()
     }
 
-    pub fn mailbox(&self) -> &InMemoryMailbox {
+    pub const fn mailbox(&self) -> &InMemoryMailbox {
         &self.mailbox
     }
 
-    pub fn liveness_mut(&mut self) -> &mut FakeLiveness {
+    pub const fn liveness_mut(&mut self) -> &mut FakeLiveness {
         &mut self.liveness
     }
 }
