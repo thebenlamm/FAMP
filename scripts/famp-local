@@ -889,6 +889,165 @@ cmd_unwire() {
   fi
 }
 
+# wire_resolve_dir CANONICAL_INPUT_DIR
+# Walk up looking for nearest .mcp.json ancestor; check the wires registry.
+# Read-only; never dies. Caller branches on the state code.
+#
+# Prints two lines on stdout:
+#   line 1: state code  — one of: WIRED, PARTIAL, NONE
+#   line 2: payload depending on state:
+#     WIRED   → "<canonical_ancestor_dir>\t<identity>"
+#     PARTIAL → "<canonical_ancestor_dir>"
+#     NONE    → ""           (empty line, kept for parser uniformity)
+#
+# Non-dying companion to cmd_identity_of's inline walk. cmd_doctor uses it
+# for read-only diagnosis where 'not wired' is a state, not an error.
+# cmd_identity_of intentionally keeps its die-on-failure walk because hook
+# scripts need to branch on exit code.
+wire_resolve_dir() {
+  local canonical="$1"
+  local cursor="$canonical"
+  local highest_mcp_ancestor=""
+  while [ "$cursor" != "/" ] && [ -n "$cursor" ]; do
+    if [ -f "$cursor/.mcp.json" ]; then
+      highest_mcp_ancestor="$cursor"
+      local hit
+      if hit="$(wires_lookup "$cursor")"; then
+        printf 'WIRED\n%s\t%s\n' "$cursor" "$hit"
+        return 0
+      fi
+    fi
+    cursor="$(dirname "$cursor")"
+  done
+  if [ -n "$highest_mcp_ancestor" ]; then
+    printf 'PARTIAL\n%s\n' "$highest_mcp_ancestor"
+    return 0
+  fi
+  printf 'NONE\n\n'
+  return 0
+}
+
+# Read-only diagnostic: "is <dir> (default: $PWD) set up for FAMP?".
+# Three sub-questions collapsed into one human-readable answer:
+#   1. .mcp.json present in cwd or an ancestor? (wired vs not)
+#   2. which identity is it bound to? (registry lookup)
+#   3. is that identity's daemon running? (pid + is_alive + port)
+# Always exits 0 unless the input itself is malformed (bad path, too many
+# args, unknown flag). Diagnostic outcomes (not wired / partial / stale) are
+# diagnoses, not errors — distinct from cmd_identity_of's hook-shaped contract.
+# Makes ZERO calls to the famp binary; safe to run when famp is not on PATH.
+cmd_doctor() {
+  local input=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --help|-h)
+        cat <<'EOF'
+famp-local doctor [<dir>]
+
+Check whether <dir> (default: $PWD) is set up for FAMP. Read-only; reports
+identity, daemon status, and inbox count if wired. Exits 0 for every
+diagnosis (✓ wired / ⚠ partial / ⚠ stale / ✗ not wired); only malformed
+input (missing dir, too many args, unknown flag) returns non-zero.
+EOF
+        return 0 ;;
+      --*)
+        die "unknown flag: $1 (try 'famp-local help')" ;;
+      *)
+        [ -z "$input" ] || die "doctor [<dir>]"
+        input="$1"; shift ;;
+    esac
+  done
+
+  [ -n "$input" ] || input="$PWD"
+  [ -d "$input" ] || die "directory does not exist: $input"
+
+  local canonical
+  canonical="$(realpath_of "$input")" || die "directory does not exist: $input"
+  [ -d "$canonical" ] || die "directory does not exist: $canonical"
+
+  # Two-line state envelope from wire_resolve_dir.
+  local resolved state payload
+  resolved="$(wire_resolve_dir "$canonical")"
+  state="$(printf '%s\n' "$resolved" | sed -n '1p')"
+  payload="$(printf '%s\n' "$resolved" | sed -n '2p')"
+
+  case "$state" in
+    NONE)
+      printf '✗ %s is not set up for FAMP\n' "$canonical"
+      printf '\n'
+      printf '  no .mcp.json found here or in any parent directory\n'
+      printf '\n'
+      printf '  to set this folder up:\n'
+      printf '    famp-local wire .\n'
+      return 0
+      ;;
+    PARTIAL)
+      local ancestor="$payload"
+      printf '⚠ %s is partially set up\n' "$canonical"
+      printf '\n'
+      printf '  .mcp.json exists at: %s\n' "$ancestor"
+      printf '  registry row:        missing — wires.tsv has no entry for this directory\n'
+      printf '\n'
+      printf '  this can happen if .mcp.json was committed by another tool, or if the\n'
+      printf '  registry was cleared. to fix:\n'
+      printf '    famp-local wire .              (re-registers using basename as identity)\n'
+      printf '    famp-local wire . --as <name>  (specify identity explicitly)\n'
+      return 0
+      ;;
+    WIRED)
+      local ancestor identity
+      ancestor="$(printf '%s\n' "$payload" | awk -F'\t' '{print $1}')"
+      identity="$(printf '%s\n' "$payload" | awk -F'\t' '{print $2}')"
+      local home; home="$(home_for "$identity")"
+      if [ ! -d "$home" ]; then
+        # Registry says X but agent dir is gone.
+        printf '⚠ %s registry is stale\n' "$canonical"
+        printf '\n'
+        printf '  registry says identity: %s\n' "$identity"
+        printf '  but %s does not exist\n' "$home"
+        printf '\n'
+        printf '  to fix:\n'
+        printf '    famp-local init %s          (recreate the identity)\n' "$identity"
+        printf '    famp-local unwire %s        (remove the stale registry row)\n' "$ancestor"
+        return 0
+      fi
+
+      # Healthy registry row + agent dir exists. Inspect daemon + inbox.
+      local pidf; pidf="$(pid_for "$identity")"
+      local port; port="$(port_of "$home" 2>/dev/null || true)"
+      local daemon_line
+      if [ -f "$pidf" ]; then
+        local pid; pid="$(cat "$pidf" 2>/dev/null || true)"
+        if [ -n "$pid" ] && is_alive "$pid"; then
+          daemon_line="running (pid $pid, port ${port:-unknown})"
+        else
+          daemon_line="stopped — start it with: famp-local init $identity"
+        fi
+      else
+        daemon_line="stopped — start it with: famp-local init $identity"
+      fi
+
+      local inbox_msgs=0
+      if [ -f "$home/inbox.jsonl" ]; then
+        inbox_msgs="$(wc -l < "$home/inbox.jsonl" 2>/dev/null | tr -d ' ')"
+        [ -n "$inbox_msgs" ] || inbox_msgs=0
+      fi
+
+      printf '✓ %s is set up for FAMP\n' "$canonical"
+      printf '\n'
+      printf '  identity:  %s\n' "$identity"
+      printf '  home:      %s\n' "$home"
+      printf '  wired at:  %s  (.mcp.json + registry)\n' "$ancestor"
+      printf '  daemon:    %s\n' "$daemon_line"
+      printf '  inbox:     %s messages\n' "$inbox_msgs"
+      return 0
+      ;;
+    *)
+      die "internal error: wire_resolve_dir returned unexpected state '$state'"
+      ;;
+  esac
+}
+
 cmd_identity_of() {
   [ $# -eq 1 ] || die "identity-of <dir>"
   local input="$1"
@@ -966,6 +1125,9 @@ COMMANDS
                                   subdirectory of a wired repo). Exits non-zero
                                   with a re-wire hint if not found. Designed
                                   for hook scripts: IDENTITY=$(famp-local identity-of "$PWD")
+  doctor [<dir>]                  Check whether <dir> (default: $PWD) is set up
+                                  for FAMP. Shows identity, daemon status,
+                                  inbox count. Read-only.
   send <from> <to> <text>         Send a new_task from one agent to another.
   inbox <name>                    List a name's inbox entries.
   status                          Show all known agents and daemon state.
@@ -1017,6 +1179,7 @@ case "$cmd" in
   send)    require_famp; cmd_send "$@" ;;
   inbox)   require_famp; cmd_inbox "$@" ;;
   identity-of)            cmd_identity_of "$@" ;;
+  doctor)                 cmd_doctor "$@" ;;
   status)                 cmd_status "$@" ;;
   stop)                   cmd_stop "$@" ;;
   clean)                  cmd_clean "$@" ;;
