@@ -64,8 +64,17 @@ audit:
 spec-lint:
     bash scripts/spec-lint.sh
 
+# BUS-01: assert famp-bus does not pull tokio into its runtime dep tree.
+check-no-tokio-in-bus:
+    @echo "Verifying famp-bus has no tokio in dependency tree..."
+    @if cargo tree -p famp-bus --edges normal | grep -E '^\s*tokio v'; then \
+      echo "ERROR: famp-bus has tokio in its dependency tree (BUS-01 violation)"; \
+      exit 1; \
+    fi
+    @echo "OK - famp-bus is tokio-free."
+
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint
+ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus
     @echo "✓ local CI-parity checks passed"
 
 # Start two famp daemons in the background for the Phase 4 E2E-02

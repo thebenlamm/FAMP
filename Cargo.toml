@@ -6,6 +6,7 @@ members = [
   "crates/famp-crypto",
   "crates/famp-envelope",
   "crates/famp-fsm",
+  "crates/famp-bus",
   "crates/famp-keyring",
   "crates/famp-transport",
   "crates/famp-transport-http",
@@ -32,6 +33,7 @@ rand = { version = "0.8", default-features = false, features = ["std", "std_rng"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.149", default-features = false, features = ["std", "float_roundtrip"] }
 serde_jcs = "0.2.0"
+regex = "1.10"
 
 # Identifiers
 uuid = { version = "1.23.0", features = ["v7", "serde"] }

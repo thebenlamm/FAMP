@@ -1,0 +1,25 @@
+[package]
+name = "famp-bus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FAMP v0.5.2 - famp-bus crate (Layer 1 pure-actor bus library)"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+regex = { workspace = true }
+uuid = { workspace = true, features = ["serde", "v7"] }
+famp-canonical = { path = "../famp-canonical" }
+famp-core = { path = "../famp-core" }
+famp-envelope = { path = "../famp-envelope" }
+
+[dev-dependencies]
+proptest = { workspace = true }
