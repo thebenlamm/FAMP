@@ -1,8 +1,7 @@
 #![allow(dead_code)]
 
 use famp_bus::{
-    DrainResult, FakeLiveness, InMemoryMailbox, LivenessProbe, MailboxErr, MailboxName,
-    MailboxRead,
+    DrainResult, FakeLiveness, InMemoryMailbox, LivenessProbe, MailboxErr, MailboxName, MailboxRead,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -26,11 +25,7 @@ impl TestEnv {
 }
 
 impl MailboxRead for TestEnv {
-    fn drain_from(
-        &self,
-        name: &MailboxName,
-        since_bytes: u64,
-    ) -> Result<DrainResult, MailboxErr> {
+    fn drain_from(&self, name: &MailboxName, since_bytes: u64) -> Result<DrainResult, MailboxErr> {
         self.mailbox.drain_from(name, since_bytes)
     }
 }

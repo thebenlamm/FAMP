@@ -67,7 +67,9 @@ spec-lint:
 # BUS-01: assert famp-bus does not pull tokio into its runtime dep tree.
 check-no-tokio-in-bus:
     @echo "Verifying famp-bus has no tokio in dependency tree..."
-    @if cargo tree -p famp-bus --edges normal | grep -E '^\s*tokio v'; then \
+    @command -v cargo >/dev/null || { echo "ERROR: cargo not found in PATH"; exit 1; }
+    @tree="$$(cargo tree -p famp-bus --edges normal)" || exit 1; \
+    if printf '%s\n' "$$tree" | grep -E '^\s*tokio v'; then \
       echo "ERROR: famp-bus has tokio in its dependency tree (BUS-01 violation)"; \
       exit 1; \
     fi

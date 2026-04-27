@@ -15,8 +15,10 @@ use famp_bus::{Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName,
 #[test]
 fn register_drain_replies_before_cursor_advance() {
     let env = TestEnv::new();
-    env.mailbox()
-        .append(&MailboxName::Agent("alice".into()), br#"{"hello":"world"}"#.to_vec());
+    env.mailbox().append(
+        &MailboxName::Agent("alice".into()),
+        br#"{"hello":"world"}"#.to_vec(),
+    );
     let mut broker = Broker::new(env);
 
     let out = broker.handle(

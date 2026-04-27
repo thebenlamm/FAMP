@@ -23,9 +23,7 @@ fn arb_busmessage() -> impl Strategy<Value = BusMessage> {
             pid: 1234,
         }),
         Just(BusMessage::Send {
-            to: famp_bus::Target::Agent {
-                name: "bob".into(),
-            },
+            to: famp_bus::Target::Agent { name: "bob".into() },
             envelope: json!({"body": "hello"}),
         }),
         Just(BusMessage::Inbox {

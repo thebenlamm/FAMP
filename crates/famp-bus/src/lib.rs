@@ -19,6 +19,8 @@
 
 // Dev-deps referenced only by integration tests in `tests/`. Silence
 // `unused_crate_dependencies` for the lib compile unit.
+use famp_core as _;
+use famp_envelope as _;
 #[cfg(test)]
 use proptest as _;
 
