@@ -1200,11 +1200,13 @@ All other claims in this document are tagged VERIFIED (against codebase or offic
 | MCP rewire diff map | HIGH | Traced directly against server.rs and session.rs source |
 | JSON-RPC error code table | HIGH | Standard range; exhaustive match pattern verified |
 
-### Open Questions
+### Resolved Open Questions
 
-1. **`POSIX_SPAWN_SETSID` on macOS** — verify before implementing spawn.rs; fallback to `Command::new(exe).args(["broker"]).spawn()` + `nix::unistd::setsid()` if needed (run in child after fork).
-2. **`SessionRow.started_at`** — confirm whether to add this field in Phase 2 or defer to Phase 3.
-3. **`famp_peers` semantics** — confirm the tool should return live bus sessions, not v0.8 `peers.toml` federation peers.
+1. **RESOLVED**: **`POSIX_SPAWN_SETSID` on macOS** — Use the `Command::new(exe).args(["broker"]).spawn()` simpler-fallback path documented in §2.3 instead of `posix_spawn` + `setsid` flag. Rationale: `nix::spawn::PosixSpawnAttr::setflags` does NOT expose `POSIX_SPAWN_SETSID` (a macOS-only extension that is not portable to Linux). The portable path is: (1) `Command::new` to fork+exec, (2) the child process's first action is `nix::unistd::setsid()`, (3) parent process disowns. This works on both macOS and Linux. Plan 02-01 task 1 (bus_client/spawn.rs) implements this pattern. The `nix = "0.31"` dependency already provides `unistd::setsid`. **Affects:** plan 02-01 task creating `bus_client/spawn.rs` (already specified) — no plan-level change needed; this just locks the implementation pattern.
+
+2. **RESOLVED**: **`SessionRow.started_at`** — Defer to Phase 1 source of truth. `crates/famp-bus/src/proto.rs` defines `SessionRow` with the fields actually shipped in v0.5.2. If `started_at` is not in the struct, the `sessions list` JSONL output omits it; Phase 2 does NOT amend the bus envelope schema. Plan 02-07 task creating `cli/sessions/mod.rs` should serialize `SessionRow` directly via `serde_json::to_string(&row)` (the SessionRow `Serialize` derive determines the wire shape). If a user-visible `started_at` becomes a v0.9.x ergonomic ask, it lands as a Phase 4 (or v0.9.1) requirement — not Phase 2. **Affects:** plan 02-07 — locks "serialize SessionRow as-is, no field synthesis."
+
+3. **RESOLVED**: **`famp_peers` semantics — federation peers.toml vs live bus sessions** — Live bus sessions. `famp_peers` MCP tool is a v0.9 tool whose semantic break from v0.8 is intentional per design spec §"MCP surface" — the bus has no notion of cross-host peers in v0.9, so "peers" maps to "currently-registered identities on this bus." Implementation: `famp_peers` calls `bus.send_recv(BusMessage::Sessions { filter: None })` and returns `{ peers: [{name, pid}, ...] }`. Plan 02-09 task implementing `tools/peers.rs` should call into `cli::sessions::run_at_structured` (or directly issue `BusMessage::Sessions`) and project to the `peers` shape. The v0.8 `peers.toml` reading code is removed in this rewire. **Affects:** plan 02-09 task for `tools/peers.rs` — locks semantics; the existing plan body's "direct bus call" pattern matches this.
 
 ### Ready for Planning
 

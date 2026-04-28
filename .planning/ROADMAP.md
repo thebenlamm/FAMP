@@ -94,7 +94,21 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   3. `famp mcp` connects to the UDS bus instead of TLS — `cargo tree -p famp` shows `reqwest` and `rustls` are no longer reached from the MCP startup path; the eight-tool surface (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) round-trips through the MCP E2E harness with two stdio processes scripted from both sides (TEST-05), bus-side equivalent of v0.8's `e2e_two_daemons`. The MCP error-mapping layer is exhaustive `match` over `BusErrorKind` with no wildcard — adding a `BusErrorKind` variant fails compile until MCP error mapping handles it.
   4. `famp-local hook add --on Edit:<glob> --to <peer-or-#channel>` declaratively wires hooks (replacing hand-written bash scripts), persists to `~/.famp-local/hooks.tsv`, and round-trips through `famp-local hook list` + `famp-local hook remove <id>`.
   5. INBOX-01 wording (carry-forward TD-3) is rewritten to match the raw-bytes-per-line implementation (or a structured wrapper added) alongside the CLI inbox rework; `just ci` is full green at every commit.
-**Plans:** TBD
+**Plans:** 14 plans
+- [ ] 02-00-PLAN.md — Wave-1 stub-file infrastructure: 9 Wave-0 test stubs (broker_lifecycle, broker_spawn_race, broker_crash_recovery, cli_dm_roundtrip, cli_channel_fanout, cli_inbox, cli_sessions, mcp_bus_e2e, hook_subcommand) created with #[ignore] gates so 02-01 stays under the 15-file blocker threshold (no requirement IDs — pure infra)
+- [ ] 02-01-PLAN.md — Wave-2 substantive foundation: deps (nix, assert_cmd, tokio test-util), bus_client/{mod,codec,spawn}, cli/identity, cli/broker/nfs_check, scripts/check-mcp-deps.sh
+- [ ] 02-02-PLAN.md — Broker actor and UDS lifecycle: bind-exclusion, accept loop, Out executor (D-04 ordering), idle timer, NFS warning, DiskMailboxEnv + cursor_exec + sessions_log
+- [ ] 02-03-PLAN.md — `famp register` foreground subcommand (CLI-01) with --tail / --no-reconnect / bounded exp backoff reconnect
+- [ ] 02-04-PLAN.md — `famp send` rewire to BusClient + additive `send_as: Option<String>` field on BusMessage::Send (BUS-02 round-trip preserved)
+- [ ] 02-05-PLAN.md — `famp inbox list` / `famp inbox ack` rewire; CLI-04/CLI-10 atomic cursor advance is local-only (no broker round-trip)
+- [ ] 02-06-PLAN.md — `famp await` rewire to BusClient with humantime --timeout
+- [ ] 02-07-PLAN.md — New CLI subcommands: `join`, `leave`, `sessions [--me]`, `whoami`; channel normalization helper
+- [ ] 02-08-PLAN.md — MCP session reshape (drop home_path; add bus + active_identity); error_kind retargeted at BusErrorKind exhaustively (MCP-10)
+- [ ] 02-09-PLAN.md — Rewrite all 8 MCP tools (register/send/inbox/await_/peers/whoami/join/leave) against bus
+- [ ] 02-10-PLAN.md — `scripts/famp-local hook add|list|remove` (HOOK-01..04) ~110 LoC bash addition
+- [ ] 02-11-PLAN.md — Broker integration tests: idle exit (BROKER-04), spawn race (TEST-04), kill -9 recovery (TEST-03), sessions.jsonl diagnostic (CLI-11), NFS warning (BROKER-05)
+- [ ] 02-12-PLAN.md — CLI integration tests: DM round-trip (TEST-01), channel fan-out (TEST-02), sessions list, whoami; CARRY-02 INBOX-01 wording rewrite
+- [ ] 02-13-PLAN.md — TEST-05: two stdio MCP processes round-trip register/send/await over UDS bus
 
 ### Phase 3: Claude Code integration polish
 **Goal:** Make the user-facing onboarding hit the milestone acceptance gate — two Claude Code windows exchange a message in **≤12 lines of instruction and ≤30 seconds elapsed** on a fresh macOS install. This phase is the gate; if the gate fails, the design is too heavy and must be revisited before v0.9.0 tags.
@@ -105,6 +119,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   2. The seven slash commands (`/famp-register`, `/famp-join`, `/famp-leave`, `/famp-msg`, `/famp-channel`, `/famp-who`, `/famp-inbox`) each invoke the corresponding MCP tool with the right argument shape — `/famp-register alice` calls `famp_register(name="alice")`, `/famp-msg bob "ship it"` calls `famp_send(to={kind:"agent",name:"bob"}, new_task="ship it")`, etc.
   3. The README Quick Start passes the **12-line / 30-second acceptance test** on a clean macOS install: `brew install famp && famp install-claude-code` followed by two Claude Code windows registering as different identities and exchanging a message — completed in ≤12 user-visible lines and ≤30 seconds wall-clock.
   4. Onboarding doc (`docs/ONBOARDING.md` or equivalent) ships as part of this phase and walks a new user from zero install to first cross-window message; ready to ship at v0.9.0 tag.
+  5. HOOK-04 execution runner ships in this phase: the Edit-event trigger registered in Claude Code's `~/.claude/hooks.json` reads `~/.famp-local/hooks.tsv` (registered in Phase 2 by `famp-local hook add`) and dispatches `famp send --to <to> --new-task "Edit hook: <glob> matched <file>"` per matching row. Phase 2 ships the registration surface; Phase 3 closes HOOK-04 by wiring the runner end-to-end. (`famp install-claude-code` is the natural surface for installing the hooks.json fragment.)
 **Plans:** TBD
 **UI hint**: yes
 
@@ -226,7 +241,7 @@ Rough ordering (not committed):
 | 3. Conversation CLI | v0.8 | 4/4 | Complete | 2026-04-14 |
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 3/3 | Complete | 2026-04-15 |
 | 1. `famp-bus` library + audit-log MessageClass | v0.9 | 0/3 | Not started | — |
-| 2. UDS wire + CLI + MV-MCP rewire + hook subcommand | v0.9 | 0/0 | Not started | — |
+| 2. UDS wire + CLI + MV-MCP rewire + hook subcommand | v0.9 | 0/14 | Not started | — |
 | 3. Claude Code integration polish | v0.9 | 0/0 | Not started | — |
 | 4. Federation CLI unwire + federation-CI preservation | v0.9 | 0/0 | Not started | — |
 

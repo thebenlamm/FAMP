@@ -66,7 +66,7 @@ created: 2026-04-28
 | HOOK-01 | `famp-local hook add --on Edit:<glob> --to <peer-or-#channel>` writes row to `~/.famp-local/hooks.tsv` | Shell integration | `cargo nextest run -p famp test_hook_add` (shells `scripts/famp-local`) | `crates/famp/tests/hook_subcommand.rs` ❌ W0 | ⬜ pending |
 | HOOK-02 | `~/.famp-local/hooks.tsv` row format `<id>\t<event>:<glob>\t<to>\t<added_at>` | Shell integration | covered by `test_hook_add` (TSV-format assert) | reuse | ⬜ pending |
 | HOOK-03 | `famp-local hook list` reads back rows | Shell integration | `cargo nextest run -p famp test_hook_list` | `crates/famp/tests/hook_subcommand.rs` ❌ W0 | ⬜ pending |
-| HOOK-04 | `famp-local hook remove <id>` removes by id | Shell integration | `cargo nextest run -p famp test_hook_remove` | `crates/famp/tests/hook_subcommand.rs` ❌ W0 | ⬜ pending |
+| HOOK-04 | Hook **registration** persists round-trip via add→list→remove (execution runner deferred to Phase 3 per ROADMAP SC-5) | Shell integration | `cargo nextest run -p famp test_hook_remove` | reuse | ⬜ pending |
 | TEST-01 | 2-client DM round-trip | Integration `assert_cmd` | `cargo nextest run -p famp test_dm_roundtrip` | `crates/famp/tests/cli_dm_roundtrip.rs` ❌ W0 | ⬜ pending |
 | TEST-02 | 3-client channel fan-out | Integration `assert_cmd` | `cargo nextest run -p famp test_channel_fanout` | `crates/famp/tests/cli_channel_fanout.rs` ❌ W0 | ⬜ pending |
 | TEST-03 | `kill -9` mid-Send → reconnect recovers mailbox | Integration `assert_cmd` | `cargo nextest run -p famp test_kill9_recovery` | `crates/famp/tests/broker_crash_recovery.rs` ❌ W0 | ⬜ pending |
