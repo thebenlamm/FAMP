@@ -9,7 +9,7 @@
 
 #![allow(clippy::module_name_repetitions)]
 
-use crate::body::{AckBody, CommitBody, ControlBody, DeliverBody, RequestBody};
+use crate::body::{AckBody, AuditLogBody, CommitBody, ControlBody, DeliverBody, RequestBody};
 use crate::{EnvelopeDecodeError, MessageClass, SignedEnvelope};
 use famp_canonical::from_slice_strict;
 use famp_crypto::TrustedVerifyingKey;
@@ -22,6 +22,7 @@ pub enum AnySignedEnvelope {
     Deliver(SignedEnvelope<DeliverBody>),
     Ack(SignedEnvelope<AckBody>),
     Control(SignedEnvelope<ControlBody>),
+    AuditLog(SignedEnvelope<AuditLogBody>),
 }
 
 impl AnySignedEnvelope {
@@ -34,6 +35,7 @@ impl AnySignedEnvelope {
             Self::Deliver(e) => e.class(),
             Self::Ack(e) => e.class(),
             Self::Control(e) => e.class(),
+            Self::AuditLog(e) => e.class(),
         }
     }
 
@@ -68,6 +70,9 @@ impl AnySignedEnvelope {
             "control" => Ok(Self::Control(SignedEnvelope::<ControlBody>::decode_value(
                 value, verifier,
             )?)),
+            "audit_log" => Ok(Self::AuditLog(
+                SignedEnvelope::<AuditLogBody>::decode_value(value, verifier)?,
+            )),
             _ => Err(EnvelopeDecodeError::UnknownClass { found: class_str }),
         }
     }

@@ -52,7 +52,7 @@ pub fn build_router(keyring: Arc<Keyring>, inboxes: Arc<InboxRegistry>) -> Route
         )
 }
 
-/// `envelope_sender` 5-arm match inlined here because `famp-transport-http`
+/// `envelope_sender` 6-arm match inlined here because `famp-transport-http`
 /// cannot depend on `crates/famp::runtime::adapter`. Mirrors the shape in
 /// `crates/famp/src/runtime/adapter.rs` — if the adapter changes, update this.
 fn envelope_sender(env: &AnySignedEnvelope) -> &Principal {
@@ -62,6 +62,7 @@ fn envelope_sender(env: &AnySignedEnvelope) -> &Principal {
         AnySignedEnvelope::Deliver(e) => e.from_principal(),
         AnySignedEnvelope::Ack(e) => e.from_principal(),
         AnySignedEnvelope::Control(e) => e.from_principal(),
+        AnySignedEnvelope::AuditLog(e) => e.from_principal(),
     }
 }
 

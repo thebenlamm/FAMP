@@ -1,0 +1,18 @@
+{
+  "authority": "advisory",
+  "body": {
+    "details": {
+      "ip": "127.0.0.1"
+    },
+    "event": "user_login",
+    "subject": "agent:example.test/alice"
+  },
+  "class": "audit_log",
+  "famp": "0.5.2",
+  "from": "agent:example.test/alice",
+  "id": "01890000-0000-7000-8000-000000000001",
+  "scope": "standalone",
+  "signature": "7V5EBg03MgvzPcx5dluNEjWrtItITSZpFzrEivdIizRBa1j573_a1udFD6wkvYdC_GJHGqOoA6-ZtZUxJ2jJCg",
+  "to": "agent:example.test/bob",
+  "ts": "2026-04-27T12:00:00Z"
+}

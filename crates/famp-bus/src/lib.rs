@@ -36,6 +36,7 @@ pub use broker::{Broker, BrokerInput, Out};
 pub use codec::{encode_frame, try_decode_frame, FrameError, LEN_PREFIX_BYTES, MAX_FRAME_BYTES};
 pub use env::BrokerEnv;
 pub use error::BusErrorKind;
+pub use famp_envelope::bus::{AnyBusEnvelope, BusEnvelope};
 pub use liveness::{AlwaysAliveLiveness, FakeLiveness, LivenessProbe};
 pub use mailbox::{DrainResult, InMemoryMailbox, MailboxErr, MailboxName, MailboxRead};
 pub use proto::{AwaitFilter, BusMessage, BusReply, ClientId, Delivered, SessionRow, Target};

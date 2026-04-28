@@ -13,6 +13,23 @@ use proptest::prelude::*;
 use serde_json::json;
 use std::time::Instant;
 
+fn audit_log_envelope(seq: usize) -> serde_json::Value {
+    json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": "01890000-0000-7000-8000-000000000001",
+        "from": "agent:example.test/bob",
+        "to": "agent:example.test/alice",
+        "authority": "advisory",
+        "ts": "2026-04-27T12:00:00Z",
+        "body": {
+            "event": "offline_message",
+            "details": { "offline_seq": seq }
+        }
+    })
+}
+
 fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: Instant) {
     let _ = broker.handle(
         BrokerInput::Wire {
@@ -68,7 +85,7 @@ proptest! {
                     client: ClientId::from(1),
                     msg: BusMessage::Send {
                         to: Target::Agent { name: "alice".into() },
-                        envelope: json!({"offline_seq": seq}),
+                        envelope: audit_log_envelope(seq),
                     },
                 },
                 now,
@@ -104,8 +121,55 @@ proptest! {
         };
         let observed: Vec<u64> = drained
             .iter()
-            .map(|value| value["offline_seq"].as_u64().unwrap())
+            .map(|value| {
+                let bytes = famp_canonical::canonicalize(value).unwrap();
+                let typed = famp_envelope::AnyBusEnvelope::decode(&bytes).unwrap();
+                assert!(matches!(typed, famp_envelope::AnyBusEnvelope::AuditLog(_)));
+                value["body"]["details"]["offline_seq"].as_u64().unwrap()
+            })
             .collect();
         prop_assert_eq!(observed, (0..n_offline_sends as u64).collect::<Vec<_>>());
     }
+}
+
+#[test]
+fn malformed_drain_line_returns_error_and_does_not_advance_cursor() {
+    let env = TestEnv::new();
+    env.mailbox()
+        .append(&MailboxName::Agent("alice".into()), b"{not json".to_vec());
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1),
+            msg: BusMessage::Hello {
+                bus_proto: 1,
+                client: "alice".into(),
+            },
+        },
+        now,
+    );
+    let out = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1),
+            msg: BusMessage::Register {
+                name: "alice".into(),
+                pid: 40_001,
+            },
+        },
+        now,
+    );
+    assert!(matches!(
+        out.as_slice(),
+        [Out::Reply(
+            ClientId(1),
+            BusReply::Err {
+                kind: BusErrorKind::EnvelopeInvalid,
+                ..
+            }
+        )]
+    ));
+    assert!(!out
+        .iter()
+        .any(|item| matches!(item, Out::AdvanceCursor { .. })));
 }

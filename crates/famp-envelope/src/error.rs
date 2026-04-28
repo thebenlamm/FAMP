@@ -33,7 +33,7 @@ pub enum EnvelopeDecodeError {
     #[error("unknown body field at depth: {class}.{field}")]
     UnknownBodyField { class: MessageClass, field: String },
 
-    #[error("envelope.famp = {found:?}; expected \"0.5.1\"")]
+    #[error("envelope.famp = {found:?}; expected \"0.5.2\"")]
     UnsupportedVersion { found: String },
 
     #[error("envelope.class = {found:?} not a known message class")]
@@ -54,6 +54,9 @@ pub enum EnvelopeDecodeError {
 
     #[error("envelope is unsigned — signature field absent")]
     MissingSignature,
+
+    #[error("bus envelope MUST NOT carry signature field (BUS-11)")]
+    UnexpectedSignature,
 
     #[error("signature encoding malformed")]
     InvalidSignatureEncoding(#[from] CryptoError),
@@ -107,6 +110,7 @@ impl From<EnvelopeDecodeError> for ProtocolError {
             | EnvelopeDecodeError::MissingErrorDetail
             | EnvelopeDecodeError::MissingProvenance
             | EnvelopeDecodeError::InsufficientBounds { .. }
+            | EnvelopeDecodeError::UnexpectedSignature
             | EnvelopeDecodeError::BodyValidation(_) => ProtocolErrorKind::Malformed,
         };
         Self::with_detail(kind, e.to_string())

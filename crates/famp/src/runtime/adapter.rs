@@ -1,6 +1,6 @@
 //! Envelope -> FSM input adapter. The ~20-line function Phase 2 D-D3
-//! committed to. Returns `None` for `ack` class (D-D4: ack is wire-only,
-//! never enters the FSM).
+//! committed to. Returns `None` for `ack` and `audit_log` classes (D-D4/D-15:
+//! wire-only/non-FSM-firing classes never enter the FSM).
 
 use famp_core::{MessageClass, Principal, TerminalStatus};
 use famp_envelope::AnySignedEnvelope;
@@ -8,7 +8,8 @@ use famp_fsm::TaskTransitionInput;
 
 /// Derive the FSM transition input from a decoded envelope.
 ///
-/// Returns `None` when the envelope is `ack` (D-D4 — ack is wire-only) OR
+/// Returns `None` when the envelope is `ack` (D-D4 — ack is wire-only),
+/// `audit_log` (D-15 — store-only, non-FSM-firing), OR
 /// `request` (Plan 03-04 Rule-1 fix — the 5-state FSM starts in `Requested`
 /// and has no transition consuming a `request` input; the initial state IS
 /// the creation event, so receiving the request message is a no-op at the
@@ -20,7 +21,9 @@ pub fn fsm_input_from_envelope(env: &AnySignedEnvelope) -> Option<TaskTransition
         AnySignedEnvelope::Commit(e) => (e.class(), e.terminal_status().copied()),
         AnySignedEnvelope::Deliver(e) => (e.class(), e.terminal_status().copied()),
         AnySignedEnvelope::Control(e) => (e.class(), e.terminal_status().copied()),
-        AnySignedEnvelope::Request(_) | AnySignedEnvelope::Ack(_) => return None,
+        AnySignedEnvelope::Request(_)
+        | AnySignedEnvelope::Ack(_)
+        | AnySignedEnvelope::AuditLog(_) => return None,
     };
     Some(TaskTransitionInput {
         class,
@@ -39,6 +42,7 @@ pub fn envelope_recipient(env: &AnySignedEnvelope) -> &Principal {
         AnySignedEnvelope::Deliver(e) => e.to_principal(),
         AnySignedEnvelope::Ack(e) => e.to_principal(),
         AnySignedEnvelope::Control(e) => e.to_principal(),
+        AnySignedEnvelope::AuditLog(e) => e.to_principal(),
     }
 }
 
@@ -51,6 +55,7 @@ pub fn envelope_sender(env: &AnySignedEnvelope) -> &Principal {
         AnySignedEnvelope::Deliver(e) => e.from_principal(),
         AnySignedEnvelope::Ack(e) => e.from_principal(),
         AnySignedEnvelope::Control(e) => e.from_principal(),
+        AnySignedEnvelope::AuditLog(e) => e.from_principal(),
     }
 }
 
@@ -62,5 +67,6 @@ pub fn envelope_class(env: &AnySignedEnvelope) -> MessageClass {
         AnySignedEnvelope::Deliver(e) => e.class(),
         AnySignedEnvelope::Ack(e) => e.class(),
         AnySignedEnvelope::Control(e) => e.class(),
+        AnySignedEnvelope::AuditLog(e) => e.class(),
     }
 }

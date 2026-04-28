@@ -468,15 +468,13 @@ mod tests {
     }
 
     #[test]
-    fn vector_0_decodes_through_typed_signed_envelope() {
+    fn vector_0_is_historical_and_rejected_under_v0_5_2() {
         let (_, vk) = test1_keys();
-        let signed = SignedEnvelope::<AckBody>::decode(VECTOR_0_BYTES, &vk).unwrap();
-        assert_eq!(
-            signed.body().disposition,
-            crate::body::AckDisposition::Accepted
+        let err = SignedEnvelope::<AckBody>::decode(VECTOR_0_BYTES, &vk).unwrap_err();
+        assert!(
+            matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.5.1"),
+            "expected UnsupportedVersion {{ 0.5.1 }}, got {err:?}"
         );
-        assert_eq!(signed.class(), MessageClass::Ack);
-        assert_eq!(signed.scope(), EnvelopeScope::Standalone);
     }
 
     #[test]
@@ -541,6 +539,10 @@ mod tests {
         let (sk, vk) = test1_keys();
         let mut value: Value = serde_json::from_slice(VECTOR_0_BYTES).unwrap();
         value.as_object_mut().unwrap().remove("signature");
+        value.as_object_mut().unwrap().insert(
+            "famp".to_string(),
+            Value::String(FAMP_SPEC_VERSION.to_string()),
+        );
         value
             .as_object_mut()
             .unwrap()

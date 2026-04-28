@@ -1,8 +1,8 @@
 //! Body schema module.
 //!
-//! Exposes the sealed `BodySchema` trait and the five shipped body types.
-//! v0.7 ships exactly five implementers: `RequestBody`, `CommitBody`, `DeliverBody`,
-//! `AckBody`, `ControlBody`. Adding a sixth is a v0.8+ breaking change. The trait is
+//! Exposes the sealed `BodySchema` trait and the six shipped body types.
+//! v0.5.2 ships exactly six implementers: `RequestBody`, `CommitBody`, `DeliverBody`,
+//! `AckBody`, `ControlBody`, `AuditLogBody`. The trait is
 //! sealed via a private supertrait so downstream crates cannot declare new body types.
 //!
 //! Each implementer carries its own `CLASS: MessageClass` and `SCOPE: EnvelopeScope`
@@ -17,8 +17,8 @@ mod private {
 
 /// Sealed trait implemented by every shipped body variant.
 ///
-/// v0.7 ships exactly five implementers (`RequestBody`, `CommitBody`, `DeliverBody`,
-/// `AckBody`, `ControlBody`). Adding a sixth is a v0.8+ breaking change.
+/// v0.5.2 ships exactly six implementers (`RequestBody`, `CommitBody`, `DeliverBody`,
+/// `AckBody`, `ControlBody`, `AuditLogBody`).
 ///
 /// ```compile_fail
 /// use famp_envelope::body::BodySchema;
@@ -52,6 +52,7 @@ pub trait BodySchema:
 }
 
 pub mod ack;
+pub mod audit_log;
 pub mod bounds;
 pub mod commit;
 pub mod control;
@@ -59,15 +60,17 @@ pub mod deliver;
 pub mod request;
 
 pub use ack::{AckBody, AckDisposition};
+pub use audit_log::AuditLogBody;
 pub use bounds::{Bounds, Budget};
 pub use commit::CommitBody;
 pub use control::{ControlAction, ControlBody, ControlDisposition, ControlTarget};
 pub use deliver::{Artifact, DeliverBody, ErrorCategory, ErrorDetail, TerminalStatus};
 pub use request::RequestBody;
 
-// Sealed impls — exactly five, locked. Adding a sixth requires v0.8+ work.
+// Sealed impls — exactly six (v0.5.2 added audit_log per spec §8a.6).
 impl private::Sealed for RequestBody {}
 impl private::Sealed for CommitBody {}
 impl private::Sealed for DeliverBody {}
 impl private::Sealed for AckBody {}
 impl private::Sealed for ControlBody {}
+impl private::Sealed for AuditLogBody {}

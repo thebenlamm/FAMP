@@ -1,4 +1,4 @@
-//! `MessageClass` — the five v0.7 Personal Runtime message classes.
+//! `MessageClass` — the six v0.5.2 message classes.
 //!
 //! Wire form is `snake_case` per §7.1c.2. Narrowed per CONTEXT.md D-B2:
 //! `announce`, `describe`, `propose`, `delegate`, `supersede`, `close` are
@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-/// The five v0.7 message classes.
+/// The six v0.5.2 message classes.
 ///
 /// Sealed via CONTEXT.md D-B2: downstream crates cannot invent new classes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -17,6 +17,7 @@ pub enum MessageClass {
     Deliver,
     Ack,
     Control,
+    AuditLog,
 }
 
 impl fmt::Display for MessageClass {
@@ -27,6 +28,7 @@ impl fmt::Display for MessageClass {
             Self::Deliver => "deliver",
             Self::Ack => "ack",
             Self::Control => "control",
+            Self::AuditLog => "audit_log",
         };
         f.write_str(s)
     }

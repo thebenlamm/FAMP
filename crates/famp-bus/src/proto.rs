@@ -151,6 +151,11 @@ pub enum BusReply {
         kind: BusErrorKind,
         message: String,
     },
+    // D-09: `drained` is `Vec<serde_json::Value>` on the wire to preserve
+    // BUS-02/BUS-03 canonical-JSON round-trip, but the broker MUST
+    // type-validate each line via `AnyBusEnvelope::decode` before inserting
+    // into this Vec. Decode failure emits `Err{EnvelopeInvalid}` and aborts
+    // cursor advance for that drain.
     RegisterOk {
         active: String,
         drained: Vec<serde_json::Value>,

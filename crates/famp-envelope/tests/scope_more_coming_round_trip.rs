@@ -12,13 +12,9 @@
 //! 1. **Round-trip:** building a request with `scope.more_coming = true`,
 //!    signing, encoding, and decoding round-trips the flag exactly.
 //!
-//! 2. **Backwards compat against a pinned legacy fixture:** load the
-//!    on-disk `tests/fixtures/provisional/request-scope-instructions.json`
-//!    vector (pinned BEFORE this task added `more_coming`), decode it
-//!    under the RFC 8032 Test-1 trust anchor, and assert the decoded
-//!    body does NOT carry the `more_coming` key. This is the *real*
-//!    proof — comparing two builds from the post-change builder is a
-//!    tautology (BL-03).
+//! 2. **Version boundary against a pinned legacy fixture:** load the
+//!    on-disk v0.5.1 `tests/fixtures/provisional/request-scope-instructions.json`
+//!    vector and assert v0.5.2 rejects it with `UnsupportedVersion`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
@@ -37,7 +33,7 @@ use famp_envelope::body::request::{
     RequestBody, REQUEST_SCOPE_INSTRUCTIONS_KEY, REQUEST_SCOPE_MORE_COMING_KEY,
 };
 use famp_envelope::body::Bounds;
-use famp_envelope::{SignedEnvelope, Timestamp, UnsignedEnvelope};
+use famp_envelope::{EnvelopeDecodeError, SignedEnvelope, Timestamp, UnsignedEnvelope};
 
 // RFC 8032 Test 1 keypair — reproducible across runs. Same as the
 // existing provisional vector test so the two share a trust anchor.
@@ -127,13 +123,7 @@ fn more_coming_true_round_trips() {
 }
 
 #[test]
-fn legacy_fixture_decodes_without_more_coming_key() {
-    // BL-03: the *real* backwards-compat proof is the on-disk fixture
-    // pinned BEFORE this task introduced `more_coming`. If a future
-    // change to `RequestBody`, the canonicalizer, or the field ordering
-    // breaks signature verification on pre-flag envelopes, this test
-    // fails — which is exactly the regression the previous tautology
-    // ("does the post-change builder match itself?") could not catch.
+fn legacy_fixture_rejects_at_v0_5_2_boundary() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
@@ -147,22 +137,9 @@ fn legacy_fixture_decodes_without_more_coming_key() {
     });
 
     let vk = TrustedVerifyingKey::from_bytes(&PUBLIC).unwrap();
-    let decoded: SignedEnvelope<RequestBody> = SignedEnvelope::decode(&bytes, &vk)
-        .expect("pre-pc7 fixture must verify under RFC 8032 Test-1 pubkey");
-
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk).unwrap_err();
     assert!(
-        decoded.body().scope.pointer("/more_coming").is_none(),
-        "pre-pc7 fixture must NOT contain a more_coming key — \
-         backwards-compat broken"
-    );
-    // Sanity-check the decoder isn't silently smuggling the constant in
-    // under a different path either.
-    assert_eq!(
-        decoded
-            .body()
-            .scope
-            .pointer(&format!("/{REQUEST_SCOPE_MORE_COMING_KEY}"))
-            .and_then(serde_json::Value::as_bool),
-        None,
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.5.1"),
+        "historical pre-pc7 fixture must reject at v0.5.2 boundary, got {err:?}"
     );
 }

@@ -487,6 +487,9 @@ fn decode_lines(lines: Vec<Vec<u8>>) -> Result<Vec<serde_json::Value>, String> {
     lines
         .into_iter()
         .map(|line| {
+            famp_envelope::AnyBusEnvelope::decode(&line).map_err(|error| {
+                format!("drain line rejected by AnyBusEnvelope::decode: {error}")
+            })?;
             famp_canonical::from_slice_strict::<serde_json::Value>(&line)
                 .map_err(|error| error.to_string())
         })

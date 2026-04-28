@@ -19,7 +19,7 @@ use thiserror as _;
 
 use famp_canonical::{canonicalize, from_slice_strict};
 use famp_crypto::{sign_value, FampSigningKey, TrustedVerifyingKey};
-use famp_envelope::body::{AckBody, AckDisposition};
+use famp_envelope::body::AckBody;
 use famp_envelope::{AnySignedEnvelope, EnvelopeDecodeError, SignedEnvelope};
 use serde_json::Value;
 use std::fs;
@@ -50,18 +50,17 @@ fn test1_vk() -> TrustedVerifyingKey {
 }
 
 #[test]
-fn vector_0_decodes_through_signed_envelope() {
-    // §7.1c.7 → §7.1c.8 — decode the signed wire envelope with the Test 1 key.
+fn vector_0_is_historical_and_rejected_under_v0_5_2() {
+    // vector_0 is the v0.5.1 historical fixture. v0.5.2 rejects it via
+    // UnsupportedVersion per spec §19: implementations MUST emit this exact
+    // version string.
     let bytes = vector_0_bytes();
     let vk = test1_vk();
-    let decoded = SignedEnvelope::<AckBody>::decode(&bytes, &vk)
-        .expect("vector 0 must decode through the typed SignedEnvelope path");
-    assert_eq!(
-        decoded.body().disposition,
-        AckDisposition::Accepted,
-        "§7.1c.2 ack body must round-trip to disposition=accepted"
+    let err = SignedEnvelope::<AckBody>::decode(&bytes, &vk).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.5.1"),
+        "expected UnsupportedVersion {{ 0.5.1 }}, got {err:?}"
     );
-    assert_eq!(decoded.body().reason, None);
 }
 
 #[test]
@@ -104,10 +103,10 @@ fn vector_0_signature_reproduces_byte_exact() {
 fn any_signed_envelope_dispatches_vector_0_to_ack() {
     let bytes = vector_0_bytes();
     let vk = test1_vk();
-    let decoded = AnySignedEnvelope::decode(&bytes, &vk).unwrap();
+    let err = AnySignedEnvelope::decode(&bytes, &vk).unwrap_err();
     assert!(
-        matches!(decoded, AnySignedEnvelope::Ack(_)),
-        "vector 0 class=ack must route to AnySignedEnvelope::Ack"
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.5.1"),
+        "vector 0 class=ack is rejected before routing under v0.5.2, got {err:?}"
     );
 }
 

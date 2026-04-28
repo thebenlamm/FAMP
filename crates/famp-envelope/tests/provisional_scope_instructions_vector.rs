@@ -16,10 +16,7 @@
 //! ## Validating (not `#[ignore]`)
 //!
 //! The `decode_provisional_scope_instructions_vector` test loads the on-disk
-//! fixture and asserts:
-//! - `SignedEnvelope::decode` succeeds (implies `verify_strict` passed),
-//! - `body.scope.instructions` equals the fixture prose,
-//! - `body.natural_language_summary` equals the fixture title.
+//! v0.5.1 fixture and asserts v0.5.2 rejects it at the version boundary.
 //!
 //! This is NOT a normative Level 2 vector. A Level 2 conformance loader
 //! MUST NOT include the `provisional/` path in its glob.
@@ -39,7 +36,7 @@ use famp_core::{AuthorityScope, MessageId, Principal};
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
 use famp_envelope::body::request::{RequestBody, REQUEST_SCOPE_INSTRUCTIONS_KEY};
 use famp_envelope::body::Bounds;
-use famp_envelope::{SignedEnvelope, Timestamp, UnsignedEnvelope};
+use famp_envelope::{EnvelopeDecodeError, SignedEnvelope, Timestamp, UnsignedEnvelope};
 
 // RFC 8032 Test 1 keypair — reproducible across regenerations.
 const SECRET: [u8; 32] = [
@@ -144,18 +141,9 @@ fn decode_provisional_scope_instructions_vector() {
         )
     });
     let vk = TrustedVerifyingKey::from_bytes(&PUBLIC).unwrap();
-    let decoded: SignedEnvelope<RequestBody> = SignedEnvelope::decode(&bytes, &vk)
-        .expect("provisional vector must verify under RFC 8032 Test-1 pubkey");
-
-    let scope = &decoded.body().scope;
-    assert_eq!(
-        scope.pointer("/instructions").and_then(|v| v.as_str()),
-        Some(FIXTURE_BODY),
-        "provisional vector body.scope.instructions drifted"
-    );
-    assert_eq!(
-        decoded.body().natural_language_summary.as_deref(),
-        Some(FIXTURE_TITLE),
-        "provisional vector body.natural_language_summary drifted"
+    let err = SignedEnvelope::<RequestBody>::decode(&bytes, &vk).unwrap_err();
+    assert!(
+        matches!(err, EnvelopeDecodeError::UnsupportedVersion { ref found } if found == "0.5.1"),
+        "historical provisional vector must reject at v0.5.2 boundary, got {err:?}"
     );
 }

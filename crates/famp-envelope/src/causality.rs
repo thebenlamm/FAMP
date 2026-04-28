@@ -1,10 +1,7 @@
 //! Envelope causality sub-struct.
 //!
-//! v0.7 ships the five relations actually emitted by the Personal Runtime
-//! (`acknowledges`, `requests`, `commits`, `delivers`, `cancels`). The other
-//! six relations from the v0.5.1 §7.1 / §13 / §11.3 catalog are deferred to
-//! v0.9 Causality & Replay Defense (ENV-13). Re-widening this enum in v0.7
-//! is intentionally a compiler-visible break.
+//! v0.5.2 ships six relations: the five Personal Runtime relations plus
+//! `audits`, added by Delta 32 and distinct from `acknowledges` per D-16.
 
 use famp_core::MessageId;
 use serde::{Deserialize, Serialize};
@@ -17,6 +14,7 @@ pub enum Relation {
     Commits,
     Delivers,
     Cancels,
+    Audits,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

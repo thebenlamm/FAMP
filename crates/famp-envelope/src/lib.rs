@@ -16,6 +16,7 @@ use insta as _;
 #[cfg(test)]
 use proptest as _;
 pub mod body;
+pub mod bus;
 pub mod causality;
 pub mod class;
 pub mod dispatch;
@@ -28,6 +29,7 @@ pub mod version;
 pub(crate) mod wire;
 
 pub use body::BodySchema;
+pub use bus::{AnyBusEnvelope, BusEnvelope};
 pub use causality::{Causality, Relation};
 pub use class::MessageClass;
 pub use dispatch::AnySignedEnvelope;

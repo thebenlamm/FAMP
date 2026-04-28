@@ -8,6 +8,23 @@ use common::TestEnv;
 use famp_bus::{Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName, Out, Target};
 use serde_json::json;
 
+fn audit_log_envelope(seq: u64) -> serde_json::Value {
+    json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": "01890000-0000-7000-8000-000000000001",
+        "from": "agent:example.test/bob",
+        "to": "agent:example.test/alice",
+        "authority": "advisory",
+        "ts": "2026-04-27T12:00:00Z",
+        "body": {
+            "event": "offline_message",
+            "details": { "seq": seq }
+        }
+    })
+}
+
 fn hello(broker: &mut Broker<TestEnv>, client: u64, now: Instant) {
     let _ = broker.handle(
         BrokerInput::Wire {
@@ -24,10 +41,10 @@ fn hello(broker: &mut Broker<TestEnv>, client: u64, now: Instant) {
 #[test]
 fn register_drain_replies_before_cursor_advance() {
     let env = TestEnv::new();
-    env.mailbox().append(
-        &MailboxName::Agent("alice".into()),
-        br#"{"hello":"world"}"#.to_vec(),
-    );
+    let line = famp_canonical::canonicalize(&audit_log_envelope(0)).unwrap();
+    let expected_offset = u64::try_from(line.len() + 1).unwrap();
+    env.mailbox()
+        .append(&MailboxName::Agent("alice".into()), line);
     let mut broker = Broker::new(env);
     let now = Instant::now();
     hello(&mut broker, 1, now);
@@ -52,9 +69,9 @@ fn register_drain_replies_before_cursor_advance() {
             ),
             Out::AdvanceCursor {
                 name: MailboxName::Agent(_),
-                offset: 18,
+                offset,
             },
-        ] if active == "alice" && drained.len() == 1
+        ] if active == "alice" && drained.len() == 1 && *offset == expected_offset
     ));
 }
 
@@ -91,7 +108,7 @@ fn send_emits_append_before_reply() {
             client: ClientId::from(1),
             msg: BusMessage::Send {
                 to: Target::Agent { name: "bob".into() },
-                envelope: json!({"body":"hello"}),
+                envelope: audit_log_envelope(1),
             },
         },
         now,

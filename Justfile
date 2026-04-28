@@ -75,8 +75,15 @@ check-no-tokio-in-bus:
     fi
     @echo "OK - famp-bus is tokio-free."
 
+# AUDIT-05: prevent split-commit between FAMP_SPEC_VERSION bump and impl.
+check-spec-version-coherence:
+    @if grep -q 'pub const FAMP_SPEC_VERSION: &str = "0.5.2"' crates/famp-envelope/src/version.rs; then \
+      grep -q 'AuditLog' crates/famp-core/src/class.rs || (echo "spec version 0.5.2 declared but MessageClass::AuditLog missing" && exit 1); \
+      grep -q 'AuditLogBody' crates/famp-envelope/src/body/mod.rs || (echo "spec version 0.5.2 declared but AuditLogBody missing" && exit 1); \
+    fi
+
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus
+ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-spec-version-coherence
     @echo "✓ local CI-parity checks passed"
 
 # Start two famp daemons in the background for the Phase 4 E2E-02
