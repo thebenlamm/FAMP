@@ -608,40 +608,47 @@ loop {
 3. `std::fs::remove_file(sock_path)` (ignore ENOENT — already cleaned).
 4. Exit 0.
 
-### `posix_spawn` + `setsid` via `nix 0.31.2`
+### Broker Spawn (portable: `Command::new` + child-side `setsid`)
 
-[VERIFIED: `nix::spawn::PosixSpawnAttr`, `nix::spawn::posix_spawnp`, `nix::unistd::setsid` exist in nix 0.31.2; `process` crate feature required]
+> **SUPERSEDED-BY-Q1 NOTE.** The original code block in this section used `nix::spawn::posix_spawnp` with a `POSIX_SPAWN_SETSID` flag. **Do not implement that pattern.** `POSIX_SPAWN_SETSID` is a macOS-only nonportable extension and `nix 0.31`'s `PosixSpawnFlags` does not expose it on Linux. The locked, portable answer (see "Resolved Open Questions" Q1 at the bottom of this file) is `std::process::Command::new(current_exe).pre_exec(|| nix::unistd::setsid())`. The block below is the canonical implementation.
+
+[VERIFIED: `nix::unistd::setsid` exists in nix 0.31.2 (`fs` feature); `std::os::unix::process::CommandExt::pre_exec` is stable; the closure runs in the child between fork and exec.]
 
 ```rust
-// In spawn.rs — called by BusClient::connect when socket absent
+// In bus_client/spawn.rs — called by BusClient::connect when socket absent
+use std::os::unix::process::CommandExt;
+use std::process::{Command, Stdio};
+
 pub fn spawn_broker_if_absent(sock_path: &Path) -> Result<(), SpawnError> {
-    use nix::spawn::{PosixSpawnAttr, PosixSpawnFileActions, posix_spawnp};
-    use nix::sys::signal::{SigSet, Signal};
-
-    // Build attrs: setsid equivalent is POSIX_SPAWN_SETSID flag
-    let mut attr = PosixSpawnAttr::new()?;
-    attr.setflags(nix::spawn::PosixSpawnFlags::POSIX_SPAWN_SETSID)?;
-
-    // File actions: redirect stdout/stderr to broker.log
+    let exe = std::env::current_exe()?;
     let bus_dir = sock_path.parent().expect("socket has parent");
     let log_path = bus_dir.join("broker.log");
-    let mut fa = PosixSpawnFileActions::new()?;
-    // open log_path for append on fd 1 and fd 2
-    fa.open(1, &log_path, nix::fcntl::OFlag::O_WRONLY | nix::fcntl::OFlag::O_CREAT | nix::fcntl::OFlag::O_APPEND, nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR)?;
-    fa.dup2(1, 2)?;
-    // stdin → /dev/null
-    fa.open(0, std::path::Path::new("/dev/null"), nix::fcntl::OFlag::O_RDONLY, nix::sys::stat::Mode::empty())?;
+    let log = std::fs::OpenOptions::new()
+        .create(true).append(true).mode(0o600)
+        .open(&log_path)?;
+    let log_err = log.try_clone()?;
 
-    let exe = std::env::current_exe()?; // path to `famp` binary itself
-    let args = [exe.to_str().unwrap(), "broker", "--socket", sock_path.to_str().unwrap()];
-    posix_spawnp(exe.to_str().unwrap(), &fa, &attr, &args, &[])?;
+    // SAFETY: pre_exec runs after fork() and before exec() in the child.
+    // The closure must be async-signal-safe; setsid() is on the safe list.
+    unsafe {
+        Command::new(&exe)
+            .args(["broker", "--socket", sock_path.to_str().unwrap()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(log))
+            .stderr(Stdio::from(log_err))
+            .pre_exec(|| {
+                nix::unistd::setsid().map_err(std::io::Error::from)?;
+                Ok(())
+            })
+            .spawn()?;
+    }
     Ok(())
 }
 ```
 
-**No double-fork needed**: `POSIX_SPAWN_SETSID` creates a new session, detaching from the terminal's process group. This is equivalent to the `setsid()` + `fork()` pattern but in a single call.
+**Why no `posix_spawn`**: `nix::spawn::PosixSpawnAttr::setflags` does not expose `POSIX_SPAWN_SETSID` (macOS-only). `Command::new + pre_exec(setsid)` produces an equivalent detached session and is portable across macOS+Linux. **No double-fork needed**: `setsid()` in the child between fork and exec creates a new session, detaching from the terminal's process group.
 
-[CITED: design spec lines 206-206: "posix_spawn + setsid (detaches from terminal; survives Cmd-Q on Terminal.app). No double-fork."]
+[CITED: design spec lines 206: "posix_spawn + setsid (detaches from terminal; survives Cmd-Q on Terminal.app). No double-fork." — "posix_spawn" is the *intent* (fork-and-exec daemonization); the *implementation* is `Command::new + pre_exec(setsid)`.]
 
 ### NFS Warning
 

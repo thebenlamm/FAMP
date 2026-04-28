@@ -117,31 +117,32 @@ pub struct BusClient {
 }
 
 impl BusClient {
-    /// Connect to sock_path; spawn broker if absent.
-    pub async fn connect(sock_path: &Path) -> Result<Self, BusClientError> {
+    /// Connect to sock_path; spawn broker if absent. `bind_as` = D-10 proxy binding:
+    /// None for canonical-holder connections (`famp register`, MCP server).
+    /// Some(name) for one-shot CLI commands proxying to a live registered holder.
+    pub async fn connect(sock_path: &Path, bind_as: Option<String>) -> Result<Self, BusClientError> {
         spawn::spawn_broker_if_absent(sock_path)?;
-        // poll up to 2s for socket to appear
         let stream = tokio::net::UnixStream::connect(sock_path).await?;
-        Ok(Self { stream })
+        let mut client = Self { stream };
+        let hello = BusMessage::Hello {
+            bus_proto: 1,
+            client: "famp-cli/0.9.0".to_string(),
+            bind_as,
+        };
+        match client.send_recv(hello).await? {
+            BusReply::HelloOk { .. } => Ok(client),
+            BusReply::HelloErr { kind, message } => Err(BusClientError::HelloFailed { kind, message }),
+            BusReply::Err { kind, message } => Err(BusClientError::HelloFailed { kind, message }),
+            other => Err(BusClientError::UnexpectedReply(format!("{other:?}"))),
+        }
     }
 
-    /// Send one BusMessage, receive one BusReply (Hello handshake embedded).
+    /// Send one BusMessage, receive one BusReply.
     pub async fn send_recv(&mut self, msg: BusMessage) -> Result<BusReply, BusClientError> {
-        codec::write_frame(&mut self.stream, &msg).await?;
-        codec::read_frame(&mut self.stream).await
+        let (mut reader, mut writer) = self.stream.split();
+        codec::write_frame(&mut writer, &msg).await?;
+        codec::read_frame(&mut reader).await
     }
-}
-```
-
-**Hello handshake pattern** (called immediately after connect):
-```rust
-// In BusClient::connect, after UnixStream::connect succeeds:
-let mut client = Self { stream };
-let hello = BusMessage::Hello { bus_proto: 1, client: "famp-cli/0.9.0".to_string() };
-match client.send_recv(hello).await? {
-    BusReply::HelloOk { .. } => Ok(client),
-    BusReply::Err { kind, message } => Err(BusClientError::HelloFailed { kind, message }),
-    other => Err(BusClientError::UnexpectedReply(format!("{other:?}"))),
 }
 ```
 
@@ -170,32 +171,40 @@ pub fn bus_dir(sock_path: &Path) -> &Path {
 
 **Analog:** `crates/famp/src/cli/listen/mod.rs` (bind and listener pattern; no direct UDS spawn analog exists)
 
-**Greenfield: `posix_spawn` + `setsid` via `nix 0.31.2`.** No existing analog in the codebase. Use RESEARCH.md §5 verbatim. Key pattern elements:
+**Greenfield: portable broker spawn via `Command::new` + child-side `nix::unistd::setsid()`.** Per RESEARCH §"Resolved Open Questions" Q1, the `POSIX_SPAWN_SETSID` flag is a macOS-only extension and is NOT portable across platforms; `nix::spawn::PosixSpawnAttr::setflags` does not expose it. The locked, portable pattern is: `Command::new(current_exe).args(["broker", "--socket", path]).spawn()` with `pre_exec(|| nix::unistd::setsid())` so the child detaches from the controlling terminal as its first action after fork (before exec). This works on both macOS and Linux.
 
 ```rust
-// spawn.rs
-use nix::spawn::{PosixSpawnAttr, PosixSpawnFileActions, posix_spawnp};
+// spawn.rs — portable broker spawn (Q1-locked)
+use std::os::unix::process::CommandExt;
 
 pub fn spawn_broker_if_absent(sock_path: &Path) -> Result<(), SpawnError> {
     // Try connect first — if already running, return immediately.
     if std::os::unix::net::UnixStream::connect(sock_path).is_ok() {
         return Ok(());
     }
-    // Build posix_spawn attrs with POSIX_SPAWN_SETSID for terminal detach.
-    let mut attr = PosixSpawnAttr::new()?;
-    attr.setflags(nix::spawn::PosixSpawnFlags::POSIX_SPAWN_SETSID)?;
-    // Redirect stdin → /dev/null, stdout+stderr → bus_dir/broker.log
     let bus_dir = sock_path.parent().expect("socket has parent");
+    std::fs::create_dir_all(bus_dir)?;
     let log_path = bus_dir.join("broker.log");
-    let mut fa = PosixSpawnFileActions::new()?;
-    fa.open(1, &log_path, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR)?;
-    fa.dup2(1, 2)?;
-    fa.open(0, Path::new("/dev/null"), O_RDONLY, Mode::empty())?;
-    // Spawn self as "famp broker --socket <path>"
+    let log = std::fs::OpenOptions::new()
+        .create(true).append(true).mode(0o600).open(&log_path)?;
+    let log_clone = log.try_clone()?;
     let exe = std::env::current_exe()?;
-    posix_spawnp(exe.to_str().unwrap(), &fa, &attr,
-        &[exe.to_str().unwrap(), "broker", "--socket", sock_path.to_str().unwrap()],
-        &[])?;
+    let child = unsafe {
+        std::process::Command::new(&exe)
+            .args(["broker", "--socket", sock_path.to_str().unwrap()])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::from(log))
+            .stderr(std::process::Stdio::from(log_clone))
+            .pre_exec(|| {
+                // First action in the child after fork, before exec:
+                // detach from the controlling terminal by creating a new session.
+                nix::unistd::setsid().map_err(std::io::Error::from)?;
+                Ok(())
+            })
+            .spawn()?
+    };
+    drop(child); // disown — broker has its own session and will outlive us
+
     // Poll up to 2s (10 × 200ms) for the socket to appear.
     for _ in 0..10 {
         std::thread::sleep(std::time::Duration::from_millis(200));
@@ -206,6 +215,8 @@ pub fn spawn_broker_if_absent(sock_path: &Path) -> Result<(), SpawnError> {
     Err(SpawnError::BrokerDidNotStart)
 }
 ```
+
+**No `POSIX_SPAWN_SETSID` reference**: that constant is macOS-only and `nix 0.31`'s `PosixSpawnFlags` does not expose it. The portable answer is `Command::new` + `pre_exec(setsid)` — see RESEARCH §"Resolved Open Questions" Q1.
 
 ---
 
@@ -342,7 +353,7 @@ impl<T: MailboxRead + LivenessProbe> BrokerEnv for T {}
 // cli/broker/mailbox_env.rs
 pub struct DiskMailboxEnv {
     bus_dir: PathBuf,
-    inboxes: std::collections::HashMap<MailboxName, famp_inbox::Inbox>,
+    inboxes: tokio::sync::Mutex<HashMap<MailboxName, famp_inbox::Inbox>>,
 }
 
 impl MailboxRead for DiskMailboxEnv {
@@ -422,9 +433,7 @@ pub fn resolve_identity(
         }
     }
     // Tier 4: hard error
-    Err(CliError::NotRegistered) // or a new CliError::NoIdentityBound
-    // message: "no identity bound — pass --as, set $FAMP_LOCAL_IDENTITY,
-    //           or run `famp-local wire <dir>` first"
+    Err(CliError::NoIdentityBound { reason: "no identity bound — pass --as, set $FAMP_LOCAL_IDENTITY, or run `famp-local wire <dir>` first".into() })
 }
 ```
 
@@ -446,49 +455,40 @@ wires_lookup() {
 
 **Analog:** `crates/famp/src/cli/listen/mod.rs` (long-lived blocking subcommand pattern)
 
-**Args + run pattern** (copy from listen/mod.rs lines 35-85):
+Per D-10, `famp register` is the canonical holder, NOT a proxy → `BusClient::connect(&sock, None)`. The Register frame then sets the canonical name+pid for this connection.
+
 ```rust
 // cli/register.rs
 #[derive(clap::Args, Debug)]
 pub struct RegisterArgs {
-    /// Identity name to register as. Broker holds the slot for the lifetime
-    /// of this process.
     pub name: String,
-    /// Opt into live event stream on stderr (< prefix per received envelope).
-    #[arg(long)]
-    pub tail: bool,
-    /// Exit non-zero on first broker disconnect instead of reconnecting.
-    /// Use in tests/CI for deterministic behavior.
-    #[arg(long)]
-    pub no_reconnect: bool,
+    #[arg(long)] pub tail: bool,
+    #[arg(long)] pub no_reconnect: bool,
 }
 
 pub async fn run(args: RegisterArgs) -> Result<(), CliError> {
     let sock = bus_client::resolve_sock_path();
-    // Reconnect loop with bounded exponential backoff (D-09)
     let mut delay = Duration::from_secs(1);
     loop {
-        match BusClient::connect(&sock).await {
+        // bind_as: None — register IS the canonical holder, not a proxy (D-10)
+        match BusClient::connect(&sock, None).await {
             Ok(mut client) => {
                 let pid = std::process::id();
                 let reply = client.send_recv(BusMessage::Register { name: args.name.clone(), pid }).await?;
                 match reply {
-                    BusReply::RegisterOk { drained, joined } => {
-                        eprintln!("registered as {} (pid {}, joined: {:?}) — Ctrl-C to release",
-                            args.name, pid, joined);
-                        if args.tail {
-                            tail_loop(&mut client, &args.name).await?;
-                        } else {
-                            block_until_disconnect(&mut client).await?;
-                        }
+                    BusReply::RegisterOk { active, drained, peers } => {
+                        eprintln!("registered as {active} (pid {pid}, joined: [], peers: {peers:?}) — Ctrl-C to release");
+                        if args.tail { tail_loop(&mut client, &args.name).await? }
+                        else { block_until_disconnect(&mut client).await? }
                     }
-                    BusReply::Err { kind, .. } => return Err(kind.into()),
-                    other => return Err(CliError::Io { .. }),
+                    BusReply::Err { kind: BusErrorKind::NameTaken, .. } => return Err(CliError::NameTaken { name: args.name.clone() }),
+                    BusReply::Err { kind, message } => return Err(CliError::BusError { kind, message }),
+                    other => return Err(CliError::Io { /* unexpected */ }),
                 }
-                delay = Duration::from_secs(1); // reset on clean disconnect
+                delay = Duration::from_secs(1);
             }
             Err(_) => {
-                if args.no_reconnect { return Err(CliError::Io { .. }); }
+                if args.no_reconnect { return Err(CliError::Disconnected); }
                 eprintln!("broker disconnected — reconnecting in {}s", delay.as_secs());
                 tokio::time::sleep(delay).await;
                 delay = std::cmp::min(delay * 2, Duration::from_secs(30));
@@ -505,36 +505,30 @@ pub async fn run(args: RegisterArgs) -> Result<(), CliError> {
 
 **Analog:** Current `crates/famp/src/cli/send/mod.rs` (exact — preserve arg shapes, swap transport)
 
-**Args to preserve** (lines 42-64, send/mod.rs):
+D-10 explicitly REJECTS adding a per-message `send_as` field. Identity binding is connection-level via `Hello.bind_as`. The `BusMessage::Send` shape is unchanged from Phase 1.
+
 ```rust
-// Keep entire SendArgs struct unchanged — #[arg(conflicts_with)] + #[arg(requires)] matrix preserved.
-// Add --as flag:
-#[arg(long)]
+// SendArgs preserved verbatim from v0.8 + new --as flag:
+#[arg(long = "as")]
 pub send_as: Option<String>,
+
+// Transport swap:
+pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcome, CliError> {
+    let identity = resolve_identity(args.send_as.as_deref())?;
+    let target = build_target(&args)?;
+    let envelope = fsm_glue::build_envelope_value(&args)?;
+    // D-10: connection-level proxy via Hello.bind_as — broker validates at Hello time.
+    let mut bus = BusClient::connect(sock, Some(identity.clone())).await
+        .map_err(|e| match e {
+            BusClientError::HelloFailed { kind: BusErrorKind::NotRegistered, .. } => CliError::NotRegisteredHint { name: identity.clone() },
+            _ => CliError::BrokerUnreachable,
+        })?;
+    let reply = bus.send_recv(BusMessage::Send { to: target, envelope }).await?;  // NO send_as field
+    // ... map reply ...
+}
 ```
 
-**Transport swap** (lines 200-210, from `client::post_envelope(...)` to `bus.send_recv(...)`):
-```rust
-// BEFORE (v0.8):
-let outcome = client::post_envelope(&peer.endpoint, ...).await?;
-
-// AFTER (v0.9):
-let identity = resolve_identity(args.send_as.as_deref())?;
-let mut bus = BusClient::connect(&resolve_sock_path()).await
-    .map_err(|_| CliError::NotRegistered)?;
-let reply = bus.send_recv(BusMessage::Send {
-    to: Target::Agent { name: args.to.clone() },
-    envelope: serde_json::to_value(&envelope_bytes)?,
-    send_as: args.send_as.clone(),
-}).await?;
-let outcome = match reply {
-    BusReply::SendOk { task_id, delivered } => SendOutcome { task_id: task_id.to_string(), state: "requested".to_string() },
-    BusReply::Err { kind, message } => return Err(bus_error_to_cli(kind, &message)),
-    other => return Err(CliError::Io { .. }),
-};
-```
-
-**`run` / `run_at` / `run_at_structured` pattern** — preserve the three-layer pattern (lines 88-101) so MCP tools can continue calling `run_at_structured` unchanged.
+**`run` / `run_at` / `run_at_structured` pattern** — preserve the three-layer pattern so MCP tools can continue calling `run_at_structured` unchanged.
 
 ---
 
@@ -542,29 +536,32 @@ let outcome = match reply {
 
 **Analog:** `crates/famp/src/cli/inbox/mod.rs` (subcommand-with-identity-resolution pattern)
 
-**Pattern to copy** (inbox/mod.rs lines 1-64):
 ```rust
-// cli/join.rs — modeled on inbox/mod.rs minimal subcommand shape
+// cli/join.rs — D-10 proxy via Hello.bind_as
 #[derive(clap::Args, Debug)]
 pub struct JoinArgs {
     pub channel: String,
-    #[arg(long)]
-    pub send_as: Option<String>,  // --as flag for D-01 resolution
+    #[arg(long = "as")]
+    pub send_as: Option<String>,
 }
 
 pub async fn run(args: JoinArgs) -> Result<(), CliError> {
     let identity = resolve_identity(args.send_as.as_deref())?;
     let channel = normalize_channel(&args.channel)?;
-    let sock = bus_client::resolve_sock_path();
-    let mut bus = BusClient::connect(&sock).await.map_err(|_| CliError::NotRegistered)?;
+    // Hello.bind_as = Some(identity) — broker mutates canonical holder's joined set
+    // (NOT this proxy connection's), so the proxy can exit and alice stays in #c.
+    let mut bus = BusClient::connect(&resolve_sock_path(), Some(identity.clone())).await
+        .map_err(|e| /* HelloErr{NotRegistered} → NotRegisteredHint */)?;
     let reply = bus.send_recv(BusMessage::Join { channel: channel.clone() }).await?;
     match reply {
-        BusReply::JoinOk { members, drained } => {
-            let out = serde_json::json!({ "channel": channel, "members": members, "drained": drained });
-            println!("{}", serde_json::to_string(&out)?);
+        BusReply::JoinOk { channel: c, members, drained } => {
+            // drained is Vec<serde_json::Value> per Phase-1 D-09 evolved shape — typed envelopes on the wire.
+            // Surface count for ergonomics; full envelopes via run_at_structured.
+            println!("{}", serde_json::json!({ "channel": c, "members": members, "drained": drained.len() }));
             Ok(())
         }
-        BusReply::Err { kind, message } => Err(bus_error_to_cli(kind, &message)),
+        BusReply::Err { kind: BusErrorKind::NotRegistered, .. } => Err(CliError::NotRegisteredHint { name: identity }),
+        BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::Io { .. }),
     }
 }
@@ -577,7 +574,6 @@ fn normalize_channel(input: &str) -> Result<String, CliError> {
     if normalized.starts_with("##") {
         return Err(CliError::SendArgsInvalid { reason: "channel name cannot start with ##".into() });
     }
-    // Validate against BUS-04 regex (same CHANNEL_RE used in proto.rs)
     if !CHANNEL_RE.is_match(&normalized) {
         return Err(CliError::SendArgsInvalid { reason: format!("invalid channel name: {normalized}") });
     }
@@ -591,17 +587,17 @@ fn normalize_channel(input: &str) -> Result<String, CliError> {
 
 **Analog:** `crates/famp/src/cli/inbox/list.rs` (JSONL stdout output pattern)
 
-**JSONL output pattern** (copy from inbox/list.rs stdout loop):
 ```rust
 // cli/sessions.rs — JSONL-per-row output, same shape as inbox list
 pub async fn run(args: SessionsArgs) -> Result<(), CliError> {
-    let sock = bus_client::resolve_sock_path();
-    let mut bus = BusClient::connect(&sock).await.map_err(|_| CliError::NotRegistered)?;
+    // --me → Hello.bind_as = Some(identity); else bind_as: None (read-only observer)
+    let bind_as = if args.me { Some(resolve_identity(None)?) } else { None };
+    let mut bus = BusClient::connect(&resolve_sock_path(), bind_as.clone()).await
+        .map_err(/* ... */)?;
     let reply = bus.send_recv(BusMessage::Sessions {}).await?;
     match reply {
         BusReply::SessionsOk { rows } => {
-            // --me filter: resolve identity, emit only matching row
-            let filter = if args.me { Some(resolve_identity(None)?) } else { None };
+            let filter = bind_as;
             for row in &rows {
                 if filter.as_deref().map_or(true, |name| row.name == name) {
                     println!("{}", serde_json::to_string(row)?);
@@ -609,8 +605,7 @@ pub async fn run(args: SessionsArgs) -> Result<(), CliError> {
             }
             Ok(())
         }
-        BusReply::Err { kind, message } => Err(bus_error_to_cli(kind, &message)),
-        other => Err(CliError::Io { .. }),
+        // ...
     }
 }
 ```
@@ -621,26 +616,8 @@ pub async fn run(args: SessionsArgs) -> Result<(), CliError> {
 
 **Analog:** Current `crates/famp/src/cli/mcp/session.rs` (exact — preserve OnceLock+Mutex pattern, replace inner type)
 
-**Full pattern to preserve** (lines 65-93):
-```rust
-// session.rs — keep this exact OnceLock<Mutex<...>> pattern; replace IdentityBinding with SessionState
-fn state() -> &'static Mutex<Option<IdentityBinding>> {
-    static STATE: OnceLock<Mutex<Option<IdentityBinding>>> = OnceLock::new();
-    STATE.get_or_init(|| Mutex::new(None))
-}
+Per D-10 the MCP server is NOT a proxy — it's a long-lived process that calls `famp_register` and BECOMES the registered slot. So `BusClient::connect` is invoked with `bind_as: None`.
 
-pub async fn current() -> Option<IdentityBinding> { state().lock().await.clone() }
-pub async fn set(binding: IdentityBinding) -> Option<IdentityBinding> {
-    let mut guard = state().lock().await;
-    guard.replace(binding)
-}
-pub async fn clear() -> Option<IdentityBinding> {
-    let mut guard = state().lock().await;
-    guard.take()
-}
-```
-
-**New inner type for v0.9** (from RESEARCH.md §7):
 ```rust
 // session.rs v0.9 — drop IdentityBinding/home_path; add bus + active_identity
 struct SessionState {
@@ -657,7 +634,8 @@ pub async fn ensure_bus() -> Result<(), BusErrorKind> {
     let mut guard = state().lock().await;
     if guard.bus.is_none() {
         let sock = bus_client::resolve_sock_path();
-        guard.bus = Some(BusClient::connect(&sock).await.map_err(|_| BusErrorKind::BrokerUnreachable)?);
+        // bind_as: None — MCP is the registered slot per D-10, not a proxy
+        guard.bus = Some(BusClient::connect(&sock, None).await.map_err(|_| BusErrorKind::BrokerUnreachable)?);
     }
     Ok(())
 }
@@ -675,7 +653,6 @@ pub async fn ensure_bus() -> Result<(), BusErrorKind> {
 use famp_bus::BusErrorKind;
 
 pub fn bus_error_to_jsonrpc(kind: BusErrorKind) -> (i64, &'static str) {
-    // No `_ =>` arm. Adding a BusErrorKind variant fails compile here (MCP-10).
     let (code, kind_str) = match kind {
         BusErrorKind::NotRegistered       => (-32100, "not_registered"),
         BusErrorKind::NameTaken           => (-32101, "name_taken"),
@@ -687,8 +664,6 @@ pub fn bus_error_to_jsonrpc(kind: BusErrorKind) -> (i64, &'static str) {
         BusErrorKind::BrokerProtoMismatch => (-32107, "broker_proto_mismatch"),
         BusErrorKind::BrokerUnreachable   => (-32108, "broker_unreachable"),
         BusErrorKind::Internal            => (-32109, "internal"),
-        // If a new BusErrorKind variant is added, THIS line fails to compile.
-        // That is the intended behavior (MCP-10).
     };
     (code, kind_str)
 }
@@ -696,7 +671,6 @@ pub fn bus_error_to_jsonrpc(kind: BusErrorKind) -> (i64, &'static str) {
 
 **Companion exhaustive test** (copy `mcp_error_kind_exhaustive.rs` pattern — iterate `BusErrorKind::ALL`, assert unique codes):
 ```rust
-// tests/bus_error_kind_exhaustive.rs — mirrors mcp_error_kind_exhaustive.rs
 #[test]
 fn every_bus_error_kind_has_jsonrpc_code() {
     use std::collections::HashSet;
@@ -716,25 +690,22 @@ fn every_bus_error_kind_has_jsonrpc_code() {
 
 **Analog:** Current `crates/famp/src/cli/mcp/tools/register.rs` (exact pattern; swap `resolve_identity_dir` for bus `Register` message)
 
-**Tool call pattern to preserve** (lines 65-101):
 ```rust
 // tools/register.rs (v0.9) — same input parsing, new backend call
 pub async fn call(input: &Value) -> Result<Value, BusErrorKind> {
-    let name = input["name"].as_str()
-        .ok_or(BusErrorKind::EnvelopeInvalid)?.to_string();
+    let name = input["name"].as_str().ok_or(BusErrorKind::EnvelopeInvalid)?.to_string();
     validate_identity_name(&name)?;
-
-    // Connect bus + send Register (MCP process IS the identity; PID = self)
-    session::ensure_bus().await?;
+    session::ensure_bus().await?;  // bind_as: None per D-10
     let mut guard = session::state().lock().await;
     let bus = guard.bus.as_mut().expect("ensure_bus guarantees Some");
     let pid = std::process::id();
     let reply = bus.send_recv(BusMessage::Register { name: name.clone(), pid }).await
         .map_err(|_| BusErrorKind::BrokerUnreachable)?;
     match reply {
-        BusReply::RegisterOk { drained, joined } => {
-            guard.active_identity = Some(name.clone());
-            Ok(serde_json::json!({ "active": name, "drained": drained, "peers": joined }))
+        BusReply::RegisterOk { active, drained, peers } => {
+            guard.active_identity = Some(active.clone());
+            // drained is Vec<serde_json::Value> — typed envelopes per Phase-1 D-09 evolved
+            Ok(serde_json::json!({ "active": active, "drained": drained.len(), "peers": peers }))
         }
         BusReply::Err { kind, .. } => Err(kind),
         _ => Err(BusErrorKind::Internal),
@@ -746,29 +717,13 @@ pub async fn call(input: &Value) -> Result<Value, BusErrorKind> {
 
 ### `crates/famp/src/cli/mcp/tools/send.rs` (rewrite, controller, request-response)
 
-**Analog:** Current `crates/famp/src/cli/mcp/tools/send.rs` (exact pattern — preserve input parsing shape; swap `run_at_structured(home, args)` for `bus.send_recv(BusMessage::Send{..})`)
-
-**Input parsing pattern to preserve** (lines 30-103, send.rs):
 ```rust
-// tools/send.rs (v0.9) — keep same input validation, new backend
+// tools/send.rs (v0.9) — calls cli::send::run_at_structured (D-10 proxy at that layer)
 pub async fn call(input: &Value) -> Result<Value, BusErrorKind> {
-    // Input parsing identical to v0.8 (peer → to, mode, title, body, more_coming)
-    let to_str = input["to"].as_str().ok_or(BusErrorKind::EnvelopeInvalid)?;
-    let new_task = input["new_task"].as_str().map(str::to_string);
-    // ...build BusEnvelope from new_task/task/terminal flags...
-    let guard = session::state().lock().await;
-    let bus = guard.bus.as_ref().ok_or(BusErrorKind::NotRegistered)?;
-    let reply = bus.send_recv(BusMessage::Send {
-        to: Target::Agent { name: to_str.to_string() },
-        envelope: built_envelope_value,
-        send_as: None,
-    }).await.map_err(|_| BusErrorKind::BrokerUnreachable)?;
-    match reply {
-        BusReply::SendOk { task_id, delivered } =>
-            Ok(serde_json::json!({ "task_id": task_id, "delivered": delivered })),
-        BusReply::Err { kind, .. } => Err(kind),
-        _ => Err(BusErrorKind::Internal),
-    }
+    // Build SendArgs from input fields, then proxy through cli::send::run_at_structured
+    // (which uses Hello.bind_as = Some(identity) per D-10).
+    // No `send_as` field — D-10 rejects per-message identity.
+    // ...
 }
 ```
 
@@ -776,20 +731,18 @@ pub async fn call(input: &Value) -> Result<Value, BusErrorKind> {
 
 ### `crates/famp/src/cli/mcp/tools/join.rs` + `tools/leave.rs` (new, controller, request-response)
 
-**Analog:** Current `crates/famp/src/cli/mcp/tools/send.rs` (same call pattern; different message variant)
-
 ```rust
-// tools/join.rs (new)
+// tools/join.rs (new) — calls cli::join::run_at_structured
 pub async fn call(input: &Value) -> Result<Value, BusErrorKind> {
     let channel = input["channel"].as_str().ok_or(BusErrorKind::EnvelopeInvalid)?.to_string();
-    let channel = normalize_channel(&channel).map_err(|_| BusErrorKind::ChannelNameInvalid)?;
-    // get bus from session::state()
-    let reply = bus.send_recv(BusMessage::Join { channel: channel.clone() }).await?;
-    match reply {
-        BusReply::JoinOk { members, drained } =>
-            Ok(serde_json::json!({ "channel": channel, "members": members, "drained": drained })),
-        BusReply::Err { kind, .. } => Err(kind),
-        _ => Err(BusErrorKind::Internal),
+    let args = JoinArgs { channel, send_as: None };
+    match crate::cli::join::run_at_structured(&resolve_sock_path(), args).await {
+        Ok(out) => Ok(serde_json::json!({
+            "channel": out.channel,
+            "members": out.members,
+            "drained": out.drained,  // typed Vec<serde_json::Value>
+        })),
+        Err(_) => Err(BusErrorKind::Internal),
     }
 }
 ```
@@ -798,13 +751,11 @@ pub async fn call(input: &Value) -> Result<Value, BusErrorKind> {
 
 ### `crates/famp/src/cli/mcp/server.rs` (UNCHANGED)
 
-**Analog:** Itself. The JSON-RPC loop in `server.rs` (lines 255-381) is preserved verbatim per D-04. The only changes are:
-- `dispatch_tool` signature: remove `local_root: &Path` parameter
+The JSON-RPC loop is preserved verbatim per D-04. Only changes:
 - Add `"famp_join"` and `"famp_leave"` arms to `dispatch_tool` match
 - `tool_descriptors()`: add `famp_join` and `famp_leave` tool descriptors
 - `cli_error_response` → `bus_error_response` (using `bus_error_to_jsonrpc`)
 
-**Dispatch pattern to copy** (lines 355-381):
 ```rust
 // server.rs dispatch_tool — same structure; add two arms
 async fn dispatch_tool(name: &str, input: &serde_json::Value) -> Result<Value, BusErrorKind> {
@@ -813,7 +764,6 @@ async fn dispatch_tool(name: &str, input: &serde_json::Value) -> Result<Value, B
         "famp_whoami"   => return tools::whoami::call(input).await,
         _ => {}
     }
-    // Pre-registration gate (D-05): preserved from v0.8
     let identity = { session::state().lock().await.active_identity.clone() };
     if identity.is_none() { return Err(BusErrorKind::NotRegistered); }
     match name {
@@ -823,7 +773,7 @@ async fn dispatch_tool(name: &str, input: &serde_json::Value) -> Result<Value, B
         "famp_peers" => tools::peers::call(input).await,
         "famp_join"  => tools::join::call(input).await,   // NEW
         "famp_leave" => tools::leave::call(input).await,  // NEW
-        other => Err(BusErrorKind::Internal),
+        _ => Err(BusErrorKind::Internal),
     }
 }
 ```
@@ -832,30 +782,21 @@ async fn dispatch_tool(name: &str, input: &serde_json::Value) -> Result<Value, B
 
 ### `crates/famp/src/bin/famp.rs` (extend, config)
 
-**Analog:** Current `crates/famp/src/bin/famp.rs` + `crates/famp/src/cli/mod.rs`
-
 **Commands enum extension pattern** (cli/mod.rs lines 33-56):
 ```rust
-// cli/mod.rs — add new variants to Commands enum
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     // ... existing variants (Init, Setup, Info, Listen, Peer, Send, Await, Inbox, Mcp) ...
-    /// Start (or connect to) the UDS broker daemon.
     Broker(broker::BrokerArgs),
-    /// Register this terminal session as a named identity on the local bus.
     Register(register::RegisterArgs),
-    /// Join a channel (#name).
     Join(join::JoinArgs),
-    /// Leave a channel (#name).
     Leave(leave::LeaveArgs),
-    /// List currently registered sessions.
     Sessions(sessions::SessionsArgs),
-    /// Print the current registered identity.
     Whoami(whoami::WhoamiArgs),
 }
 ```
 
-**Tokio runtime dispatch pattern** (cli/mod.rs lines 66-124) — copy the `let rt = tokio::runtime::Builder::new_multi_thread()...` block for each new async command:
+**Tokio runtime dispatch pattern** (cli/mod.rs lines 66-124):
 ```rust
 Commands::Broker(args) => {
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()
@@ -877,6 +818,8 @@ Commands::Register(args) => {
 ### `scripts/famp-local` (hook additions, utility, event-driven)
 
 **Analog:** `scripts/famp-local` `cmd_wire` (lines 734-812) + `wires_write_row`/`wires_remove_row` helpers (lines 109-131)
+
+Per D-12, this plan owns HOOK-04a (registration). HOOK-04b (execution runner) is Phase 3.
 
 **`cmd_hook_add` pattern** (from RESEARCH.md §8 — copy verbatim):
 ```bash
@@ -920,7 +863,6 @@ cmd_hook_remove() {
 
 **Dispatch routing addition** (mirrors `wire)` dispatch line 1216):
 ```bash
-# In main case "$cmd" block:
 hook)  cmd_hook "$@" ;;
 
 cmd_hook() {
@@ -940,35 +882,22 @@ cmd_hook() {
 
 **Analog:** `crates/famp/tests/listen_smoke.rs` (in-process async server + tokio test pattern)
 
-**In-process tokio spawn pattern** (listen_smoke.rs lines 29-86):
 ```rust
-// broker_lifecycle.rs — in-process broker for idle timer tests
-#[tokio::test(start_paused = true)]  // enables tokio::time::advance()
+#[tokio::test(start_paused = true)]
 async fn broker_exits_after_5min_idle() {
     let tmp = tempfile::TempDir::new().unwrap();
     let sock = tmp.path().join("bus.sock");
-
     let broker_handle = tokio::spawn(run_broker(sock.clone()));
-
-    // Connect one client and disconnect (triggers idle timer arm)
     {
         let _stream = tokio::net::UnixStream::connect(&sock).await.unwrap();
-        // drop closes connection
     }
-
-    // Fast-forward 5 min + 1s
     tokio::time::advance(Duration::from_secs(301)).await;
-    tokio::task::yield_now().await; // allow broker task to process
-
+    tokio::task::yield_now().await;
     assert!(!sock.exists(), "broker must unlink socket on idle exit");
-    assert!(broker_handle.is_finished() || matches!(
-        tokio::time::timeout(Duration::from_millis(100), broker_handle).await,
-        Ok(_)
-    ));
 }
 ```
 
-**`start_paused = true` is NOT yet used anywhere in the repo** — this is the first precedent. Add `tokio = { workspace = true, features = ["test-util"] }` to `crates/famp/Cargo.toml [dev-dependencies]`.
+`start_paused = true` is the first use of `tokio::time::pause()`/`advance()` in the repo. Add `tokio = { workspace = true, features = ["test-util"] }` to `crates/famp/Cargo.toml [dev-dependencies]`.
 
 ---
 
@@ -976,9 +905,7 @@ async fn broker_exits_after_5min_idle() {
 
 **Analog:** `crates/famp/tests/mcp_stdio_tool_calls.rs` (subprocess spawn + `Command::cargo_bin("famp")` pattern)
 
-**Subprocess spawn pattern** (mcp_stdio_tool_calls.rs lines 72-88):
 ```rust
-// broker_spawn_race.rs — two simultaneous famp register invocations
 #[test]
 fn two_simultaneous_register_invocations_produce_one_broker() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -999,27 +926,14 @@ fn two_simultaneous_register_invocations_produce_one_broker() {
 }
 ```
 
-**`assert_cmd` pattern** (not yet in repo — RESEARCH.md §9 confirms it must be added to `[dev-dependencies]`):
-```toml
-# crates/famp/Cargo.toml [dev-dependencies]
-assert_cmd = "2.0"
-tokio = { workspace = true, features = ["...", "test-util"] }
-```
-
 ---
 
 ### `crates/famp/tests/mcp_bus_e2e.rs` (test, request-response)
 
 **Analog:** `crates/famp/tests/mcp_stdio_tool_calls.rs` (MCP harness pattern — McpHarness struct, send_msg/recv_msg helpers)
 
-**Harness to adapt** (mcp_stdio_tool_calls.rs lines 54-238):
-- Copy `send_msg` / `recv_msg` helpers verbatim (lines 24-50)
-- Adapt `McpHarness::new()` to set `FAMP_BUS_SOCKET=$tmp/test-bus.sock` instead of `FAMP_LOCAL_ROOT`
-- Two harness instances (alice_mcp, bob_mcp) share the same socket env var for bus isolation
-
 ```rust
-// mcp_bus_e2e.rs harness shape
-fn spawn_mcp_process(sock_path: &Path, name_for_log: &str) -> (Child, ChildStdin, ChildStdout) {
+fn spawn_mcp_process(sock_path: &Path, _name_for_log: &str) -> (Child, ChildStdin, ChildStdout) {
     let mut child = Command::cargo_bin("famp").unwrap()
         .args(["mcp"])
         .env("FAMP_BUS_SOCKET", sock_path)
@@ -1046,27 +960,33 @@ fn spawn_mcp_process(sock_path: &Path, name_for_log: &str) -> (Child, ChildStdin
 let identity = resolve_identity(args.send_as.as_deref())?;
 ```
 
-### Hard-Error on NotRegistered
-**Source:** `crates/famp/src/cli/error.rs` (existing pattern) + bus client reply handling
-**Apply to:** All CLI subcommands that call `BusClient::send_recv`
+### D-10 Hello.bind_as Proxy (connection-level identity)
+**Source:** `crates/famp-bus/src/proto.rs` (Hello.bind_as field, plan 02-02) + `crates/famp/src/bus_client/mod.rs::BusClient::connect(sock, bind_as)`
+**Apply to:** Every one-shot CLI subcommand (`send`, `inbox list/ack`, `await`, `join`, `leave`, `sessions --me`, `whoami`).
+**Do NOT apply to:** `famp register` (canonical holder, `bind_as: None`) and `famp mcp` (registered slot, `bind_as: None`).
 
 ```rust
-// When BusReply::Err { kind: BusErrorKind::NotRegistered, .. }:
-eprintln!("{} is not registered — start `famp register {}` in another terminal first",
-    identity, identity);
-std::process::exit(1);
+// Every one-shot CLI command after resolving identity:
+let mut bus = BusClient::connect(&resolve_sock_path(), Some(identity.clone())).await
+    .map_err(|e| match e {
+        BusClientError::HelloFailed { kind: BusErrorKind::NotRegistered, .. } => CliError::NotRegisteredHint { name: identity.clone() },
+        _ => CliError::BrokerUnreachable,
+    })?;
+let reply = bus.send_recv(msg).await?;
+// match BusReply::Err { kind: NotRegistered } → NotRegisteredHint (per-op liveness re-check)
 ```
 
-### BusClient Dispatch Pattern
-**Source:** `crates/famp/src/bus_client/mod.rs` (new)
-**Apply to:** All CLI subcommands and MCP tools that talk to the broker
+NOTE: there is NO `send_as` / `as` / per-message identity field on any BusMessage variant. Identity is bound at the connection level via Hello.bind_as. D-10 explicitly rejects per-message identity fields.
+
+### Hard-Error on NotRegistered
+**Source:** `crates/famp/src/cli/error.rs` (existing pattern) + bus client reply handling
+**Apply to:** All CLI subcommands that call `BusClient::connect(_, Some(identity))`
+
+Both Hello-time validation (HelloErr{NotRegistered}) and per-op liveness re-check (Err{NotRegistered}) surface the same hint message:
 
 ```rust
-// Consistent one-shot connect+send_recv for short-lived commands:
-let mut bus = BusClient::connect(&resolve_sock_path()).await
-    .map_err(|_| CliError::NotRegistered)?;
-let reply = bus.send_recv(msg).await?;
-// map reply variants to Result<_, CliError>
+#[error("{name} is not registered — start `famp register {name}` in another terminal first")]
+NotRegisteredHint { name: String },
 ```
 
 ### `run` / `run_at` / `run_at_structured` Three-Layer Pattern
@@ -1083,11 +1003,11 @@ Every rewired command must expose:
 **Apply to:** All new CLI Args structs
 
 ```rust
-// Copy --as flag on every non-register subcommand:
-#[arg(long, name = "as")]
+// --as on every non-register subcommand:
+#[arg(long = "as")]
 pub send_as: Option<String>,
 
-// Copy conflicts_with / requires discipline:
+// conflicts_with / requires discipline:
 #[arg(long, conflicts_with = "task")]
 pub new_task: Option<String>,
 #[arg(long, requires = "task")]
@@ -1099,9 +1019,11 @@ pub terminal: bool,
 **Apply to:** `sessions list`, `inbox list`, `await` (single-line), `send` (result JSON)
 
 ```rust
-// One serde_json::to_string(&row)? per println! — same pattern as inbox list.
-for row in &rows {
-    println!("{}", serde_json::to_string(row)?);
+// One serde_json::to_string(&value)? per println! — same pattern as inbox list.
+// `value` is a `serde_json::Value` (typed envelope per Phase-1 D-09 evolved wire shape),
+// NOT raw bytes (those are only on disk).
+for env in &envelopes {
+    println!("{}", serde_json::to_string(env)?);
 }
 ```
 
@@ -1131,7 +1053,8 @@ rt.block_on(new_cmd::run(args))
 // Every tool:
 // 1. Parse input fields with `.as_str().ok_or(BusErrorKind::EnvelopeInvalid)?`
 // 2. Check session::state().active_identity (except register + whoami)
-// 3. send_recv via session::state().bus
+// 3. Call cli::*::run_at_structured (which handles D-10 proxy at the CLI layer)
+//    OR send_recv via session::state().bus directly (peers, register, whoami)
 // 4. Match BusReply exhaustively → Ok(serde_json::json!({...})) or Err(BusErrorKind)
 ```
 
@@ -1165,7 +1088,7 @@ use std::time::Duration;
 | File | Role | Data Flow | Reason |
 |---|---|---|---|
 | `crates/famp/src/cli/broker/nfs_check.rs` | utility | request-response | No `statfs`/filesystem-type detection in repo; use RESEARCH.md §2 §"Item 3" verbatim |
-| `crates/famp/src/bus_client/spawn.rs` | utility | event-driven | No `posix_spawn` + `setsid` in repo; use RESEARCH.md §5 verbatim |
+| `crates/famp/src/bus_client/spawn.rs` | utility | event-driven | No portable broker-spawn analog in repo; use RESEARCH §"Resolved Open Questions" Q1 (`Command::new` + `pre_exec(setsid)`) — note: `POSIX_SPAWN_SETSID` is NOT used (macOS-only nonportable) |
 | `crates/famp/tests/broker_lifecycle.rs` (`start_paused = true` tests) | test | event-driven | First use of `tokio::time::pause()`/`advance()` in repo; requires `test-util` feature added to `[dev-dependencies]` |
 
 ---
@@ -1175,6 +1098,7 @@ use std::time::Duration;
 **Analog search scope:** `crates/famp/src/`, `crates/famp/tests/`, `crates/famp-bus/src/`, `crates/famp-inbox/src/`, `scripts/famp-local`
 **Files scanned:** 45 Rust source files, 1 bash script (1230 LoC)
 **Pattern extraction date:** 2026-04-28
+**Patches applied:** 2026-04-28 (revision 3) — D-10 Hello.bind_as proxy semantics; D-11 source-import grep; D-12 HOOK-04 split; Q1-locked portable spawn (no POSIX_SPAWN_SETSID).
 
 ---
 
@@ -1191,11 +1115,14 @@ use std::time::Duration;
 
 ### Key Patterns Identified
 - All CLI subcommands use the three-layer `run`/`run_at`/`run_at_structured` pattern — MCP tools call the structured form
+- D-10: identity binding is connection-level via `Hello.bind_as: Option<String>`. Canonical holders (register, MCP) connect with `None`; one-shot CLI commands connect with `Some(identity)` and ride on the holder's slot. No per-message `as` / `send_as` field on any BusMessage variant.
 - Every `BusErrorKind` consumer must use exhaustive match with no `_ =>` arm; `BusErrorKind::ALL` constant enables companion test
 - BusClient codec wraps the existing sync `encode_frame`/`try_decode_frame` with `AsyncReadExt`/`AsyncWriteExt` — identical 4-byte BE length prefix
 - Session state follows the `OnceLock<Mutex<SessionState>>` module-scope singleton pattern; v0.9 replaces `IdentityBinding` inner type with `{ bus: Option<BusClient>, active_identity: Option<String> }`
 - Atomic cursor writes use `tempfile::NamedTempFile` + `sync_all` + `persist` + `0o600` — copy `famp-inbox/src/cursor.rs` lines 58-91 verbatim
 - Hook bash additions follow `wires_write_row`/`wires_remove_row` TSV-with-awk pattern from same file; ~110 LoC addition
+- Broker spawn uses `Command::new(current_exe).pre_exec(setsid).spawn()` — portable across macOS+Linux; `POSIX_SPAWN_SETSID` is NOT used (Q1)
+- Inbox/Join/Register wire shape is typed `Vec<serde_json::Value>` (Phase-1 D-09 evolved); on-disk file is raw bytes per line; `AnyBusEnvelope::decode` validates between disk and wire
 
 ### File Created
 `/Users/benlamm/Workspace/FAMP/.planning/phases/02-uds-wire-cli-mv-mcp-rewire-hook-subcommand/02-PATTERNS.md`

@@ -60,19 +60,19 @@ created: 2026-04-28
 | CLI-09 | Mailbox file created on disk | Integration | covered by `test_dm_roundtrip` (file-presence assert) | reuse | ⬜ pending |
 | CLI-10 | Cursor advanced atomically (temp + rename) | Integration + proptest carry-forward | reuse Phase 1 TDD-02 + new wire-layer assertion in `test_inbox_ack_cursor` | reuse | ⬜ pending |
 | CLI-11 | `sessions.jsonl` is diagnostic-only (broker reads ignore it) | Integration | `cargo nextest run -p famp test_sessions_jsonl_diagnostic_only` | `crates/famp/tests/broker_lifecycle.rs` ❌ W0 | ⬜ pending |
-| MCP-01 | MCP connects UDS not TLS (`reqwest`/`rustls` not reachable from MCP startup) | Static (build) | `cargo tree -p famp -e normal --target current --prefix none \| grep -E '^(reqwest\|rustls)$'` returns empty when MCP-only feature on, OR an explicit `cargo tree --invert reqwest` audit script | `scripts/check-mcp-deps.sh` (new) ❌ W0 | ⬜ pending |
+| MCP-01 | MCP/bus/broker source paths do not import reqwest/rustls (D-11 source-import grep — Phase 2 audit; cargo-tree-strict reading deferred to Phase 4 when federation CLI is deleted) | Static (source grep) | `bash scripts/check-mcp-deps.sh` | `scripts/check-mcp-deps.sh` (new) ❌ W0 | ⬜ pending |
 | MCP-02..09 | Each of 8 MCP tools round-trips through bus | E2E harness | `cargo nextest run -p famp test_mcp_bus_e2e` | `crates/famp/tests/mcp_bus_e2e.rs` ❌ W0 | ⬜ pending |
 | MCP-10 | Exhaustive `match BusErrorKind` is compile-checked | Compile-time | `cargo build -p famp` (fails on missing arm because `#![deny(unreachable_patterns)]` consumer stub) | `crates/famp/src/cli/mcp/error_kind.rs` (existing pattern, retargeted) | ⬜ pending |
 | HOOK-01 | `famp-local hook add --on Edit:<glob> --to <peer-or-#channel>` writes row to `~/.famp-local/hooks.tsv` | Shell integration | `cargo nextest run -p famp test_hook_add` (shells `scripts/famp-local`) | `crates/famp/tests/hook_subcommand.rs` ❌ W0 | ⬜ pending |
 | HOOK-02 | `~/.famp-local/hooks.tsv` row format `<id>\t<event>:<glob>\t<to>\t<added_at>` | Shell integration | covered by `test_hook_add` (TSV-format assert) | reuse | ⬜ pending |
 | HOOK-03 | `famp-local hook list` reads back rows | Shell integration | `cargo nextest run -p famp test_hook_list` | `crates/famp/tests/hook_subcommand.rs` ❌ W0 | ⬜ pending |
-| HOOK-04 | Hook **registration** persists round-trip via add→list→remove (execution runner deferred to Phase 3 per ROADMAP SC-5) | Shell integration | `cargo nextest run -p famp test_hook_remove` | reuse | ⬜ pending |
+| HOOK-04a | Hook **registration** persists round-trip via add→list→remove (D-12 split — execution runner HOOK-04b deferred to Phase 3 per ROADMAP SC-5) | Shell integration | `cargo nextest run -p famp test_hook_remove` | reuse | ⬜ pending |
 | TEST-01 | 2-client DM round-trip | Integration `assert_cmd` | `cargo nextest run -p famp test_dm_roundtrip` | `crates/famp/tests/cli_dm_roundtrip.rs` ❌ W0 | ⬜ pending |
 | TEST-02 | 3-client channel fan-out | Integration `assert_cmd` | `cargo nextest run -p famp test_channel_fanout` | `crates/famp/tests/cli_channel_fanout.rs` ❌ W0 | ⬜ pending |
 | TEST-03 | `kill -9` mid-Send → reconnect recovers mailbox | Integration `assert_cmd` | `cargo nextest run -p famp test_kill9_recovery` | `crates/famp/tests/broker_crash_recovery.rs` ❌ W0 | ⬜ pending |
 | TEST-04 | Two near-simultaneous `famp register` → exactly one broker | Integration `assert_cmd` | `cargo nextest run -p famp test_broker_spawn_race` | `crates/famp/tests/broker_spawn_race.rs` ❌ W0 | ⬜ pending |
 | TEST-05 | Two stdio MCP processes round-trip with `$FAMP_BUS_SOCKET` isolation | E2E harness | `cargo nextest run -p famp test_mcp_bus_e2e` | `crates/famp/tests/mcp_bus_e2e.rs` ❌ W0 | ⬜ pending |
-| CARRY-02 | `REQUIREMENTS.md` INBOX-01 wording matches raw-bytes-per-line implementation | Doc/CI grep | `grep -F "raw application bytes" .planning/REQUIREMENTS.md` returns matching line; `grep -F "InboxLine" .planning/REQUIREMENTS.md` empty | — (REQUIREMENTS.md edit) | ⬜ pending |
+| CARRY-02 | `REQUIREMENTS.md` INBOX-01 wording matches the as-shipped wire shape (typed `Vec<serde_json::Value>` envelopes on the wire, raw application bytes per line on disk, `AnyBusEnvelope::decode` validation between disk and wire — Phase-1 D-09 evolved shape) | Doc/CI grep | `grep -F "Vec<serde_json::Value>" .planning/REQUIREMENTS.md` returns matching line; `grep -F "InboxLine" .planning/REQUIREMENTS.md` empty | — (REQUIREMENTS.md edit) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -95,8 +95,8 @@ before any implementation task can verify against it.
 - [ ] `crates/famp/tests/cli_inbox.rs` — stubs for CLI-04, CLI-10
 - [ ] `crates/famp/tests/cli_sessions.rs` — stubs for CLI-07
 - [ ] `crates/famp/tests/mcp_bus_e2e.rs` — stubs for MCP-02..09, TEST-05 (model after `mcp_stdio_tool_calls.rs`)
-- [ ] `crates/famp/tests/hook_subcommand.rs` — stubs for HOOK-01..04 (shells `scripts/famp-local hook`)
-- [ ] `scripts/check-mcp-deps.sh` — `cargo tree -p famp` audit asserting `reqwest` / `rustls` are not in MCP-only feature set (MCP-01)
+- [ ] `crates/famp/tests/hook_subcommand.rs` — stubs for HOOK-01..03 + HOOK-04a (shells `scripts/famp-local hook`)
+- [ ] `scripts/check-mcp-deps.sh` — D-11 source-import grep audit asserting `crates/famp/src/cli/mcp/`, `crates/famp/src/bus_client/`, `crates/famp/src/broker/` contain no `use reqwest` or `use rustls` imports (MCP-01)
 
 ---
 
@@ -104,7 +104,7 @@ before any implementation task can verify against it.
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Broker survives terminal Ctrl-C (SIGINT received by foreground process group, not the daemon) | BROKER-02 | Validates `setsid` daemonization. `assert_cmd` cannot send a real terminal SIGINT to a `posix_spawn`+`setsid` child without a pty harness. | (1) `famp register alice` in iTerm/Terminal.app, (2) `Ctrl-C`, (3) `pgrep -f 'famp broker'` still returns the broker pid for ≤5min, (4) re-running `famp register alice` reconnects without spawning a second broker. |
+| Broker survives terminal Ctrl-C (SIGINT received by foreground process group, not the daemon) | BROKER-02 | Validates `setsid` daemonization. `assert_cmd` cannot send a real terminal SIGINT to a `pre_exec(setsid)` child without a pty harness. | (1) `famp register alice` in iTerm/Terminal.app, (2) `Ctrl-C`, (3) `pgrep -f 'famp broker'` still returns the broker pid for ≤5min, (4) re-running `famp register alice` reconnects without spawning a second broker. |
 | `~/.famp/` on NFS at startup → one-line warning to stderr | BROKER-05 (manual augment) | The unit test mocks the magic number. A real NFS mount audit can only happen in a deployed env. | (1) `mkdir /tmp/nfs-mount && mount -t nfs ...`, (2) `FAMP_BUS_SOCKET=/tmp/nfs-mount/bus.sock famp register alice`, (3) stderr line `warning: ~/.famp/ is on NFS — file locking semantics may differ` appears exactly once. |
 
 ---
