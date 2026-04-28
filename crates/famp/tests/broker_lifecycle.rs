@@ -7,16 +7,24 @@
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-11"]
-fn test_broker_accepts_connection() { unimplemented!("filled in by plan 02-11"); }
+fn test_broker_accepts_connection() {
+    unimplemented!("filled in by plan 02-11");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-11"]
-fn test_broker_idle_exit() { unimplemented!("filled in by plan 02-11"); }
+fn test_broker_idle_exit() {
+    unimplemented!("filled in by plan 02-11");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-11"]
-fn test_sessions_jsonl_diagnostic_only() { unimplemented!("filled in by plan 02-11"); }
+fn test_sessions_jsonl_diagnostic_only() {
+    unimplemented!("filled in by plan 02-11");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-11"]
-fn test_nfs_warning() { unimplemented!("filled in by plan 02-11"); }
+fn test_nfs_warning() {
+    unimplemented!("filled in by plan 02-11");
+}

@@ -7,20 +7,30 @@
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-12"]
-fn test_register_blocks() { unimplemented!("filled in by plan 02-12"); }
+fn test_register_blocks() {
+    unimplemented!("filled in by plan 02-12");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-12"]
-fn test_dm_roundtrip() { unimplemented!("filled in by plan 02-12"); }
+fn test_dm_roundtrip() {
+    unimplemented!("filled in by plan 02-12");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-12"]
-fn test_inbox_list() { unimplemented!("filled in by plan 02-12"); }
+fn test_inbox_list() {
+    unimplemented!("filled in by plan 02-12");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-12"]
-fn test_await_unblocks() { unimplemented!("filled in by plan 02-12"); }
+fn test_await_unblocks() {
+    unimplemented!("filled in by plan 02-12");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-12"]
-fn test_whoami() { unimplemented!("filled in by plan 02-12"); }
+fn test_whoami() {
+    unimplemented!("filled in by plan 02-12");
+}
