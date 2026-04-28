@@ -37,6 +37,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
             msg: BusMessage::Hello {
                 bus_proto: 1,
                 client: name.into(),
+                bind_as: None,
             },
         },
         now,
@@ -100,6 +101,7 @@ proptest! {
                 msg: BusMessage::Hello {
                     bus_proto: 1,
                     client: "alice-reconnect".into(),
+                    bind_as: None,
                 },
             },
             now,
@@ -145,6 +147,7 @@ fn malformed_drain_line_returns_error_and_does_not_advance_cursor() {
             msg: BusMessage::Hello {
                 bus_proto: 1,
                 client: "alice".into(),
+                bind_as: None,
             },
         },
         now,

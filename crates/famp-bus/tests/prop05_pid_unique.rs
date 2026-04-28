@@ -36,6 +36,7 @@ fn hello(broker: &mut Broker<TestEnv>, client: ClientId, now: Instant) {
             msg: BusMessage::Hello {
                 bus_proto: 1,
                 client: format!("client-{}", client.0),
+                bind_as: None,
             },
         },
         now,
