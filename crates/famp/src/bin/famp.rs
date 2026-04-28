@@ -4,9 +4,13 @@
 // pulls in the full workspace dep set; the bin target only references `clap`
 // and `famp`. Silence workspace `unused_crate_dependencies` for everything
 // else the lib pulls in transitively.
+#[cfg(test)]
+use assert_cmd as _;
 use axum as _;
 use base64 as _;
+use dirs as _;
 use ed25519_dalek as _;
+use famp_bus as _;
 use famp_canonical as _;
 use famp_core as _;
 use famp_crypto as _;
@@ -19,6 +23,7 @@ use famp_transport as _;
 use famp_transport_http as _;
 use hex as _;
 use humantime as _;
+use nix as _;
 use rand as _;
 use rcgen as _;
 use reqwest as _;

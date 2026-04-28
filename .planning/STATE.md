@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: Local-First Bus
-status: planning
+status: executing
 stopped_at: Phase 2 context gathered
-last_updated: "2026-04-28T20:27:25.223Z"
-last_activity: 2026-04-28 -- Phase 01 verification + completion
+last_updated: "2026-04-28T22:52:36.515Z"
+last_activity: 2026-04-28 -- Phase 02 execution started
 progress:
   total_phases: 7
   completed_phases: 1
@@ -24,14 +24,14 @@ See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 02 — UDS wire + CLI + MV-MCP rewire + `famp-local hook add`
+**Current focus:** Phase 02 — uds-wire-cli-mv-mcp-rewire-hook-subcommand
 
 ## Current Position
 
-Phase: 01 (famp-bus-library-and-audit-log) — **COMPLETE**
-Plan: 3 of 3 complete
-Status: Phase 01 verification PASS (28/28 in-scope reqs satisfied or formally deferred per policy); ready to plan Phase 02
-Last activity: 2026-04-28 -- Phase 01 verification + completion
+Phase: 02 (uds-wire-cli-mv-mcp-rewire-hook-subcommand) — EXECUTING
+Plan: 1 of 14
+Status: Executing Phase 02
+Last activity: 2026-04-28 -- Phase 02 execution started
 
 ## Last Shipped
 

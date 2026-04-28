@@ -23,3 +23,4 @@ famp-envelope = { path = "../famp-envelope" }
 
 [dev-dependencies]
 proptest = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

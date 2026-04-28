@@ -8,11 +8,14 @@
 
 // Silence workspace `unused_crate_dependencies` for deps the other example /
 // tests reference but this one-shot binary does not.
+use assert_cmd as _;
 use axum as _;
 use base64 as _;
 use clap as _;
+use dirs as _;
 use ed25519_dalek as _;
 use famp as _;
+use famp_bus as _;
 use famp_canonical as _;
 use famp_core as _;
 use famp_crypto as _;
@@ -25,6 +28,7 @@ use famp_transport as _;
 use famp_transport_http as _;
 use hex as _;
 use humantime as _;
+use nix as _;
 use rand as _;
 use reqwest as _;
 use rustls as _;
