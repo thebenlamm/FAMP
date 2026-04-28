@@ -33,8 +33,11 @@
 )]
 
 // Silencers — deps from the famp crate that this example does not reference.
+use assert_cmd as _;
 use axum as _;
 use clap as _;
+use dirs as _;
+use famp_bus as _;
 use famp_canonical as _;
 use famp_envelope as _;
 use famp_fsm as _;
@@ -43,6 +46,7 @@ use famp_taskdir as _;
 use famp_transport as _;
 use hex as _;
 use humantime as _;
+use nix as _;
 use reqwest as _;
 use rustls as _;
 use serde as _;

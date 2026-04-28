@@ -7,12 +7,18 @@
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-10"]
-fn test_hook_add() { unimplemented!("filled in by plan 02-10"); }
+fn test_hook_add() {
+    unimplemented!("filled in by plan 02-10");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-10"]
-fn test_hook_list() { unimplemented!("filled in by plan 02-10"); }
+fn test_hook_list() {
+    unimplemented!("filled in by plan 02-10");
+}
 
 #[test]
 #[ignore = "stub: implementation lands in plan 02-10"]
-fn test_hook_remove() { unimplemented!("filled in by plan 02-10"); }
+fn test_hook_remove() {
+    unimplemented!("filled in by plan 02-10");
+}

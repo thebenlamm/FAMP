@@ -8,8 +8,26 @@ repository.workspace = true
 authors.workspace = true
 description = "FAMP v0.5.1 — umbrella crate and CLI"
 
-[lints]
-workspace = true
+[lints.rust]
+# Inherit the workspace clippy/rust lint set, but downgrade `unsafe_code`
+# from `forbid` to `deny` so `bus_client::spawn` can opt-in via a single
+# narrowly-scoped `#[allow(unsafe_code)]` for the locked Q1 broker-spawn
+# pattern (`Command::new` + child-side `pre_exec(setsid)` per RESEARCH).
+# Every other module in the crate keeps the `deny` posture and the lib
+# root retains `#![forbid(unsafe_code)]` outside `bus_client::spawn`.
+unsafe_code = "deny"
+unused_crate_dependencies = "warn"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
 
 [dependencies]
 famp-core = { path = "../famp-core" }

@@ -14,29 +14,26 @@
 //! canonical-JSON primitives beyond `canonicalize` / strict parse),
 //! import the member crates directly.
 
-#![forbid(unsafe_code)]
+// `unsafe_code` is `deny` (not `forbid`) at the crate level so
+// `bus_client::spawn` can opt in via a single narrowly-scoped
+// `#[allow(unsafe_code)]` for the locked Q1 portable broker spawn
+// pattern (`Command::new` + child-side `pre_exec(setsid)` per RESEARCH).
+// Every other module keeps the `deny` posture.
+#![deny(unsafe_code)]
 
-// These crates are used by Task 2 (loop_fn), examples, and integration tests.
-// Silence the workspace `unused_crate_dependencies` lint for the lib compile
-// unit (examples and tests are separate compile units).
+// These crates are used by examples and integration tests, not by the
+// library compile unit directly. Silence the workspace
+// `unused_crate_dependencies` lint here.
 #[cfg(test)]
 use axum as _;
 use base64 as _;
-// `dirs`, `famp_bus`, and `nix` are wired up by the bus_client/identity
-// modules in plan 02-01 task 2; the task-1 placeholders do not yet
-// reference them, so silence the workspace `unused_crate_dependencies`
-// lint until task 2 lands.
-use dirs as _;
 use ed25519_dalek as _;
-use famp_bus as _;
 use famp_transport as _;
 use famp_transport_http as _;
-use nix as _;
 use rand as _;
 #[cfg(test)]
 use reqwest as _;
 use tempfile as _;
-use tokio as _;
 use url as _;
 // `assert_cmd` is a dev-dependency consumed by integration tests
 // (`crates/famp/tests/*`); silence it in the library test compile unit.

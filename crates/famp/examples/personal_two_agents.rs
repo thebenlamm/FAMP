@@ -17,14 +17,18 @@
 
 // Silence workspace `unused_crate_dependencies` for deps pulled in via famp's
 // Cargo.toml that the example does not reference directly.
+use assert_cmd as _;
 use axum as _;
 use base64 as _;
 use clap as _;
+use dirs as _;
+use famp_bus as _;
 use famp_inbox as _;
 use famp_taskdir as _;
 use famp_transport_http as _;
 use hex as _;
 use humantime as _;
+use nix as _;
 use rcgen as _;
 use reqwest as _;
 use rustls as _;
