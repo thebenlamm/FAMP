@@ -13,7 +13,7 @@
 
 ## Phases
 
-- [ ] **v0.9 Phase 1: `famp-bus` library + audit-log MessageClass** — pure state machine, codec, types, four TDD gates, proptest coverage, atomic v0.5.2 constant bump
+- [x] **v0.9 Phase 1: `famp-bus` library + audit-log MessageClass** — pure state machine, codec, types, four TDD gates, proptest coverage, atomic v0.5.2 constant bump *(completed 2026-04-28; 28/28 reqs, see [01-VERIFICATION.md](phases/01-famp-bus-library-and-audit-log/01-VERIFICATION.md))*
 - [ ] **v0.9 Phase 2: UDS wire + CLI + MV-MCP rewire + hook subcommand** — `famp broker`, top-level CLI surface, MCP rewired to bus, `famp-local hook add`, integration tests
 - [ ] **v0.9 Phase 3: Claude Code integration polish** — `famp install-claude-code`, slash commands, 12-line / 30-second README Quick Start
 - [ ] **v0.9 Phase 4: Federation CLI unwire + federation-CI preservation** — top-level CLI removals, `e2e_two_daemons` library-API refactor, `v0.8.1-federation-preserved` tag, migration doc
@@ -82,7 +82,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 **Plans:** 3 plans
 - [x] 01-01-PLAN.md — `famp-bus` crate scaffold + types + codec + InMemoryMailbox + four TDD-RED gates (TDD-01 GREEN; TDD-02/03/04 RED-first scaffolds)
 - [x] 01-02-PLAN.md — Pure `Broker` actor + dispatch + TDD-02/03/04 GREEN + five proptest properties PROP-01..05 GREEN
-- [ ] 01-03-PLAN.md — Atomic v0.5.2 bump (single commit): `MessageClass::AuditLog` + body schema + `Relation::Audits` + `AnySignedEnvelope::AuditLog` dispatch + `BusEnvelope<B>` sibling type (BUS-11) + `AnyBusEnvelope` 6-arm dispatch + `UnexpectedSignature` + `FAMP_SPEC_VERSION` flip + T5 doc-comment removal + vector_1 fixture + `just check-spec-version-coherence` CI guard
+- [x] 01-03-PLAN.md — Atomic v0.5.2 bump (single commit): `MessageClass::AuditLog` + body schema + `Relation::Audits` + `AnySignedEnvelope::AuditLog` dispatch + `BusEnvelope<B>` sibling type (BUS-11) + `AnyBusEnvelope` 6-arm dispatch + `UnexpectedSignature` + `FAMP_SPEC_VERSION` flip + T5 doc-comment removal + vector_1 fixture + `just check-spec-version-coherence` CI guard *(commit `9ca6e13`)*
 
 ### Phase 2: UDS wire + CLI + MV-MCP rewire + `famp-local hook add`
 **Goal:** Wrap the Phase 1 library in a real wire and a real CLI so a developer can `famp register alice &; famp register bob &; famp send --to bob "hi"` from two terminals on one laptop with no MCP plumbing yet. Rewire `famp mcp` to the bus (drops TLS / `reqwest`), expose the eight-tool stable surface, and ship Sofer's biggest leverage gap as a declarative `famp-local hook add` subcommand.

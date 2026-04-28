@@ -24,7 +24,7 @@
 - [x] **BUS-08**: Hello handshake required as first frame; bus_proto version negotiation with additive-compatibility intent for v2+ brokers
 - [x] **BUS-09**: Single-threaded actor model — one tokio task owns broker state, mpsc inbox, no `RwLock` / `Mutex<HashMap>` on broker state
 - [x] **BUS-10**: In-memory mailbox impl for tests
-- [ ] **BUS-11**: `Envelope` reuse — bus uses existing `famp_envelope::Envelope` unchanged; `sig` field MUST be `None` on the bus
+- [x] **BUS-11**: `Envelope` reuse — bus uses existing `famp_envelope::Envelope` unchanged; `sig` field MUST be `None` on the bus
 
 ### TDD — Phase-1 TDD gates (RED before GREEN)
 
@@ -43,12 +43,12 @@
 
 ### AUDIT — `audit_log` MessageClass (v0.5.2 spec amendment, lagged constant)
 
-- [ ] **AUDIT-01**: `MessageClass::AuditLog` variant added to `famp-core` (or `famp-envelope` per existing layout); fire-and-forget semantics, non-FSM-firing
-- [ ] **AUDIT-02**: Body schema `event` (REQUIRED string) + `subject` (OPTIONAL string) + `details` (OPTIONAL object) — matches v0.5.2 §10 amendment
-- [ ] **AUDIT-03**: Receiver MUST store, MUST NOT emit `ack` (Δ31 normative; future "improvements" forbidden)
-- [ ] **AUDIT-04**: Optional causality `rel = "audits"` distinct from `"acknowledges"` (new `rel` value, not a re-purpose)
-- [ ] **AUDIT-05**: **Atomic version bump** — the same commit that adds the `MessageClass::AuditLog` enum variant + dispatch + body validation MUST bump `FAMP_SPEC_VERSION` from `"0.5.1"` → `"0.5.2"` in `crates/famp-envelope/src/version.rs`. Bumping in a separate commit either lies (if before impl) or strands impl as v0.5.1-tagged (if after) — Phase 1 closes the spec-vs-constant lag T5 intentionally introduced.
-- [ ] **AUDIT-06**: Doc-comment updated to remove the spec-vs-constant lag note once the bump lands
+- [x] **AUDIT-01**: `MessageClass::AuditLog` variant added to `famp-core` (or `famp-envelope` per existing layout); fire-and-forget semantics, non-FSM-firing
+- [x] **AUDIT-02**: Body schema `event` (REQUIRED string) + `subject` (OPTIONAL string) + `details` (OPTIONAL object) — matches v0.5.2 §10 amendment
+- [x] **AUDIT-03**: Receiver MUST store, MUST NOT emit `ack` (Δ31 normative; future "improvements" forbidden)
+- [x] **AUDIT-04**: Optional causality `rel = "audits"` distinct from `"acknowledges"` (new `rel` value, not a re-purpose)
+- [x] **AUDIT-05**: **Atomic version bump** — the same commit that adds the `MessageClass::AuditLog` enum variant + dispatch + body validation MUST bump `FAMP_SPEC_VERSION` from `"0.5.1"` → `"0.5.2"` in `crates/famp-envelope/src/version.rs`. Bumping in a separate commit either lies (if before impl) or strands impl as v0.5.1-tagged (if after) — Phase 1 closes the spec-vs-constant lag T5 intentionally introduced.
+- [x] **AUDIT-06**: Doc-comment updated to remove the spec-vs-constant lag note once the bump lands
 
 ### BROKER — UDS daemon + lifecycle
 
@@ -185,7 +185,7 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | BUS-08 | Phase 1 | Complete |
 | BUS-09 | Phase 1 | Complete |
 | BUS-10 | Phase 1 | Complete |
-| BUS-11 | Phase 1 | Pending |
+| BUS-11 | Phase 1 | Complete |
 | TDD-01 | Phase 1 | Complete |
 | TDD-02 | Phase 1 | Complete |
 | TDD-03 | Phase 1 | Complete |
@@ -195,12 +195,12 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | PROP-03 | Phase 1 | Complete |
 | PROP-04 | Phase 1 | Complete |
 | PROP-05 | Phase 1 | Complete |
-| AUDIT-01 | Phase 1 | Pending |
-| AUDIT-02 | Phase 1 | Pending |
-| AUDIT-03 | Phase 1 | Pending |
-| AUDIT-04 | Phase 1 | Pending |
-| AUDIT-05 | Phase 1 | Pending |
-| AUDIT-06 | Phase 1 | Pending |
+| AUDIT-01 | Phase 1 | Complete |
+| AUDIT-02 | Phase 1 | Complete |
+| AUDIT-03 | Phase 1 | Complete |
+| AUDIT-04 | Phase 1 | Complete |
+| AUDIT-05 | Phase 1 | Complete |
+| AUDIT-06 | Phase 1 | Complete |
 | CARRY-03 | Phase 1 | Complete |
 | CARRY-04 | Phase 1 | Complete |
 | BROKER-01 | Phase 2 | Pending |
