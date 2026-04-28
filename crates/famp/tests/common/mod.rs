@@ -36,5 +36,5 @@ pub mod two_daemon_harness;
 pub use listen_harness::{
     build_signed_ack_bytes, build_trusting_reqwest_client, init_home_in_process, post_bytes,
     read_inbox_lines, read_stderr_bound_addr, self_principal, spawn_listen, wait_for_bind,
-    ChildGuard,
+    wait_for_tls_listener_ready, ChildGuard,
 };

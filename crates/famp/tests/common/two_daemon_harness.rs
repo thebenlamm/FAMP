@@ -101,18 +101,7 @@ async fn spawn_one(
         .expect("run_on_listener");
     });
 
-    // Wait until the daemon accepts TCP (up to 5s).
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "daemon bind timed out at {addr}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    super::listen_harness::wait_for_tls_listener_ready().await;
 
     (addr, handle, tx)
 }

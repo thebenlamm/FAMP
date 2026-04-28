@@ -25,7 +25,7 @@ use std::time::Duration;
 use common::conversation_harness::{pubkey_b64, setup_home};
 use common::listen_harness::{
     build_trusting_reqwest_client, init_home_in_process, load_self_signing_key, post_bytes,
-    self_principal,
+    self_principal, wait_for_tls_listener_ready,
 };
 use famp::cli::peer::add::run_add_at;
 use famp_core::{AuthorityScope, MessageId, Principal};
@@ -52,18 +52,7 @@ async fn spawn_daemon_in_process(
         .await
         .expect("run_on_listener");
     });
-    // Wait for TCP accept.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "daemon bind timed out"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_for_tls_listener_ready().await;
     (addr, handle, tx)
 }
 

@@ -37,7 +37,7 @@ use famp_taskdir::{TaskDir, TaskRecord};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use super::listen_harness::init_home_in_process;
+use super::listen_harness::{init_home_in_process, wait_for_tls_listener_ready};
 
 /// Create a temporary `FAMP_HOME`, initialize it in-process, and return
 /// the owning `TempDir`. Caller holds the guard for the test duration.
@@ -64,7 +64,7 @@ pub fn pubkey_b64(home: &Path) -> String {
 
 /// Bind an ephemeral port on `127.0.0.1`, spawn
 /// `famp::cli::listen::run_on_listener` in-process against it, wait until
-/// the daemon accepts TCP, and return the bound address + join handle +
+/// the TLS server has had a chance to enter its accept loop, and return the bound address + join handle +
 /// shutdown sender.
 ///
 /// The caller MUST drop `shutdown_tx` (or `send(())` it) and then
@@ -86,18 +86,7 @@ pub async fn spawn_listener(home: &Path) -> (SocketAddr, JoinHandle<()>, oneshot
             .expect("run_on_listener");
     });
 
-    // Wait for TCP accept.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "daemon bind timed out at {addr}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_for_tls_listener_ready().await;
 
     (addr, handle, shutdown_tx)
 }

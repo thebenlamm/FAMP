@@ -196,27 +196,32 @@ fn parse_listening_line(line: &str) -> Option<String> {
     Some(rest.to_string())
 }
 
-/// Poll `addr` with a TCP connect until success or `timeout` elapses.
-/// Also checks the child hasn't already exited: returns an error with
-/// the exit status if so, rather than spinning until timeout.
+/// Give an in-process TLS listener a chance to enter its accept loop.
+///
+/// Do not probe HTTPS listeners with a raw TCP connect. A plaintext
+/// connect-and-drop can occupy rustls handshake handling long enough to
+/// make the first real HTTPS request time out on this server stack.
+pub async fn wait_for_tls_listener_ready() {
+    tokio::task::yield_now().await;
+    tokio::time::sleep(Duration::from_millis(75)).await;
+}
+
+/// Wait briefly after a subprocess prints its bound-address beacon.
+///
+/// The beacon proves the socket is bound. We intentionally do not poll the
+/// TLS port with raw TCP because that can poison the first rustls accept.
+/// Also checks the child hasn't already exited.
 pub fn wait_for_bind(child: &mut Child, addr: SocketAddr, timeout: Duration) -> Result<(), String> {
-    let deadline = Instant::now() + timeout;
-    let mut backoff = Duration::from_millis(10);
-    loop {
-        if let Ok(Some(status)) = child.try_wait() {
-            return Err(format!("child exited before bind: {status}"));
-        }
-        match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(100)) {
-            Ok(_) => return Ok(()),
-            Err(_) => {
-                if Instant::now() >= deadline {
-                    return Err(format!("timed out waiting for TCP bind at {addr}"));
-                }
-                std::thread::sleep(backoff);
-                backoff = (backoff * 2).min(Duration::from_millis(100));
-            }
-        }
+    if let Ok(Some(status)) = child.try_wait() {
+        return Err(format!("child exited before bind: {status}"));
     }
+    std::thread::sleep(timeout.min(Duration::from_millis(150)));
+    if let Ok(Some(status)) = child.try_wait() {
+        return Err(format!(
+            "child exited after bind beacon at {addr}: {status}"
+        ));
+    }
+    Ok(())
 }
 
 /// Load the daemon's ed25519 seed from `<home>/key.ed25519` and return
@@ -265,10 +270,10 @@ pub fn build_signed_ack_bytes(home: &Path) -> Vec<u8> {
 /// root anchor (in addition to the platform trust store).
 pub fn build_trusting_reqwest_client(home: &Path) -> reqwest::Client {
     let cert_path: PathBuf = home.join("tls.cert.pem");
-    let tls = famp_transport_http::tls::build_client_config(Some(&cert_path))
-        .expect("build rustls client config");
+    let cert = std::fs::read(&cert_path).expect("read tls.cert.pem");
+    let cert = reqwest::Certificate::from_pem(&cert).expect("parse tls.cert.pem");
     reqwest::Client::builder()
-        .use_preconfigured_tls(tls)
+        .add_root_certificate(cert)
         .timeout(Duration::from_secs(5))
         .http1_only()
         .build()

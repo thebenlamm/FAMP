@@ -21,6 +21,7 @@ use famp_inbox::InboxCursor;
 use common::init_home_in_process;
 use common::listen_harness::{
     build_signed_ack_bytes, build_trusting_reqwest_client, post_bytes, self_principal,
+    wait_for_tls_listener_ready,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -45,18 +46,7 @@ async fn await_blocks_until_message_arrives() {
             .expect("run_on_listener");
     });
 
-    // Wait for daemon bind.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "daemon bind timed out"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_for_tls_listener_ready().await;
 
     // Spawn the await task FIRST — it should be blocked polling.
     let home_await = home.clone();

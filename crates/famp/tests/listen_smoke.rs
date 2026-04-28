@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use common::{
     build_signed_ack_bytes, build_trusting_reqwest_client, init_home_in_process, post_bytes,
-    read_inbox_lines, self_principal,
+    read_inbox_lines, self_principal, wait_for_tls_listener_ready,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -51,18 +51,7 @@ async fn smoke_post_delivers_to_inbox() {
             .expect("run_on_listener");
     });
 
-    // Wait until the TCP port is actually accepting.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "timed out waiting for ephemeral listener at {addr}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_for_tls_listener_ready().await;
 
     // Build envelope bytes + post them.
     let bytes = build_signed_ack_bytes(&home);

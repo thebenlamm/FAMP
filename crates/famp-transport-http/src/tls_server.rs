@@ -39,6 +39,12 @@ pub fn serve(
 /// you bind the listener yourself, read `listener.local_addr()` to discover
 /// the actual port, print it to stdout for the peer process, and *then* hand
 /// the listener to the server.
+///
+/// The listener **must** already be in non-blocking mode before being passed
+/// here. `run_on_listener` ensures this; `axum_server::from_tcp_rustls`
+/// delegates to `tokio::net::TcpListener::from_std` which requires a
+/// non-blocking socket (tokio-rs/tokio#7172 — registering a blocking socket
+/// with the tokio runtime panics).
 pub fn serve_std_listener(
     listener: std::net::TcpListener,
     router: Router,
@@ -46,10 +52,10 @@ pub fn serve_std_listener(
 ) -> JoinHandle<std::io::Result<()>> {
     let rustls_config = RustlsConfig::from_config(server_config);
     tokio::spawn(async move {
-        // `axum_server::from_tcp_rustls` returns `io::Result<Server<...>>`
-        // (it sets the listener to non-blocking under the hood). Surface that
-        // error through the JoinHandle's `io::Result<()>` channel so the
-        // caller sees it on `.await`.
+        // `axum_server::from_tcp_rustls` delegates to
+        // `tokio::net::TcpListener::from_std`, which panics if the socket is
+        // in blocking mode. Do NOT call `set_nonblocking(false)` here.
+        // The listener arrives already non-blocking from `run_on_listener`.
         let server = match axum_server::from_tcp_rustls(listener, rustls_config) {
             Ok(s) => s,
             Err(e) => return Err(e),

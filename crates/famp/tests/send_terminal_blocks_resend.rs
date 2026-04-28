@@ -19,7 +19,7 @@ use famp::cli::peer::add::run_add_at;
 use famp::cli::send::{run_at as send_run_at, SendArgs};
 use famp_taskdir::TaskDir;
 
-use common::init_home_in_process;
+use common::{init_home_in_process, wait_for_tls_listener_ready};
 
 fn pubkey_b64(home: &std::path::Path) -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -52,14 +52,7 @@ async fn terminal_send_locks_resend() {
             .expect("run_on_listener");
     });
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(tokio::time::Instant::now() < deadline, "bind timed out");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    wait_for_tls_listener_ready().await;
 
     run_add_at(
         &home,

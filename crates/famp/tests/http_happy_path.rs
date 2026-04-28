@@ -37,27 +37,9 @@ fn fixture_dir() -> PathBuf {
         .join("cross_machine")
 }
 
-/// Poll `addr` with a TCP connect until it succeeds or `timeout` elapses.
-/// Used in place of a fixed settle-sleep so the test picks up as soon as
-/// the axum-rustls server has started accepting (LOW-01).
-async fn wait_for_tcp(
-    addr: std::net::SocketAddr,
-    timeout: std::time::Duration,
-) -> std::io::Result<()> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    let mut backoff = std::time::Duration::from_millis(5);
-    loop {
-        match tokio::net::TcpStream::connect(addr).await {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                if tokio::time::Instant::now() >= deadline {
-                    return Err(e);
-                }
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_millis(100));
-            }
-        }
-    }
+async fn wait_for_tls_listener_ready() {
+    tokio::task::yield_now().await;
+    tokio::time::sleep(std::time::Duration::from_millis(75)).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -136,16 +118,7 @@ async fn http_happy_path_same_process() {
     bob_transport.attach_server(bob_handle).await;
     alice_transport.attach_server(alice_handle).await;
 
-    // LOW-01: poll both bound addresses with a TCP connect probe instead
-    // of a fixed 300ms sleep. Keeps 2s as the hard ceiling so slow CI
-    // runners get enough time while fast local runs stop waiting as
-    // soon as both listeners are accepting.
-    wait_for_tcp(alice_addr, std::time::Duration::from_secs(2))
-        .await
-        .expect("alice listener ready");
-    wait_for_tcp(bob_addr, std::time::Duration::from_secs(2))
-        .await
-        .expect("bob listener ready");
+    wait_for_tls_listener_ready().await;
 
     // --- Drive the cycle via the shared helper ---
     let trace_alice: cycle_driver::Trace = Arc::new(Mutex::new(Vec::new()));
