@@ -4,9 +4,11 @@
 use clap::{Parser, Subcommand};
 
 pub mod await_cmd;
+pub mod broker;
 pub mod config;
 pub mod error;
 pub mod home;
+pub mod identity;
 pub mod inbox;
 pub mod info;
 pub mod init;

@@ -75,6 +75,13 @@ check-no-tokio-in-bus:
     fi
     @echo "OK - famp-bus is tokio-free."
 
+# MCP-01 (D-11 source-import grep): assert MCP/bus/broker source has no
+# `use reqwest` or `use rustls` imports. Cheap structural gate that ships
+# today; cargo-tree-strict reading is deferred to Phase 4 when the
+# federation CLI surfaces are deleted.
+check-mcp-deps:
+    bash scripts/check-mcp-deps.sh
+
 # AUDIT-05: prevent split-commit between FAMP_SPEC_VERSION bump and impl.
 check-spec-version-coherence:
     @if grep -q 'pub const FAMP_SPEC_VERSION: &str = "0.5.2"' crates/famp-envelope/src/version.rs; then \
@@ -83,7 +90,7 @@ check-spec-version-coherence:
     fi
 
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-spec-version-coherence
+ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-spec-version-coherence check-mcp-deps
     @echo "✓ local CI-parity checks passed"
 
 # Start two famp daemons in the background for the Phase 4 E2E-02
