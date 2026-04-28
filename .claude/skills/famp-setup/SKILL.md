@@ -24,14 +24,41 @@ Identity backing store: `$FAMP_LOCAL_ROOT/agents/<name>/` (default
 
 `scripts/famp-local` compresses the 8-step federation flow into one command.
 
+### Prerequisite — `famp` binary on PATH (or `FAMP_BIN` set)
+
+`famp-local` resolves the binary in one of two ways:
+
+1. `$FAMP_BIN` if exported (absolute path)
+2. `famp` on `$PATH`
+
+Otherwise it dies with `famp binary not found on PATH (set FAMP_BIN=... to override)`.
+
+Three options to satisfy this from outside the FAMP repo:
+
+- **Per-invocation override** — no install needed:
+  `FAMP_BIN=$HOME/Workspace/FAMP/target/release/famp ~/Workspace/FAMP/scripts/famp-local wire <dir>`
+- **Shell export** — set `FAMP_BIN` in `~/.zshrc` pointing at
+  `target/release/famp` so `cargo build --release` is the only refresh step.
+  Recommended for FAMP contributors: no global stale binary.
+- **Global install** — `cargo install --path crates/famp` once. Frozen
+  copy in `~/.cargo/bin/famp`; you must re-run install after protocol
+  changes. Best for FAMP *consumers* who don't iterate on the protocol.
+
+Version skew warning: if a globally-installed `famp` lags the repo, signature
+or canonicalization (INV-10) bugs can mask. The export-`FAMP_BIN` path avoids this.
+
 ### Step 1 — Wire each repo directory
 
+From any directory:
+
 ```bash
-scripts/famp-local wire ~/Workspace/RepoA
-scripts/famp-local wire ~/Workspace/RepoB
+~/Workspace/FAMP/scripts/famp-local wire ~/Workspace/RepoA
+~/Workspace/FAMP/scripts/famp-local wire ~/Workspace/RepoB
 # Override identity name if the repo basename doesn't fit:
-scripts/famp-local wire ~/Workspace/God --as architect
+~/Workspace/FAMP/scripts/famp-local wire ~/Workspace/God --as architect
 ```
+
+Or, when CWD is the FAMP repo, `scripts/famp-local wire …`.
 
 `wire` creates the identity (if new), starts a daemon, exchanges peer cards
 with existing agents, and drops a project-scoped `.mcp.json` in the target
