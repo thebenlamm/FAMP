@@ -144,6 +144,20 @@ wires_lookup() {
   printf '%s\n' "$id"
 }
 
+# ─── hooks.tsv registry (HOOK-04a, Phase 2) ───────────────────────────
+#
+# On-disk hook registry at $STATE_ROOT/hooks.tsv. Tab-separated, no header,
+# one `<id>\t<event>:<glob>\t<to>\t<added_at>` row per registered hook.
+# HOOK-04a (this script): registration surface — add/list/remove round-trip.
+# HOOK-04b (Phase 3, separate): the execution runner. Wired separately in
+# ~/.claude/hooks.json. The runner reads this hooks.tsv and on each Edit event
+# matching <glob>, invokes:
+#   famp send --to "$to" --new-task "Edit hook: $glob matched $file"
+# Phase 3's `famp install-claude-code` installs the hooks.json fragment.
+hooks_file() {
+  printf '%s\n' "$STATE_ROOT/hooks.tsv"
+}
+
 # Space-separated list of identity names currently present under STATE_ROOT.
 # Empty string if none exist yet.
 list_existing_agents_inline() {
@@ -1147,6 +1161,71 @@ cmd_identity_of() {
   die "directory not in wire registry. Run: famp-local wire --as <name> from inside the wired repo to register it."
 }
 
+# HOOK-04a (Phase 2, this script): registration surface — add/list/remove round-trip.
+# HOOK-04b (Phase 3, separate): the execution runner. Wired separately in
+# ~/.claude/hooks.json. The runner reads this hooks.tsv and on each Edit event
+# matching <glob>, invokes:
+#   famp send --to "$to" --new-task "Edit hook: $glob matched $file"
+# Phase 3's `famp install-claude-code` installs the hooks.json fragment.
+cmd_hook_add() {
+  local on="" to=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --on) on="$2"; shift 2 ;;
+      --to) to="$2"; shift 2 ;;
+      *) die "hook add: unknown argument '$1'" ;;
+    esac
+  done
+  [ -n "$on" ] || die "hook add: --on is required"
+  [ -n "$to" ] || die "hook add: --to is required"
+  case "$on" in
+    Edit:*) ;;
+    *) die "hook add: --on must be 'Edit:<glob>'" ;;
+  esac
+  local id; id="h$(printf '%x' "$(date +%s)")$(head -c3 /dev/urandom | xxd -p)"
+  local ts; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u)"
+  local f; f="$(hooks_file)"
+  mkdir -p "$(dirname "$f")"
+  printf '%s\t%s\t%s\t%s\n' "$id" "$on" "$to" "$ts" >> "$f"
+  printf 'hook added: id=%s on=%s to=%s\n' "$id" "$on" "$to"
+}
+
+cmd_hook_list() {
+  local f; f="$(hooks_file)"
+  if [ ! -f "$f" ]; then
+    printf 'no hooks registered\n'
+    return 0
+  fi
+  # Print existing rows verbatim (TSV) — no header, pipe-friendly.
+  cat "$f"
+}
+
+cmd_hook_remove() {
+  [ $# -eq 1 ] || die "hook remove <id>"
+  local id="$1"
+  local f; f="$(hooks_file)"
+  [ -f "$f" ] || die "no hooks file found"
+  local tmp; tmp="$(mktemp)"
+  awk -F'\t' -v id="$id" '$1 != id' "$f" > "$tmp"
+  if diff -q "$f" "$tmp" >/dev/null 2>&1; then
+    rm "$tmp"
+    die "hook id '$id' not found"
+  fi
+  mv "$tmp" "$f"
+  printf 'hook removed: %s\n' "$id"
+}
+
+cmd_hook() {
+  local sub="${1:-help}"
+  shift || true
+  case "$sub" in
+    add)    cmd_hook_add "$@" ;;
+    list)   cmd_hook_list ;;
+    remove) cmd_hook_remove "$@" ;;
+    *)      die "hook: unknown subcommand '$sub' (add|list|remove)" ;;
+  esac
+}
+
 cmd_help() {
   cat <<'EOF'
 famp-local — same-host onboarding wrapper for FAMP v0.8.
@@ -1160,6 +1239,12 @@ COMMANDS
                                   .mcp.json in <dir>, update ~/.zprofile.
   unwire <dir>                    Remove .mcp.json from <dir>. Identity and
                                   daemon stay — hint printed for full removal.
+  hook add --on Edit:<glob> --to <peer-or-#channel>
+                                  Register a declarative Edit-hook (HOOK-04a).
+                                  Writes a TSV row to ~/.famp-local/hooks.tsv.
+                                  The execution runner ships in Phase 3 (HOOK-04b).
+  hook list                       Print the hooks.tsv registry verbatim.
+  hook remove <id>                Atomically remove a hook by id.
   identity-of <dir>               Print the identity wired to <dir> (or any
                                   subdirectory of a wired repo). Exits non-zero
                                   with a re-wire hint if not found. Designed
@@ -1214,6 +1299,7 @@ cmd="${1:-help}"; shift || true
 case "$cmd" in
   init)    require_famp; cmd_init "$@" ;;
   wire)    require_famp; cmd_wire "$@" ;;
+  hook)                   cmd_hook "$@" ;;
   unwire)                 cmd_unwire "$@" ;;
   send)    require_famp; cmd_send "$@" ;;
   inbox)   require_famp; cmd_inbox "$@" ;;
