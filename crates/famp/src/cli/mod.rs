@@ -20,6 +20,7 @@ pub mod perms;
 pub mod send;
 pub mod setup;
 
+pub use broker::BrokerArgs;
 pub use error::CliError;
 pub use init::InitOutcome;
 pub use listen::ListenArgs;
@@ -55,6 +56,10 @@ pub enum Commands {
     /// `famp_inbox`, `famp_peers`). Reads Content-Length-framed JSON-RPC from
     /// stdin; writes framed responses to stdout.
     Mcp(mcp::McpArgs),
+    /// Run the local-first UDS broker daemon (Phase 02). Auto-spawned by
+    /// `bus_client::spawn::spawn_broker_if_absent`; rarely invoked
+    /// directly by humans.
+    Broker(BrokerArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -122,6 +127,16 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     source: e,
                 })?;
             rt.block_on(mcp::run(args))
+        }
+        Commands::Broker(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(broker::run(args))
         }
     }
 }
