@@ -90,7 +90,8 @@
 - [ ] **HOOK-01**: `famp-local hook add --on <Event>:<glob> --to <peer-or-#channel>` declarative wiring; replaces hand-written bash hook scripts
 - [ ] **HOOK-02**: Hook config persisted to `~/.famp-local/hooks.tsv` (or equivalent registry, consistent with `wires.tsv` precedent from prep sprint T3)
 - [ ] **HOOK-03**: `famp-local hook list` and `famp-local hook remove <id>` round-trip
-- [ ] **HOOK-04**: Hook execution emits a `famp send` (or eventually `audit_log` envelope) — declarative wiring is the user-facing UX, send semantics unchanged
+- [ ] **HOOK-04a** (Phase 2): A registered hook persists round-trip via `famp-local hook add/list/remove`. TSV row format `<id>\t<event>:<glob>\t<to>\t<added_at>` in `~/.famp-local/hooks.tsv`. (D-12 split — registration surface.)
+- [ ] **HOOK-04b** (Phase 3): A registered hook fires `famp send` to the configured `<peer-or-#channel>` when a matching file-system event occurs. Implementation likely a Claude-Code Stop/Edit hook shim wired by `famp install-claude-code`, NOT the Rust binary. (D-12 split — execution runner.)
 
 ### TEST — integration + property test coverage at the wire
 
@@ -133,7 +134,7 @@
 ### CARRY — v0.8 carry-forward debt addressed during v0.9
 
 - [ ] **CARRY-01** (TD-1): `[[profile.default.test-groups]]` pinned for listen-subprocess tests (max-threads = 4) before listen subprocess tests proliferate further. Address in Phase 4 alongside `e2e_two_daemons` refactor.
-- [ ] **CARRY-02** (TD-3): REQUIREMENTS.md INBOX-01 wording rewritten to match raw-bytes-per-line implementation OR a structured wrapper added. Address in Phase 2 alongside CLI inbox rework.
+- [x] **CARRY-02** (TD-3): REQUIREMENTS.md INBOX-01 wording rewritten to match the as-shipped wire shape. **Closed in Phase 2 (plan 02-12).** The inbox-draining wire format delivers **typed envelopes** — `BusReply::InboxOk { envelopes: Vec<serde_json::Value>, next_offset: u64 }`. Phase 1 D-09 evolved past raw `Vec<Vec<u8>>` on the wire to keep BUS-02/03 byte-exact canonical-JSON round-trip; the broker decodes each on-disk line via `AnyBusEnvelope::decode` before insertion into `envelopes`. The on-disk `mailboxes/<name>.jsonl` file format is still raw application bytes per line (Phase-1 D-09 file-shape contract). Consumers parse wire envelopes via `serde_json::from_value`; the structured per-line wrapper type rejected in the original CARRY-02 evaluation never shipped.
 - [x] **CARRY-03** (TD-4): Broker auto-creates `REQUESTED` task record on inbound request (eliminates receiver-side test seed). Naturally absorbed by Phase 1 broker state-machine design.
 - [x] **CARRY-04** (TD-7): Backfill Nyquist `VALIDATION.md` for v0.8 phases 02-04 + bridge phase, OR formally defer per project policy. Address inside Phase 1's TDD-gates pass.
 
@@ -232,7 +233,8 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | HOOK-01 | Phase 2 | Pending |
 | HOOK-02 | Phase 2 | Pending |
 | HOOK-03 | Phase 2 | Pending |
-| HOOK-04 | Phase 2 | Pending |
+| HOOK-04a | Phase 2 | Pending |
+| HOOK-04b | Phase 3 | Pending |
 | TEST-01 | Phase 2 | Pending |
 | TEST-02 | Phase 2 | Pending |
 | TEST-03 | Phase 2 | Pending |
@@ -262,4 +264,4 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | TEST-06 | Phase 4 | Pending |
 | CARRY-01 | Phase 4 | Pending |
 
-**Coverage:** 84/84 v0.9 active requirements mapped to exactly one phase. No orphans. (Future and Out-of-Scope sections do not require phase mapping.)
+**Coverage:** 85/85 v0.9 active requirements mapped to exactly one phase. No orphans. (Future and Out-of-Scope sections do not require phase mapping.) Total bumped from 84 → 85 by the D-12 HOOK-04 split landed in plan 02-12: HOOK-04 → HOOK-04a (Phase 2) + HOOK-04b (Phase 3).

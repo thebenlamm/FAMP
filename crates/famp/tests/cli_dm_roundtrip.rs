@@ -2,157 +2,266 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! Phase 02 plan 02-03 (CLI-01): `famp register` integration smoke test.
+//! Phase 02 plan 02-12 — `famp` CLI integration round-trip tests.
 //!
-//! `test_register_blocks` is implemented here (replacing the 02-00
-//! `#[ignore]` stub). The full DM round-trip in `test_dm_roundtrip` and
-//! the rest of the `cli_dm_roundtrip` family land in plan 02-12; those
-//! stubs remain `#[ignore]`.
+//! Exercises TEST-01 (DM round-trip) and the per-command CLI assertions
+//! CLI-01 (`register`), CLI-02 (`send`), CLI-03 (`inbox list`), CLI-05
+//! (`await`), CLI-08 (`whoami`). All five tests shell `famp` as a real
+//! subprocess via `assert_cmd::Command::cargo_bin` and run against an
+//! isolated `FAMP_BUS_SOCKET` per test (each test has its own tempdir
+//! and broker process). Identity binding follows D-10 (proxy via
+//! `Hello.bind_as`), surfaced via `--as <name>`.
 
+use std::path::Path;
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use assert_cmd::cargo::CommandCargoExt as _;
-use famp::bus_client::codec;
-use famp_bus::{BusMessage, BusReply};
-use tokio::net::UnixStream;
+use assert_cmd::cargo::CommandCargoExt;
 
-/// CLI-01 (plan 02-03): `famp register alice --no-reconnect` connects
-/// to the broker, registers, prints the locked startup line on stderr,
-/// and then blocks. A second client (this test) can Hello+Register a
-/// different name (`bob`) on the same broker. Killing alice's process
-/// causes it to exit within 1 s.
+/// Per-test isolation: a unique tempdir holding the bus socket. Each
+/// test gets its own broker process via the `famp register`-driven lazy
+/// spawn (`spawn_broker_if_absent`).
+struct Bus {
+    tmp: tempfile::TempDir,
+    sock: std::path::PathBuf,
+}
+
+impl Bus {
+    fn new() -> Self {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sock = tmp.path().join("bus.sock");
+        Self { tmp, sock }
+    }
+
+    fn sock(&self) -> &Path {
+        self.sock.as_path()
+    }
+
+    /// Run a one-shot `famp <args>` against this bus and return the
+    /// captured `Output`. Adds `HOME` pointed at the bus tempdir so any
+    /// D-01 identity-resolution side effects cannot leak into the
+    /// developer's real `~/.famp-local`.
+    fn famp_cmd(&self, args: &[&str]) -> std::process::Output {
+        Command::cargo_bin("famp")
+            .unwrap()
+            .env("FAMP_BUS_SOCKET", self.sock())
+            .env("HOME", self.tmp.path())
+            .args(args)
+            .output()
+            .unwrap()
+    }
+
+    /// Spawn `famp <args>` in the background (suppress output) and
+    /// return the `Child` handle. Used for the long-lived `famp
+    /// register <name>` canonical-holder processes.
+    fn famp_spawn(&self, args: &[&str]) -> Child {
+        Command::cargo_bin("famp")
+            .unwrap()
+            .env("FAMP_BUS_SOCKET", self.sock())
+            .env("HOME", self.tmp.path())
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    /// Poll until a one-shot proxy connect with `--as <name>` succeeds
+    /// OR a deadline elapses. Proves the broker is up AND `name`'s
+    /// holder has completed its Register handshake. The lazy
+    /// broker-spawn-then-Register path can take longer than a fixed
+    /// sleep on slow CI.
+    fn wait_for_register(&self, name: &str) {
+        for _ in 0..50 {
+            // `whoami --as <name>` exits 0 only if Hello.bind_as proxy
+            // validation succeeded, which requires `name` to be held by
+            // a live registered holder.
+            let out = self.famp_cmd(&["whoami", "--as", name]);
+            if out.status.success() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("{name} did not register within 5s");
+    }
+}
+
+/// Best-effort cleanup so the broker observes Disconnect promptly and
+/// the next test starts with a fresh tempdir.
+fn kill_and_wait(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// CLI-01 (replaces the plan 02-03 wire-level test): `famp register
+/// alice --no-reconnect` blocks. With `--no-reconnect` the holder
+/// process stays alive until killed.
 #[test]
 fn test_register_blocks() {
-    let tmp = tempfile::tempdir().unwrap();
-    let sock = tmp.path().join("test-bus.sock");
-
-    let mut child = std::process::Command::cargo_bin("famp")
-        .unwrap()
-        .args(["register", "alice", "--no-reconnect"])
-        .env("FAMP_BUS_SOCKET", &sock)
-        // Suppress any HOME-resolution side effects from leaking into
-        // the user's real `~/.famp`.
-        .env("HOME", tmp.path())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .expect("failed to spawn `famp register`");
-
-    // Give the child time to (a) spawn the broker subprocess, (b) bind
-    // the UDS, (c) Hello+Register, and (d) emit the startup line. Up
-    // to 5 seconds — broker startup on a cold cargo test cache can be
-    // slow on macOS.
-    let mut alive_after_register = false;
-    for _ in 0..50 {
-        std::thread::sleep(Duration::from_millis(100));
-        match child.try_wait() {
-            Ok(None) => {
-                // Process still running. Probe the socket; if it
-                // accepts a connection, the broker is up and the
-                // register handshake has likely completed.
-                if std::os::unix::net::UnixStream::connect(&sock).is_ok() {
-                    alive_after_register = true;
-                    break;
-                }
-            }
-            Ok(Some(status)) => {
-                let _ = child.wait();
-                panic!(
-                    "famp register exited prematurely with status {status:?}; \
-                     expected blocking process"
-                );
-            }
-            Err(e) => panic!("try_wait failed: {e}"),
-        }
-    }
+    let bus = Bus::new();
+    let mut alice = bus.famp_spawn(&["register", "alice", "--no-reconnect"]);
+    bus.wait_for_register("alice");
+    // alice should still be running (blocking) once registered.
     assert!(
-        alive_after_register,
-        "famp register did not become reachable within 5 s"
+        alice.try_wait().unwrap().is_none(),
+        "alice should still be blocking"
+    );
+    kill_and_wait(&mut alice);
+}
+
+/// TEST-01: full DM round-trip via shelled CLI. Covers CLI-01, CLI-02,
+/// and CLI-03 in one test:
+///
+/// 1. alice + bob register (CLI-01).
+/// 2. alice `famp send --as alice --to bob --new-task "hi"` (CLI-02).
+/// 3. bob `famp inbox list --as bob` shows "hi" plus the
+///    `{"next_offset":N}` footer (CLI-03).
+#[test]
+fn test_dm_roundtrip() {
+    let bus = Bus::new();
+    let mut alice = bus.famp_spawn(&["register", "alice"]);
+    let mut bob = bus.famp_spawn(&["register", "bob"]);
+    bus.wait_for_register("alice");
+    bus.wait_for_register("bob");
+
+    let send = bus.famp_cmd(&["send", "--as", "alice", "--to", "bob", "--new-task", "hi"]);
+    assert!(
+        send.status.success(),
+        "send failed: stderr={}",
+        String::from_utf8_lossy(&send.stderr)
+    );
+    let send_stdout = String::from_utf8_lossy(&send.stdout);
+    assert!(
+        send_stdout.contains("task_id"),
+        "send stdout should include task_id: {send_stdout}"
     );
 
-    // Hand off to a tokio runtime for the second-client probe + cleanup.
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
+    // bob's inbox sees the message body. The envelope on the wire is
+    // `{"mode":"new_task","summary":"hi"}` — the summary string is the
+    // body the user typed, so a substring match for "hi" is faithful.
+    let inbox = bus.famp_cmd(&["inbox", "list", "--as", "bob"]);
+    assert!(
+        inbox.status.success(),
+        "inbox list failed: stderr={}",
+        String::from_utf8_lossy(&inbox.stderr)
+    );
+    let inbox_stdout = String::from_utf8_lossy(&inbox.stdout);
+    assert!(
+        inbox_stdout.contains("\"hi\""),
+        "inbox should contain message body 'hi': {inbox_stdout}"
+    );
+    assert!(
+        inbox_stdout.contains("next_offset"),
+        "inbox output should include next_offset footer: {inbox_stdout}"
+    );
+
+    kill_and_wait(&mut alice);
+    kill_and_wait(&mut bob);
+}
+
+/// CLI-03 — direct coverage of empty-inbox case. `inbox list` against
+/// a freshly-registered identity emits ZERO envelope lines and one
+/// `{"next_offset":0}` footer.
+#[test]
+fn test_inbox_list() {
+    let bus = Bus::new();
+    let mut alice = bus.famp_spawn(&["register", "alice"]);
+    bus.wait_for_register("alice");
+
+    let out = bus.famp_cmd(&["inbox", "list", "--as", "alice"]);
+    assert!(
+        out.status.success(),
+        "inbox list failed: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("next_offset"),
+        "empty inbox MUST still emit next_offset footer: {stdout}"
+    );
+
+    kill_and_wait(&mut alice);
+}
+
+/// CLI-05: `famp await --as bob` blocks until alice sends; on receipt
+/// bob's await emits the typed envelope JSONL on stdout and exits 0.
+#[test]
+fn test_await_unblocks() {
+    let bus = Bus::new();
+    let mut alice = bus.famp_spawn(&["register", "alice"]);
+    let mut bob = bus.famp_spawn(&["register", "bob"]);
+    bus.wait_for_register("alice");
+    bus.wait_for_register("bob");
+
+    // Spawn bob's `famp await --as bob --timeout 10s` in background;
+    // capture stdout for the envelope JSONL on AwaitOk.
+    let bob_await = Command::cargo_bin("famp")
+        .unwrap()
+        .env("FAMP_BUS_SOCKET", bus.sock())
+        .env("HOME", bus.tmp.path())
+        .args(["await", "--as", "bob", "--timeout", "10s"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
         .unwrap();
 
-    rt.block_on(async {
-        // Second client: connect to the same broker and Register as
-        // `bob` (different name from alice → no NameTaken collision).
-        let mut stream = UnixStream::connect(&sock)
-            .await
-            .expect("second client failed to connect to broker");
+    // Give bob's await time to register its parked-await on the broker
+    // BEFORE alice sends. If alice sends first the broker writes to
+    // bob's mailbox and the await still works (per send_agent's
+    // waiting-client lookup), but the test reads more cleanly when
+    // await is parked first.
+    std::thread::sleep(Duration::from_millis(500));
 
-        let hello = BusMessage::Hello {
-            bus_proto: 1,
-            client: "cli-dm-roundtrip-test/0.0.1".into(),
-            bind_as: None,
-        };
-        codec::write_frame(&mut stream, &hello)
-            .await
-            .expect("write Hello");
-        let reply: BusReply = codec::read_frame(&mut stream).await.expect("read HelloOk");
-        match reply {
-            BusReply::HelloOk { bus_proto } => assert_eq!(bus_proto, 1),
-            other => panic!("expected HelloOk, got {other:?}"),
-        }
-
-        // Register as bob (a fresh, unique name) with a synthetic PID.
-        let register = BusMessage::Register {
-            name: "bob".into(),
-            pid: 99_999,
-        };
-        codec::write_frame(&mut stream, &register)
-            .await
-            .expect("write Register");
-        let reply: BusReply = codec::read_frame(&mut stream)
-            .await
-            .expect("read RegisterOk");
-        match reply {
-            BusReply::RegisterOk { active, .. } => {
-                assert_eq!(active, "bob", "broker reported wrong active name");
-            }
-            other => panic!("expected RegisterOk, got {other:?}"),
-        }
-    });
-
-    // Kill alice and assert it exits within 1s (signal-driven shutdown).
-    child.kill().expect("kill alice");
-    let exited_within_1s = (0..20).any(|_| {
-        std::thread::sleep(Duration::from_millis(50));
-        matches!(child.try_wait(), Ok(Some(_)))
-    });
+    let send = bus.famp_cmd(&["send", "--as", "alice", "--to", "bob", "--new-task", "ping"]);
     assert!(
-        exited_within_1s,
-        "famp register did not exit within 1 s after SIGKILL"
+        send.status.success(),
+        "send failed: stderr={}",
+        String::from_utf8_lossy(&send.stderr)
     );
 
-    // Best-effort: terminate the broker child too so the next test does
-    // not inherit a stale `/tmp/...` socket. The broker's own idle-exit
-    // timer would also handle this within 5 minutes; tearing down the
-    // tempdir below is the actual correctness guarantee.
+    let await_out = bob_await.wait_with_output().unwrap();
+    assert!(
+        await_out.status.success(),
+        "await failed: stderr={}",
+        String::from_utf8_lossy(&await_out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&await_out.stdout);
+    assert!(
+        stdout.contains("\"ping\""),
+        "await stdout should contain 'ping': {stdout}"
+    );
+
+    kill_and_wait(&mut alice);
+    kill_and_wait(&mut bob);
 }
 
+/// CLI-08: `famp whoami --as alice` returns `{"active":"alice", ...}`.
+/// Per D-10, the proxy connection's effective identity IS the bound
+/// name, so the broker's `WhoamiOk` reply carries `active:
+/// Some("alice")`.
 #[test]
-#[ignore = "stub: implementation lands in plan 02-12"]
-fn test_dm_roundtrip() {
-    unimplemented!("filled in by plan 02-12");
-}
-
-#[test]
-#[ignore = "stub: implementation lands in plan 02-12"]
-fn test_inbox_list() {
-    unimplemented!("filled in by plan 02-12");
-}
-
-#[test]
-#[ignore = "stub: implementation lands in plan 02-12"]
-fn test_await_unblocks() {
-    unimplemented!("filled in by plan 02-12");
-}
-
-#[test]
-#[ignore = "stub: implementation lands in plan 02-12"]
 fn test_whoami() {
-    unimplemented!("filled in by plan 02-12");
+    let bus = Bus::new();
+    let mut alice = bus.famp_spawn(&["register", "alice"]);
+    bus.wait_for_register("alice");
+
+    let out = bus.famp_cmd(&["whoami", "--as", "alice"]);
+    assert!(
+        out.status.success(),
+        "whoami failed: stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"active\""),
+        "whoami stdout should include active key: {stdout}"
+    );
+    assert!(
+        stdout.contains("\"alice\""),
+        "whoami active value should be alice (D-10 proxy): {stdout}"
+    );
+
+    kill_and_wait(&mut alice);
 }
