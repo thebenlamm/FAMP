@@ -567,8 +567,14 @@ fn tick<E: BrokerEnv>(broker: &mut Broker<E>, now: Instant) -> Vec<Out> {
             (!broker.env.is_alive(pid)).then_some(*client)
         })
         .collect();
+    let mut out = Vec::new();
     for client in dead_clients {
-        let _ = disconnect(broker, client);
+        // WR-08: thread the disconnect Out vec through tick's return
+        // instead of discarding it. Without this, Out::ReleaseClient
+        // and Out::SessionEnded for liveness-discovered dead clients
+        // never reach the executor — leaking the per-client reply
+        // sender and skipping the SessionRow write.
+        out.extend(disconnect(broker, client));
     }
 
     let expired: Vec<ClientId> = broker
@@ -577,7 +583,7 @@ fn tick<E: BrokerEnv>(broker: &mut Broker<E>, now: Instant) -> Vec<Out> {
         .iter()
         .filter_map(|(client, parked)| (now >= parked.deadline).then_some(*client))
         .collect();
-    let mut out = Vec::with_capacity(expired.len() * 2);
+    out.reserve(expired.len() * 2);
     for client in expired {
         broker.state.pending_awaits.remove(&client);
         out.push(Out::Reply(client, BusReply::AwaitTimeout {}));
