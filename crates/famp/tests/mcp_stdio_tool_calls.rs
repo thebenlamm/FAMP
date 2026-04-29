@@ -77,9 +77,12 @@ impl McpHarness {
             .expect("famp init");
         assert!(status.success(), "famp init failed: {status}");
 
+        // v0.9: isolate the broker per harness instance.
+        let sock = local_root.path().join("bus.sock");
         let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
             .args(["mcp"])
             .env("FAMP_LOCAL_ROOT", local_root.path())
+            .env("FAMP_BUS_SOCKET", &sock)
             .env_remove("FAMP_HOME")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -239,7 +242,9 @@ impl Drop for McpHarness {
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
-/// `famp mcp` responds to initialize and advertises exactly six tools.
+/// `famp mcp` responds to initialize and advertises exactly eight tools
+/// after Phase 02 plan 02-09 (the v0.9 surface adds `famp_join` and
+/// `famp_leave` to the v0.8 six).
 #[test]
 fn mcp_initialize_lists_four_tools() {
     let mut h = McpHarness::new();
@@ -257,7 +262,7 @@ fn mcp_initialize_lists_four_tools() {
         .map(|t| t["name"].as_str().expect("tool name"))
         .collect();
 
-    assert_eq!(names.len(), 6, "expected exactly 6 tools, got: {names:?}");
+    assert_eq!(names.len(), 8, "expected exactly 8 tools, got: {names:?}");
     for expected in &[
         "famp_send",
         "famp_await",
@@ -265,6 +270,8 @@ fn mcp_initialize_lists_four_tools() {
         "famp_peers",
         "famp_register",
         "famp_whoami",
+        "famp_join",
+        "famp_leave",
     ] {
         assert!(
             names.contains(expected),
@@ -424,7 +431,15 @@ fn mcp_famp_send_new_task_returns_structured() {
 }
 
 /// `famp_peers` list returns the peers that were added via the CLI.
+///
+/// SUPERSEDED IN V0.9: plan 02-09 reshapes `famp_peers` to return
+/// `{ online: [name, ...] }` from broker memory, NOT
+/// `{ peers: [{ alias, ... }] }` from peers.toml. The peer-add CLI path
+/// is also removed (v0.9 has no `add_peer` since federation isn't local).
+/// A v0.9-shaped equivalent test belongs in the broker integration suite.
 #[test]
+#[ignore = "Plan 02-09: v0.8 peers.toml shape; v0.9 famp_peers returns \
+            broker-memory `online` list. Rewrite in plan 02-13 (E2E)."]
 fn mcp_famp_peers_list_returns_entries() {
     let mut h = McpHarness::new();
     let pubkey = h.self_pubkey_b64();
@@ -544,6 +559,9 @@ fn entries_from_response(resp: &serde_json::Value) -> Vec<serde_json::Value> {
 }
 
 #[test]
+#[ignore = "Plan 02-09: v0.8 file-fixture (writes inbox.jsonl directly). \
+            v0.9 broker reads from in-memory mailbox state; rewrite this \
+            in plan 02-13 (broker-driven E2E)."]
 fn famp_inbox_list_filters_terminal_by_default() {
     let mut h = McpHarness::new();
     seed_filter_fixture(&h.home());
@@ -560,6 +578,9 @@ fn famp_inbox_list_filters_terminal_by_default() {
 }
 
 #[test]
+#[ignore = "Plan 02-09: v0.8 file-fixture (writes inbox.jsonl directly). \
+            v0.9 broker reads from in-memory mailbox state; rewrite this \
+            in plan 02-13 (broker-driven E2E)."]
 fn famp_inbox_list_include_terminal_true_returns_all() {
     let mut h = McpHarness::new();
     seed_filter_fixture(&h.home());
