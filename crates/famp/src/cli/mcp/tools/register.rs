@@ -1,27 +1,126 @@
-// PLAN 02-09: implement
-//! `famp_register` MCP tool — D-04/D-10 rewire stub.
+//! `famp_register` MCP tool — Phase 02 plan 02-09 implementation.
 //!
-//! Plan 02-08 reshaped `cli::mcp::session` to drop the v0.8
-//! `IdentityBinding` / `BindingSource` / `home_path` surface in favour
-//! of a `BusClient` + `active_identity` model. The real `famp_register`
-//! body (which sends a `BusMessage::Register { name }` frame to the
-//! broker via `session::ensure_bus()` and then calls
-//! `session::set_active_identity` on `RegisterOk`) lands in plan 02-09.
+//! Sends `BusMessage::Register { name, pid }` to the local broker via the
+//! lazily-opened `BusClient` from `cli::mcp::session`, and on `RegisterOk`
+//! installs the canonical identity on the per-process session state via
+//! [`session::set_active_identity`] (D-04 + D-10).
 //!
-//! Until then, this file holds the `pub async fn call(input: &Value)`
-//! signature and a stub body so `cli::mcp::server::dispatch_tool`
-//! compiles. Calling the stub at runtime panics — but the MCP server
-//! is not part of any 02-08 test path that exercises tool dispatch
-//! (the binding-required branch returns `NotRegistered` before
-//! reaching here, and `mcp_error_kind_exhaustive` only exercises the
-//! pure error-mapping table).
+//! Per D-10, the MCP server is the registered slot for its session — NOT
+//! a proxy that rides on a separate `famp register <name>` daemon. So the
+//! `pid` field carries the MCP server's own process id (`std::process::id()`).
+//!
+//! Identity-name validation mirrors the bash regex used by
+//! `scripts/famp-local cmd_register` so the CLI surface and the MCP
+//! surface agree on what is a valid name: `^[A-Za-z0-9._-]+$`. Names that
+//! fail validation are rejected with `BusErrorKind::EnvelopeInvalid`
+//! before the broker is contacted.
+//!
+//! ## Output shape
+//!
+//! ```json
+//! { "active": "<name>", "drained": <count>, "peers": ["..."] }
+//! ```
+//!
+//! `drained` is the *count* of typed envelopes the broker drained on
+//! register (Phase-1 D-09 wire shape carries the full envelopes; the MCP
+//! tool surfaces only the count, matching `cli::join`'s ergonomics).
+//! `peers` is the broker's `connected_names` snapshot at register time.
 
+use famp_bus::{BusErrorKind, BusMessage, BusReply};
 use serde_json::Value;
 
-use famp_bus::BusErrorKind;
+use crate::cli::mcp::session;
+use crate::cli::mcp::tools::ToolError;
 
-/// Dispatch a `famp_register` tool call. Stub — see plan 02-09.
-#[allow(clippy::unused_async)] // body is `unimplemented!()` until plan 02-09 wires the bus.
-pub async fn call(_input: &Value) -> Result<Value, BusErrorKind> {
-    unimplemented!("rewired in plan 02-09")
+/// Dispatch a `famp_register` tool call.
+pub async fn call(input: &Value) -> Result<Value, ToolError> {
+    // Accept both `identity` (v0.8 surface, what existing MCP clients
+    // and tests pass) and `name` (the broker's wire field name) so this
+    // tool is robust to either spelling.
+    let name = input
+        .get("identity")
+        .and_then(Value::as_str)
+        .or_else(|| input.get("name").and_then(Value::as_str))
+        .ok_or_else(|| {
+            ToolError::new(
+                BusErrorKind::EnvelopeInvalid,
+                "missing required field: identity (string)",
+            )
+        })?
+        .to_string();
+    validate_identity_name(&name)?;
+
+    session::ensure_bus()
+        .await
+        .map_err(|kind| ToolError::new(kind, "failed to connect to local broker"))?;
+
+    let mut guard = session::state().lock().await;
+    let Some(bus) = guard.bus.as_mut() else {
+        // ensure_bus() succeeded but the slot is empty — only possible if
+        // a concurrent caller cleared `bus` (test code only). Treat as a
+        // broker-unreachable since the connection is gone.
+        return Err(ToolError::new(
+            BusErrorKind::BrokerUnreachable,
+            "bus connection closed concurrently",
+        ));
+    };
+    let pid = std::process::id();
+    let reply = bus
+        .send_recv(BusMessage::Register {
+            name: name.clone(),
+            pid,
+        })
+        .await
+        .map_err(|e| {
+            ToolError::new(
+                BusErrorKind::BrokerUnreachable,
+                format!("broker round-trip failed: {e:?}"),
+            )
+        })?;
+
+    let result = match reply {
+        BusReply::RegisterOk {
+            active,
+            drained,
+            peers,
+        } => {
+            guard.active_identity = Some(active.clone());
+            Ok(serde_json::json!({
+                "active": active,
+                "drained": drained.len(),
+                "peers": peers,
+            }))
+        }
+        BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
+        // `BusReply` is open-coded with many ok-shaped variants. A non-Err,
+        // non-RegisterOk reply is a broker protocol violation; surface as
+        // Internal so the JSON-RPC layer projects to -32109.
+        other => Err(ToolError::new(
+            BusErrorKind::Internal,
+            format!("unexpected reply to Register: {other:?}"),
+        )),
+    };
+    drop(guard);
+    result
+}
+
+/// Validate the identity name. Mirrors the bash regex from
+/// `scripts/famp-local cmd_register`: `^[A-Za-z0-9._-]+$`.
+fn validate_identity_name(name: &str) -> Result<(), ToolError> {
+    if name.is_empty() {
+        return Err(ToolError::new(
+            BusErrorKind::EnvelopeInvalid,
+            "identity name must not be empty",
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err(ToolError::new(
+            BusErrorKind::EnvelopeInvalid,
+            format!("invalid identity name {name:?}: must match [A-Za-z0-9._-]+"),
+        ));
+    }
+    Ok(())
 }

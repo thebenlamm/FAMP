@@ -40,13 +40,17 @@ fn spawn_unbound() -> (
     tempfile::TempDir,
 ) {
     // After 01-03 the server starts unbound by default; no env-var seam needed.
-    // An empty local_root (no agents sub-dir) means no identity is registrable,
-    // but the server starts fine — the gating test never calls famp_register.
+    // Each test gets its own bus socket dir so concurrent test runs cannot
+    // accidentally share a registered slot — pre-registration gating
+    // assertions require the broker on this socket to have NO live
+    // canonical holder for any name.
     let local_root = tempfile::tempdir().unwrap();
+    let sock = local_root.path().join("bus.sock");
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
         .args(["mcp"])
         .env("FAMP_LOCAL_ROOT", local_root.path())
+        .env("FAMP_BUS_SOCKET", &sock)
         .env_remove("FAMP_HOME")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -62,7 +66,10 @@ fn assert_not_registered(resp: &serde_json::Value, tool_name: &str) {
     let err = resp
         .get("error")
         .unwrap_or_else(|| panic!("{tool_name}: expected error response, got: {resp}"));
-    assert_eq!(err["code"].as_i64().unwrap(), -32000, "{tool_name}: code");
+    // Plan 02-08 (MCP-10) reshaped the error code map: NotRegistered is
+    // -32100 in the application range -32100..=-32109. Pre-02-08 the
+    // catch-all generic JSON-RPC server error code -32000 was used.
+    assert_eq!(err["code"].as_i64().unwrap(), -32100, "{tool_name}: code");
     let kind = err["data"]["famp_error_kind"].as_str().unwrap_or("");
     assert_eq!(kind, "not_registered", "{tool_name}: famp_error_kind");
     let hint = err["data"]["details"]["hint"].as_str().unwrap_or("");

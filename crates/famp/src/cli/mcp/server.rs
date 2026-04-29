@@ -21,7 +21,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::cli::error::CliError;
 use crate::cli::mcp::error_kind::bus_error_to_jsonrpc;
-use crate::cli::mcp::tools;
+use crate::cli::mcp::tools::{self, ToolError};
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -102,10 +102,32 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_whoami",
-            "description": "Return the current session's identity binding. Use this to debug session binding — for example, to confirm a famp_register call took effect, or to discover whether a window is still unregistered. Returns { identity: string|null, source: \"explicit\"|\"unregistered\" }; never errors.",
+            "description": "Return the current session's identity binding. Use this to debug session binding — for example, to confirm a famp_register call took effect, or to discover whether a window is still unregistered. Returns { active: string|null, joined: [string] }; never errors.",
             "inputSchema": {
                 "type": "object",
                 "properties": {}
+            }
+        },
+        {
+            "name": "famp_join",
+            "description": "Join a channel; the broker drains any pending channel messages on join completion and adds the canonical holder to the channel members.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "channel": { "type": "string", "description": "Channel name (with or without leading '#')." }
+                },
+                "required": ["channel"]
+            }
+        },
+        {
+            "name": "famp_leave",
+            "description": "Leave a channel; the broker removes the canonical holder from the channel members.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "channel": { "type": "string", "description": "Channel name (with or without leading '#')." }
+                },
+                "required": ["channel"]
             }
         }
     ])
@@ -338,18 +360,9 @@ pub async fn run(local_root: std::path::PathBuf) -> Result<(), CliError> {
                 let call_result = dispatch_tool(&local_root, &name, &input).await;
                 match call_result {
                     Ok(ref value) => ok_response(&id, &tool_result(value)),
-                    Err(kind) => {
-                        // Synthesize a descriptive message per kind. Once
-                        // plan 02-09 wires real broker round-trips, the
-                        // broker-supplied message will be plumbed through
-                        // here directly.
-                        let message = match kind {
-                            BusErrorKind::NotRegistered => {
-                                "session is not registered; call famp_register first"
-                            }
-                            _ => "tool error",
-                        };
-                        bus_error_response(&id, kind, message)
+                    Err(tool_err) => {
+                        let (kind, message) = tool_err.into_parts();
+                        bus_error_response(&id, kind, &message)
                     }
                 }
             }
@@ -382,34 +395,34 @@ async fn dispatch_tool(
     _local_root: &std::path::Path,
     name: &str,
     input: &serde_json::Value,
-) -> Result<serde_json::Value, BusErrorKind> {
-    // Pre-binding tools: famp_register and famp_whoami work at any time.
-    // Per D-04 they no longer take a `local_root` (identity resolves
-    // through the broker's `Register` frame, not the filesystem).
+) -> Result<serde_json::Value, ToolError> {
+    // FREE-PASS tools: famp_register sets identity; famp_whoami is a
+    // session readback. Both work at any time, before any binding has
+    // been established.
     match name {
         "famp_register" => return tools::register::call(input).await,
         "famp_whoami" => return tools::whoami::call(input).await,
         _ => {}
     }
 
-    // Binding-required tools: refuse with NotRegistered if the session
-    // has not yet called famp_register (D-05). The active identity is
-    // set on `session` after `tools::register::call` receives RegisterOk
-    // from the broker.
+    // GATE (D-05): every other tool requires an active identity. Refuse
+    // with NotRegistered + the canonical operator hint if the session has
+    // not yet called famp_register. The active identity is set on
+    // `session` after `tools::register::call` receives RegisterOk from
+    // the broker.
     if crate::cli::mcp::session::active_identity().await.is_none() {
-        return Err(BusErrorKind::NotRegistered);
+        return Err(ToolError::not_registered());
     }
-    // Plan 02-09 will add the `famp_join` / `famp_leave` arms here and
-    // wire the per-tool body. For now every tool body is `unimplemented!()`.
     match name {
         "famp_send" => tools::send::call(input).await,
         "famp_await" => tools::await_::call(input).await,
         "famp_inbox" => tools::inbox::call(input).await,
         "famp_peers" => tools::peers::call(input).await,
-        // Unknown tool name → JSON-RPC will surface "tool error" via
-        // BusErrorKind::Internal. Plan 02-09 may switch this to JSON-RPC
-        // -32601 ("Method not found") since unknown-tool is structurally
-        // different from a broker-rejected op.
-        _other => Err(BusErrorKind::Internal),
+        "famp_join" => tools::join::call(input).await,
+        "famp_leave" => tools::leave::call(input).await,
+        other => Err(ToolError::new(
+            BusErrorKind::Internal,
+            format!("unknown tool: {other}"),
+        )),
     }
 }

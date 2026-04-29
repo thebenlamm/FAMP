@@ -27,9 +27,13 @@ fn spawn_mcp(home: &Path) -> (Child, ChildStdin, ChildStdout) {
         .expect("famp init");
     assert!(status.success(), "famp init failed: {status}");
 
+    // Each malformed-input test owns its broker socket so parallel runs
+    // do not collide on the canonical holder slot for "alice".
+    let sock = home.join("bus.sock");
     let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
         .args(["mcp"])
         .env("FAMP_LOCAL_ROOT", home)
+        .env("FAMP_BUS_SOCKET", &sock)
         .env_remove("FAMP_HOME")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

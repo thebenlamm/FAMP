@@ -95,10 +95,17 @@ impl Harness {
     /// with a `TwoDaemonsLocal` harness). The caller owns the `local_root`
     /// lifetime; pass `None` for the optional `TempDir` if the caller manages
     /// the directory's lifetime.
+    ///
+    /// In v0.9 each Harness instance points at its own ephemeral bus socket
+    /// under `local_root/bus.sock`. This isolates parallel test runs so
+    /// pre-registration / name-collision assertions are not contaminated
+    /// by sibling tests' brokers.
     pub fn with_local_root(local_root: &Path, owned: Option<tempfile::TempDir>) -> Self {
+        let sock = local_root.join("bus.sock");
         let mut child = Command::new(env!("CARGO_BIN_EXE_famp"))
             .args(["mcp"])
             .env("FAMP_LOCAL_ROOT", local_root)
+            .env("FAMP_BUS_SOCKET", &sock)
             .env_remove("FAMP_HOME")
             // TOFU bootstrap enabled for tests: the first-contact TLS
             // fingerprint is accepted so `famp_send` works in integration
