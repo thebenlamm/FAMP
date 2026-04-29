@@ -12,6 +12,8 @@ pub mod identity;
 pub mod inbox;
 pub mod info;
 pub mod init;
+pub mod join;
+pub mod leave;
 pub mod listen;
 pub mod mcp;
 pub mod paths;
@@ -20,6 +22,7 @@ pub mod perms;
 pub mod register;
 pub mod send;
 pub mod setup;
+pub mod util;
 
 pub use broker::BrokerArgs;
 pub use error::CliError;
@@ -71,6 +74,13 @@ pub enum Commands {
     /// below boots a multi-thread tokio runtime and calls
     /// `register::run`.
     Register(register::RegisterArgs),
+    /// Join a channel. Accepts `#name` or bare `name`. D-10 proxy:
+    /// the broker mutates the canonical holder's `joined` set, NOT
+    /// this connection's, so the one-shot CLI process exiting does
+    /// not auto-leave.
+    Join(join::JoinArgs),
+    /// Leave a channel. Same D-10 proxy semantics as `join`.
+    Leave(leave::LeaveArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -158,6 +168,26 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     source: e,
                 })?;
             rt.block_on(register::run(args))
+        }
+        Commands::Join(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(join::run(args))
+        }
+        Commands::Leave(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(leave::run(args))
         }
     }
 }
