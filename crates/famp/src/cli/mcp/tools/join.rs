@@ -25,6 +25,7 @@ use serde_json::Value;
 use crate::bus_client::resolve_sock_path;
 use crate::cli::error::CliError;
 use crate::cli::join::{run_at_structured, JoinArgs};
+use crate::cli::mcp::session;
 use crate::cli::mcp::tools::ToolError;
 
 /// Dispatch a `famp_join` tool call.
@@ -42,7 +43,11 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
 
     let args = JoinArgs {
         channel,
-        act_as: None,
+        // Carry MCP session's bound identity through so
+        // `cli::join::run_at_structured`'s `resolve_identity()` does not
+        // fall back to wires.tsv. dispatch_tool guarantees
+        // active_identity is Some by this point.
+        act_as: session::active_identity().await,
     };
     match run_at_structured(&resolve_sock_path(), args).await {
         Ok(out) => Ok(serde_json::json!({
