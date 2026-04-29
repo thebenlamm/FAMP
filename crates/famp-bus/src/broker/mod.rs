@@ -35,6 +35,18 @@ pub enum Out {
         client: ClientId,
     },
     ReleaseClient(ClientId),
+    /// WR-07: emitted by `disconnect` for a canonical-holder client at
+    /// the moment its session ends, BEFORE its `joined` set is cleared.
+    /// The executor surfaces this as a `SessionRow` write to
+    /// `~/.famp/sessions.jsonl` so post-mortem operators can see which
+    /// channels the session held when it disconnected. Proxy
+    /// disconnects do NOT emit this variant (proxies never appended a
+    /// SessionRow on register).
+    SessionEnded {
+        name: String,
+        pid: u32,
+        joined: Vec<String>,
+    },
 }
 
 pub struct Broker<E: BrokerEnv> {

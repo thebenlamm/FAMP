@@ -510,13 +510,24 @@ fn disconnect<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) -> Vec<Out
     // canonical holder's `joined` set, does NOT remove the canonical
     // name from any channel member set, and does NOT touch
     // `sessions.jsonl` (the proxy never appended a row).
-    let (canonical_name, is_proxy) = broker.state.clients.get(&client).map_or_else(
+    //
+    // WR-07: snapshot (name, pid, joined) for the canonical-holder
+    // branch BEFORE clearing state, so the executor can write a
+    // SessionRow with the correct joined set.
+    let (canonical_snapshot, is_proxy) = broker.state.clients.get(&client).map_or_else(
         || (None, false),
         |state| {
-            (
-                state.name.clone(),
-                state.bind_as.is_some() && state.name.is_none(),
-            )
+            let is_proxy = state.bind_as.is_some() && state.name.is_none();
+            let snapshot = if is_proxy {
+                None
+            } else {
+                state.name.clone().and_then(|name| {
+                    state.pid.map(|pid| {
+                        (name, pid, state.joined.iter().cloned().collect::<Vec<_>>())
+                    })
+                })
+            };
+            (snapshot, is_proxy)
         },
     );
 
@@ -530,15 +541,20 @@ fn disconnect<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) -> Vec<Out
     }
 
     // Canonical holder (or unbound, never-registered) cleanup path:
-    if let Some(name) = canonical_name {
+    if let Some((ref name, _, _)) = canonical_snapshot {
         for members in broker.state.channels.values_mut() {
-            members.remove(&name);
+            members.remove(name);
         }
     }
     // BL-03: drop the dead entry from the map (see proxy branch above).
     broker.state.clients.remove(&client);
     broker.state.pending_awaits.remove(&client);
-    vec![Out::ReleaseClient(client)]
+    let mut outs = Vec::with_capacity(2);
+    if let Some((name, pid, joined)) = canonical_snapshot {
+        outs.push(Out::SessionEnded { name, pid, joined });
+    }
+    outs.push(Out::ReleaseClient(client));
+    outs
 }
 
 fn tick<E: BrokerEnv>(broker: &mut Broker<E>, now: Instant) -> Vec<Out> {

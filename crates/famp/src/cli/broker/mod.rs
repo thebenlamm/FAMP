@@ -192,10 +192,9 @@ pub async fn run_on_listener(
 
     let (broker_tx, mut broker_rx) = mpsc::channel::<BrokerMsg>(BROKER_INBOX_CAPACITY);
     let mut reply_senders: HashMap<ClientId, mpsc::Sender<BusReply>> = HashMap::new();
-    // Track each connection's PID + name at register time so we can
-    // append a SessionRow on disconnect (CLI-11). The broker's
-    // internal state is private; we mirror just what we need here.
-    let mut session_meta: HashMap<ClientId, (String, u32)> = HashMap::new();
+    // WR-07: SessionRow data now flows through Out::SessionEnded
+    // (broker snapshots `joined` before clearing state). The previous
+    // executor-side `session_meta` mirror is gone.
     let mut client_count: u32 = 0;
     let mut idle: Option<Pin<Box<tokio::time::Sleep>>> = None;
     let mut next_id: u64 = 0;
@@ -233,11 +232,6 @@ pub async fn run_on_listener(
             Some(msg) = broker_rx.recv() => {
                 let outs = match msg {
                     BrokerMsg::Frame(client, wire) => {
-                        // Track Register-side metadata so disconnect can
-                        // emit a SessionRow line.
-                        if let famp_bus::BusMessage::Register { ref name, pid } = wire {
-                            session_meta.insert(client, (name.clone(), pid));
-                        }
                         broker.handle(
                             BrokerInput::Wire { client, msg: wire },
                             Instant::now(),
@@ -245,16 +239,6 @@ pub async fn run_on_listener(
                     }
                     BrokerMsg::Disconnect(client) => {
                         let outs = broker.handle(BrokerInput::Disconnect(client), Instant::now());
-                        // CLI-11: append a SessionRow if this was a
-                        // canonical-registered connection. Best-effort;
-                        // failure is logged but not fatal (sessions.jsonl
-                        // is diagnostic-only).
-                        if let Some((name, pid)) = session_meta.remove(&client) {
-                            let row = SessionRow { name, pid, joined: Vec::new() };
-                            if let Err(e) = sessions_log::append_session_row(bus_dir, &row) {
-                                eprintln!("sessions.jsonl write error: {e}");
-                            }
-                        }
                         // Drop reply sender so the per-client write loop
                         // exits cleanly.
                         reply_senders.remove(&client);
@@ -336,6 +320,16 @@ async fn execute_outs(
                 // drop the wire-side reply sender so the per-client
                 // write loop notices the channel close and exits.
                 reply_senders.remove(&id);
+            }
+            Out::SessionEnded { name, pid, joined } => {
+                // WR-07: append the diagnostic SessionRow with the
+                // broker's pre-disconnect snapshot of `joined`. Best-
+                // effort; failure is logged but not fatal (sessions.jsonl
+                // is diagnostic-only).
+                let row = SessionRow { name, pid, joined };
+                if let Err(e) = sessions_log::append_session_row(bus_dir, &row) {
+                    eprintln!("sessions.jsonl write error: {e}");
+                }
             }
         }
     }
