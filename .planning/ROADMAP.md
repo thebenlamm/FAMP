@@ -97,7 +97,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 **Plans:** 14 plans
 - [x] 02-00-PLAN.md — Wave-1 stub-file infrastructure: 9 Wave-0 test stubs (broker_lifecycle, broker_spawn_race, broker_crash_recovery, cli_dm_roundtrip, cli_channel_fanout, cli_inbox, cli_sessions, mcp_bus_e2e, hook_subcommand) created with #[ignore] gates so 02-01 stays under the 15-file blocker threshold (no requirement IDs — pure infra)
 - [x] 02-01-PLAN.md — Wave-2 substantive foundation: deps (nix, assert_cmd, tokio test-util), bus_client/{mod,codec,spawn}, cli/identity, cli/broker/nfs_check, scripts/check-mcp-deps.sh
-- [ ] 02-02-PLAN.md — Broker actor and UDS lifecycle: bind-exclusion, accept loop, Out executor (D-04 ordering), idle timer, NFS warning, DiskMailboxEnv + cursor_exec + sessions_log
+- [x] 02-02-PLAN.md — Broker actor and UDS lifecycle: bind-exclusion, accept loop, Out executor (D-04 ordering), idle timer, NFS warning, DiskMailboxEnv + cursor_exec + sessions_log
 - [ ] 02-03-PLAN.md — `famp register` foreground subcommand (CLI-01) with --tail / --no-reconnect / bounded exp backoff reconnect
 - [ ] 02-04-PLAN.md — `famp send` rewire to BusClient + additive `send_as: Option<String>` field on BusMessage::Send (BUS-02 round-trip preserved)
 - [ ] 02-05-PLAN.md — `famp inbox list` / `famp inbox ack` rewire; CLI-04/CLI-10 atomic cursor advance is local-only (no broker round-trip)
