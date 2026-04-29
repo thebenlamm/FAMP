@@ -210,21 +210,24 @@ async fn run_one_session(
     }
 }
 
-/// Block forever, racing Ctrl-C against the (never-resolving) future.
-/// On Ctrl-C, return `SignalCaught` so the run loop exits Ok. The
-/// `UnixStream` inside the client closes via Drop when this function
-/// returns; the broker observes that as a `Disconnect` per its
-/// run-loop's per-client `Disconnect` arm.
+/// Block until either Ctrl-C (return `SignalCaught` so the run loop
+/// exits Ok) or the broker connection drops (return `Disconnected` so
+/// the outer reconnect-with-backoff loop fires; load-bearing for
+/// TEST-03 kill-9 recovery). The `UnixStream` inside the client closes
+/// via Drop when this function returns; the broker observes that as a
+/// `Disconnect` per its run-loop's per-client `Disconnect` arm.
 ///
-/// Note: we deliberately do NOT poll the wire for unsolicited frames
-/// here. The Phase-1 broker's design is request/reply; async deliveries
-/// go through Inbox/Await polls (the `--tail` path), not unsolicited
-/// frames. So a default-mode `famp register` truly is silent: zero
-/// stdout, exactly one stderr line, then nothing until shutdown.
-async fn block_until_disconnect(_client: &mut BusClient) -> Result<SessionOutcome, CliError> {
+/// We do a 1-byte peek-style read on the wire so that broker death
+/// (process kill, network reset) becomes a wakeable event rather than
+/// requiring the next request/reply round-trip to surface it. The
+/// Phase-1 broker contract forbids unsolicited frames, so any readable
+/// event MUST be EOF/error, never a valid frame. If a future Phase-2
+/// extension introduces server-pushed events the polling path lives in
+/// `tail_loop` (`--tail`), not here.
+async fn block_until_disconnect(client: &mut BusClient) -> Result<SessionOutcome, CliError> {
     tokio::select! {
         () = shutdown_signal() => Ok(SessionOutcome::SignalCaught),
-        () = std::future::pending::<()>() => unreachable!("pending future never resolves"),
+        () = client.wait_for_disconnect() => Ok(SessionOutcome::Disconnected),
     }
 }
 
