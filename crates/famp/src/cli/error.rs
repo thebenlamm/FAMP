@@ -8,6 +8,8 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use famp_bus::BusErrorKind;
+
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
     #[error("FAMP_HOME is not set and $HOME is not set")]
@@ -197,6 +199,40 @@ pub enum CliError {
     /// CLI subcommand that calls `cli::identity::resolve_identity`.
     #[error("{reason}")]
     NoIdentityBound { reason: String },
+
+    /// D-02 hard-error: the resolved identity is not currently held by a live
+    /// `famp register <name>` process. Surfaced by every one-shot CLI proxy
+    /// subcommand (`famp send`, `famp await`, `famp inbox`, `famp join`,
+    /// `famp leave`, `famp whoami`) when the broker rejects the
+    /// `Hello { bind_as: Some(name) }` proxy bind at handshake time, or when
+    /// the per-op liveness re-check fails (the holder died between Hello and
+    /// the op). The message is the literal D-02 hint so users get a single
+    /// nudge to start the canonical holder.
+    #[error("{name} is not registered — start `famp register {name}` in another terminal first")]
+    NotRegisteredHint { name: String },
+
+    /// The local broker socket could not be reached. Distinct from
+    /// `NotRegisteredHint` — `BrokerUnreachable` is a transport-level
+    /// failure (socket missing, broker crashed, spawn race exhausted),
+    /// not a protocol-level rejection. Surfaced when `BusClient::connect`
+    /// returns any non-`HelloFailed{NotRegistered}` error.
+    #[error("local broker unreachable at the bus socket")]
+    BrokerUnreachable,
+
+    /// `BusClient` send/recv failure outside the Hello handshake. Carries
+    /// the underlying `BusClientError` rendering as a string so the variant
+    /// stays object-safe and decoupled from the bus-client error type.
+    /// `detail` is named (not `source`) because thiserror's interpolation
+    /// would otherwise treat a `source` field as `#[source]`-typed.
+    #[error("bus client error: {detail}")]
+    BusClient { detail: String },
+
+    /// Broker returned `BusReply::Err { kind, message }` for a non-handshake
+    /// op. The `kind: BusErrorKind` is structurally exhaustive (Phase 1
+    /// closed enum); callers MAY match on it to surface variant-specific
+    /// hints. The default rendering carries both the kind and the message.
+    #[error("bus error: {kind:?}: {message}")]
+    BusError { kind: BusErrorKind, message: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

@@ -7,13 +7,14 @@
 use famp_fsm::TaskFsmError;
 
 use crate::cli::error::CliError::{
-    AlreadyInitialized, AwaitTimeout, CertgenFailed, Envelope, FsmTransition, HomeCreateFailed,
-    HomeHasNoParent, HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName,
-    InvalidDuration, InvalidIdentityName, InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed,
-    NoIdentityBound, NotRegistered, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
-    PeerNotFound, PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed,
-    TaskDir, TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused,
-    TomlParse, TomlSerialize, UnknownIdentity,
+    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, CertgenFailed,
+    Envelope, FsmTransition, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute, HomeNotSet,
+    IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
+    InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed, NoIdentityBound, NotRegistered,
+    NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid, PeerNotFound,
+    PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir,
+    TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse,
+    TomlSerialize, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -74,6 +75,15 @@ impl crate::cli::error::CliError {
             UnknownIdentity { .. } => "unknown_identity",
             InvalidIdentityName { .. } => "invalid_identity_name",
             NoIdentityBound { .. } => "no_identity_bound",
+            // Phase 02 plan 02-06: bus-transport variants. Kind strings
+            // distinguish the proxy-validation hard-error (`not_registered_hint`)
+            // from the transport-level failure (`broker_unreachable`) so MCP
+            // clients can disambiguate "the broker is up but my identity slot
+            // is gone" from "I cannot reach the broker at all".
+            NotRegisteredHint { .. } => "not_registered_hint",
+            BrokerUnreachable => "broker_unreachable",
+            BusClient { .. } => "bus_client_error",
+            BusError { .. } => "bus_error",
         }
     }
 }
