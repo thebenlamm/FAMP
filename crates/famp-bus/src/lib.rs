@@ -23,6 +23,11 @@ use famp_core as _;
 use famp_envelope as _;
 #[cfg(test)]
 use proptest as _;
+// `tokio` is a dev-only dep added in Phase 2 plan 02-01 for `start_paused`
+// time-forward tests; the lib unit-test compile unit doesn't reference it
+// directly, so silence the workspace lint here.
+#[cfg(test)]
+use tokio as _;
 
 pub mod broker;
 pub mod codec;

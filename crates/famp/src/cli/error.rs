@@ -191,6 +191,12 @@ pub enum CliError {
     /// to the MCP register tool's identity-name input.
     #[error("invalid identity name '{name}': {reason}")]
     InvalidIdentityName { name: String, reason: String },
+
+    /// D-01 hybrid identity resolver exhausted all four tiers without
+    /// resolving an active identity. Surfaced verbatim by every non-register
+    /// CLI subcommand that calls `cli::identity::resolve_identity`.
+    #[error("{reason}")]
+    NoIdentityBound { reason: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

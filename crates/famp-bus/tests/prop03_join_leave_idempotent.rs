@@ -19,6 +19,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, now: Instant) {
             msg: BusMessage::Hello {
                 bus_proto: 1,
                 client: "alice".into(),
+                bind_as: None,
             },
         },
         now,

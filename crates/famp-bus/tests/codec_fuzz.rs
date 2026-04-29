@@ -17,6 +17,7 @@ fn arb_busmessage() -> impl Strategy<Value = BusMessage> {
         Just(BusMessage::Hello {
             bus_proto: 1,
             client: "codec-test".into(),
+            bind_as: None,
         }),
         Just(BusMessage::Register {
             name: "alice".into(),
