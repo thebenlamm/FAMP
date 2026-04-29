@@ -108,7 +108,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 - [x] 02-10-PLAN.md — `scripts/famp-local hook add|list|remove` (HOOK-01..04) ~110 LoC bash addition
 - [x] 02-11-PLAN.md — Broker integration tests: idle exit (BROKER-04), spawn race (TEST-04), kill -9 recovery (TEST-03), sessions.jsonl diagnostic (CLI-11), NFS warning (BROKER-05)
 - [x] 02-12-PLAN.md — CLI integration tests: DM round-trip (TEST-01), channel fan-out (TEST-02), sessions list, whoami; CARRY-02 INBOX-01 wording rewrite
-- [ ] 02-13-PLAN.md — TEST-05: two stdio MCP processes round-trip register/send/await over UDS bus
+- [x] 02-13-PLAN.md — TEST-05: two stdio MCP processes round-trip register/send/await over UDS bus
 
 ### Phase 3: Claude Code integration polish
 **Goal:** Make the user-facing onboarding hit the milestone acceptance gate — two Claude Code windows exchange a message in **≤12 lines of instruction and ≤30 seconds elapsed** on a fresh macOS install. This phase is the gate; if the gate fails, the design is too heavy and must be revisited before v0.9.0 tags.
