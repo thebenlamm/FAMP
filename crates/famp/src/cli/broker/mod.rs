@@ -108,16 +108,25 @@ pub async fn run(args: BrokerArgs) -> Result<(), CliError> {
 /// Algorithm:
 ///   1. `tokio::net::UnixListener::bind(sock_path)`:
 ///      - `Ok` → return.
-///      - `EADDRINUSE` → another broker (or stale socket) holds the path.
-///        Probe by `connect()`-ing:
+///      - `EADDRINUSE` (Linux) or `EEXIST` (macOS — `bind(2)` over an
+///        existing socket file returns `EEXIST` rather than
+///        `EADDRINUSE` on Darwin) → another broker (or stale socket
+///        file) holds the path. Probe by `connect()`-ing:
 ///          - connect succeeds → live broker; `process::exit(0)`.
-///          - connect fails (`ECONNREFUSED` typically) → stale socket;
-///            `unlink` + retry `bind` once.
+///          - connect fails (`ECONNREFUSED` typically; `ENOENT` if the
+///            file was unlinked between our `bind` and the probe;
+///            `EACCES` on cross-user inode) → treat as stale; `unlink`
+///            + retry `bind` once.
 ///      - other errors → `CliError::Io`.
 fn bind_exclusive(sock_path: &Path) -> Result<UnixListener, CliError> {
     match UnixListener::bind(sock_path) {
         Ok(l) => Ok(l),
-        Err(e) if e.raw_os_error() == Some(nix::libc::EADDRINUSE) => {
+        Err(e)
+            if matches!(
+                e.raw_os_error(),
+                Some(c) if c == nix::libc::EADDRINUSE || c == nix::libc::EEXIST
+            ) =>
+        {
             // Probe: is there a live broker on the other end?
             if std::os::unix::net::UnixStream::connect(sock_path).is_ok() {
                 // Another broker is live; defer to it. exit(0) so the

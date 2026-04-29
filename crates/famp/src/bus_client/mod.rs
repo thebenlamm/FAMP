@@ -134,6 +134,30 @@ impl BusClient {
     pub async fn shutdown(&mut self) {
         let _ = self.stream.shutdown().await;
     }
+
+    /// Wait until the underlying broker connection is closed (broker
+    /// process death, OS-level reset, or graceful peer shutdown). The
+    /// returned future never resolves while the broker is alive: under
+    /// the Phase-1 request/reply contract the broker NEVER sends
+    /// unsolicited frames, so any readable event indicates the peer has
+    /// gone away.
+    ///
+    /// Used by `famp register`'s `block_until_disconnect` to drive the
+    /// reconnect-loop arm. A 1-byte peek (`AsyncReadExt::read` on a
+    /// 1-byte buffer) returns `Ok(0)` on EOF or a `BrokenPipe`/`ConnectionReset`
+    /// error on abrupt close — both observed via the broker SIGKILL
+    /// path (TEST-03). A nonzero read would mean the broker violated
+    /// the request/reply invariant; we still surface it as "disconnect"
+    /// because the stream is then desynchronized and unusable.
+    pub async fn wait_for_disconnect(&mut self) {
+        use tokio::io::AsyncReadExt;
+        let mut probe = [0u8; 1];
+        // Any read result — EOF (Ok(0)), broker-side close (Err), or
+        // even an unsolicited byte (protocol violation) — means the
+        // request/reply session is no longer usable. Return so the
+        // outer loop tears down and reconnects.
+        let _ = self.stream.read(&mut probe).await;
+    }
 }
 
 /// Resolve the broker socket path. `$FAMP_BUS_SOCKET` overrides;
