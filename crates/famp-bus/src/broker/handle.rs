@@ -25,13 +25,26 @@ fn handle_wire<E: BrokerEnv>(
     msg: BusMessage,
     now: Instant,
 ) -> Vec<Out> {
-    if !matches!(msg, BusMessage::Hello { .. })
-        && broker.state.clients.get(&client).map(|c| c.handshaked) != Some(true)
-    {
+    let already_handshaked =
+        broker.state.clients.get(&client).map(|c| c.handshaked) == Some(true);
+    if !matches!(msg, BusMessage::Hello { .. }) && !already_handshaked {
         return vec![err(
             client,
             BusErrorKind::BrokerProtoMismatch,
             "Hello required as first frame",
+        )];
+    }
+    // WR-10 / WR-11: a second Hello on a handshaked connection would
+    // overwrite the existing ClientState (wiping `name`, `pid`, and
+    // `joined`, AND silently rotating `bind_as`). That released the
+    // canonical-holder slot and let a misbehaving / malicious proxy
+    // un-register the canonical holder or rotate identities mid-
+    // connection. Reject the second Hello.
+    if matches!(msg, BusMessage::Hello { .. }) && already_handshaked {
+        return vec![err(
+            client,
+            BusErrorKind::BrokerProtoMismatch,
+            "Hello already received on this connection",
         )];
     }
 
