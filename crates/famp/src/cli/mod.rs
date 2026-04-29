@@ -21,8 +21,10 @@ pub mod peer;
 pub mod perms;
 pub mod register;
 pub mod send;
+pub mod sessions;
 pub mod setup;
 pub mod util;
+pub mod whoami;
 
 pub use broker::BrokerArgs;
 pub use error::CliError;
@@ -81,6 +83,14 @@ pub enum Commands {
     Join(join::JoinArgs),
     /// Leave a channel. Same D-10 proxy semantics as `join`.
     Leave(leave::LeaveArgs),
+    /// List currently registered sessions held by live `famp register`
+    /// processes. Read-only; reads broker memory (NOT the diagnostic
+    /// `sessions.jsonl`). With `--me`, filters to the caller's resolved
+    /// identity and uses `Hello.bind_as` proxy for liveness validation.
+    Sessions(sessions::SessionsArgs),
+    /// Print the active identity (per D-10 proxy `bind_as`) and the
+    /// canonical holder's joined channels.
+    Whoami(whoami::WhoamiArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -90,104 +100,45 @@ pub struct InitArgs {
     pub force: bool,
 }
 
+/// Build a multi-thread tokio runtime and block on `fut`. Shared by every
+/// async dispatch arm in [`run`] so each match arm stays a single-line
+/// `block_on_async(...)` call and the dispatcher does not balloon with
+/// repeated runtime-construction boilerplate.
+fn block_on_async<F>(fut: F) -> Result<(), CliError>
+where
+    F: std::future::Future<Output = Result<(), CliError>>,
+{
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: e,
+        })?;
+    rt.block_on(fut)
+}
+
 /// Top-level CLI dispatcher. Called from `bin/famp.rs`.
 pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
+        // Sync arms (no tokio runtime needed).
         Commands::Init(args) => init::run(args).map(|_| ()),
         Commands::Setup(args) => setup::run(&args).map(|_| ()),
         Commands::Info(args) => info::run(&args).map(|_| ()),
-        Commands::Listen(args) => {
-            // Only the `Listen` arm boots tokio; `Init` stays sync so
-            // `famp init` does not pay the multi-thread runtime cost.
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(listen::run(args))
-        }
         Commands::Peer(args) => peer::run(args),
-        Commands::Send(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(send::run(args))
-        }
-        Commands::Await(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(await_cmd::run(args))
-        }
-        Commands::Inbox(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(inbox::run(args))
-        }
-        Commands::Mcp(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(mcp::run(args))
-        }
-        Commands::Broker(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(broker::run(args))
-        }
-        Commands::Register(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(register::run(args))
-        }
-        Commands::Join(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(join::run(args))
-        }
-        Commands::Leave(args) => {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| CliError::Io {
-                    path: std::path::PathBuf::new(),
-                    source: e,
-                })?;
-            rt.block_on(leave::run(args))
-        }
+        // Async arms: each boots a multi-thread tokio runtime via
+        // `block_on_async` and dispatches into the subcommand's
+        // `async fn run`. Only async-required arms pay the runtime cost.
+        Commands::Listen(args) => block_on_async(listen::run(args)),
+        Commands::Send(args) => block_on_async(send::run(args)),
+        Commands::Await(args) => block_on_async(await_cmd::run(args)),
+        Commands::Inbox(args) => block_on_async(inbox::run(args)),
+        Commands::Mcp(args) => block_on_async(mcp::run(args)),
+        Commands::Broker(args) => block_on_async(broker::run(args)),
+        Commands::Register(args) => block_on_async(register::run(args)),
+        Commands::Join(args) => block_on_async(join::run(args)),
+        Commands::Leave(args) => block_on_async(leave::run(args)),
+        Commands::Sessions(args) => block_on_async(sessions::run(args)),
+        Commands::Whoami(args) => block_on_async(whoami::run(args)),
     }
 }
