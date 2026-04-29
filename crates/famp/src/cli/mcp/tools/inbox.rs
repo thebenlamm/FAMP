@@ -33,6 +33,7 @@ use serde_json::Value;
 use crate::bus_client::resolve_sock_path;
 use crate::cli::error::CliError;
 use crate::cli::inbox::list::{run_at_structured, ListArgs};
+use crate::cli::mcp::session;
 use crate::cli::mcp::tools::ToolError;
 
 /// Dispatch a `famp_inbox` tool call.
@@ -64,7 +65,11 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     let args = ListArgs {
         since,
         include_terminal,
-        act_as: None,
+        // Carry MCP session's bound identity through so
+        // `cli::inbox::list::run_at_structured`'s `resolve_identity()`
+        // does not fall back to wires.tsv. dispatch_tool guarantees
+        // active_identity is Some by this point.
+        act_as: session::active_identity().await,
     };
 
     match run_at_structured(&resolve_sock_path(), args).await {

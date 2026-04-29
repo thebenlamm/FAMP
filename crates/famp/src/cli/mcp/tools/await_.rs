@@ -22,6 +22,7 @@ use serde_json::Value;
 use crate::bus_client::resolve_sock_path;
 use crate::cli::await_cmd::{run_at_structured, AwaitArgs};
 use crate::cli::error::CliError;
+use crate::cli::mcp::session;
 use crate::cli::mcp::tools::ToolError;
 
 /// Dispatch a `famp_await` tool call.
@@ -62,7 +63,11 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     let args = AwaitArgs {
         timeout,
         task,
-        act_as: None,
+        // Carry MCP session's bound identity through so
+        // `cli::await_cmd::run_at_structured`'s `resolve_identity()` does
+        // not fall back to wires.tsv. dispatch_tool guarantees
+        // active_identity is Some by this point.
+        act_as: session::active_identity().await,
     };
 
     match run_at_structured(&resolve_sock_path(), args).await {

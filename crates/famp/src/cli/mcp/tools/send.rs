@@ -16,12 +16,19 @@ use serde_json::Value;
 
 use crate::bus_client::resolve_sock_path;
 use crate::cli::error::CliError;
+use crate::cli::mcp::session;
 use crate::cli::mcp::tools::ToolError;
 use crate::cli::send::{run_at_structured, SendArgs};
 
 /// Dispatch a `famp_send` tool call.
 pub async fn call(input: &Value) -> Result<Value, ToolError> {
-    let args = parse_input(input)?;
+    let mut args = parse_input(input)?;
+    // Carry the MCP session's bound identity through so
+    // `cli::send::run_at_structured`'s `resolve_identity()` (D-01) does not
+    // fall through to the cwd-based wires.tsv path. The dispatch_tool
+    // gate (server.rs) guarantees active_identity is Some by the time we
+    // reach this code path.
+    args.act_as = session::active_identity().await;
     match run_at_structured(&resolve_sock_path(), args).await {
         Ok(out) => Ok(serde_json::json!({
             "task_id": out.task_id,
@@ -122,6 +129,9 @@ fn parse_input(input: &Value) -> Result<SendArgs, ToolError> {
         terminal,
         body,
         more_coming,
+        // Filled in by `call()` from `session::active_identity()` after
+        // `parse_input` returns. Left as `None` here so this helper stays
+        // pure (no async / no session access).
         act_as: None,
     })
 }
