@@ -255,6 +255,14 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                 reason: "must match [A-Za-z0-9_-]+".to_string(),
             },
         ),
+        (
+            "NoIdentityBound",
+            CliError::NoIdentityBound {
+                reason: "no identity bound — pass --as, set $FAMP_LOCAL_IDENTITY, or run \
+                         `famp-local wire <dir>` first"
+                    .to_string(),
+            },
+        ),
     ]
 }
 

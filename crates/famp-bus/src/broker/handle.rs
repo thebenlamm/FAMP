@@ -39,20 +39,8 @@ fn handle_wire<E: BrokerEnv>(
         BusMessage::Hello {
             bus_proto,
             client: _,
-        } => {
-            broker.state.clients.insert(
-                client,
-                ClientState {
-                    handshaked: true,
-                    bus_proto,
-                    name: None,
-                    pid: None,
-                    joined: BTreeSet::new(),
-                    connected: true,
-                },
-            );
-            vec![Out::Reply(client, BusReply::HelloOk { bus_proto: 1 })]
-        }
+            bind_as,
+        } => hello(broker, client, bus_proto, bind_as),
         BusMessage::Register { name, pid } => register(broker, client, name, pid),
         BusMessage::Send { to, envelope } => send(broker, client, to, envelope),
         BusMessage::Inbox {
@@ -69,12 +57,87 @@ fn handle_wire<E: BrokerEnv>(
     }
 }
 
+/// D-10 Hello handler. `bind_as = None` is the existing canonical-holder
+/// path. `bind_as = Some(name)` is the proxy path: the broker validates
+/// `name` maps to a live registered holder, and rejects with
+/// `HelloErr { NotRegistered }` if not.
+fn hello<E: BrokerEnv>(
+    broker: &mut Broker<E>,
+    client: ClientId,
+    bus_proto: u32,
+    bind_as: Option<String>,
+) -> Vec<Out> {
+    if let Some(name) = bind_as {
+        // D-10: locate the canonical live registered holder for `name`.
+        // Cache the holder PID for the per-op liveness re-check; if the
+        // holder process has died between Register and our Hello, treat
+        // the bind_as as unregistered.
+        let holder_pid = broker.state.clients.values().find_map(|state| {
+            if state.connected && state.name.as_deref() == Some(name.as_str()) {
+                state.pid
+            } else {
+                None
+            }
+        });
+        let alive = holder_pid.is_some_and(|pid| broker.env.is_alive(pid));
+        if !alive {
+            return vec![Out::Reply(
+                client,
+                BusReply::HelloErr {
+                    kind: BusErrorKind::NotRegistered,
+                    message: format!("bind_as identity '{name}' is not registered"),
+                },
+            )];
+        }
+        broker.state.clients.insert(
+            client,
+            ClientState {
+                handshaked: true,
+                bus_proto,
+                name: None,
+                pid: None,
+                joined: BTreeSet::new(),
+                connected: true,
+                bind_as: Some(name),
+            },
+        );
+        return vec![Out::Reply(client, BusReply::HelloOk { bus_proto: 1 })];
+    }
+    broker.state.clients.insert(
+        client,
+        ClientState {
+            handshaked: true,
+            bus_proto,
+            name: None,
+            pid: None,
+            joined: BTreeSet::new(),
+            connected: true,
+            bind_as: None,
+        },
+    );
+    vec![Out::Reply(client, BusReply::HelloOk { bus_proto: 1 })]
+}
+
 fn register<E: BrokerEnv>(
     broker: &mut Broker<E>,
     client: ClientId,
     name: String,
     pid: u32,
 ) -> Vec<Out> {
+    // D-10: a proxy (`bind_as = Some`) connection MUST NOT register;
+    // it is read/write-through to its bound canonical holder. Reject
+    // with NotRegistered (the proxy can disconnect and reconnect with
+    // `bind_as = None` to register cleanly).
+    if let Some(state) = broker.state.clients.get(&client) {
+        if state.bind_as.is_some() {
+            return vec![err(
+                client,
+                BusErrorKind::NotRegistered,
+                "proxy (bind_as) connection cannot register",
+            )];
+        }
+    }
+
     let name_taken = broker
         .state
         .clients
@@ -133,7 +196,16 @@ fn send<E: BrokerEnv>(
     to: Target,
     envelope: serde_json::Value,
 ) -> Vec<Out> {
-    if registered_name(broker, client).is_none() {
+    // D-10: resolve via effective_identity so a proxy connection can
+    // send under the bound canonical holder's name. The from-stamp on
+    // the encoded envelope MUST be the resolved identity (NOT the
+    // proxy's own None-name). `encode_envelope` operates on the JSON
+    // value as-is; identity is implicit in the broker's state and is
+    // not currently stamped onto the envelope here — that responsibility
+    // is left to the CLI/MCP caller for v0.9 (the envelope already
+    // carries `from` from the higher layer). We still gate the op on
+    // a resolvable + live identity.
+    if resolve_op_identity(broker, client).is_err() {
         return vec![err(
             client,
             BusErrorKind::NotRegistered,
@@ -224,7 +296,9 @@ fn send_channel<E: BrokerEnv>(
 }
 
 fn inbox<E: BrokerEnv>(broker: &Broker<E>, client: ClientId, since: Option<u64>) -> Vec<Out> {
-    let Some(name) = registered_name(broker, client) else {
+    // D-10: a proxy connection's `Inbox` reads the canonical holder's
+    // mailbox via effective_identity.
+    let Ok(name) = resolve_op_identity(broker, client) else {
         return vec![err(
             client,
             BusErrorKind::NotRegistered,
@@ -263,6 +337,16 @@ fn await_envelope<E: BrokerEnv>(
     task: Option<uuid::Uuid>,
     now: Instant,
 ) -> Vec<Out> {
+    // D-10: proxy connections can `Await` on the canonical holder's
+    // mailbox; reject if neither a registered holder nor a live proxy
+    // binding is present.
+    if resolve_op_identity(broker, client).is_err() {
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "client is not registered",
+        )];
+    }
     let filter = task.map_or(AwaitFilter::Any, AwaitFilter::Task);
     let deadline = now + Duration::from_millis(timeout_ms);
     broker.state.pending_awaits.insert(
@@ -281,7 +365,9 @@ fn await_envelope<E: BrokerEnv>(
 }
 
 fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String) -> Vec<Out> {
-    let Some(name) = registered_name(broker, client) else {
+    // D-10: resolve effective identity; for proxies, the holder ID is
+    // the canonical registered slot, NOT the proxy connection.
+    let Ok(name) = resolve_op_identity(broker, client) else {
         return vec![err(
             client,
             BusErrorKind::NotRegistered,
@@ -293,8 +379,12 @@ fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String)
         .channels
         .entry(channel.clone())
         .or_default()
-        .insert(name);
-    if let Some(state) = broker.state.clients.get_mut(&client) {
+        .insert(name.clone());
+    // D-10: mutate the canonical holder's `joined` set, not the proxy's.
+    // For canonical holders this resolves to `client` itself; for
+    // proxies it resolves to the live registered holder of `name`.
+    let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
+    if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.insert(channel.clone());
     }
 
@@ -332,7 +422,9 @@ fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String)
 }
 
 fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String) -> Vec<Out> {
-    let Some(name) = registered_name(broker, client) else {
+    // D-10: resolve effective identity; for proxies, mutate the
+    // canonical holder's `joined` set rather than the proxy's.
+    let Ok(name) = resolve_op_identity(broker, client) else {
         return vec![err(
             client,
             BusErrorKind::NotRegistered,
@@ -342,7 +434,8 @@ fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String
     if let Some(members) = broker.state.channels.get_mut(&channel) {
         members.remove(&name);
     }
-    if let Some(state) = broker.state.clients.get_mut(&client) {
+    let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
+    if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.remove(&channel);
     }
     vec![Out::Reply(client, BusReply::LeaveOk { channel })]
@@ -366,24 +459,67 @@ fn sessions<E: BrokerEnv>(broker: &Broker<E>, client: ClientId) -> Vec<Out> {
 }
 
 fn whoami<E: BrokerEnv>(broker: &Broker<E>, client: ClientId) -> Vec<Out> {
+    // D-10: a proxy connection's `whoami` returns the bound canonical
+    // identity (and that holder's joined set) — not the proxy's own
+    // empty state. Liveness re-check: if the proxy's holder has died,
+    // surface `active = None` (consistent with NotRegistered semantics).
     let (active, joined) = broker.state.clients.get(&client).map_or_else(
         || (None, Vec::new()),
-        |state| (state.name.clone(), state.joined.iter().cloned().collect()),
+        |state| {
+            if state.name.is_some() {
+                // Canonical holder.
+                (state.name.clone(), state.joined.iter().cloned().collect())
+            } else if let Some(ref bound) = state.bind_as {
+                // Proxy: surface the canonical holder's identity + joined.
+                if proxy_holder_alive(broker, bound) {
+                    let holder_joined = canonical_holder_id(broker, bound)
+                        .and_then(|id| broker.state.clients.get(&id))
+                        .map_or_else(Vec::new, |h| h.joined.iter().cloned().collect());
+                    (Some(bound.clone()), holder_joined)
+                } else {
+                    (None, Vec::new())
+                }
+            } else {
+                (None, Vec::new())
+            }
+        },
     );
     vec![Out::Reply(client, BusReply::WhoamiOk { active, joined })]
 }
 
 fn disconnect<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) -> Vec<Out> {
-    let name = broker
-        .state
-        .clients
-        .get(&client)
-        .and_then(|state| state.name.clone());
+    // D-10: branch on canonical-holder vs. proxy. A proxy disconnect
+    // is a no-op for the canonical name — it does NOT clear the
+    // canonical holder's `joined` set, does NOT remove the canonical
+    // name from any channel member set, and does NOT touch
+    // `sessions.jsonl` (the proxy never appended a row).
+    let (canonical_name, is_proxy) = broker.state.clients.get(&client).map_or_else(
+        || (None, false),
+        |state| {
+            (
+                state.name.clone(),
+                state.bind_as.is_some() && state.name.is_none(),
+            )
+        },
+    );
+
+    if is_proxy {
+        if let Some(state) = broker.state.clients.get_mut(&client) {
+            state.connected = false;
+            // Proxy `joined` should already be empty (Join/Leave mutate
+            // the canonical holder's set), but clear defensively.
+            state.joined.clear();
+        }
+        broker.state.pending_awaits.remove(&client);
+        return vec![Out::ReleaseClient(client)];
+    }
+
+    // Canonical holder (or unbound, never-registered) cleanup path:
     if let Some(state) = broker.state.clients.get_mut(&client) {
         state.connected = false;
         state.joined.clear();
     }
-    if let Some(name) = name {
+    if let Some(name) = canonical_name {
         for members in broker.state.channels.values_mut() {
             members.remove(&name);
         }
@@ -421,6 +557,10 @@ fn tick<E: BrokerEnv>(broker: &mut Broker<E>, now: Instant) -> Vec<Out> {
     out
 }
 
+/// Pre-D-10 helper kept for callers that need the *registered* name
+/// (the canonical-holder slot) explicitly, regardless of any proxy
+/// binding. Most ops should use [`resolve_op_identity`] instead.
+#[allow(dead_code)]
 fn registered_name<E: BrokerEnv>(broker: &Broker<E>, client: ClientId) -> Option<String> {
     broker
         .state
@@ -428,6 +568,77 @@ fn registered_name<E: BrokerEnv>(broker: &Broker<E>, client: ClientId) -> Option
         .get(&client)
         .filter(|state| state.connected)
         .and_then(|state| state.name.clone())
+}
+
+/// D-10: resolve the effective identity for `client`. Returns the
+/// registered holder's name (`state.name`) for canonical connections,
+/// the bound holder's name (`state.bind_as`) for proxy connections,
+/// or `Err(NotRegistered)` if neither is set.
+///
+/// This is the central identity-resolution entry point — every
+/// identity-required op (`Send`, `Inbox`, `Await`, `Join`, `Leave`,
+/// `Whoami`) calls into it instead of `state.name` directly.
+fn effective_identity(state: &ClientState) -> Result<String, BusErrorKind> {
+    if let Some(ref name) = state.name {
+        return Ok(name.clone());
+    }
+    if let Some(ref bound) = state.bind_as {
+        return Ok(bound.clone());
+    }
+    Err(BusErrorKind::NotRegistered)
+}
+
+/// D-10: per-op liveness re-check for proxy connections. Returns true
+/// iff the canonical holder of `bound` is still connected AND its PID
+/// answers `is_alive`. Called by every identity-required op when the
+/// caller is a proxy (`state.bind_as = Some(_)`).
+fn proxy_holder_alive<E: BrokerEnv>(broker: &Broker<E>, bound: &str) -> bool {
+    broker.state.clients.values().any(|h| {
+        h.connected
+            && h.name.as_deref() == Some(bound)
+            && h.pid.is_some_and(|pid| broker.env.is_alive(pid))
+    })
+}
+
+/// D-10: `ClientId` of the canonical live holder for `bound`, or
+/// `None` if no holder is currently registered. Used by Join/Leave to
+/// mutate the canonical holder's `joined` set instead of the proxy's.
+fn canonical_holder_id<E: BrokerEnv>(broker: &Broker<E>, bound: &str) -> Option<ClientId> {
+    broker.state.clients.iter().find_map(|(id, state)| {
+        if state.connected && state.name.as_deref() == Some(bound) {
+            Some(*id)
+        } else {
+            None
+        }
+    })
+}
+
+/// D-10: resolve effective identity AND verify proxy liveness in one
+/// step. Returns `Err(NotRegistered)` if the connection has no
+/// resolvable identity OR if it is a proxy whose holder has died.
+fn resolve_op_identity<E: BrokerEnv>(
+    broker: &Broker<E>,
+    client: ClientId,
+) -> Result<String, BusErrorKind> {
+    let state = broker
+        .state
+        .clients
+        .get(&client)
+        .ok_or(BusErrorKind::NotRegistered)?;
+    if !state.connected {
+        return Err(BusErrorKind::NotRegistered);
+    }
+    let identity = effective_identity(state)?;
+    // Canonical holder owns the slot; no liveness re-check needed.
+    if state.name.is_some() {
+        return Ok(identity);
+    }
+    // Proxy: re-verify the canonical holder is still alive.
+    if proxy_holder_alive(broker, &identity) {
+        Ok(identity)
+    } else {
+        Err(BusErrorKind::NotRegistered)
+    }
 }
 
 fn connected_names(clients: &std::collections::BTreeMap<ClientId, ClientState>) -> Vec<String> {
@@ -445,7 +656,9 @@ fn waiting_client_for_name<E: BrokerEnv>(
 ) -> Option<ClientId> {
     broker.state.pending_awaits.values().find_map(|parked| {
         let state = broker.state.clients.get(&parked.client)?;
-        let waiting_name = state.name.as_deref()?;
+        // D-10: a proxy connection's effective identity matches via
+        // `state.bind_as` when its `state.name` is None.
+        let waiting_name = state.name.as_deref().or(state.bind_as.as_deref())?;
         (state.connected && waiting_name == name && filter_matches(&parked.filter, envelope))
             .then_some(parked.client)
     })
@@ -522,4 +735,248 @@ fn err(client: ClientId, kind: BusErrorKind, message: impl Into<String>) -> Out 
             message: message.into(),
         },
     )
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod d10_tests {
+    //! D-10 unit tests for `bind_as` proxy semantics.
+
+    use super::*;
+    use crate::{Broker, FakeLiveness, InMemoryMailbox};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::time::Instant;
+
+    #[derive(Debug, Default, Clone)]
+    struct TestEnv {
+        mailbox: InMemoryMailbox,
+        liveness: Rc<RefCell<FakeLiveness>>,
+    }
+
+    impl crate::MailboxRead for TestEnv {
+        fn drain_from(
+            &self,
+            name: &crate::MailboxName,
+            since_bytes: u64,
+        ) -> Result<crate::DrainResult, crate::MailboxErr> {
+            self.mailbox.drain_from(name, since_bytes)
+        }
+    }
+
+    impl crate::LivenessProbe for TestEnv {
+        fn is_alive(&self, pid: u32) -> bool {
+            self.liveness.borrow().is_alive(pid)
+        }
+    }
+
+    fn hello_canonical(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: Instant) {
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(client),
+                msg: BusMessage::Hello {
+                    bus_proto: 1,
+                    client: name.into(),
+                    bind_as: None,
+                },
+            },
+            now,
+        );
+    }
+
+    fn register(broker: &mut Broker<TestEnv>, client: u64, name: &str, pid: u32, now: Instant) {
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(client),
+                msg: BusMessage::Register {
+                    name: name.into(),
+                    pid,
+                },
+            },
+            now,
+        );
+    }
+
+    fn hello_proxy(
+        broker: &mut Broker<TestEnv>,
+        client: u64,
+        bound: &str,
+        now: Instant,
+    ) -> Vec<Out> {
+        broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(client),
+                msg: BusMessage::Hello {
+                    bus_proto: 1,
+                    client: "proxy".into(),
+                    bind_as: Some(bound.into()),
+                },
+            },
+            now,
+        )
+    }
+
+    #[test]
+    fn test_hello_bind_as_unregistered_returns_not_registered() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        // alice is not registered.
+        let outs = hello_proxy(&mut broker, 1, "alice", now);
+        assert_eq!(outs.len(), 1);
+        match &outs[0] {
+            Out::Reply(_, BusReply::HelloErr { kind, .. }) => {
+                assert_eq!(*kind, BusErrorKind::NotRegistered);
+            }
+            other => panic!("expected HelloErr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_hello_bind_as_dead_holder_returns_not_registered() {
+        let env = TestEnv::default();
+        env.liveness.borrow_mut().mark_dead(12345);
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 12345, now);
+        let outs = hello_proxy(&mut broker, 2, "alice", now);
+        match &outs[0] {
+            Out::Reply(_, BusReply::HelloErr { kind, .. }) => {
+                assert_eq!(*kind, BusErrorKind::NotRegistered);
+            }
+            other => panic!("expected HelloErr, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_hello_bind_as_live_holder_succeeds() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        // Canonical holder for alice: client 1, pid 999 (alive by default).
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+        // Proxy from client 2.
+        let outs = hello_proxy(&mut broker, 2, "alice", now);
+        match &outs[0] {
+            Out::Reply(_, BusReply::HelloOk { .. }) => {}
+            other => panic!("expected HelloOk, got {other:?}"),
+        }
+        // Proxy can Send under alice's identity.
+        let send_outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent { name: "bob".into() },
+                    envelope: serde_json::json!({"body": "hi"}),
+                },
+            },
+            now,
+        );
+        let has_append = send_outs
+            .iter()
+            .any(|o| matches!(o, Out::AppendMailbox { .. }));
+        assert!(has_append, "proxy Send must produce an AppendMailbox");
+    }
+
+    #[test]
+    fn test_proxy_join_persists_after_disconnect() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+        // Proxy joins #x.
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Join {
+                    channel: "#x".into(),
+                },
+            },
+            now,
+        );
+        // Proxy disconnects.
+        let _ = broker.handle(BrokerInput::Disconnect(ClientId::from(2_u64)), now);
+        // Sessions from a fresh connection still shows alice in #x.
+        hello_canonical(&mut broker, 3, "observer", now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(3_u64),
+                msg: BusMessage::Sessions {},
+            },
+            now,
+        );
+        let rows = outs
+            .into_iter()
+            .find_map(|o| match o {
+                Out::Reply(_, BusReply::SessionsOk { rows }) => Some(rows),
+                _ => None,
+            })
+            .expect("SessionsOk");
+        let alice = rows
+            .iter()
+            .find(|r| r.name == "alice")
+            .expect("alice should still appear in sessions");
+        assert!(alice.joined.contains(&"#x".to_string()));
+    }
+
+    #[test]
+    fn test_proxy_op_after_holder_dies_returns_not_registered() {
+        let env = TestEnv::default();
+        let liveness_handle = Rc::clone(&env.liveness);
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+        // Mark holder dead via the shared liveness handle.
+        liveness_handle.borrow_mut().mark_dead(999);
+        // Proxy attempts a Send → should NotRegistered.
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent { name: "bob".into() },
+                    envelope: serde_json::json!({"body": "hi"}),
+                },
+            },
+            now,
+        );
+        let kind = outs.iter().find_map(|o| match o {
+            Out::Reply(_, BusReply::Err { kind, .. }) => Some(*kind),
+            _ => None,
+        });
+        assert_eq!(kind, Some(BusErrorKind::NotRegistered));
+    }
+
+    #[test]
+    fn test_proxy_disconnect_does_not_remove_canonical_registration() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+        let _ = broker.handle(BrokerInput::Disconnect(ClientId::from(2_u64)), now);
+        // Sessions from a fresh connection still shows alice.
+        hello_canonical(&mut broker, 3, "observer", now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(3_u64),
+                msg: BusMessage::Sessions {},
+            },
+            now,
+        );
+        let rows = outs
+            .into_iter()
+            .find_map(|o| match o {
+                Out::Reply(_, BusReply::SessionsOk { rows }) => Some(rows),
+                _ => None,
+            })
+            .expect("SessionsOk");
+        assert!(rows.iter().any(|r| r.name == "alice"));
+    }
 }

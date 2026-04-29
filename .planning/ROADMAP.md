@@ -95,9 +95,9 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   4. `famp-local hook add --on Edit:<glob> --to <peer-or-#channel>` declaratively wires hooks (replacing hand-written bash scripts), persists to `~/.famp-local/hooks.tsv`, and round-trips through `famp-local hook list` + `famp-local hook remove <id>`.
   5. INBOX-01 wording (carry-forward TD-3) is rewritten to match the raw-bytes-per-line implementation (or a structured wrapper added) alongside the CLI inbox rework; `just ci` is full green at every commit.
 **Plans:** 14 plans
-- [ ] 02-00-PLAN.md — Wave-1 stub-file infrastructure: 9 Wave-0 test stubs (broker_lifecycle, broker_spawn_race, broker_crash_recovery, cli_dm_roundtrip, cli_channel_fanout, cli_inbox, cli_sessions, mcp_bus_e2e, hook_subcommand) created with #[ignore] gates so 02-01 stays under the 15-file blocker threshold (no requirement IDs — pure infra)
-- [ ] 02-01-PLAN.md — Wave-2 substantive foundation: deps (nix, assert_cmd, tokio test-util), bus_client/{mod,codec,spawn}, cli/identity, cli/broker/nfs_check, scripts/check-mcp-deps.sh
-- [ ] 02-02-PLAN.md — Broker actor and UDS lifecycle: bind-exclusion, accept loop, Out executor (D-04 ordering), idle timer, NFS warning, DiskMailboxEnv + cursor_exec + sessions_log
+- [x] 02-00-PLAN.md — Wave-1 stub-file infrastructure: 9 Wave-0 test stubs (broker_lifecycle, broker_spawn_race, broker_crash_recovery, cli_dm_roundtrip, cli_channel_fanout, cli_inbox, cli_sessions, mcp_bus_e2e, hook_subcommand) created with #[ignore] gates so 02-01 stays under the 15-file blocker threshold (no requirement IDs — pure infra)
+- [x] 02-01-PLAN.md — Wave-2 substantive foundation: deps (nix, assert_cmd, tokio test-util), bus_client/{mod,codec,spawn}, cli/identity, cli/broker/nfs_check, scripts/check-mcp-deps.sh
+- [x] 02-02-PLAN.md — Broker actor and UDS lifecycle: bind-exclusion, accept loop, Out executor (D-04 ordering), idle timer, NFS warning, DiskMailboxEnv + cursor_exec + sessions_log
 - [ ] 02-03-PLAN.md — `famp register` foreground subcommand (CLI-01) with --tail / --no-reconnect / bounded exp backoff reconnect
 - [ ] 02-04-PLAN.md — `famp send` rewire to BusClient + additive `send_as: Option<String>` field on BusMessage::Send (BUS-02 round-trip preserved)
 - [ ] 02-05-PLAN.md — `famp inbox list` / `famp inbox ack` rewire; CLI-04/CLI-10 atomic cursor advance is local-only (no broker round-trip)
@@ -105,7 +105,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 - [ ] 02-07-PLAN.md — New CLI subcommands: `join`, `leave`, `sessions [--me]`, `whoami`; channel normalization helper
 - [ ] 02-08-PLAN.md — MCP session reshape (drop home_path; add bus + active_identity); error_kind retargeted at BusErrorKind exhaustively (MCP-10)
 - [ ] 02-09-PLAN.md — Rewrite all 8 MCP tools (register/send/inbox/await_/peers/whoami/join/leave) against bus
-- [ ] 02-10-PLAN.md — `scripts/famp-local hook add|list|remove` (HOOK-01..04) ~110 LoC bash addition
+- [x] 02-10-PLAN.md — `scripts/famp-local hook add|list|remove` (HOOK-01..04) ~110 LoC bash addition
 - [ ] 02-11-PLAN.md — Broker integration tests: idle exit (BROKER-04), spawn race (TEST-04), kill -9 recovery (TEST-03), sessions.jsonl diagnostic (CLI-11), NFS warning (BROKER-05)
 - [ ] 02-12-PLAN.md — CLI integration tests: DM round-trip (TEST-01), channel fan-out (TEST-02), sessions list, whoami; CARRY-02 INBOX-01 wording rewrite
 - [ ] 02-13-PLAN.md — TEST-05: two stdio MCP processes round-trip register/send/await over UDS bus

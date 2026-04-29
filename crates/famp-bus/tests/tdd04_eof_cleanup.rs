@@ -16,6 +16,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
             msg: BusMessage::Hello {
                 bus_proto: 1,
                 client: format!("client-{client}"),
+                bind_as: None,
             },
         },
         now,
