@@ -49,13 +49,15 @@ pub struct ListOutcome {
     pub next_offset: u64,
 }
 
-/// Run `famp inbox list` against the broker at `sock`, writing one
-/// JSONL line per envelope to `out`, followed by a `{"next_offset":N}`
-/// footer.
+/// Run `famp inbox list` against the broker at `sock`.
+///
+/// Writes one JSONL line per envelope to `out`, followed by a
+/// `{"next_offset":N}` footer. `out` is `Send` so the future composes
+/// inside multi-threaded runtimes (D-clippy `future_not_send`).
 pub async fn run_at(
     sock: &Path,
     args: ListArgs,
-    mut out: impl std::io::Write,
+    out: &mut (dyn std::io::Write + Send),
 ) -> Result<(), CliError> {
     let outcome = run_at_structured(sock, args).await?;
     for env in &outcome.envelopes {
@@ -75,10 +77,11 @@ pub async fn run_at(
     Ok(())
 }
 
-/// Structured-outcome entry point — preserved for the MCP `famp_inbox`
-/// tool (plan 02-09). Performs the same Hello.bind_as proxy connect +
-/// `BusMessage::Inbox` round-trip but returns the typed envelopes
-/// instead of writing JSONL.
+/// Structured-outcome entry point — preserved for the MCP `famp_inbox` tool.
+///
+/// Plan 02-09 calls into this. Performs the same `Hello.bind_as` proxy
+/// connect + `BusMessage::Inbox` round-trip but returns the typed
+/// envelopes instead of writing JSONL.
 pub async fn run_at_structured(sock: &Path, args: ListArgs) -> Result<ListOutcome, CliError> {
     let identity = resolve_identity(args.act_as.as_deref())?;
 
@@ -129,6 +132,6 @@ pub async fn run_at_structured(sock: &Path, args: ListArgs) -> Result<ListOutcom
 /// stdout.
 pub async fn run(args: ListArgs) -> Result<(), CliError> {
     let sock = resolve_sock_path();
-    let stdout = std::io::stdout();
-    run_at(&sock, args, stdout.lock()).await
+    let mut stdout = std::io::stdout();
+    run_at(&sock, args, &mut stdout).await
 }

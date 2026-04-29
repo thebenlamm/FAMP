@@ -214,7 +214,7 @@ pub enum CliError {
     BrokerUnreachable,
 
     /// Per-op error reply from the broker (e.g. holder died mid-op,
-    /// EnvelopeInvalid, NotJoined). Carries the typed `BusErrorKind`
+    /// `EnvelopeInvalid`, `NotJoined`). Carries the typed `BusErrorKind`
     /// so callers can pattern-match without a string compare.
     #[error("bus error: {kind:?}: {message}")]
     BusError {

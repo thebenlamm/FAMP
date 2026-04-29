@@ -104,6 +104,36 @@ async fn await_one(
     .expect("await_one")
 }
 
+fn extract_task_id_from_envelope(value: &serde_json::Value) -> &str {
+    let class = value
+        .get("class")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    match class {
+        "request" => value
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(""),
+        _ => value
+            .get("causality")
+            .and_then(|c| c.get("ref"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(""),
+    }
+}
+
+fn is_terminal_task(td: &famp_taskdir::TaskDir, tid: &str) -> bool {
+    use famp_taskdir::TaskDirError;
+    if tid.is_empty() {
+        return false;
+    }
+    match td.read(tid) {
+        Ok(rec) => rec.terminal,
+        Err(TaskDirError::NotFound { .. } | TaskDirError::InvalidUuid { .. }) => false,
+        Err(_) => true,
+    }
+}
+
 /// Assert v0.8-federation-listener filter behavior on the originator after
 /// a task has reached COMPLETED.
 ///
@@ -114,50 +144,19 @@ async fn await_one(
 ///
 /// Phase 02 plan 02-05 rewired `cli::inbox::list` to talk to the local UDS
 /// broker, deleting the v0.8 file-reader API. The federation E2E here still
-/// targets the v0.8 listener path, which writes the inbox.jsonl file, so
+/// targets the v0.8 listener path, which writes the `inbox.jsonl` file, so
 /// this helper reads the file directly. Phase 4 will rewrite this whole
-/// test against the bus or delete it (FED-04 / e2e_two_daemons refactor).
+/// test against the bus or delete it (FED-04 / `e2e_two_daemons` refactor).
 fn assert_list_filters_completed_task(home: &std::path::Path, task_id: &str) {
-    use famp_taskdir::{TaskDir, TaskDirError};
-
     let inbox_path = home.join("inbox.jsonl");
     let entries = famp_inbox::read::read_from(&inbox_path, 0).expect("read inbox.jsonl");
-    let taskdir = TaskDir::open(home.join("tasks")).expect("open taskdir");
-
-    fn extract_task_id(value: &serde_json::Value) -> &str {
-        let class = value
-            .get("class")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        match class {
-            "request" => value
-                .get("id")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(""),
-            _ => value
-                .get("causality")
-                .and_then(|c| c.get("ref"))
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(""),
-        }
-    }
-
-    fn is_terminal(td: &TaskDir, tid: &str) -> bool {
-        if tid.is_empty() {
-            return false;
-        }
-        match td.read(tid) {
-            Ok(rec) => rec.terminal,
-            Err(TaskDirError::NotFound { .. } | TaskDirError::InvalidUuid { .. }) => false,
-            Err(_) => true,
-        }
-    }
+    let taskdir = famp_taskdir::TaskDir::open(home.join("tasks")).expect("open taskdir");
 
     // Default filter: `task_id` must not appear among the surfaced entries.
     let surfaced_filtered: Vec<&str> = entries
         .iter()
-        .map(|(v, _o)| extract_task_id(v))
-        .filter(|tid| !is_terminal(&taskdir, tid))
+        .map(|(v, _o)| extract_task_id_from_envelope(v))
+        .filter(|tid| !is_terminal_task(&taskdir, tid))
         .collect();
     for tid in &surfaced_filtered {
         assert_ne!(
@@ -169,7 +168,7 @@ fn assert_list_filters_completed_task(home: &std::path::Path, task_id: &str) {
     // include_terminal: entries for `task_id` remain visible.
     let matching = entries
         .iter()
-        .filter(|(v, _o)| extract_task_id(v) == task_id)
+        .filter(|(v, _o)| extract_task_id_from_envelope(v) == task_id)
         .count();
     assert!(
         matching >= 2,

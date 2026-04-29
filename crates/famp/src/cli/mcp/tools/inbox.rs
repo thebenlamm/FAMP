@@ -22,7 +22,7 @@
 //! ```
 //!
 //! NOTE: plan 02-09 will rewire this to call into a session-bound
-//! BusClient instead of resolving identity per-call. The shape here is
+//! `BusClient` instead of resolving identity per-call. The shape here is
 //! the v0.9 wire shape; the session-binding plumbing is owned by 02-09.
 
 use serde_json::Value;

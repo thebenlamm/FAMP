@@ -3,10 +3,10 @@
 //! Phase 02 plan 02-05: per RESEARCH §6, "the broker does not track
 //! per-session Inbox cursors — the client is authoritative." Therefore
 //! `inbox ack` is a LOCAL file write only — NO broker round-trip,
-//! NO Hello.bind_as proxy, NO `BusMessage` is sent.
+//! NO `Hello.bind_as` proxy, NO `BusMessage` is sent.
 //!
 //! The cursor write reuses `cli::broker::cursor_exec::execute_advance_cursor`
-//! (atomic temp+rename + sync_all + chmod 0o600). The `--offset` value
+//! (atomic temp+rename + `sync_all` + chmod 0o600). The `--offset` value
 //! is REQUIRED — per RESEARCH §6 it is taken from the `next_offset`
 //! field of a prior `famp inbox list` output that the user pipes in.
 
