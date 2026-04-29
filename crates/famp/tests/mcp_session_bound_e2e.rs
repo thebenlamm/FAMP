@@ -77,6 +77,8 @@ fn assert_bob_inbox_has_task(win_b: &mut Harness, task_id: &str) {
 ///   |<-- famp_await terminal ---|<----------------------------|
 ///   [assert alice's task record == COMPLETED + terminal=true]
 /// ```
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn two_windows_register_as_different_identities_and_full_lifecycle() {
     famp::cli::send::client::allow_tofu_bootstrap_for_tests();

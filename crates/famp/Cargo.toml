@@ -65,6 +65,7 @@ humantime = "2"
 famp-bus = { path = "../famp-bus" }
 nix = { version = "0.31", features = ["process", "fs", "signal"] }
 dirs = "5"
+regex = { workspace = true }
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).

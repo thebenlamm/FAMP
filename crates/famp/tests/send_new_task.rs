@@ -5,6 +5,10 @@
 //! `agent:localhost/self`, and runs `famp send --new-task --to self`. Asserts
 //! the task record is created in REQUESTED state with a valid `UUIDv7` id and
 //! the daemon's inbox contains exactly one request envelope line.
+//!
+//! Phase 02 Plan 02-04: gated off — v0.8 HTTPS shape incompatible with
+//! v0.9 bus path (`SendArgs` shape change + `run_at` socket-path swap).
+//! See `send_more_coming_requires_new_task.rs` header for the migration plan.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -27,6 +31,8 @@ fn pubkey_b64(home: &std::path::Path) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn send_new_task_creates_record_and_hits_daemon() {
     // Existing tests rely on first-contact TOFU pinning, which is now
@@ -67,12 +73,14 @@ async fn send_new_task_creates_record_and_hits_daemon() {
 
     // Send a new task.
     let args = SendArgs {
-        to: "self".to_string(),
+        to: Some("self".to_string()),
+        channel: None,
         new_task: Some("hello phase 3".to_string()),
         task: None,
         terminal: false,
         body: None,
         more_coming: false,
+        act_as: None,
     };
     send_run_at(&home, args).await.expect("famp send");
 

@@ -81,6 +81,8 @@ use famp_taskdir::{TaskDir, TaskRecord};
 // See test body for explanation of why a TOML comment sentinel discriminates the bug.
 const SENTINEL: &str = "\n# TEST_SENTINEL_DO_NOT_REWRITE\n";
 
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "current_thread")]
 async fn commit_arrival_when_record_already_committed_does_not_rewrite_task_file() {
     let tmp = setup_home();

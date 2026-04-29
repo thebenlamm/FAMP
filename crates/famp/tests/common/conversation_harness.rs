@@ -129,16 +129,27 @@ pub fn update_peer_endpoint(home: &Path, alias: &str, addr: SocketAddr) {
 /// task-id by reading the one record that now exists in `<home>/tasks`.
 ///
 /// Precondition: no prior task records in this home.
+///
+/// Phase 02 Plan 02-04 transition: `cli::send` swapped from the v0.8
+/// HTTPS path to the v0.9 UDS bus path. The harness now passes `home`
+/// as the broker socket path argument — semantically incorrect under
+/// v0.9 (the broker is keyed by `~/.famp/bus.sock`, not by `FAMP_HOME`),
+/// but enough to keep this shared test-helper compiling. Every consumer
+/// of `new_task` / `deliver` / `try_deliver` is a v0.8 federation test
+/// gated off behind `#[ignore]` or `#![cfg(any())]` for Phase 02; Phase 4
+/// will either delete this harness or migrate it onto the bus surface.
 pub async fn new_task(home: &Path, alias: &str, summary: &str) -> String {
     send_run_at(
         home,
         SendArgs {
-            to: alias.to_string(),
+            to: Some(alias.to_string()),
+            channel: None,
             new_task: Some(summary.to_string()),
             task: None,
             terminal: false,
             body: None,
             more_coming: false,
+            act_as: None,
         },
     )
     .await
@@ -158,12 +169,14 @@ pub async fn deliver(home: &Path, alias: &str, task_id: &str, terminal: bool, bo
     send_run_at(
         home,
         SendArgs {
-            to: alias.to_string(),
+            to: Some(alias.to_string()),
+            channel: None,
             new_task: None,
             task: Some(task_id.to_string()),
             terminal,
             body: Some(body.to_string()),
             more_coming: false,
+            act_as: None,
         },
     )
     .await
@@ -181,12 +194,14 @@ pub async fn try_deliver(
     send_run_at(
         home,
         SendArgs {
-            to: alias.to_string(),
+            to: Some(alias.to_string()),
+            channel: None,
             new_task: None,
             task: Some(task_id.to_string()),
             terminal,
             body: Some(body.to_string()),
             more_coming: false,
+            act_as: None,
         },
     )
     .await

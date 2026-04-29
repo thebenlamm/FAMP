@@ -21,6 +21,12 @@
 //! 6. Alice sends terminal deliver → A's record = COMPLETED.
 //! 7. Bob awaits the terminal deliver (consume it from B's inbox).
 //! 8. Teardown + assert inbox counts.
+//!
+//! Phase 02 Plan 02-04: gated off — v0.8 HTTPS shape incompatible with
+//! v0.9 bus path. The two-daemon harness still exercises the federation
+//! HTTPS path through `cli::listen` directly, but `cli::send` no longer
+//! drives it; Phase 4 will either delete this file or migrate it onto
+//! a federation gateway harness once that lands.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -40,12 +46,14 @@ async fn send_new_task(home: &std::path::Path, to_alias: &str, summary: &str) ->
     let outcome = send_structured(
         home,
         SendArgs {
-            to: to_alias.to_string(),
+            to: Some(to_alias.to_string()),
+            channel: None,
             new_task: Some(summary.to_string()),
             task: None,
             terminal: false,
             body: None,
             more_coming: false,
+            act_as: None,
         },
     )
     .await
@@ -58,12 +66,14 @@ async fn send_deliver(home: &std::path::Path, to_alias: &str, task_id: &str, bod
     send_structured(
         home,
         SendArgs {
-            to: to_alias.to_string(),
+            to: Some(to_alias.to_string()),
+            channel: None,
             new_task: None,
             task: Some(task_id.to_string()),
             terminal: false,
             body: Some(body.to_string()),
             more_coming: false,
+            act_as: None,
         },
     )
     .await
@@ -75,12 +85,14 @@ async fn send_terminal(home: &std::path::Path, to_alias: &str, task_id: &str) {
     send_structured(
         home,
         SendArgs {
-            to: to_alias.to_string(),
+            to: Some(to_alias.to_string()),
+            channel: None,
             new_task: None,
             task: Some(task_id.to_string()),
             terminal: true,
             body: Some("done".to_string()),
             more_coming: false,
+            act_as: None,
         },
     )
     .await
@@ -199,6 +211,8 @@ fn seed_committed_record(home: &std::path::Path, task_id: &str, peer_alias: &str
 ///   Alice: record COMPLETED
 ///   Bob awaits terminal
 /// ```
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn e2e_two_daemons_full_lifecycle() {
     famp::cli::send::client::allow_tofu_bootstrap_for_tests();

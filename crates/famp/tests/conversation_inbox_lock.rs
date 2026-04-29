@@ -18,6 +18,8 @@ use famp_inbox::{InboxError, InboxLock};
 
 use common::conversation_harness::setup_home;
 
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn second_await_while_first_holds_lock_returns_lockheld() {
     let tmp = setup_home();

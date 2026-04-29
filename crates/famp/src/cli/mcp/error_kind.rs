@@ -7,13 +7,14 @@
 use famp_fsm::TaskFsmError;
 
 use crate::cli::error::CliError::{
-    AlreadyInitialized, AwaitTimeout, CertgenFailed, Envelope, FsmTransition, HomeCreateFailed,
-    HomeHasNoParent, HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName,
-    InvalidDuration, InvalidIdentityName, InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed,
-    NoIdentityBound, NotRegistered, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
-    PeerNotFound, PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed,
-    TaskDir, TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused,
-    TomlParse, TomlSerialize, UnknownIdentity,
+    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, CertgenFailed,
+    Envelope, FsmTransition, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute, HomeNotSet,
+    IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
+    InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed, NoIdentityBound, NotRegistered,
+    NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid, PeerNotFound,
+    PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir,
+    TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse,
+    TomlSerialize, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -74,6 +75,10 @@ impl crate::cli::error::CliError {
             UnknownIdentity { .. } => "unknown_identity",
             InvalidIdentityName { .. } => "invalid_identity_name",
             NoIdentityBound { .. } => "no_identity_bound",
+            NotRegisteredHint { .. } => "not_registered_hint",
+            BusError { .. } => "bus_error",
+            BusClient { .. } => "bus_client_error",
+            BrokerUnreachable => "broker_unreachable",
         }
     }
 }

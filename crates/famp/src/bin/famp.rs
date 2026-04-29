@@ -26,6 +26,7 @@ use humantime as _;
 use nix as _;
 use rand as _;
 use rcgen as _;
+use regex as _;
 use reqwest as _;
 use rustls as _;
 use serde as _;

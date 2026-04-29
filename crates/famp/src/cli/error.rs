@@ -197,6 +197,45 @@ pub enum CliError {
     /// CLI subcommand that calls `cli::identity::resolve_identity`.
     #[error("{reason}")]
     NoIdentityBound { reason: String },
+
+    /// D-10 proxy-binding failure. The named identity is not currently held
+    /// by a live `famp register <name>` process — either nothing has ever
+    /// registered as that name, the holder has died, or the broker rejected
+    /// the proxy connection at Hello time. The hint message tells the
+    /// operator how to recover. Returned by every D-10 proxy CLI command
+    /// (`send`, `inbox`, `await`, `join`, `leave`, `whoami`) on
+    /// `BusReply::HelloErr { NotRegistered }` or per-op
+    /// `BusReply::Err { NotRegistered }`.
+    #[error("{name} is not registered — start `famp register {name}` in another terminal first")]
+    NotRegisteredHint { name: String },
+
+    /// Catch-all for any non-NotRegistered `BusReply::Err` returned by the
+    /// broker for an op invoked from a CLI subcommand. Carries the typed
+    /// `BusErrorKind` so MCP tools can map back to a stable `famp_error_kind`
+    /// discriminator and the operator's human-readable broker message.
+    #[error("broker error ({kind:?}): {message}")]
+    BusError {
+        kind: famp_bus::BusErrorKind,
+        message: String,
+    },
+
+    /// `BusClient` returned an error that was not a typed `BusReply::Err`
+    /// (transport-level failure, codec error, broker did not start, etc.).
+    /// The inner string is the `BusClientError`'s `Debug` output — typed
+    /// rich-error chain remains accessible via the source pointer when one
+    /// is set, but every `BusClientError` is included verbatim so operators
+    /// see the exact failure mode. Distinct from `BusError` (which is a
+    /// well-formed protocol-level Err) and from `BrokerUnreachable` (which
+    /// is a higher-level alias used by transport-failure paths).
+    #[error("bus client error: {detail}")]
+    BusClient { detail: String },
+
+    /// Broker socket exists but cannot be reached, or the spawned broker
+    /// failed to bind in time. Distinct from `BusError` / `BusClient` in
+    /// that no protocol-level reply was ever received. Surfaced when
+    /// `BusClient::connect` fails at the transport layer.
+    #[error("broker unreachable at the local UDS socket")]
+    BrokerUnreachable,
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

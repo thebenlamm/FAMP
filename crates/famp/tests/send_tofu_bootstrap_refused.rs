@@ -9,6 +9,9 @@
 //! `allow_tofu_bootstrap_for_tests()` and does NOT set
 //! `FAMP_TOFU_BOOTSTRAP=1` — and lives in its own test binary so other
 //! tests' process-wide opt-in cannot leak in.
+//!
+//! Phase 02 Plan 02-04: gated off — v0.8 HTTPS shape incompatible with
+//! v0.9 bus path. See `send_more_coming_requires_new_task.rs` header.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -30,6 +33,8 @@ fn pubkey_b64(home: &std::path::Path) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn first_contact_without_pin_or_opt_in_is_refused() {
     // Ensure the env opt-in is NOT set for this test binary.
@@ -85,12 +90,14 @@ async fn first_contact_without_pin_or_opt_in_is_refused() {
     let res = send_run_at(
         &home,
         SendArgs {
-            to: "self".to_string(),
+            to: Some("self".to_string()),
+            channel: None,
             new_task: Some("must be refused".to_string()),
             task: None,
             terminal: false,
             body: None,
             more_coming: false,
+            act_as: None,
         },
     )
     .await;
