@@ -359,6 +359,12 @@ fn await_envelope<E: BrokerEnv>(
         )];
     }
     let filter = task.map_or(AwaitFilter::Any, AwaitFilter::Task);
+    // WR-05: cap timeout_ms before adding to `now`. `Instant + Duration`
+    // panics on overflow; `Duration::from_millis(u64::MAX)` is ~584M
+    // years and a malicious or buggy client sending the max would crash
+    // the broker actor task (taking down every connected client).
+    const MAX_AWAIT_MS: u64 = 60 * 60 * 1000; // 1 hour
+    let timeout_ms = timeout_ms.min(MAX_AWAIT_MS);
     let deadline = now + Duration::from_millis(timeout_ms);
     broker.state.pending_awaits.insert(
         client,
