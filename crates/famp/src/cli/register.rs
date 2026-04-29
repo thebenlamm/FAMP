@@ -100,7 +100,14 @@ pub async fn run(args: RegisterArgs) -> Result<(), CliError> {
                 if args.no_reconnect {
                     return Err(CliError::Disconnected);
                 }
-                delay = RECONNECT_INITIAL; // successful run; reset
+                // BL-01: do NOT reset `delay` here. Resetting on every
+                // disconnect collapses the documented `1 → 2 → 4 → 8 →
+                // 16 → 30` schedule into a flat 1 s wait when the broker
+                // bounces repeatedly (the thundering-herd / busy-loop
+                // case bounded backoff is supposed to prevent). Backoff
+                // grows on every disconnect; only a long-running session
+                // (handled in `run_one_session` via the success-tick
+                // reset below) returns the schedule to its initial value.
                 eprintln!("broker disconnected — reconnecting in {}s", delay.as_secs());
                 tokio::time::sleep(delay).await;
                 delay = std::cmp::min(delay * 2, RECONNECT_CAP);
