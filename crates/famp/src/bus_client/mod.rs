@@ -164,10 +164,12 @@ impl BusClient {
 /// otherwise `~/.famp/bus.sock`. Mirrors the v0.8 `FAMP_HOME` →
 /// `FAMP_LOCAL_ROOT` precedence pattern but for the v0.9 bus socket.
 ///
-/// # Panics
-/// Panics if `$FAMP_BUS_SOCKET` is unset AND `$HOME` is also unset.
-/// CLI subcommands should resolve early so the panic is observable as
-/// the very first operation, before any I/O.
+/// # Behavior
+/// Falls back to `/nonexistent-famp-home/.famp/bus.sock` when both
+/// `$FAMP_BUS_SOCKET` and `$HOME` are unset, so the next syscall fails
+/// visibly rather than silently writing into the cwd. (No panic — the
+/// fallback path is intentionally non-existent on every supported
+/// platform so connect/bind surface the misconfiguration.)
 pub fn resolve_sock_path() -> PathBuf {
     if let Ok(p) = std::env::var("FAMP_BUS_SOCKET") {
         return PathBuf::from(p);
