@@ -358,6 +358,21 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                     .to_string(),
             },
         ),
+        (
+            "NameTaken",
+            CliError::NameTaken {
+                name: "alice".to_string(),
+            },
+        ),
+        ("BrokerUnreachable", CliError::BrokerUnreachable),
+        ("Disconnected", CliError::Disconnected),
+        (
+            "BusError",
+            CliError::BusError {
+                kind: BusErrorKind::Internal,
+                message: "synthetic test error".to_string(),
+            },
+        ),
     ]
 }
 

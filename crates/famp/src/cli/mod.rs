@@ -17,6 +17,7 @@ pub mod mcp;
 pub mod paths;
 pub mod peer;
 pub mod perms;
+pub mod register;
 pub mod send;
 pub mod setup;
 
@@ -60,6 +61,16 @@ pub enum Commands {
     /// `bus_client::spawn::spawn_broker_if_absent`; rarely invoked
     /// directly by humans.
     Broker(BrokerArgs),
+    /// Register an identity with the local broker and hold the slot for
+    /// the lifetime of this process. Long-lived foreground subcommand
+    /// (Phase 02 / D-10): `famp register alice` is the canonical holder
+    /// of `alice`; later one-shot CLI commands (`send`, `inbox`,
+    /// `await`, `join`, `leave`, `whoami`, `sessions --me`) ride on
+    /// this process via `Hello { bind_as = "alice" }` (the proxy
+    /// shape). Variant for `Commands::Register`; the dispatch arm
+    /// below boots a multi-thread tokio runtime and calls
+    /// `register::run`.
+    Register(register::RegisterArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -137,6 +148,16 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
                     source: e,
                 })?;
             rt.block_on(broker::run(args))
+        }
+        Commands::Register(args) => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CliError::Io {
+                    path: std::path::PathBuf::new(),
+                    source: e,
+                })?;
+            rt.block_on(register::run(args))
         }
     }
 }

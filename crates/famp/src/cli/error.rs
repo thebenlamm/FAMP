@@ -197,6 +197,40 @@ pub enum CliError {
     /// CLI subcommand that calls `cli::identity::resolve_identity`.
     #[error("{reason}")]
     NoIdentityBound { reason: String },
+
+    /// `famp register <name>` got `BusReply::Err { kind: NameTaken }` from
+    /// the broker — another live process already holds this identity slot.
+    /// Plan 02-03 (CLI-01): the message is the locked stderr text the user
+    /// sees verbatim before the process exits non-zero.
+    #[error("{name} is already registered by another process")]
+    NameTaken { name: String },
+
+    /// `famp register` could not reach the broker at the resolved socket
+    /// path (broker spawn failed, socket I/O error before the Hello
+    /// handshake). Plan 02-03 (CLI-01): used by `map_bus_client_err` so the
+    /// caller can distinguish "broker unreachable" from "broker rejected
+    /// us with a typed error" (the latter funnels through `BusError`).
+    #[error("broker unreachable")]
+    BrokerUnreachable,
+
+    /// `famp register --no-reconnect` exiting because the broker connection
+    /// dropped (read returned EOF or an unrecoverable I/O error after Hello).
+    /// Plan 02-03 (CLI-01): only emitted under the `--no-reconnect` flag —
+    /// without the flag, the run loop falls through to the backoff sleep.
+    #[error("disconnected")]
+    Disconnected,
+
+    /// Generic broker-side error that does not have a dedicated `CliError`
+    /// variant — funnels every `BusReply::Err { kind, message }` that is
+    /// NOT `NameTaken` into a typed surface so callers (and the MCP layer
+    /// via `mcp_error_kind`) can still classify it. The `kind` is the
+    /// broker's discriminator; the `message` is the human-readable detail
+    /// from the broker's reply.
+    #[error("bus error: {kind:?}: {message}")]
+    BusError {
+        kind: famp_bus::BusErrorKind,
+        message: String,
+    },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the
