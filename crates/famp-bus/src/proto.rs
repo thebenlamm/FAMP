@@ -129,14 +129,19 @@ pub enum BusMessage {
         envelope: serde_json::Value,
     },
     Inbox {
-        #[serde(skip_serializing_if = "Option::is_none")]
+        // BL-04: `default + skip_serializing_if` together preserves
+        // BUS-02 byte-exact round-trip when the field is None AND
+        // accepts a wire form that omits the field. Match the locked
+        // pattern used by `Hello.bind_as` (see comment on that field).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         since: Option<u64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         include_terminal: Option<bool>,
     },
     Await {
         timeout_ms: u64,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        // BL-04: see Inbox above.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         task: Option<uuid::Uuid>,
     },
     Join {
@@ -193,7 +198,8 @@ pub enum BusReply {
         rows: Vec<SessionRow>,
     },
     WhoamiOk {
-        #[serde(skip_serializing_if = "Option::is_none")]
+        // BL-04: see BusMessage::Inbox above.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         active: Option<String>,
         joined: Vec<String>,
     },
