@@ -92,7 +92,14 @@ pub async fn run(args: BrokerArgs) -> Result<(), CliError> {
              ~/.famp/ to a local filesystem for reliable operation."
         );
     }
-    let listener = bind_exclusive(&sock_path)?;
+    let listener = match bind_exclusive(&sock_path)? {
+        BindOutcome::Bound(l) => l,
+        // BL-02: another live broker holds the socket. Return Ok(())
+        // from `run` so destructors run in scope and the spawning client
+        // sees a clean "broker present" outcome — instead of calling
+        // `std::process::exit(0)` from a non-`main` helper.
+        BindOutcome::Existing => return Ok(()),
+    };
     eprintln!("broker started, socket: {}", sock_path.display());
     run_on_listener(
         &sock_path,
@@ -101,6 +108,17 @@ pub async fn run(args: BrokerArgs) -> Result<(), CliError> {
         crate::cli::listen::signal::shutdown_signal(),
     )
     .await
+}
+
+/// Result of a `bind_exclusive` attempt.
+///
+/// `Bound` carries a freshly-bound listener for a clean or stale-socket
+/// path. `Existing` signals that another live broker already holds the
+/// socket; the caller should treat this as success and `return Ok(())`
+/// from the surrounding `run`.
+enum BindOutcome {
+    Bound(UnixListener),
+    Existing,
 }
 
 /// Bind the UDS listener with single-broker exclusion (BROKER-03).
@@ -118,9 +136,9 @@ pub async fn run(args: BrokerArgs) -> Result<(), CliError> {
 ///            `EACCES` on cross-user inode) → treat as stale; `unlink`
 ///            + retry `bind` once.
 ///      - other errors → `CliError::Io`.
-fn bind_exclusive(sock_path: &Path) -> Result<UnixListener, CliError> {
+fn bind_exclusive(sock_path: &Path) -> Result<BindOutcome, CliError> {
     match UnixListener::bind(sock_path) {
-        Ok(l) => Ok(l),
+        Ok(l) => Ok(BindOutcome::Bound(l)),
         Err(e)
             if matches!(
                 e.raw_os_error(),
@@ -129,19 +147,22 @@ fn bind_exclusive(sock_path: &Path) -> Result<UnixListener, CliError> {
         {
             // Probe: is there a live broker on the other end?
             if std::os::unix::net::UnixStream::connect(sock_path).is_ok() {
-                // Another broker is live; defer to it. exit(0) so the
-                // spawning client sees a clean "broker present" outcome.
-                std::process::exit(0);
+                // BL-02: another broker is live; defer to it via a typed
+                // outcome (NOT `std::process::exit(0)` from a non-`main`
+                // helper — that skips destructors and is untestable).
+                return Ok(BindOutcome::Existing);
             }
             // Stale socket → unlink + retry once.
             std::fs::remove_file(sock_path).map_err(|src| CliError::Io {
                 path: sock_path.to_path_buf(),
                 source: src,
             })?;
-            UnixListener::bind(sock_path).map_err(|src| CliError::Io {
-                path: sock_path.to_path_buf(),
-                source: src,
-            })
+            UnixListener::bind(sock_path)
+                .map(BindOutcome::Bound)
+                .map_err(|src| CliError::Io {
+                    path: sock_path.to_path_buf(),
+                    source: src,
+                })
         }
         Err(e) => Err(CliError::Io {
             path: sock_path.to_path_buf(),
@@ -330,10 +351,13 @@ mod tests {
     async fn test_bind_exclusive_returns_listener_on_clean_path() {
         let tmp = tempfile::TempDir::new().unwrap();
         let sock = tmp.path().join("bus.sock");
-        let listener = bind_exclusive(&sock).expect("clean bind");
-        // Drop the listener; the path should still exist (UDS leaves
-        // it on disk until unlinked) — we let TempDir clean up.
-        drop(listener);
+        let outcome = bind_exclusive(&sock).expect("clean bind");
+        match outcome {
+            BindOutcome::Bound(listener) => drop(listener),
+            BindOutcome::Existing => panic!("expected fresh bind, got Existing"),
+        }
+        // The path should still exist (UDS leaves it on disk until
+        // unlinked) — we let TempDir clean up.
         assert!(sock.exists());
     }
 
@@ -351,8 +375,29 @@ mod tests {
         assert!(sock.exists());
         // bind_exclusive sees EADDRINUSE, probes (connect refused),
         // unlinks, and re-binds.
-        let listener = bind_exclusive(&sock).expect("stale-unlink path");
-        drop(listener);
+        let outcome = bind_exclusive(&sock).expect("stale-unlink path");
+        match outcome {
+            BindOutcome::Bound(listener) => drop(listener),
+            BindOutcome::Existing => panic!("expected re-bind, got Existing"),
+        }
         assert!(sock.exists());
+    }
+
+    #[tokio::test]
+    async fn test_bind_exclusive_returns_existing_when_live_broker_present() {
+        // BL-02 regression: when another listener is live on the same
+        // path, bind_exclusive must return BindOutcome::Existing rather
+        // than calling std::process::exit(0).
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sock = tmp.path().join("bus.sock");
+        // Hold the listener open so the connect() probe in bind_exclusive
+        // succeeds.
+        let live = StdUnixListener::bind(&sock).unwrap();
+        let outcome = bind_exclusive(&sock).expect("existing-broker outcome");
+        match outcome {
+            BindOutcome::Existing => {}
+            BindOutcome::Bound(_) => panic!("expected Existing, got Bound"),
+        }
+        drop(live);
     }
 }
