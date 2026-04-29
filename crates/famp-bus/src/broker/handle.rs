@@ -504,26 +504,22 @@ fn disconnect<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) -> Vec<Out
     );
 
     if is_proxy {
-        if let Some(state) = broker.state.clients.get_mut(&client) {
-            state.connected = false;
-            // Proxy `joined` should already be empty (Join/Leave mutate
-            // the canonical holder's set), but clear defensively.
-            state.joined.clear();
-        }
+        // BL-03: drop the dead entry from the map so per-tick iteration
+        // (`canonical_holder_id`, `proxy_holder_alive`, `connected_names`,
+        // tick's liveness sweep) does not grow O(N) with dead proxies.
+        broker.state.clients.remove(&client);
         broker.state.pending_awaits.remove(&client);
         return vec![Out::ReleaseClient(client)];
     }
 
     // Canonical holder (or unbound, never-registered) cleanup path:
-    if let Some(state) = broker.state.clients.get_mut(&client) {
-        state.connected = false;
-        state.joined.clear();
-    }
     if let Some(name) = canonical_name {
         for members in broker.state.channels.values_mut() {
             members.remove(&name);
         }
     }
+    // BL-03: drop the dead entry from the map (see proxy branch above).
+    broker.state.clients.remove(&client);
     broker.state.pending_awaits.remove(&client);
     vec![Out::ReleaseClient(client)]
 }
