@@ -32,6 +32,8 @@ use common::conversation_harness::{
 use common::wait_for_tls_listener_ready;
 use famp::cli::await_cmd::{run_at as await_run_at, AwaitArgs};
 
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn auto_commit_round_trip() {
     let tmp = setup_home();

@@ -207,9 +207,11 @@ pub enum CliError {
 
     /// `famp register` could not reach the broker at the resolved socket
     /// path (broker spawn failed, socket I/O error before the Hello
-    /// handshake). Plan 02-03 (CLI-01): used by `map_bus_client_err` so the
-    /// caller can distinguish "broker unreachable" from "broker rejected
-    /// us with a typed error" (the latter funnels through `BusError`).
+    /// handshake). Used by `map_bus_client_err` so the caller can
+    /// distinguish "broker unreachable" from "broker rejected us with a
+    /// typed error" (the latter funnels through `BusError`). Also surfaced
+    /// by Wave 4 D-10 proxy CLI commands when `BusClient::connect` fails
+    /// at the transport layer.
     #[error("broker unreachable")]
     BrokerUnreachable,
 
@@ -220,17 +222,39 @@ pub enum CliError {
     #[error("disconnected")]
     Disconnected,
 
+    /// D-10 proxy-binding failure. The named identity is not currently held
+    /// by a live `famp register <name>` process — either nothing has ever
+    /// registered as that name, the holder has died, or the broker rejected
+    /// the proxy connection at Hello time. The hint message tells the
+    /// operator how to recover. Returned by every D-10 proxy CLI command
+    /// (`send`, `inbox`, `await`, `join`, `leave`, `whoami`) on
+    /// `BusReply::HelloErr { NotRegistered }` or per-op
+    /// `BusReply::Err { NotRegistered }`.
+    #[error("{name} is not registered — start `famp register {name}` in another terminal first")]
+    NotRegisteredHint { name: String },
+
     /// Generic broker-side error that does not have a dedicated `CliError`
     /// variant — funnels every `BusReply::Err { kind, message }` that is
-    /// NOT `NameTaken` into a typed surface so callers (and the MCP layer
-    /// via `mcp_error_kind`) can still classify it. The `kind` is the
-    /// broker's discriminator; the `message` is the human-readable detail
-    /// from the broker's reply.
+    /// NOT `NameTaken`/`NotRegistered` into a typed surface so callers
+    /// (and the MCP layer via `mcp_error_kind`) can still classify it.
+    /// The `kind` is the broker's discriminator; the `message` is the
+    /// human-readable detail from the broker's reply.
     #[error("bus error: {kind:?}: {message}")]
     BusError {
         kind: famp_bus::BusErrorKind,
         message: String,
     },
+
+    /// `BusClient` returned an error that was not a typed `BusReply::Err`
+    /// (transport-level failure, codec error, broker did not start, etc.).
+    /// The inner string is the `BusClientError`'s `Debug` output — typed
+    /// rich-error chain remains accessible via the source pointer when one
+    /// is set, but every `BusClientError` is included verbatim so operators
+    /// see the exact failure mode. Distinct from `BusError` (which is a
+    /// well-formed protocol-level Err) and from `BrokerUnreachable` (which
+    /// is a higher-level alias used by transport-failure paths).
+    #[error("bus client error: {detail}")]
+    BusClient { detail: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

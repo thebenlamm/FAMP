@@ -373,6 +373,18 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                 message: "synthetic test error".to_string(),
             },
         ),
+        (
+            "NotRegisteredHint",
+            CliError::NotRegisteredHint {
+                name: "alice".to_string(),
+            },
+        ),
+        (
+            "BusClient",
+            CliError::BusClient {
+                detail: "io error".to_string(),
+            },
+        ),
     ]
 }
 

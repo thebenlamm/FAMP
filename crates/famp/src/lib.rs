@@ -35,6 +35,12 @@ use rand as _;
 use reqwest as _;
 use tempfile as _;
 use url as _;
+// `uuid` is consumed transitively by `famp-bus` types we re-thread (the
+// CLI used to construct `MessageId::new_v7()` directly; Phase 02 Plan
+// 02-04 swapped that for the broker-assigned `task_id`). Keep the
+// dependency declared so workspace consumers and integration tests can
+// reach `uuid::Uuid` parsing helpers without re-adding the dep.
+use uuid as _;
 // `assert_cmd` is a dev-dependency consumed by integration tests
 // (`crates/famp/tests/*`); silence it in the library test compile unit.
 #[cfg(test)]

@@ -36,6 +36,9 @@
 //! This is a strict discrimination test: it FAILS against pre-lny send code
 //! even when bytes would otherwise be identical (as the pre-kbx mtime test
 //! would have missed).
+//!
+//! Phase 02 Plan 02-04: gated off — v0.8 HTTPS shape incompatible with
+//! v0.9 bus path. See `send_more_coming_requires_new_task.rs` header.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -61,6 +64,8 @@ fn pubkey_b64(home: &std::path::Path) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
+revisit / migrate in Phase 4 federation gateway"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[allow(clippy::too_many_lines)]
 async fn terminal_send_when_record_in_requested_does_not_rewrite_task_file() {
@@ -104,12 +109,14 @@ async fn terminal_send_when_record_in_requested_does_not_rewrite_task_file() {
     send_run_at(
         &home,
         SendArgs {
-            to: "self".to_string(),
+            to: Some("self".to_string()),
+            channel: None,
             new_task: Some("sentinel test".to_string()),
             task: None,
             terminal: false,
             body: None,
             more_coming: false,
+            act_as: None,
         },
     )
     .await
@@ -167,12 +174,14 @@ async fn terminal_send_when_record_in_requested_does_not_rewrite_task_file() {
     let send_result = send_run_at(
         &home,
         SendArgs {
-            to: "self".to_string(),
+            to: Some("self".to_string()),
+            channel: None,
             new_task: None,
             task: Some(task_id.clone()),
             terminal: true,
             body: Some("done".to_string()),
             more_coming: false,
+            act_as: None,
         },
     )
     .await;

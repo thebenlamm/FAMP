@@ -77,7 +77,14 @@ fn test_hook_list() {
     );
     let _ = run_local(
         tmp.path(),
-        &["hook", "add", "--on", "Edit:src/**/*.rs", "--to", "#planning"],
+        &[
+            "hook",
+            "add",
+            "--on",
+            "Edit:src/**/*.rs",
+            "--to",
+            "#planning",
+        ],
     );
     let out = run_local(tmp.path(), &["hook", "list"]);
     assert!(out.status.success());
@@ -114,10 +121,7 @@ fn test_hook_remove() {
     );
     // Removing a non-existent id should fail
     let rm2 = run_local(tmp.path(), &["hook", "remove", "h-not-real"]);
-    assert!(
-        !rm2.status.success(),
-        "remove of non-existent id must fail"
-    );
+    assert!(!rm2.status.success(), "remove of non-existent id must fail");
     let stderr = String::from_utf8_lossy(&rm2.stderr);
     assert!(
         stderr.contains("hook id 'h-not-real' not found"),
