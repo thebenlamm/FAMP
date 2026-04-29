@@ -111,6 +111,14 @@ pub enum BusMessage {
     Hello {
         bus_proto: u32,
         client: String,
+        // D-10: optional proxy binding. `Some(name)` = this connection
+        // acts as a read/write-through proxy to the canonical live
+        // registered holder of `name`. `None` = normal unbound connection
+        // (must `Register` before identity-required ops).
+        // `skip_serializing_if = Option::is_none` + `default` preserves
+        // BUS-02 byte-exact round-trip when the field is None.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bind_as: Option<String>,
     },
     Register {
         name: String,
@@ -319,5 +327,62 @@ mod tests {
         let bytes = famp_canonical::canonicalize(&v).unwrap();
         let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
         assert_eq!(v, decoded);
+    }
+
+    /// D-10: `Hello { bind_as: None }` serializes byte-identical to the
+    /// pre-D-10 `Hello { bus_proto, client }` shape via
+    /// `skip_serializing_if = Option::is_none`. This pins the
+    /// BUS-02 round-trip property so a wire frame produced by a v0.5.2
+    /// agent (no `bind_as` field) round-trips through a v0.5.2+D-10
+    /// implementation byte-for-byte.
+    #[test]
+    fn hello_bind_as_none_byte_identical_to_pre_d10() {
+        let with_field = BusMessage::Hello {
+            bus_proto: 1,
+            client: "alice".into(),
+            bind_as: None,
+        };
+        let bytes = famp_canonical::canonicalize(&with_field).unwrap();
+        // Pre-D-10 shape would canonicalize identically since the missing
+        // optional field is skipped on serialize. Expected canonical form:
+        // {"bus_proto":1,"client":"alice","op":"hello"}
+        let expected = br#"{"bus_proto":1,"client":"alice","op":"hello"}"#;
+        assert_eq!(bytes.as_slice(), &expected[..]);
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(with_field, decoded);
+    }
+
+    /// D-10: `Hello { bind_as: Some(name) }` round-trips with the new
+    /// field present in canonical form (alphabetical key order).
+    #[test]
+    fn hello_bind_as_some_round_trips() {
+        let v = BusMessage::Hello {
+            bus_proto: 1,
+            client: "alice".into(),
+            bind_as: Some("bob".into()),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        // Canonical (RFC 8785) JSON sorts keys alphabetically:
+        // bind_as < bus_proto < client < op
+        let expected = br#"{"bind_as":"bob","bus_proto":1,"client":"alice","op":"hello"}"#;
+        assert_eq!(bytes.as_slice(), &expected[..]);
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    /// D-10: a v0.5.2 frame with no `bind_as` field still deserializes
+    /// (via `serde(default)`) to `Hello { bind_as: None }`.
+    #[test]
+    fn hello_pre_d10_frame_deserializes_with_default_none() {
+        let pre_d10 = br#"{"bus_proto":1,"client":"alice","op":"hello"}"#;
+        let decoded: BusMessage = famp_canonical::from_slice_strict(pre_d10).unwrap();
+        assert_eq!(
+            decoded,
+            BusMessage::Hello {
+                bus_proto: 1,
+                client: "alice".into(),
+                bind_as: None,
+            }
+        );
     }
 }

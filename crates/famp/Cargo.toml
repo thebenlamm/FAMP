@@ -63,7 +63,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls-no-p
 rustls = { workspace = true }
 humantime = "2"
 famp-bus = { path = "../famp-bus" }
-nix = { version = "0.31", features = ["process", "fs"] }
+nix = { version = "0.31", features = ["process", "fs", "signal"] }
 dirs = "5"
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so

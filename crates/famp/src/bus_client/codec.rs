@@ -74,6 +74,7 @@ mod tests {
         let original = BusMessage::Hello {
             bus_proto: 1,
             client: "famp-cli/0.9.0".into(),
+            bind_as: None,
         };
         write_frame(&mut a, &original).await.unwrap();
         let decoded: BusMessage = read_frame(&mut b).await.unwrap();

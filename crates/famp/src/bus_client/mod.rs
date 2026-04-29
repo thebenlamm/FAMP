@@ -96,17 +96,14 @@ impl BusClient {
         };
 
         let mut client = Self { stream, bind_as };
-        // D-10: `bind_as` is forwarded on the Hello frame in plan 02-02
-        // when `BusMessage::Hello` gains the field. Until then we simply
-        // hold it on the client; the broker treats every Hello as
-        // unbound. The proxy validation contract (HelloErr NotRegistered
-        // when `bind_as` does not match a live holder) lights up the
-        // moment 02-02 lands.
-        let bind_as_for_hello = client.bind_as.clone();
-        let _ = bind_as_for_hello; // 02-02: pass into BusMessage::Hello
+        // D-10 (back-filled in plan 02-02): forward `bind_as` on the
+        // Hello frame. The broker validates `bind_as = Some(holder)`
+        // maps to a live registered holder and rejects with
+        // `HelloErr { NotRegistered }` if not.
         let hello = BusMessage::Hello {
             bus_proto: 1,
             client: "famp-cli/0.9.0".to_string(),
+            bind_as: client.bind_as.clone(),
         };
         match client.send_recv(hello).await? {
             BusReply::HelloOk { .. } => Ok(client),
