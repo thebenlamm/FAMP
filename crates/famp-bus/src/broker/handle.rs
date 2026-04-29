@@ -124,6 +124,17 @@ fn register<E: BrokerEnv>(
     name: String,
     pid: u32,
 ) -> Vec<Out> {
+    // BL-05: PID 0 has POSIX-special semantics for `kill(2)` (targets
+    // the calling pgrp). A client claiming PID 0 would always pass
+    // `is_alive`, defeating the D-10 per-op liveness gate. Reject the
+    // Register frame outright so the name is never bound to PID 0.
+    if pid == 0 {
+        return vec![err(
+            client,
+            BusErrorKind::EnvelopeInvalid,
+            "pid 0 is not a valid process identifier",
+        )];
+    }
     // D-10: a proxy (`bind_as = Some`) connection MUST NOT register;
     // it is read/write-through to its bound canonical holder. Reject
     // with NotRegistered (the proxy can disconnect and reconnect with

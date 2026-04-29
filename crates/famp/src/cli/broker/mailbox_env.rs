@@ -100,9 +100,22 @@ impl MailboxRead for DiskMailboxEnv {
 
 impl LivenessProbe for DiskMailboxEnv {
     fn is_alive(&self, pid: u32) -> bool {
+        // BL-05: POSIX defines `kill(pid=0, sig)` as targeting every
+        // process in the calling pgrp; with `sig=None` it returns
+        // Ok(()) whenever the calling process has any pgrp (i.e.
+        // always). That would let a misbehaving client claim PID 0 and
+        // ride forever as "alive", defeating the D-10 per-op proxy
+        // liveness gate. Reject PID 0 (and any non-positive raw) up
+        // front. `i32::try_from` already rejects values ≥ 2^31.
+        if pid == 0 {
+            return false;
+        }
         let Ok(raw) = i32::try_from(pid) else {
             return false;
         };
+        if raw <= 0 {
+            return false;
+        }
         nix::sys::signal::kill(nix::unistd::Pid::from_raw(raw), None).is_ok()
     }
 }
