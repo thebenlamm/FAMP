@@ -1,9 +1,19 @@
-//! Exhaustive test: every `CliError` variant has a `mcp_error_kind()` string,
-//! all strings are non-empty, and they are unique across variants.
+//! MCP-10 exhaustive coverage: every `famp_bus::BusErrorKind` variant
+//! has a unique JSON-RPC error code in `-32100..=-32109` plus a
+//! non-empty, unique kind string.
 //!
-//! This test is the CI gate that proves the compile-time exhaustive match in
-//! `cli::mcp::error_kind` does not use a `_ =>` fallback and that every
-//! discriminator string is meaningful and distinct.
+//! This is the CI gate that complements the compile-time exhaustive
+//! match in `cli::mcp::error_kind::bus_error_to_jsonrpc` (no `_ =>`
+//! arm). The compile gate prevents *missing* variants; this runtime
+//! gate prevents *colliding* codes/strings — two variants accidentally
+//! sharing a discriminator would silently misroute tool errors at the
+//! wire boundary.
+//!
+//! Plan 02-08 (MCP-10) introduced `bus_error_to_jsonrpc`; plan 02-01's
+//! `every_variant_has_mcp_kind` / `mcp_kinds_are_unique` /
+//! `mcp_kind_mapping_spot_checks` over `CliError::mcp_error_kind` stay
+//! green and live alongside this `BusErrorKind` suite — both surfaces
+//! coexist until plan 02-09 retires the `CliError` side.
 
 // Integration test binaries inherit all of famp's transitive deps; silence
 // "unused crate" warnings for crates we don't explicitly reference here.
@@ -14,8 +24,93 @@
 use std::collections::HashSet;
 
 use famp::cli::error::CliError;
+use famp::cli::mcp::error_kind::bus_error_to_jsonrpc;
+use famp_bus::BusErrorKind;
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── Phase 2 (MCP-10): BusErrorKind exhaustive coverage ───────────────────────
+
+/// Iterate `BusErrorKind::ALL` (the 10-element pinned constant) and
+/// assert each variant maps to a unique JSON-RPC code in the documented
+/// `-32100..=-32109` range plus a unique non-empty kind string.
+#[test]
+fn every_bus_error_kind_has_unique_jsonrpc_code() {
+    let mut codes = HashSet::new();
+    let mut kinds = HashSet::new();
+    for kind in BusErrorKind::ALL {
+        let (code, kind_str) = bus_error_to_jsonrpc(kind);
+        assert!(
+            (-32109..=-32100).contains(&code),
+            "code {code} for {kind:?} must be in -32100..=-32109 (RESEARCH §2 Item 6)"
+        );
+        assert!(
+            !kind_str.is_empty(),
+            "kind_str for {kind:?} must be non-empty"
+        );
+        assert!(
+            codes.insert(code),
+            "duplicate JSON-RPC code {code} for kind {kind:?}"
+        );
+        assert!(
+            kinds.insert(kind_str),
+            "duplicate kind_str {kind_str:?} for kind {kind:?}"
+        );
+    }
+    assert_eq!(
+        codes.len(),
+        10,
+        "must cover all 10 BusErrorKind variants (saw {})",
+        codes.len()
+    );
+    assert_eq!(
+        kinds.len(),
+        10,
+        "must produce 10 unique kind strings (saw {})",
+        kinds.len()
+    );
+}
+
+#[test]
+fn bus_error_kind_spot_checks() {
+    // Pin the exact (code, kind_str) pairs that the wire boundary
+    // commits to. A change here without a SUMMARY-documented major
+    // version bump is a regression — these strings are stable API.
+    let cases: &[(BusErrorKind, i64, &str)] = &[
+        (BusErrorKind::NotRegistered, -32100, "not_registered"),
+        (BusErrorKind::NameTaken, -32101, "name_taken"),
+        (
+            BusErrorKind::ChannelNameInvalid,
+            -32102,
+            "channel_name_invalid",
+        ),
+        (BusErrorKind::NotJoined, -32103, "not_joined"),
+        (BusErrorKind::EnvelopeInvalid, -32104, "envelope_invalid"),
+        (BusErrorKind::EnvelopeTooLarge, -32105, "envelope_too_large"),
+        (BusErrorKind::TaskNotFound, -32106, "task_not_found"),
+        (
+            BusErrorKind::BrokerProtoMismatch,
+            -32107,
+            "broker_proto_mismatch",
+        ),
+        (
+            BusErrorKind::BrokerUnreachable,
+            -32108,
+            "broker_unreachable",
+        ),
+        (BusErrorKind::Internal, -32109, "internal"),
+    ];
+    for (kind, expected_code, expected_str) in cases {
+        let (got_code, got_str) = bus_error_to_jsonrpc(*kind);
+        assert_eq!(got_code, *expected_code, "code mismatch for {kind:?}");
+        assert_eq!(got_str, *expected_str, "kind_str mismatch for {kind:?}");
+    }
+}
+
+// ── Phase 1 carry-forward: CliError::mcp_error_kind exhaustive coverage ──────
+//
+// The CliError side of error_kind.rs stays in place for plans 02-03..02-07
+// (one-shot CLI subcommands) and the three pre-existing tests that call
+// `err.mcp_error_kind()`. Plan 02-09 retires it once every tool body has
+// migrated to BusErrorKind.
 
 fn io_err() -> std::io::Error {
     std::io::Error::other("test")
@@ -274,8 +369,6 @@ fn all_variant_kinds() -> Vec<(&'static str, String)> {
         .map(|(name, err)| (name, err.mcp_error_kind().to_string()))
         .collect()
 }
-
-// ── tests ─────────────────────────────────────────────────────────────────────
 
 // NOTE on test name vs. actual scope: this test only verifies that every
 // variant *present in the fixture lists* (variants_a / variants_b /

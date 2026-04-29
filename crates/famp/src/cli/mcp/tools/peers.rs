@@ -1,86 +1,18 @@
-//! `famp_peers` MCP tool — wraps `cli::config::read_peers` and `cli::peer::add`.
+// PLAN 02-09: implement
+//! `famp_peers` MCP tool — D-04 rewire stub.
 //!
-//! Input shape (JSON):
-//! ```json
-//! {
-//!   "action":    "list" | "add",
-//!   "alias":     "<alias>",      // required for add
-//!   "endpoint":  "<url>",        // required for add
-//!   "pubkey":    "<base64url>",  // required for add
-//!   "principal": "<principal>"   // optional for add
-//! }
-//! ```
+//! The real body uses `session::ensure_bus()` and sends a
+//! `BusMessage::Peers { … }` frame to the broker. Lands in plan 02-09.
 //!
-//! Output shape for `list`:
-//! ```json
-//! { "peers": [ { "alias": "...", "endpoint": "...", ... }, ... ] }
-//! ```
-//!
-//! Output shape for `add`:
-//! ```json
-//! { "ok": true }
-//! ```
+//! NOTE: signature is `pub async fn` (was `pub fn` in v0.8) so the
+//! dispatcher can `.await` uniformly across all tool calls.
 
 use serde_json::Value;
 
-use crate::cli::config::read_peers;
-use crate::cli::error::CliError;
-use crate::cli::mcp::session::IdentityBinding;
-use crate::cli::paths;
-use crate::cli::peer::add::run_add_at;
+use famp_bus::BusErrorKind;
 
-/// Dispatch a `famp_peers` tool call.
-pub fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, CliError> {
-    let home = binding.home.as_path();
-    let action = input["action"]
-        .as_str()
-        .ok_or_else(|| CliError::SendArgsInvalid {
-            reason: "famp_peers: missing required field 'action'".to_string(),
-        })?;
-
-    match action {
-        "list" => {
-            let peers_path = paths::peers_toml_path(home);
-            let peers = read_peers(&peers_path)?;
-            let arr: Vec<Value> = peers
-                .peers
-                .into_iter()
-                .map(|p| {
-                    serde_json::json!({
-                        "alias":    p.alias,
-                        "endpoint": p.endpoint,
-                        "pubkey_b64": p.pubkey_b64,
-                        "principal": p.principal,
-                    })
-                })
-                .collect();
-            Ok(serde_json::json!({ "peers": arr }))
-        }
-        "add" => {
-            let alias = input["alias"]
-                .as_str()
-                .ok_or_else(|| CliError::SendArgsInvalid {
-                    reason: "famp_peers action=add requires 'alias'".to_string(),
-                })?
-                .to_string();
-            let endpoint = input["endpoint"]
-                .as_str()
-                .ok_or_else(|| CliError::SendArgsInvalid {
-                    reason: "famp_peers action=add requires 'endpoint'".to_string(),
-                })?
-                .to_string();
-            let pubkey = input["pubkey"]
-                .as_str()
-                .ok_or_else(|| CliError::SendArgsInvalid {
-                    reason: "famp_peers action=add requires 'pubkey'".to_string(),
-                })?
-                .to_string();
-            let principal = input["principal"].as_str().map(str::to_string);
-            run_add_at(home, alias, endpoint, pubkey, principal)?;
-            Ok(serde_json::json!({ "ok": true }))
-        }
-        other => Err(CliError::SendArgsInvalid {
-            reason: format!("famp_peers: unknown action '{other}'; expected list|add"),
-        }),
-    }
+/// Dispatch a `famp_peers` tool call. Stub — see plan 02-09.
+#[allow(clippy::unused_async)] // body is `unimplemented!()` until plan 02-09 wires the bus.
+pub async fn call(_input: &Value) -> Result<Value, BusErrorKind> {
+    unimplemented!("rewired in plan 02-09")
 }
