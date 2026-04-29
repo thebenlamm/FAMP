@@ -14,6 +14,7 @@
 use std::collections::HashSet;
 
 use famp::cli::error::CliError;
+use famp_bus::BusErrorKind;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -261,6 +262,21 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                 reason: "no identity bound — pass --as, set $FAMP_LOCAL_IDENTITY, or run \
                          `famp-local wire <dir>` first"
                     .to_string(),
+            },
+        ),
+        (
+            "NameTaken",
+            CliError::NameTaken {
+                name: "alice".to_string(),
+            },
+        ),
+        ("BrokerUnreachable", CliError::BrokerUnreachable),
+        ("Disconnected", CliError::Disconnected),
+        (
+            "BusError",
+            CliError::BusError {
+                kind: BusErrorKind::Internal,
+                message: "synthetic test error".to_string(),
             },
         ),
     ]
