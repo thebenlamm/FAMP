@@ -52,13 +52,10 @@ use famp_bus::{BusErrorKind, BusMessage, BusReply, Target};
 use crate::bus_client::{BusClient, BusClientError};
 use crate::cli::error::CliError;
 use crate::cli::identity::resolve_identity;
+use crate::cli::util::normalize_channel;
 
 pub mod client;
 pub mod fsm_glue;
-
-/// Channel name validation (mirrors `famp_bus::proto::CHANNEL_PATTERN`).
-/// Locally inlined because `famp_bus` does not export the regex publicly.
-const CHANNEL_PATTERN: &str = r"^#[a-z0-9][a-z0-9_-]{0,31}$";
 
 /// CLI arg set for `famp send`.
 ///
@@ -257,33 +254,6 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
     }
 }
 
-/// Normalize a channel name: accept both `planning` and `#planning`; reject
-/// `##planning`; validate against the bus channel regex
-/// (`^#[a-z0-9][a-z0-9_-]{0,31}$`).
-fn normalize_channel(input: &str) -> Result<String, CliError> {
-    let normalized = if input.starts_with('#') {
-        input.to_string()
-    } else {
-        format!("#{input}")
-    };
-    if normalized.starts_with("##") {
-        return Err(CliError::SendArgsInvalid {
-            reason: format!("channel name '{input}' cannot start with ##"),
-        });
-    }
-    // The regex is compiled once on first use; failure to compile is a
-    // programmer bug, not a runtime condition.
-    let re = regex::Regex::new(CHANNEL_PATTERN).map_err(|e| CliError::SendArgsInvalid {
-        reason: format!("internal: channel regex failed to compile: {e}"),
-    })?;
-    if !re.is_match(&normalized) {
-        return Err(CliError::SendArgsInvalid {
-            reason: format!("invalid channel name '{normalized}': must match {CHANNEL_PATTERN}"),
-        });
-    }
-    Ok(normalized)
-}
-
 /// Build the JSON envelope value sent in `BusMessage::Send.envelope`.
 ///
 /// Phase 02 ships a minimal mode-tagged shape rather than the full v0.8
@@ -343,42 +313,6 @@ fn build_envelope_value(args: &SendArgs) -> Result<serde_json::Value, CliError> 
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn normalize_channel_adds_hash_prefix() {
-        assert_eq!(normalize_channel("planning").unwrap(), "#planning");
-    }
-
-    #[test]
-    fn normalize_channel_accepts_existing_hash() {
-        assert_eq!(normalize_channel("#planning").unwrap(), "#planning");
-    }
-
-    #[test]
-    fn normalize_channel_rejects_double_hash() {
-        let err = normalize_channel("##planning").unwrap_err();
-        match err {
-            CliError::SendArgsInvalid { reason } => assert!(
-                reason.contains("cannot start with ##"),
-                "unexpected reason: {reason}"
-            ),
-            other => panic!("expected SendArgsInvalid, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn normalize_channel_rejects_uppercase() {
-        let err = normalize_channel("BadCaps").unwrap_err();
-        assert!(matches!(err, CliError::SendArgsInvalid { .. }));
-    }
-
-    #[test]
-    fn normalize_channel_rejects_overlong() {
-        // 33 chars → 33-char tail after `#`, exceeds the {0,31} bound.
-        let long = format!("#a{}", "b".repeat(32));
-        let err = normalize_channel(&long).unwrap_err();
-        assert!(matches!(err, CliError::SendArgsInvalid { .. }));
-    }
 
     #[test]
     fn build_envelope_new_task_shape() {
