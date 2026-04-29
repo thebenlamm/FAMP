@@ -104,10 +104,10 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 - [x] 02-06-PLAN.md — `famp await` rewire to BusClient with humantime --timeout
 - [x] 02-07-PLAN.md — New CLI subcommands: `join`, `leave`, `sessions [--me]`, `whoami`; channel normalization helper
 - [x] 02-08-PLAN.md — MCP session reshape (drop home_path; add bus + active_identity); error_kind retargeted at BusErrorKind exhaustively (MCP-10)
-- [ ] 02-09-PLAN.md — Rewrite all 8 MCP tools (register/send/inbox/await_/peers/whoami/join/leave) against bus
+- [x] 02-09-PLAN.md — Rewrite all 8 MCP tools (register/send/inbox/await_/peers/whoami/join/leave) against bus
 - [x] 02-10-PLAN.md — `scripts/famp-local hook add|list|remove` (HOOK-01..04) ~110 LoC bash addition
 - [x] 02-11-PLAN.md — Broker integration tests: idle exit (BROKER-04), spawn race (TEST-04), kill -9 recovery (TEST-03), sessions.jsonl diagnostic (CLI-11), NFS warning (BROKER-05)
-- [ ] 02-12-PLAN.md — CLI integration tests: DM round-trip (TEST-01), channel fan-out (TEST-02), sessions list, whoami; CARRY-02 INBOX-01 wording rewrite
+- [x] 02-12-PLAN.md — CLI integration tests: DM round-trip (TEST-01), channel fan-out (TEST-02), sessions list, whoami; CARRY-02 INBOX-01 wording rewrite
 - [ ] 02-13-PLAN.md — TEST-05: two stdio MCP processes round-trip register/send/await over UDS bus
 
 ### Phase 3: Claude Code integration polish
