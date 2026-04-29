@@ -29,6 +29,16 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::time::Duration;
 
+// Phase 02 plan 02-06: the v0.8 `await_cmd::AwaitArgs` shape (`timeout:
+// String`, `task: Option<String>`) is rewired to v0.9 (`humantime::Duration`,
+// `Option<uuid::Uuid>`) and `run_at` now takes a bus socket path, not a
+// `FAMP_HOME`. The only function in this module that touches that surface
+// is `await_once`, which is `#[cfg(any())]`-gated below. Gating it (rather
+// than the whole file) keeps the rest of the harness — `setup_home`,
+// `spawn_listener`, `add_self_peer`, `read_task`, etc. — compilable for
+// the listener-only consumers (`mcp_stdio_tool_calls`,
+// `listen_multi_peer_keyring`, `conversation_restart_safety`).
+#[cfg(any())]
 use famp::cli::await_cmd::{run_at as await_run_at, AwaitArgs};
 use famp::cli::error::CliError;
 use famp::cli::peer::add::run_add_at as peer_add_run_at;
@@ -209,6 +219,11 @@ pub async fn try_deliver(
 
 /// Run `famp await --timeout <timeout>` once and return the parsed JSON
 /// line the subcommand printed. Panics on timeout or write failure.
+///
+/// Phase 02 plan 02-06: gated until plan 02-12 rewrites the conversation
+/// suite onto the BusClient path. Test files that previously called this
+/// helper are themselves `#[cfg(any())]`-gated.
+#[cfg(any())]
 pub async fn await_once(home: &Path, timeout: &str) -> serde_json::Value {
     let mut buf: Vec<u8> = Vec::new();
     await_run_at(

@@ -1,268 +1,219 @@
-//! `famp await` — block until a new inbox entry arrives past the cursor.
+//! `famp await` — block until an envelope arrives on the local bus.
 //!
-//! # Relationship to `famp inbox list`
+//! ## v0.9 rewire (Phase 02 plan 02-06, CLI-05)
 //!
-//! `await` is deliberately unfiltered. `famp inbox list` filters out
-//! entries for tasks in a terminal FSM state by default (spec
-//! `2026-04-20-filter-terminal-tasks-from-inbox-list-design.md`), which
-//! means the closing `deliver` for a task you originated is NOT
-//! visible via `list` after the daemon flips the taskdir record.
+//! Replaces the v0.8 `inbox.jsonl` polling shape with a single round-trip
+//! to the local-first UDS broker:
 //!
-//! `await` IS the canonical real-time signal for task completion.
-//! Agents waiting for a task to close should `await`; `list` is for
-//! "what's still on my plate."
+//! 1. Resolve identity via the D-01 four-tier resolver
+//!    (`--as` > `$FAMP_LOCAL_IDENTITY` > cwd → wires.tsv > error).
+//! 2. Open a `BusClient` with `Hello { bind_as: Some(resolved_identity) }`
+//!    (D-10 proxy binding). The broker validates that `resolved_identity`
+//!    is held by a live `famp register <name>` process; refusal surfaces
+//!    as `BusClientError::HelloFailed { kind: NotRegistered, .. }` which
+//!    we translate to `CliError::NotRegisteredHint` (D-02 hard error).
+//! 3. Send `BusMessage::Await { timeout_ms, task }` and wait for one reply.
+//! 4. On `BusReply::AwaitOk { envelope }` print the typed envelope as one
+//!    JSONL line on stdout and exit 0.
+//! 5. On `BusReply::AwaitTimeout {}` print `{"timeout":true}` on stdout and
+//!    exit 0 — timeout is NOT an error per D-02; only `BusReply::Err` is.
+//! 6. On `BusReply::Err { kind: NotRegistered, .. }` (per-op liveness
+//!    re-check failed — holder died between Hello and Await) surface the
+//!    same `NotRegisteredHint`.
 //!
-//! Polls `inbox.jsonl` every 250 ms (matches REQUIREMENTS.md INBOX-03),
-//! reads every line past the current cursor via `famp_inbox::read::read_from`,
-//! and:
+//! ## Three-layer pattern
 //!
-//! - If any entry matches the optional `--task <id>` filter, prints ONE
-//!   structured JSON line (see [`poll::find_match`] for the exact shape),
-//!   advances the cursor PAST that single entry, and exits 0. Remaining
-//!   entries from the same batch are left for subsequent `await` calls.
-//! - If a `--task` filter is set and none of the read entries match,
-//!   advances the cursor past the whole batch (consume-and-discard) so
-//!   we do not re-poll the same already-rejected bytes forever.
-//! - On timeout, returns [`CliError::AwaitTimeout`] with the original
-//!   string and leaves the cursor untouched.
+//! - [`run`] — production entry point. Resolves the bus socket via
+//!   `bus_client::resolve_sock_path()` and forwards to [`run_at`] writing
+//!   to `stdout`.
+//! - [`run_at`] — sock-explicit + writer-explicit wrapper used by
+//!   integration tests (lets the harness redirect stdout into a buffer
+//!   and override the socket via `$FAMP_BUS_SOCKET`).
+//! - [`run_at_structured`] — typed return for MCP-tool reuse
+//!   (`crates/famp/src/cli/mcp/tools/await_.rs` calls this so the MCP
+//!   tool surface is identical to the CLI).
 //!
-//! ## Phase 4: FSM advance on commit envelopes
-//!
-//! When a matched entry has `class == "commit"` and its `task_id` matches a
-//! local task record in `TaskDir`, `advance_committed` is called on the record
-//! before printing the structured line. This drives REQUESTED → COMMITTED on
-//! the originator side without any test-only state seeding.
-//!
-//! The output JSON shape is locked by Phase 3 Plan 03-03 and documented
-//! in that plan's SUMMARY:
+//! ## Output shape (locked by D-02 + plan 02-06)
 //!
 //! ```json
-//! { "offset": <u64>, "task_id": "<str>", "from": "<str>",
-//!   "class": "<str>", "body": <json> }
+//! {"famp":"0.5.2", "id":"...", "from":"...", ... }    // envelope JSONL on AwaitOk
+//! {"timeout":true}                                     // on AwaitTimeout
 //! ```
 //!
-//! `offset` is the byte offset AFTER the consumed line (the cursor
-//! value after advance).
+//! Identity binding is at the connection level via `Hello.bind_as`
+//! (D-10) — the `Await` message itself carries no identity field.
 
 use std::io::Write;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
-use famp_inbox::{read::read_from, InboxCursor, InboxLock};
-use famp_taskdir::{TaskDir, TaskDirError, TryUpdateError};
+use famp_bus::{BusErrorKind, BusMessage, BusReply};
 
-use crate::cli::error::{parse_duration, CliError};
-use crate::cli::send::fsm_glue::{advance_committed, advance_terminal};
-use crate::cli::{home, paths};
+use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
+use crate::cli::error::CliError;
+use crate::cli::identity::resolve_identity;
 
+/// Reserved module path.
+///
+/// The v0.9 await is a single-shot bus round-trip and no longer polls a
+/// file, so the v0.8 `poll::find_match` helper is dead code under this
+/// transport. Kept so a follow-up plan can re-introduce typed shaping
+/// helpers without churning callers.
+#[allow(dead_code)]
 pub mod poll;
 
-pub const POLL_INTERVAL: Duration = Duration::from_millis(250);
-
+/// CLI flags for `famp await`.
+///
+/// `--timeout` accepts any `humantime` duration (`5s`, `30s`, `2m`,
+/// `250ms`). Default `30s`.
+///
+/// `--task` accepts a UUID; when set, the broker filters its mailbox
+/// stream and only returns envelopes whose task matches.
+///
+/// `--as` overrides the D-01 identity resolution chain. The resolved
+/// value feeds into `Hello.bind_as` on the connection (D-10). The Rust
+/// field is named `act_as` because `as` is a reserved keyword.
 #[derive(clap::Args, Debug)]
 pub struct AwaitArgs {
-    /// Block timeout. Accepts "30s", "5m", "1h", "250ms".
+    /// Block timeout. Accepts `30s`, `5m`, `1h`, `250ms`, etc.
     #[arg(long, default_value = "30s")]
-    pub timeout: String,
-    /// Optional task-id filter — only return envelopes whose top-level
-    /// `task_id` field equals this value.
+    pub timeout: humantime::Duration,
+    /// Optional task-id filter (UUID).
     #[arg(long)]
-    pub task: Option<String>,
+    pub task: Option<uuid::Uuid>,
+    /// Override identity (D-01); the resolved value feeds into
+    /// `Hello.bind_as` on the connection (D-10).
+    #[arg(long = "as")]
+    pub act_as: Option<String>,
 }
 
-/// Structured outcome returned by [`run_at_structured`]. Maps to the JSON
-/// shape locked by Phase 3 Plan 03-03 but without printing.
+/// Structured outcome from [`run_at_structured`]. `envelope` is `None`
+/// on `AwaitTimeout`, `Some(value)` on `AwaitOk`. `timed_out` is the
+/// orthogonal flag the MCP tool surfaces in the JSON-RPC result.
 #[derive(Debug, Clone)]
 pub struct AwaitOutcome {
-    pub offset: u64,
-    pub task_id: String,
-    pub from: String,
-    pub class: String,
-    pub body: serde_json::Value,
+    /// The typed envelope returned by the broker, or `None` on timeout.
+    pub envelope: Option<serde_json::Value>,
+    /// `true` when the broker returned `BusReply::AwaitTimeout {}`.
+    pub timed_out: bool,
 }
 
-/// Top-level entry point. Resolves `FAMP_HOME` and forwards to [`run_at`].
+/// Top-level entry point for `Commands::Await`.
+///
+/// Resolves the bus socket, performs the bus round-trip, then writes one
+/// JSON line to stdout AFTER awaiting the bus future. Doing the write
+/// outside the `.await` boundary keeps the returned future `Send` —
+/// `std::io::stdout().lock()` returns a non-`Send` guard which would
+/// otherwise leak across the suspension point.
 pub async fn run(args: AwaitArgs) -> Result<(), CliError> {
-    let home = home::resolve_famp_home()?;
-    let mut stdout = std::io::stdout();
-    run_at(&home, args, &mut stdout).await
+    let outcome = run_at_structured(&resolve_sock_path(), args).await?;
+    write_outcome(&outcome, &mut std::io::stdout())
 }
 
-/// Structured entry — returns [`AwaitOutcome`] without printing. Used by the
-/// MCP tool wrapper so it can embed the matched entry as a JSON-RPC result.
-pub async fn run_at_structured(home: &Path, args: AwaitArgs) -> Result<AwaitOutcome, CliError> {
-    let mut buf = Vec::<u8>::new();
-    run_at(home, args, &mut buf).await?;
-    // `run_at` writes exactly one JSON line on success.
-    let line = std::str::from_utf8(&buf)
-        .map_err(|e| CliError::Io {
+/// Render an [`AwaitOutcome`] to a writer as a single JSONL line.
+///
+/// Split out from [`run_at`] so callers (`run`, integration tests) can
+/// drive the write side independently of the bus round-trip.
+fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Result<(), CliError> {
+    if outcome.timed_out {
+        writeln!(out, "{}", serde_json::json!({"timeout": true})).map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: e,
+        })?;
+    } else if let Some(env) = outcome.envelope.as_ref() {
+        let line = serde_json::to_string(env).map_err(|e| CliError::Io {
             path: std::path::PathBuf::new(),
             source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-        })?
-        .trim_end();
-    let value: serde_json::Value = serde_json::from_str(line).map_err(|e| CliError::Io {
-        path: std::path::PathBuf::new(),
-        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-    })?;
-    Ok(AwaitOutcome {
-        offset: value
-            .get("offset")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0),
-        task_id: value
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        from: value
-            .get("from")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        class: value
-            .get("class")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        body: value
-            .get("body")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null),
-    })
+        })?;
+        writeln!(out, "{line}").map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: e,
+        })?;
+    }
+    Ok(())
 }
 
-/// Core polling loop. `out` lets tests capture the one structured
-/// line without a process boundary.
+/// Sock-explicit + writer-explicit wrapper.
+///
+/// Tests and the integration harness call this so they can redirect
+/// stdout into a buffer and drive the bus over a tempdir socket via
+/// `$FAMP_BUS_SOCKET`. The writer is consumed AFTER the bus round-trip
+/// so the future stays `Send` regardless of the writer type.
 pub async fn run_at(
-    home: &Path,
+    sock: &Path,
     args: AwaitArgs,
-    out: &mut (dyn Write + Send),
+    out: impl Write,
 ) -> Result<(), CliError> {
-    let timeout = parse_duration(&args.timeout)?;
-    let inbox_path = paths::inbox_jsonl_path(home);
-    let cursor = InboxCursor::at(paths::inbox_cursor_path(home));
+    let outcome = run_at_structured(sock, args).await?;
+    write_outcome(&outcome, out)
+}
 
-    // Advisory lock (Plan 03-04 INBOX-05): fail-fast if another
-    // single-consumer reader holds the lock. Held for the lifetime of
-    // this call; dropped on return (happy path, timeout, or error).
-    let _lock = InboxLock::acquire(home).map_err(CliError::Inbox)?;
+/// Structured entry point.
+///
+/// Performs the bus round-trip and returns the typed [`AwaitOutcome`]
+/// without printing. Used by the MCP tool wrapper
+/// (`cli::mcp::tools::await_::call`) so the JSON-RPC result shape is
+/// owned by the MCP layer, not by this CLI.
+pub async fn run_at_structured(
+    sock: &Path,
+    args: AwaitArgs,
+) -> Result<AwaitOutcome, CliError> {
+    // 1. D-01 four-tier identity resolution.
+    let identity = resolve_identity(args.act_as.as_deref())?;
 
-    let deadline = Instant::now() + timeout;
+    // 2. Convert humantime::Duration → u64 ms with a saturating cap.
+    let timeout_ms: u64 = std::time::Duration::from(args.timeout)
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX);
 
-    loop {
-        let start = cursor.read().await?;
-        let entries = read_from(&inbox_path, start).map_err(CliError::Inbox)?;
+    // 3. Open the bus connection with the D-10 proxy binding. The
+    //    broker validates at Hello time that `identity` is held by a
+    //    live `famp register` process; refusal surfaces as
+    //    HelloFailed { NotRegistered }.
+    let mut bus = BusClient::connect(sock, Some(identity.clone()))
+        .await
+        .map_err(|e| match e {
+            BusClientError::HelloFailed {
+                kind: BusErrorKind::NotRegistered,
+                ..
+            } => CliError::NotRegisteredHint {
+                name: identity.clone(),
+            },
+            _ => CliError::BrokerUnreachable,
+        })?;
 
-        if let Some((value, advance_to)) = poll::find_match(&entries, &args.task) {
-            // Phase 4: if this is a commit-class envelope matching a local
-            // task in REQUESTED, advance the record to COMMITTED before
-            // printing. This is the T-04-07 mitigation — only advances when
-            // class == "commit" AND task_id matches a local record.
-            let class = value.get("class").and_then(|v| v.as_str()).unwrap_or("");
-            let task_id_str = value.get("task_id").and_then(|v| v.as_str()).unwrap_or("");
-            if class == "commit" && !task_id_str.is_empty() {
-                let tasks_dir = paths::tasks_dir(home);
-                match TaskDir::open(&tasks_dir) {
-                    Ok(tasks) => {
-                        // Atomic read-modify-write: try_update reads fresh from disk,
-                        // hands the FRESH record to the closure, and only persists if
-                        // the closure returns Ok. No TOCTOU window between the read
-                        // and the FSM advance — the closure operates on whatever the
-                        // store hands it, NOT on a stale snapshot from a separate
-                        // read() call.
-                        match tasks.try_update(task_id_str, |mut record| {
-                            advance_committed(&mut record).map(|_| record)
-                        }) {
-                            // Happy path: persisted REQUESTED → COMMITTED.
-                            // NotFound: commit envelope for a task we don't own locally —
-                            // not an error. Matches prior behavior where a
-                            // `tasks.read(...).is_ok()` guard silently skipped this.
-                            Ok(_) | Err(TryUpdateError::Store(TaskDirError::NotFound { .. })) => {}
-                            Err(TryUpdateError::Closure(e)) => {
-                                eprintln!(
-                                    "famp await: advance_committed failed for task {task_id_str}: {e}"
-                                );
-                            }
-                            Err(TryUpdateError::Store(e)) => {
-                                eprintln!(
-                                    "famp await: failed to persist commit-advance for task {task_id_str}: {e}"
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "famp await: failed to open task dir while handling commit for {task_id_str}: {e}"
-                        );
-                    }
-                }
-            }
+    // 4. Single round-trip: Await { timeout_ms, task }.
+    let reply = bus
+        .send_recv(BusMessage::Await {
+            timeout_ms,
+            task: args.task,
+        })
+        .await
+        .map_err(|e| CliError::BusClient {
+            detail: format!("{e:?}"),
+        })?;
 
-            // Phase 1 (01-05): if this is a terminal deliver (class == "deliver" &&
-            // body.interim == false), advance the local task record COMMITTED →
-            // COMPLETED. Mirrors the commit-receipt branch above. This is the
-            // await-side FSM advance that drives COMPLETED on the originator when
-            // the peer sends a terminal deliver back to us.
-            let is_terminal_deliver = class == "deliver"
-                && !task_id_str.is_empty()
-                && value
-                    .get("body")
-                    .and_then(|b| b.get("interim"))
-                    .and_then(serde_json::Value::as_bool)
-                    == Some(false);
-            if is_terminal_deliver {
-                let tasks_dir = paths::tasks_dir(home);
-                match TaskDir::open(&tasks_dir) {
-                    Ok(tasks) => {
-                        match tasks.try_update(task_id_str, |mut record| {
-                            advance_terminal(&mut record).map(|_| record)
-                        }) {
-                            // Happy path: persisted COMMITTED → COMPLETED.
-                            // NotFound: terminal deliver for a task we don't own locally
-                            // (e.g. we are the receiver, not the originator) — not an error.
-                            Ok(_) | Err(TryUpdateError::Store(TaskDirError::NotFound { .. })) => {}
-                            Err(TryUpdateError::Closure(e)) => {
-                                eprintln!(
-                                    "famp await: advance_terminal failed for task {task_id_str}: {e}"
-                                );
-                            }
-                            Err(TryUpdateError::Store(e)) => {
-                                eprintln!(
-                                    "famp await: failed to persist terminal-advance for task {task_id_str}: {e}"
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "famp await: failed to open task dir while handling terminal for {task_id_str}: {e}"
-                        );
-                    }
-                }
-            }
-
-            let line = serde_json::to_string(&value).unwrap_or_default();
-            writeln!(out, "{line}").map_err(|e| CliError::Io {
-                path: inbox_path.clone(),
-                source: e,
-            })?;
-            cursor.advance(advance_to).await?;
-            return Ok(());
-        }
-
-        // If a filter consumed-and-discarded every entry in this batch,
-        // advance past the whole batch so the next poll sees new bytes.
-        if args.task.is_some() {
-            if let Some((_, batch_end)) = entries.last() {
-                cursor.advance(*batch_end).await?;
-            }
-        }
-
-        if Instant::now() >= deadline {
-            return Err(CliError::AwaitTimeout {
-                timeout: args.timeout,
-            });
-        }
-        tokio::time::sleep(POLL_INTERVAL).await;
+    // 5. Map the four expected reply variants. `BusErrorKind` is closed
+    //    so the `_ =>` wildcard arm is on `BusReply` variants we never
+    //    expect in response to an Await op (e.g. `SendOk`); per
+    //    plan acceptance this is a `BusClient { source: ... }` error,
+    //    NOT a `BusError`-with-kind, because there is no kind to carry.
+    match reply {
+        BusReply::AwaitOk { envelope } => Ok(AwaitOutcome {
+            envelope: Some(envelope),
+            timed_out: false,
+        }),
+        BusReply::AwaitTimeout {} => Ok(AwaitOutcome {
+            envelope: None,
+            timed_out: true,
+        }),
+        BusReply::Err {
+            kind: BusErrorKind::NotRegistered,
+            ..
+        } => Err(CliError::NotRegisteredHint { name: identity }),
+        BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
+        other => Err(CliError::BusClient {
+            detail: format!("unexpected reply to Await: {other:?}"),
+        }),
     }
 }
