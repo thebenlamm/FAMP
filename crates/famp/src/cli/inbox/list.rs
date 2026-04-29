@@ -1,161 +1,137 @@
-//! `famp inbox list` — non-blocking dump via `read_from`.
+//! `famp inbox list` — bus-backed listing of typed envelopes.
+//!
+//! Phase 02 plan 02-05 rewires this from the v0.8 file-reader shape
+//! (`run_list(home, since, include_terminal, out)`) to a `BusClient`-driven
+//! request/reply against the local UDS broker.
+//!
+//! Identity binding is connection-level per D-10: the CLI opens a
+//! `BusClient` with `Hello { bind_as: Some(resolved_identity) }`, and
+//! the broker reads the inbox of the bound identity, NOT the proxy
+//! connection's name.
+//!
+//! Cursor management is intentionally CLIENT-SIDE — `inbox list` does
+//! NOT advance any cursor (RESEARCH §6: "the broker does not track
+//! per-session Inbox cursors — the client is authoritative"). Use
+//! `famp inbox ack --offset N` to advance after consuming.
+//!
+//! Output framing: one JSONL line per typed envelope (raw
+//! `serde_json::Value` straight from the wire), followed by a footer
+//! line `{"next_offset":N}` so the user can pipe to
+//! `famp inbox ack --offset $(... | tail -1 | jq .next_offset)`.
 
-use std::collections::HashMap;
-use std::io::Write;
 use std::path::Path;
 
-use serde_json::{json, Value};
+use famp_bus::{BusErrorKind, BusMessage, BusReply};
+use serde_json::Value;
 
-use famp_taskdir::{TaskDir, TaskDirError};
-
+use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
 use crate::cli::error::CliError;
-use crate::cli::paths;
+use crate::cli::identity::resolve_identity;
 
-/// Derive the `task_id` a given inbox entry refers to.
-///
-/// - `class == "request"`: envelope's `id` field IS the `task_id`.
-/// - Any other class: `causality.ref` carries the `task_id`.
-///
-/// Exhaustively covered by `tests/inbox_list_filters_terminal.rs` —
-/// adding a new `MessageClass` variant without updating this function
-/// will fail that test.
-fn extract_task_id(value: &Value) -> &str {
-    let class = value.get("class").and_then(Value::as_str).unwrap_or("");
-    match class {
-        "request" => value.get("id").and_then(Value::as_str).unwrap_or(""),
-        _ => value
-            .get("causality")
-            .and_then(|c| c.get("ref"))
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-    }
+/// CLI args for `famp inbox list`.
+#[derive(clap::Args, Debug)]
+pub struct ListArgs {
+    /// Override starting offset (default: 0; broker treats `None` as 0).
+    #[arg(long)]
+    pub since: Option<u64>,
+    /// Include envelopes for tasks already in a terminal state (default false per v0.8).
+    #[arg(long)]
+    pub include_terminal: bool,
+    /// Override identity (D-01); resolved value feeds into `Hello.bind_as` (D-10).
+    #[arg(long = "as")]
+    pub act_as: Option<String>,
 }
 
-/// Test-only re-export so integration tests can call `extract_task_id`
-/// without widening the module's public surface.
-#[doc(hidden)]
-pub fn extract_task_id_for_test(value: &Value) -> &str {
-    extract_task_id(value)
+/// Structured outcome — same shape as `BusReply::InboxOk`. Used by
+/// the MCP `famp_inbox` tool wrapper (plan 02-09).
+pub struct ListOutcome {
+    pub envelopes: Vec<Value>,
+    pub next_offset: u64,
 }
 
-/// Read every inbox entry at or past `since` and write one JSON line
-/// per entry to `out`, in the same locked shape as `famp await`.
-/// Does NOT advance the cursor.
+/// Run `famp inbox list` against the broker at `sock`.
 ///
-/// # Filtering
-///
-/// By default (`include_terminal = false`) entries whose `task_id`
-/// maps to a taskdir record with `terminal == true` are omitted.
-///
-/// - Missing taskdir record → **fail-open**: entry is surfaced.
-/// - Corrupt taskdir record (TOML parse / IO error) → **fail-closed**:
-///   entry is hidden; a diagnostic is written to stderr via
-///   `eprintln!`. A corrupt record for a terminal task must not
-///   resurrect its history into `list` forever; operator visibility
-///   comes through stderr.
-///
-/// # Canonical completion signal
-///
-/// `list` is not the place to learn that a task just completed. Once
-/// the daemon flips a task's taskdir record to `terminal = true`, the
-/// closing deliver is hidden here. Agents that need real-time
-/// completion notifications MUST use `famp await`, which is
-/// deliberately unfiltered.
-pub fn run_list(
-    home: &Path,
-    since: Option<u64>,
-    include_terminal: bool,
-    out: &mut dyn Write,
+/// Writes one JSONL line per envelope to `out`, followed by a
+/// `{"next_offset":N}` footer. `out` is `Send` so the future composes
+/// inside multi-threaded runtimes (D-clippy `future_not_send`).
+pub async fn run_at(
+    sock: &Path,
+    args: ListArgs,
+    out: &mut (dyn std::io::Write + Send),
 ) -> Result<(), CliError> {
-    let inbox_path = paths::inbox_jsonl_path(home);
-    let entries =
-        famp_inbox::read::read_from(&inbox_path, since.unwrap_or(0)).map_err(CliError::Inbox)?;
-
-    // Only open the taskdir when filtering. If it fails to open
-    // (e.g. fresh FAMP_HOME with no tasks dir), fall back to "filter
-    // disabled for this call" — equivalent to include_terminal=true.
-    // Opening a TaskDir mkdir -p's the root, so normal paths succeed.
-    let taskdir: Option<TaskDir> = if include_terminal {
-        None
-    } else {
-        match TaskDir::open(paths::tasks_dir(home)) {
-            Ok(td) => Some(td),
-            Err(err) => {
-                eprintln!("famp inbox list: taskdir unavailable, filter disabled: {err}");
-                None
-            }
-        }
-    };
-    let mut terminal_cache: HashMap<String, bool> = HashMap::new();
-
-    for (value, end_offset) in entries {
-        let task_id = extract_task_id(&value);
-        if let Some(ref td) = taskdir {
-            if task_id.is_empty() {
-                // Nothing to look up — fail-open.
-            } else if is_terminal_cached(td, task_id, &mut terminal_cache) {
-                continue;
-            }
-        }
-        let from = value.get("from").and_then(Value::as_str).unwrap_or("");
-        let class = value.get("class").and_then(Value::as_str).unwrap_or("");
-        let body = value.get("body").cloned().unwrap_or(Value::Null);
-        // Quick-260425-pc7: hoist scope.more_coming to a top-level field
-        // on request envelopes so callers don't have to dig through
-        // body.scope to know whether the sender expects follow-up
-        // briefing before this task is ready to commit. Default false
-        // (key absent in legacy + non-flagging senders).
-        let more_coming = if class == "request" {
-            body.pointer("/scope/more_coming")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-        } else {
-            false
-        };
-        let shaped = json!({
-            "offset": end_offset,
-            "task_id": task_id,
-            "from": from,
-            "class": class,
-            "more_coming": more_coming,
-            "body": body,
-        });
-        let line = serde_json::to_string(&shaped).unwrap_or_default();
+    let outcome = run_at_structured(sock, args).await?;
+    for env in &outcome.envelopes {
+        let line = serde_json::to_string(env).map_err(|e| CliError::Io {
+            path: sock.to_path_buf(),
+            source: std::io::Error::other(format!("serialize envelope: {e}")),
+        })?;
         writeln!(out, "{line}").map_err(|e| CliError::Io {
-            path: inbox_path.clone(),
+            path: sock.to_path_buf(),
             source: e,
         })?;
     }
+    writeln!(out, "{{\"next_offset\":{}}}", outcome.next_offset).map_err(|e| CliError::Io {
+        path: sock.to_path_buf(),
+        source: e,
+    })?;
     Ok(())
 }
 
-/// Cached taskdir lookup. Returns `true` if the entry should be hidden.
+/// Structured-outcome entry point — preserved for the MCP `famp_inbox` tool.
 ///
-/// Caching the verdict also de-duplicates the fail-closed `eprintln!` —
-/// a corrupt taskdir record logs once per `run_list` call, not once per
-/// affected inbox entry.
-///
-/// Rules:
-/// - `NotFound` / `InvalidUuid` → `false` (fail-open; surface entry).
-/// - `Ok(rec)`                   → `rec.terminal`.
-/// - any other error             → `true`  (fail-closed; hide entry + `eprintln`).
-fn is_terminal_cached(td: &TaskDir, task_id: &str, cache: &mut HashMap<String, bool>) -> bool {
-    if let Some(cached) = cache.get(task_id) {
-        return *cached;
+/// Plan 02-09 calls into this. Performs the same `Hello.bind_as` proxy
+/// connect + `BusMessage::Inbox` round-trip but returns the typed
+/// envelopes instead of writing JSONL.
+pub async fn run_at_structured(sock: &Path, args: ListArgs) -> Result<ListOutcome, CliError> {
+    let identity = resolve_identity(args.act_as.as_deref())?;
+
+    // D-10 proxy connect. The broker validates `bind_as = Some(identity)`
+    // maps to a live registered holder at Hello time and rejects with
+    // `HelloErr { kind: NotRegistered }` if not.
+    let mut bus = BusClient::connect(sock, Some(identity.clone()))
+        .await
+        .map_err(|e| match e {
+            BusClientError::HelloFailed {
+                kind: BusErrorKind::NotRegistered,
+                ..
+            } => CliError::NotRegisteredHint {
+                name: identity.clone(),
+            },
+            _ => CliError::BrokerUnreachable,
+        })?;
+
+    let reply = bus
+        .send_recv(BusMessage::Inbox {
+            since: args.since,
+            include_terminal: Some(args.include_terminal),
+        })
+        .await
+        .map_err(|_| CliError::BrokerUnreachable)?;
+
+    match reply {
+        BusReply::InboxOk {
+            envelopes,
+            next_offset,
+        } => Ok(ListOutcome {
+            envelopes,
+            next_offset,
+        }),
+        BusReply::Err {
+            kind: BusErrorKind::NotRegistered,
+            ..
+        } => Err(CliError::NotRegisteredHint { name: identity }),
+        BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
+        other => Err(CliError::Io {
+            path: sock.to_path_buf(),
+            source: std::io::Error::other(format!("unexpected broker reply: {other:?}")),
+        }),
     }
-    let verdict = match td.read(task_id) {
-        Ok(rec) => rec.terminal,
-        // Fail-open per spec edge-case table: an unparseable or absent
-        // task_id is a property of the inbox entry, not evidence that a
-        // task has completed. InvalidUuid here means the entry's
-        // causality.ref (or id, for `request`) isn't a valid UUID —
-        // surface it and move on.
-        Err(TaskDirError::NotFound { .. } | TaskDirError::InvalidUuid { .. }) => false,
-        Err(other) => {
-            eprintln!("famp inbox list: hiding entry for task_id={task_id}: {other}",);
-            true
-        }
-    };
-    cache.insert(task_id.to_string(), verdict);
-    verdict
+}
+
+/// Top-level CLI entry — resolves the bus socket and writes JSONL to
+/// stdout.
+pub async fn run(args: ListArgs) -> Result<(), CliError> {
+    let sock = resolve_sock_path();
+    let mut stdout = std::io::stdout();
+    run_at(&sock, args, &mut stdout).await
 }

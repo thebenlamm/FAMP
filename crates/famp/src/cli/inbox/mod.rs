@@ -1,15 +1,23 @@
-//! `famp inbox` — non-blocking list + manual cursor ack.
+//! `famp inbox` — bus-backed list + client-side cursor ack.
 //!
-//! - `famp inbox list [--since <offset>]`: read every entry past
-//!   `--since` (defaults to 0 — the whole file) and print one JSON
-//!   line per entry in the same locked shape `famp await` emits.
-//!   Does NOT advance the cursor.
-//! - `famp inbox ack <offset>`: advance the cursor to `<offset>`.
-//!   Prints nothing. Does not validate that the offset is on a line
-//!   boundary — the caller (Phase 4 MCP wrapper) is trusted.
+//! Phase 02 plan 02-05: rewires from v0.8 file-reader semantics to the
+//! local UDS broker. Identity binding is connection-level via D-10
+//! `Hello.bind_as`. Cursor management remains client-side (RESEARCH §6).
+//!
+//! Subcommands:
+//!
+//! - `famp inbox list [--since <offset>] [--include-terminal] [--as <name>]`
+//!   Connects with `Hello { bind_as: Some(identity) }`, sends
+//!   `BusMessage::Inbox { since, include_terminal }`, prints one JSONL
+//!   line per typed envelope to stdout, then a `{"next_offset":N}`
+//!   footer.
+//!
+//! - `famp inbox ack --offset <N> [--as <name>]`
+//!   Atomic local cursor advance via `cli::broker::cursor_exec`. NO
+//!   broker round-trip — purely a temp+rename file write at
+//!   `<bus_dir>/mailboxes/.<identity>.cursor`.
 
 use crate::cli::error::CliError;
-use crate::cli::home;
 
 pub mod ack;
 pub mod list;
@@ -23,42 +31,15 @@ pub struct InboxArgs {
 #[derive(clap::Subcommand, Debug)]
 pub enum InboxCommand {
     /// List inbox entries; with `--since`, only past that byte offset.
-    List(InboxListArgs),
-    /// Advance the cursor without printing.
-    Ack(InboxAckArgs),
+    List(list::ListArgs),
+    /// Advance the cursor to `--offset` without contacting the broker.
+    Ack(ack::AckArgs),
 }
 
-#[derive(clap::Args, Debug)]
-pub struct InboxListArgs {
-    #[arg(long)]
-    pub since: Option<u64>,
-    /// Include entries for tasks that have reached a terminal FSM state
-    /// (COMPLETED, FAILED, CANCELLED). Off by default: finished tasks
-    /// stay out of the active view. Use `famp await` for real-time
-    /// completion notifications.
-    #[arg(long)]
-    pub include_terminal: bool,
-}
-
-#[derive(clap::Args, Debug)]
-pub struct InboxAckArgs {
-    pub offset: u64,
-}
-
-/// Top-level entry point. Dispatches on subcommand. Async because
-/// `ack` calls `InboxCursor::advance` which is async.
+/// Top-level entry point. Dispatches on subcommand.
 pub async fn run(args: InboxArgs) -> Result<(), CliError> {
-    let home = home::resolve_famp_home()?;
     match args.command {
-        InboxCommand::List(list_args) => {
-            let mut stdout = std::io::stdout();
-            list::run_list(
-                &home,
-                list_args.since,
-                list_args.include_terminal,
-                &mut stdout,
-            )
-        }
-        InboxCommand::Ack(ack_args) => ack::run_ack(&home, ack_args.offset).await,
+        InboxCommand::List(list_args) => list::run(list_args).await,
+        InboxCommand::Ack(ack_args) => ack::run(ack_args).await,
     }
 }
