@@ -16,11 +16,21 @@
 //!   constant inlined here so the CLI surface and the broker reject the
 //!   same set of names.
 
+use std::sync::LazyLock;
+
 use crate::cli::error::CliError;
 
 /// Channel name validation regex (mirrors `famp_bus::proto::CHANNEL_PATTERN`).
 /// Locally inlined because `famp_bus` does not export the regex publicly.
 const CHANNEL_PATTERN: &str = r"^#[a-z0-9][a-z0-9_-]{0,31}$";
+
+/// WR-03: compile once at first use rather than on every call. The bus
+/// side already does this in `famp_bus::proto`; we mirror the pattern
+/// so MCP tool loops (`famp_send`, `famp_join`, `famp_leave`) do not
+/// pay the regex-compile cost per invocation.
+static CHANNEL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(CHANNEL_PATTERN).expect("static channel regex compiles")
+});
 
 /// Normalize a channel name: accept both `planning` and `#planning`;
 /// reject `##planning`; validate against the bus channel regex.
@@ -41,12 +51,7 @@ pub fn normalize_channel(input: &str) -> Result<String, CliError> {
             reason: format!("channel name '{input}' cannot start with ##"),
         });
     }
-    // The regex is compiled once on first use; failure to compile is a
-    // programmer bug, not a runtime condition.
-    let re = regex::Regex::new(CHANNEL_PATTERN).map_err(|e| CliError::SendArgsInvalid {
-        reason: format!("internal: channel regex failed to compile: {e}"),
-    })?;
-    if !re.is_match(&normalized) {
+    if !CHANNEL_RE.is_match(&normalized) {
         return Err(CliError::SendArgsInvalid {
             reason: format!("invalid channel name '{normalized}': must match {CHANNEL_PATTERN}"),
         });
