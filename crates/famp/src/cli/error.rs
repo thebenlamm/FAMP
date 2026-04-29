@@ -197,6 +197,30 @@ pub enum CliError {
     /// CLI subcommand that calls `cli::identity::resolve_identity`.
     #[error("{reason}")]
     NoIdentityBound { reason: String },
+
+    /// D-10 proxy validation failed at Hello time (or the broker
+    /// returned `Err{NotRegistered}` on a per-op liveness re-check):
+    /// no live `famp register <name>` is currently held for the
+    /// requested identity. The user-visible hint asks the operator to
+    /// start `famp register <name>` in another terminal first. Distinct
+    /// from `NotRegistered` (the v0.8 MCP-session-not-bound variant).
+    #[error("{name} is not registered — start \"famp register {name}\" in another terminal first")]
+    NotRegisteredHint { name: String },
+
+    /// The local UDS broker is unreachable — Hello handshake failed
+    /// for any reason other than a `NotRegistered` proxy validation,
+    /// or a frame I/O error mid-conversation.
+    #[error("broker unreachable")]
+    BrokerUnreachable,
+
+    /// Per-op error reply from the broker (e.g. holder died mid-op,
+    /// EnvelopeInvalid, NotJoined). Carries the typed `BusErrorKind`
+    /// so callers can pattern-match without a string compare.
+    #[error("bus error: {kind:?}: {message}")]
+    BusError {
+        kind: famp_bus::BusErrorKind,
+        message: String,
+    },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

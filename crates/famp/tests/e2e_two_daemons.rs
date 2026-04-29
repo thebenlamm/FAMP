@@ -104,48 +104,72 @@ async fn await_one(
     .expect("await_one")
 }
 
-/// Assert `run_list` filter behavior on the originator after a task has
-/// reached COMPLETED.
+/// Assert v0.8-federation-listener filter behavior on the originator after
+/// a task has reached COMPLETED.
 ///
-/// - Default filter (`include_terminal=false`): **no** inbox entries for
-///   `task_id` are surfaced (the taskdir record is terminal, so `run_list`
-///   must hide them).
-/// - Override (`include_terminal=true`): entries for `task_id` remain
-///   visible. In this E2E the originator's inbound-only inbox holds the
-///   commit reply + two non-terminal delivers from the peer (3 entries),
-///   so we only need to assert ≥2.
+/// Reads `<home>/inbox.jsonl` directly (the v0.8 federation listener appends
+/// here) and applies the same `terminal`-filter logic the deleted
+/// `cli::inbox::list::run_list` used to: hide entries whose `task_id` maps
+/// to a `TaskRecord.terminal == true` taskdir record.
+///
+/// Phase 02 plan 02-05 rewired `cli::inbox::list` to talk to the local UDS
+/// broker, deleting the v0.8 file-reader API. The federation E2E here still
+/// targets the v0.8 listener path, which writes the inbox.jsonl file, so
+/// this helper reads the file directly. Phase 4 will rewrite this whole
+/// test against the bus or delete it (FED-04 / e2e_two_daemons refactor).
 fn assert_list_filters_completed_task(home: &std::path::Path, task_id: &str) {
-    use famp::cli::inbox::list::run_list;
+    use famp_taskdir::{TaskDir, TaskDirError};
 
-    let mut filtered = Vec::<u8>::new();
-    run_list(home, None, /* include_terminal */ false, &mut filtered).unwrap();
-    let filtered_text = String::from_utf8(filtered).unwrap();
-    for line in filtered_text.lines() {
-        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+    let inbox_path = home.join("inbox.jsonl");
+    let entries = famp_inbox::read::read_from(&inbox_path, 0).expect("read inbox.jsonl");
+    let taskdir = TaskDir::open(home.join("tasks")).expect("open taskdir");
+
+    fn extract_task_id(value: &serde_json::Value) -> &str {
+        let class = value
+            .get("class")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        match class {
+            "request" => value
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+            _ => value
+                .get("causality")
+                .and_then(|c| c.get("ref"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+        }
+    }
+
+    fn is_terminal(td: &TaskDir, tid: &str) -> bool {
+        if tid.is_empty() {
+            return false;
+        }
+        match td.read(tid) {
+            Ok(rec) => rec.terminal,
+            Err(TaskDirError::NotFound { .. } | TaskDirError::InvalidUuid { .. }) => false,
+            Err(_) => true,
+        }
+    }
+
+    // Default filter: `task_id` must not appear among the surfaced entries.
+    let surfaced_filtered: Vec<&str> = entries
+        .iter()
+        .map(|(v, _o)| extract_task_id(v))
+        .filter(|tid| !is_terminal(&taskdir, tid))
+        .collect();
+    for tid in &surfaced_filtered {
         assert_ne!(
-            v["task_id"].as_str().unwrap(),
-            task_id,
-            "default filter must hide completed task entries: {line}",
+            *tid, task_id,
+            "default filter must hide completed task entries: tid={tid}",
         );
     }
 
-    let mut unfiltered = Vec::<u8>::new();
-    run_list(
-        home,
-        None,
-        /* include_terminal */ true,
-        &mut unfiltered,
-    )
-    .unwrap();
-    let unfiltered_text = String::from_utf8(unfiltered).unwrap();
-    let matching = unfiltered_text
-        .lines()
-        .filter(|l| {
-            serde_json::from_str::<serde_json::Value>(l).unwrap()["task_id"]
-                .as_str()
-                .unwrap()
-                == task_id
-        })
+    // include_terminal: entries for `task_id` remain visible.
+    let matching = entries
+        .iter()
+        .filter(|(v, _o)| extract_task_id(v) == task_id)
         .count();
     assert!(
         matching >= 2,

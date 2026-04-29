@@ -263,6 +263,20 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                     .to_string(),
             },
         ),
+        (
+            "NotRegisteredHint",
+            CliError::NotRegisteredHint {
+                name: "alice".to_string(),
+            },
+        ),
+        ("BrokerUnreachable", CliError::BrokerUnreachable),
+        (
+            "BusError",
+            CliError::BusError {
+                kind: famp_bus::BusErrorKind::Internal,
+                message: "boom".to_string(),
+            },
+        ),
     ]
 }
 

@@ -1,4 +1,5 @@
-//! `famp_inbox` MCP tool — wraps `cli::inbox::{list, ack}`.
+//! `famp_inbox` MCP tool — wraps `cli::inbox::{list, ack}` structured
+//! entry points (Phase 02 plan 02-05 reshape).
 //!
 //! Input shape (JSON):
 //! ```json
@@ -12,28 +13,34 @@
 //!
 //! Output shape for `list`:
 //! ```json
-//! { "entries": [ { "offset": ..., "task_id": "...", ... }, ... ] }
+//! { "envelopes": [ ... typed envelopes ... ], "next_offset": 789 }
 //! ```
 //!
 //! Output shape for `ack`:
 //! ```json
-//! { "ok": true }
+//! { "acked": true, "offset": 456 }
 //! ```
+//!
+//! NOTE: plan 02-09 will rewire this to call into a session-bound
+//! BusClient instead of resolving identity per-call. The shape here is
+//! the v0.9 wire shape; the session-binding plumbing is owned by 02-09.
 
 use serde_json::Value;
 
+use crate::bus_client::resolve_sock_path;
 use crate::cli::error::CliError;
 use crate::cli::inbox::{ack, list};
 use crate::cli::mcp::session::IdentityBinding;
 
 /// Dispatch a `famp_inbox` tool call.
 pub async fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, CliError> {
-    let home = binding.home.as_path();
     let action = input["action"]
         .as_str()
         .ok_or_else(|| CliError::SendArgsInvalid {
             reason: "famp_inbox: missing required field 'action'".to_string(),
         })?;
+
+    let sock = resolve_sock_path();
 
     match action {
         "list" => {
@@ -47,27 +54,16 @@ pub async fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, Cli
                     });
                 }
             };
-            let mut buf = Vec::<u8>::new();
-            list::run_list(home, since, include_terminal, &mut buf)?;
-
-            // Parse line-by-line into a JSON array. A malformed line is a
-            // hard tool-call failure — silently mapping it to `null` (the
-            // pre-fix behaviour) made downstream agents miss messages or
-            // mis-handle inbox state without ever seeing an error.
-            let text = std::str::from_utf8(&buf).map_err(|e| CliError::Io {
-                path: std::path::PathBuf::new(),
-                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-            })?;
-            let mut entries: Vec<Value> = Vec::new();
-            for (idx, line) in text.lines().filter(|l| !l.is_empty()).enumerate() {
-                let parsed: Value =
-                    serde_json::from_str(line).map_err(|err| CliError::SendArgsInvalid {
-                        reason: format!("famp_inbox: list line {idx} is not valid JSON: {err}"),
-                    })?;
-                entries.push(parsed);
-            }
-
-            Ok(serde_json::json!({ "entries": entries }))
+            let args = list::ListArgs {
+                since,
+                include_terminal,
+                act_as: Some(binding.identity.clone()),
+            };
+            let outcome = list::run_at_structured(&sock, args).await?;
+            Ok(serde_json::json!({
+                "envelopes": outcome.envelopes,
+                "next_offset": outcome.next_offset,
+            }))
         }
         "ack" => {
             let offset = input["offset"]
@@ -75,8 +71,15 @@ pub async fn call(binding: &IdentityBinding, input: &Value) -> Result<Value, Cli
                 .ok_or_else(|| CliError::SendArgsInvalid {
                     reason: "famp_inbox action=ack requires 'offset'".to_string(),
                 })?;
-            ack::run_ack(home, offset).await?;
-            Ok(serde_json::json!({ "ok": true }))
+            let args = ack::AckArgs {
+                offset,
+                act_as: Some(binding.identity.clone()),
+            };
+            let outcome = ack::run_at_structured(&sock, args).await?;
+            Ok(serde_json::json!({
+                "acked": outcome.acked,
+                "offset": outcome.offset,
+            }))
         }
         other => Err(CliError::SendArgsInvalid {
             reason: format!("famp_inbox: unknown action '{other}'; expected list|ack"),
