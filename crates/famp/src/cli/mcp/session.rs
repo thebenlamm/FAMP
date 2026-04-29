@@ -95,26 +95,22 @@ pub fn state() -> &'static Mutex<SessionState> {
 /// Errors are projected onto [`BusErrorKind`] so MCP-10's
 /// exhaustive-match downstream catches them.
 pub async fn ensure_bus() -> Result<(), BusErrorKind> {
-    // Hold the guard only across the `bus.is_none()` check + the
-    // `bus = Some(client)` assignment. `BusClient::connect` does I/O
-    // (broker spawn + Hello handshake); we explicitly drop the guard
-    // around it so this method is not a global serialization point
-    // for every concurrent tool call.
-    let already_open = state().lock().await.bus.is_some();
-    if already_open {
+    // WR-04: hold the lock across `BusClient::connect` so concurrent
+    // callers can't both run the broker-spawn + Hello handshake and
+    // then drop the loser's freshly-connected client on the floor
+    // (which would leak a broker accept + handshake + a stranded
+    // ClientState entry, plus a spurious broker.log line). Per the
+    // module comment above, contention is structurally bounded —
+    // stdio MCP serializes tool calls — so holding the lock is fine.
+    let mut guard = state().lock().await;
+    if guard.bus.is_some() {
         return Ok(());
     }
     let sock = crate::bus_client::resolve_sock_path();
     let client = BusClient::connect(&sock, None)
         .await
         .map_err(|_| BusErrorKind::BrokerUnreachable)?;
-    let mut guard = state().lock().await;
-    if guard.bus.is_none() {
-        guard.bus = Some(client);
-    }
-    // else: a concurrent caller raced us; the freshly-built `client` is
-    // dropped after `guard` (closing its `UnixStream` cleanly).
-    drop(guard);
+    guard.bus = Some(client);
     Ok(())
 }
 
