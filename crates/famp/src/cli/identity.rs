@@ -68,7 +68,15 @@ fn lookup_wires_tsv() -> Result<Option<String>, CliError> {
         path: PathBuf::new(),
         source: e,
     })?;
-    let cwd_canon = cwd.canonicalize().unwrap_or(cwd);
+    // WR-02: keep both the canonical and the raw cwd. The fallback
+    // comparison is `row_raw == cwd_raw` so a deleted-but-still-open
+    // working directory (canonicalize fails) still matches a
+    // verbatim-text row from `wires.tsv`. Comparing the raw row against
+    // the canonical cwd (the previous code) was dead — for that to
+    // match, the row's on-disk text would already equal the canonical
+    // cwd path, in which case the canonical comparison already matched.
+    let cwd_canon = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+    let cwd_raw = cwd;
 
     let Some(wires_path) = wires_tsv_path() else {
         return Ok(None);
@@ -87,7 +95,7 @@ fn lookup_wires_tsv() -> Result<Option<String>, CliError> {
         let row_canon = Path::new(dir_str)
             .canonicalize()
             .unwrap_or_else(|_| PathBuf::from(dir_str));
-        if row_canon == cwd_canon || Path::new(dir_str) == cwd_canon {
+        if row_canon == cwd_canon || Path::new(dir_str) == cwd_raw {
             return Ok(Some(name.to_string()));
         }
     }
