@@ -72,6 +72,22 @@ fn spawn_broker_subprocess(sock: &std::path::Path) -> std::process::Child {
         .unwrap()
 }
 
+/// Helper: poll until a `bind_as = Some(name)` proxy connect succeeds,
+/// proving the broker is up AND `name`'s holder has completed its
+/// Register handshake. The lazy `spawn_broker_if_absent` path inside
+/// `famp register` can take longer than a fixed sleep, so wait
+/// observationally instead. Up to 5s with 100ms backoff.
+async fn wait_for_registration(sock: &std::path::Path, name: &str) {
+    for _ in 0..50 {
+        if let Ok(mut client) = BusClient::connect(sock, Some(name.into())).await {
+            client.shutdown().await;
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("{name} failed to register within 5s");
+}
+
 /// D-10 invariant 1: a proxy connection joining a channel mutates the
 /// canonical holder's `joined` set, not the proxy's. The proxy
 /// disconnect (one-shot CLI exits) MUST NOT remove the holder from
@@ -86,9 +102,11 @@ fn test_proxy_join_persists_after_disconnect() {
         let tmp = tempfile::TempDir::new().unwrap();
         let sock = tmp.path().join("bus.sock");
 
-        // 1. Start alice as canonical holder.
+        // 1. Start alice as canonical holder, then wait observationally
+        //    until alice's Register handshake has actually landed
+        //    (lazy broker spawn + register can exceed a fixed sleep).
         let mut alice = spawn_register(&sock, "alice");
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        wait_for_registration(&sock, "alice").await;
 
         // 2. Open a one-shot proxy connection (bind_as: Some("alice"))
         //    — this is what `famp join --as alice #planning` would do.
