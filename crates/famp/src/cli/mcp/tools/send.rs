@@ -6,10 +6,10 @@
 
 use serde_json::Value;
 
-use crate::cli::error::CliError;
+use famp_bus::BusErrorKind;
 
 /// Dispatch a `famp_send` tool call. Stub — see plan 02-09.
 #[allow(clippy::unused_async)] // body is `unimplemented!()` until plan 02-09 wires the bus.
-pub async fn call(_input: &Value) -> Result<Value, CliError> {
+pub async fn call(_input: &Value) -> Result<Value, BusErrorKind> {
     unimplemented!("rewired in plan 02-09")
 }

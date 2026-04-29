@@ -15,10 +15,12 @@
 //! | `tools/call`            | Dispatches to the right tool handler |
 //! | anything else           | JSON-RPC `-32601 Method not found`   |
 
+use famp_bus::BusErrorKind;
 use tokio::io::{stdin, stdout};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use crate::cli::error::CliError;
+use crate::cli::mcp::error_kind::bus_error_to_jsonrpc;
 use crate::cli::mcp::tools;
 
 // ── constants ─────────────────────────────────────────────────────────────────
@@ -163,24 +165,36 @@ fn error_response(
     })
 }
 
-fn cli_error_response(id: &serde_json::Value, err: &CliError) -> serde_json::Value {
-    // Per CONTEXT.md: NotRegistered carries a stable hint string in
-    // `details.hint` so MCP clients render an actionable message.
-    // Other variants pass `details: {}` for now; future plans may
-    // expand this match if other variants need typed payloads.
-    let kind = err.mcp_error_kind();
-    let details = match kind {
-        "not_registered" => serde_json::json!({
+/// Build a JSON-RPC error frame from a `BusErrorKind` returned by a
+/// tool body. Plan 02-08 (MCP-10) renamed/retargeted the v0.8
+/// (renamed from the v0.8) cli error response builder, retargeted at the
+/// new bus error surface.
+///
+/// Code + kind string come from the [`bus_error_to_jsonrpc`] exhaustive
+/// table. The `message` argument is the broker-supplied human-readable
+/// description (or a synthesized one for client-side errors like
+/// "session not registered yet"). The `details` payload preserves the
+/// v0.8 hint convention for `NotRegistered` so MCP clients keep
+/// rendering an actionable next-step.
+fn bus_error_response(
+    id: &serde_json::Value,
+    kind: BusErrorKind,
+    message: &str,
+) -> serde_json::Value {
+    let (code, kind_str) = bus_error_to_jsonrpc(kind);
+    let details = if matches!(kind, BusErrorKind::NotRegistered) {
+        serde_json::json!({
             "hint": "Call famp_register with an identity name first. \
                      Use famp_whoami to inspect current binding."
-        }),
-        _ => serde_json::json!({}),
+        })
+    } else {
+        serde_json::json!({})
     };
     let data = serde_json::json!({
-        "famp_error_kind": kind,
+        "famp_error_kind": kind_str,
         "details": details,
     });
-    error_response(id, -32_000, &err.to_string(), &data)
+    error_response(id, code, message, &data)
 }
 
 fn tool_result(value: &serde_json::Value) -> serde_json::Value {
@@ -324,7 +338,19 @@ pub async fn run(local_root: std::path::PathBuf) -> Result<(), CliError> {
                 let call_result = dispatch_tool(&local_root, &name, &input).await;
                 match call_result {
                     Ok(ref value) => ok_response(&id, &tool_result(value)),
-                    Err(ref e) => cli_error_response(&id, e),
+                    Err(kind) => {
+                        // Synthesize a descriptive message per kind. Once
+                        // plan 02-09 wires real broker round-trips, the
+                        // broker-supplied message will be plumbed through
+                        // here directly.
+                        let message = match kind {
+                            BusErrorKind::NotRegistered => {
+                                "session is not registered; call famp_register first"
+                            }
+                            _ => "tool error",
+                        };
+                        bus_error_response(&id, kind, message)
+                    }
                 }
             }
 
@@ -356,7 +382,7 @@ async fn dispatch_tool(
     _local_root: &std::path::Path,
     name: &str,
     input: &serde_json::Value,
-) -> Result<serde_json::Value, CliError> {
+) -> Result<serde_json::Value, BusErrorKind> {
     // Pre-binding tools: famp_register and famp_whoami work at any time.
     // Per D-04 they no longer take a `local_root` (identity resolves
     // through the broker's `Register` frame, not the filesystem).
@@ -371,7 +397,7 @@ async fn dispatch_tool(
     // set on `session` after `tools::register::call` receives RegisterOk
     // from the broker.
     if crate::cli::mcp::session::active_identity().await.is_none() {
-        return Err(CliError::NotRegistered);
+        return Err(BusErrorKind::NotRegistered);
     }
     // Plan 02-09 will add the `famp_join` / `famp_leave` arms here and
     // wire the per-tool body. For now every tool body is `unimplemented!()`.
@@ -380,8 +406,10 @@ async fn dispatch_tool(
         "famp_await" => tools::await_::call(input).await,
         "famp_inbox" => tools::inbox::call(input).await,
         "famp_peers" => tools::peers::call(input).await,
-        other => Err(CliError::SendArgsInvalid {
-            reason: format!("unknown tool '{other}'"),
-        }),
+        // Unknown tool name → JSON-RPC will surface "tool error" via
+        // BusErrorKind::Internal. Plan 02-09 may switch this to JSON-RPC
+        // -32601 ("Method not found") since unknown-tool is structurally
+        // different from a broker-rejected op.
+        _other => Err(BusErrorKind::Internal),
     }
 }
