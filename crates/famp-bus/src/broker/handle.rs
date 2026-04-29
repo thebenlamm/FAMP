@@ -241,12 +241,18 @@ fn send_agent<E: BrokerEnv>(
     envelope: serde_json::Value,
     line: Vec<u8>,
 ) -> Vec<Out> {
+    // WR-09: extract task_id from the envelope so the SendOk reply
+    // carries the real task identity (matches send_channel). The
+    // pre-fix path always returned Uuid::nil() for agent DMs, leaving
+    // \`famp send\` and the \`famp_send\` MCP tool unable to surface the
+    // task id to downstream callers.
+    let task_id = task_id_from(&envelope);
     if let Some(waiting) = waiting_client_for_name(broker, &name, &envelope) {
         broker.state.pending_awaits.remove(&waiting);
         return vec![
             Out::Reply(waiting, BusReply::AwaitOk { envelope }),
             Out::UnparkAwait { client: waiting },
-            send_ok(sender, Target::Agent { name }, true),
+            send_ok(sender, task_id, Target::Agent { name }, true),
         ];
     }
 
@@ -255,7 +261,7 @@ fn send_agent<E: BrokerEnv>(
             target: MailboxName::Agent(name.clone()),
             line,
         },
-        send_ok(sender, Target::Agent { name }, true),
+        send_ok(sender, task_id, Target::Agent { name }, true),
     ]
 }
 
@@ -744,11 +750,11 @@ fn decode_lines(lines: Vec<Vec<u8>>) -> Result<Vec<serde_json::Value>, String> {
         .collect()
 }
 
-fn send_ok(client: ClientId, to: Target, ok: bool) -> Out {
+fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool) -> Out {
     Out::Reply(
         client,
         BusReply::SendOk {
-            task_id: uuid::Uuid::nil(),
+            task_id,
             delivered: vec![Delivered { to, ok }],
         },
     )
