@@ -188,14 +188,19 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
         }
     };
 
-    // 4. Build the envelope value. Phase 02 wires a minimal envelope shape
-    //    (mode + optional body) so the broker has typed JSON to fan out.
-    //    Phase 4 will graft the full signed-envelope construction back in
-    //    once the federation gateway lands and the keyring loader is wired
-    //    into the bus path. Until then the envelope carries enough metadata
-    //    for the receiver to drive an `await` cursor without depending on
-    //    keyring fields the local broker does not need.
-    let envelope = build_envelope_value(&args)?;
+    // 4. Build the envelope value. Phase 02 wires a minimal mode-tagged
+    //    payload wrapped in a typed `audit_log` BusEnvelope so the broker's
+    //    Phase-1 D-09 typed-decoder (`AnyBusEnvelope::decode`) accepts the
+    //    line on drain. The mode-tagged payload (mode + summary + task +
+    //    body + flags) lives under `body.details`, preserving the v0.8 send
+    //    surface verbatim for downstream readers. The audit_log class is
+    //    chosen because it is fire-and-forget (no FSM-firing on receipt),
+    //    its body schema is the most permissive (event + optional details),
+    //    and BUS-11 forbids signatures on the bus path so an unsigned
+    //    envelope is the correct shape. Phase 4 will graft the full signed
+    //    Request/Deliver envelope construction back in once the federation
+    //    gateway lands and the keyring loader is wired into the bus path.
+    let envelope = build_envelope_value(&args, &identity, &target)?;
 
     // 5. Connect. `Some(identity)` = D-10 proxy shape; broker validates
     //    at Hello time. Rich-error mapping: HelloErr{NotRegistered} =>
@@ -254,20 +259,18 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
     }
 }
 
-/// Build the JSON envelope value sent in `BusMessage::Send.envelope`.
+/// Build the inner mode-tagged payload (the "what does this send mean?"
+/// shape). Embedded under `body.details` of the outer `audit_log` envelope
+/// so existing v0.8 consumers continue to read fields by name.
 ///
-/// Phase 02 ships a minimal mode-tagged shape rather than the full v0.8
-/// signed envelope. The bus path does not yet route signed/keyring envelopes
-/// (federation Phase 4 lights that up); for now the receiver only needs
-/// enough structure to drive its inbox cursor and FSM. Fields:
-///
+/// Fields:
 /// - `mode`: `"new_task"` | `"deliver"` | `"deliver_terminal"` | `"channel_post"`
 /// - `summary`: optional human-readable summary (from `--new-task`)
 /// - `task`: optional `task_id` reference (for `--task` modes)
 /// - `body`: optional freeform body text (from `--body`)
 /// - `terminal`: bool (true on `--terminal`)
 /// - `more_coming`: bool (only set when true, on `--new-task`)
-fn build_envelope_value(args: &SendArgs) -> Result<serde_json::Value, CliError> {
+fn build_inner_payload(args: &SendArgs) -> Result<serde_json::Value, CliError> {
     let mode = match (
         args.new_task.is_some(),
         args.task.is_some(),
@@ -309,13 +312,105 @@ fn build_envelope_value(args: &SendArgs) -> Result<serde_json::Value, CliError> 
     Ok(serde_json::Value::Object(obj))
 }
 
+/// Build the wire envelope sent in `BusMessage::Send.envelope`.
+///
+/// Wraps the mode-tagged payload from [`build_inner_payload`] in a typed
+/// unsigned `audit_log` `BusEnvelope` shape so the broker's Phase-1 D-09
+/// typed-decoder accepts each drained line. BUS-11 forbids signatures on
+/// the bus path, so the envelope is signature-less and `from`/`to` use
+/// a synthetic `agent:local.bus/<name>` Principal scheme. Channel sends
+/// surface the channel name in `to` as `agent:local.bus/<channel-without-#>`
+/// — pure cosmetic; the broker routes by `BusMessage::Send.to: Target`,
+/// not by the envelope `to` field.
+fn build_envelope_value(
+    args: &SendArgs,
+    identity: &str,
+    target: &Target,
+) -> Result<serde_json::Value, CliError> {
+    let inner = build_inner_payload(args)?;
+
+    // Synthesize Principal-shaped `from` / `to` strings. The local bus
+    // does not enforce Principal authority/name validation beyond what
+    // the typed-decoder requires (`from_str` parsing during deserialize).
+    // Use a fixed `local.bus` authority so canonical bytes are stable
+    // across runs for byte-exact round-trip in property tests.
+    let from = format!("agent:local.bus/{identity}");
+    let to = match target {
+        Target::Agent { name } => format!("agent:local.bus/{name}"),
+        Target::Channel { name } => {
+            // Channel names start with `#`; strip for the Principal name
+            // segment (which forbids `#`). `agent:local.bus/channel-X`.
+            let stripped = name.trim_start_matches('#');
+            format!("agent:local.bus/channel-{stripped}")
+        }
+    };
+
+    // Synthesize a fresh UUIDv7 message id and the current timestamp.
+    let id = uuid::Uuid::now_v7().to_string();
+    // RFC 3339 UTC timestamp, second precision, trailing `Z`. Shallow
+    // format match for `Timestamp::shallow_validate` (≥20 bytes,
+    // `-`/`T`/`:` at fixed offsets, ends with `Z`).
+    let ts = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|e| CliError::SendArgsInvalid {
+            reason: format!("failed to format envelope ts: {e}"),
+        })?;
+    // Strip subsecond component if `time` emitted one — `Timestamp`'s
+    // shallow validator accepts the trimmed `YYYY-MM-DDTHH:MM:SSZ` form
+    // and the fixture used by `audit_log_dispatch.rs`. Find the first
+    // dot or `Z` after the `T` and rebuild as `<HMS>Z`.
+    let ts = if let Some(dot_idx) = ts.find('.') {
+        // Find tail offset end (the `Z` or +/-HH:MM after subsecs).
+        let tail_idx = ts[dot_idx..]
+            .find(['Z', '+', '-'])
+            .map_or(ts.len(), |i| dot_idx + i);
+        let mut out = String::with_capacity(ts.len() - (tail_idx - dot_idx));
+        out.push_str(&ts[..dot_idx]);
+        out.push_str(&ts[tail_idx..]);
+        out
+    } else {
+        ts
+    };
+
+    // The audit_log body's only required field is `event`; we encode the
+    // mode-tagged payload under `details` for Phase-2 consumers that
+    // continue to read by name (`details.mode`, `details.summary`, ...).
+    let event = match (
+        args.new_task.is_some(),
+        args.task.is_some(),
+        args.terminal,
+        args.channel.is_some(),
+    ) {
+        (true, false, false, _) => "famp.send.new_task",
+        (false, true, true, _) => "famp.send.deliver_terminal",
+        (false, true, false, _) => "famp.send.deliver",
+        (false, false, false, true) => "famp.send.channel_post",
+        _ => "famp.send", // unreachable: build_inner_payload would have errored.
+    };
+
+    Ok(serde_json::json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": id,
+        "from": from,
+        "to": to,
+        "authority": "advisory",
+        "ts": ts,
+        "body": {
+            "event": event,
+            "details": inner,
+        }
+    }))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
     #[test]
-    fn build_envelope_new_task_shape() {
+    fn build_inner_payload_new_task_shape() {
         let args = SendArgs {
             to: Some("alice".to_string()),
             channel: None,
@@ -326,7 +421,7 @@ mod tests {
             more_coming: true,
             act_as: None,
         };
-        let v = build_envelope_value(&args).unwrap();
+        let v = build_inner_payload(&args).unwrap();
         assert_eq!(v["mode"], serde_json::Value::String("new_task".into()));
         assert_eq!(v["summary"], serde_json::Value::String("hi".into()));
         assert_eq!(v["body"], serde_json::Value::String("prose".into()));
@@ -336,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn build_envelope_deliver_terminal_shape() {
+    fn build_inner_payload_deliver_terminal_shape() {
         let args = SendArgs {
             to: Some("alice".to_string()),
             channel: None,
@@ -347,7 +442,7 @@ mod tests {
             more_coming: false,
             act_as: None,
         };
-        let v = build_envelope_value(&args).unwrap();
+        let v = build_inner_payload(&args).unwrap();
         assert_eq!(
             v["mode"],
             serde_json::Value::String("deliver_terminal".into())
@@ -356,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn build_envelope_invalid_combo_errors() {
+    fn build_inner_payload_invalid_combo_errors() {
         let args = SendArgs {
             to: None,
             channel: None,
@@ -367,8 +462,49 @@ mod tests {
             more_coming: false,
             act_as: None,
         };
-        let err = build_envelope_value(&args).unwrap_err();
+        let err = build_inner_payload(&args).unwrap_err();
         assert!(matches!(err, CliError::SendArgsInvalid { .. }));
+    }
+
+    /// The wrapped `build_envelope_value` MUST produce a typed
+    /// `audit_log` envelope that round-trips through
+    /// `AnyBusEnvelope::decode`. Locks the Phase-2 fix for the
+    /// Phase-1 D-09 typed-decoder regression.
+    #[test]
+    fn build_envelope_value_decodes_as_audit_log() {
+        let args = SendArgs {
+            to: Some("bob".to_string()),
+            channel: None,
+            new_task: Some("hi".to_string()),
+            task: None,
+            terminal: false,
+            body: None,
+            more_coming: false,
+            act_as: None,
+        };
+        let target = Target::Agent {
+            name: "bob".to_string(),
+        };
+        let envelope = build_envelope_value(&args, "alice", &target).unwrap();
+        // Top-level keys required by `AnyBusEnvelope::decode`.
+        assert_eq!(
+            envelope["class"],
+            serde_json::Value::String("audit_log".into())
+        );
+        assert_eq!(envelope["famp"], serde_json::Value::String("0.5.2".into()));
+        // The mode-tagged inner payload lives under body.details.
+        assert_eq!(
+            envelope["body"]["details"]["mode"],
+            serde_json::Value::String("new_task".into())
+        );
+        assert_eq!(
+            envelope["body"]["details"]["summary"],
+            serde_json::Value::String("hi".into())
+        );
+        // Round-trip through the broker's typed decoder.
+        let bytes = famp_canonical::canonicalize(&envelope).unwrap();
+        let _decoded = famp_envelope::AnyBusEnvelope::decode(&bytes)
+            .expect("audit_log envelope MUST decode via AnyBusEnvelope");
     }
 
     #[test]
