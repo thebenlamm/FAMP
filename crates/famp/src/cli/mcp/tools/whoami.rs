@@ -1,32 +1,16 @@
-//! `famp_whoami` MCP tool — returns the current session identity binding.
+// PLAN 02-09: implement
+//! `famp_whoami` MCP tool — D-04 rewire stub.
 //!
-//! Output shape:
-//! - registered:   `{ "identity": "<name>", "source": "explicit" }`
-//! - unregistered: `{ "identity": null,     "source": "unregistered" }`
-//!
-//! Per CONTEXT.md: "Never errors (unless the JSON-RPC framing layer
-//! itself fails)." This function therefore returns `Ok` unconditionally.
+//! The real body reads `session::active_identity()` and returns
+//! `{ "identity": <name>|null, "source": "explicit"|"unregistered" }`.
+//! Lands in plan 02-09 alongside the other tool rewires.
 
 use serde_json::Value;
 
 use crate::cli::error::CliError;
-use crate::cli::mcp::session::{self, BindingSource};
 
-/// Dispatch a `famp_whoami` tool call. Ignores `_input`.
+/// Dispatch a `famp_whoami` tool call. Stub — see plan 02-09.
+#[allow(clippy::unused_async)] // body is `unimplemented!()` until plan 02-09 wires the bus.
 pub async fn call(_input: &Value) -> Result<Value, CliError> {
-    match session::current().await {
-        Some(b) => {
-            let source = match b.source {
-                BindingSource::Explicit => "explicit",
-            };
-            Ok(serde_json::json!({
-                "identity": b.identity,
-                "source":   source,
-            }))
-        }
-        None => Ok(serde_json::json!({
-            "identity": Value::Null,
-            "source":   "unregistered",
-        })),
-    }
+    unimplemented!("rewired in plan 02-09")
 }

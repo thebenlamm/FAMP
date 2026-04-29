@@ -353,27 +353,33 @@ pub async fn run(local_root: std::path::PathBuf) -> Result<(), CliError> {
 // ── tool dispatcher ───────────────────────────────────────────────────────────
 
 async fn dispatch_tool(
-    local_root: &std::path::Path,
+    _local_root: &std::path::Path,
     name: &str,
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, CliError> {
     // Pre-binding tools: famp_register and famp_whoami work at any time.
+    // Per D-04 they no longer take a `local_root` (identity resolves
+    // through the broker's `Register` frame, not the filesystem).
     match name {
-        "famp_register" => return tools::register::call(local_root, input).await,
+        "famp_register" => return tools::register::call(input).await,
         "famp_whoami" => return tools::whoami::call(input).await,
         _ => {}
     }
 
     // Binding-required tools: refuse with NotRegistered if the session
-    // has not yet called famp_register. CONTEXT.md "Pre-registration tool gating".
-    let Some(binding) = crate::cli::mcp::session::current().await else {
+    // has not yet called famp_register (D-05). The active identity is
+    // set on `session` after `tools::register::call` receives RegisterOk
+    // from the broker.
+    if crate::cli::mcp::session::active_identity().await.is_none() {
         return Err(CliError::NotRegistered);
-    };
+    }
+    // Plan 02-09 will add the `famp_join` / `famp_leave` arms here and
+    // wire the per-tool body. For now every tool body is `unimplemented!()`.
     match name {
-        "famp_send" => tools::send::call(&binding, input).await,
-        "famp_await" => tools::await_::call(&binding, input).await,
-        "famp_inbox" => tools::inbox::call(&binding, input).await,
-        "famp_peers" => tools::peers::call(&binding, input),
+        "famp_send" => tools::send::call(input).await,
+        "famp_await" => tools::await_::call(input).await,
+        "famp_inbox" => tools::inbox::call(input).await,
+        "famp_peers" => tools::peers::call(input).await,
         other => Err(CliError::SendArgsInvalid {
             reason: format!("unknown tool '{other}'"),
         }),
