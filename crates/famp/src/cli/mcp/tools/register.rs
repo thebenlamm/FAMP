@@ -104,13 +104,23 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     result
 }
 
-/// Validate the identity name. Mirrors the bash regex from
-/// `scripts/famp-local cmd_register`: `^[A-Za-z0-9._-]+$`.
+/// Validate the identity name. Mirrors the bash regex AND length cap from
+/// `scripts/famp-local cmd_register`: `^[A-Za-z0-9._-]+$`, ≤64 bytes.
+///
+/// IN-05: enforce the length cap here so an oversized name fails fast at
+/// the MCP boundary with the right error class, not as a confusing
+/// downstream error from `famp-core::identity::validate_name_or_instance_id`.
 fn validate_identity_name(name: &str) -> Result<(), ToolError> {
     if name.is_empty() {
         return Err(ToolError::new(
             BusErrorKind::EnvelopeInvalid,
             "identity name must not be empty",
+        ));
+    }
+    if name.len() > 64 {
+        return Err(ToolError::new(
+            BusErrorKind::EnvelopeInvalid,
+            format!("identity name length {} exceeds 64 bytes", name.len()),
         ));
     }
     if !name
