@@ -115,39 +115,29 @@ mod tests {
     }
 
     /// Tier 2: `$FAMP_LOCAL_IDENTITY` env var when no flag is passed.
-    /// Env mutation in tests is process-global; we save and restore.
+    ///
+    /// WR-06: env mutation is process-global; `temp_env::with_var` saves
+    /// + restores around the closure so a panic doesn't leak state and
+    /// `set_var` doesn't need an `unsafe` block under Rust 2024.
     #[test]
     fn tier_2_env_var_wins_when_no_flag() {
-        let prev = std::env::var("FAMP_LOCAL_IDENTITY").ok();
-        std::env::set_var("FAMP_LOCAL_IDENTITY", "bob");
-        let got = resolve_identity(None).unwrap();
-        assert_eq!(got, "bob");
-        match prev {
-            Some(v) => std::env::set_var("FAMP_LOCAL_IDENTITY", v),
-            None => std::env::remove_var("FAMP_LOCAL_IDENTITY"),
-        }
+        temp_env::with_var("FAMP_LOCAL_IDENTITY", Some("bob"), || {
+            let got = resolve_identity(None).unwrap();
+            assert_eq!(got, "bob");
+        });
     }
 
     /// Tier 2: empty env var falls through (does not match).
     #[test]
     fn tier_2_empty_env_var_falls_through() {
-        let prev_env = std::env::var("FAMP_LOCAL_IDENTITY").ok();
-        let prev_home = std::env::var("HOME").ok();
-        std::env::set_var("FAMP_LOCAL_IDENTITY", "");
-        // Force tier 3 to fail by pointing HOME at a fresh empty tempdir
-        // with no wires.tsv.
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", tmp.path());
-        let res = resolve_identity(None);
-        // Restore env BEFORE asserts so a panic doesn't leak state.
-        match prev_env {
-            Some(v) => std::env::set_var("FAMP_LOCAL_IDENTITY", v),
-            None => std::env::remove_var("FAMP_LOCAL_IDENTITY"),
-        }
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+        let res = temp_env::with_vars(
+            [
+                ("FAMP_LOCAL_IDENTITY", Some("")),
+                ("HOME", Some(tmp.path().to_str().unwrap())),
+            ],
+            || resolve_identity(None),
+        );
         let err = res.expect_err("tier 4 hard error expected");
         match err {
             CliError::NoIdentityBound { reason } => {
@@ -162,9 +152,6 @@ mod tests {
     /// is hermetic.
     #[test]
     fn tier_3_wires_tsv_match() {
-        let prev_env = std::env::var("FAMP_LOCAL_IDENTITY").ok();
-        let prev_home = std::env::var("HOME").ok();
-        std::env::remove_var("FAMP_LOCAL_IDENTITY");
         let tmp = tempfile::tempdir().unwrap();
         let local_dir = tmp.path().join(".famp-local");
         std::fs::create_dir_all(&local_dir).unwrap();
@@ -175,16 +162,13 @@ mod tests {
             format!("{}\tcharlie\n", cwd_canon.display()),
         )
         .unwrap();
-        std::env::set_var("HOME", tmp.path());
-        let res = resolve_identity(None);
-        match prev_env {
-            Some(v) => std::env::set_var("FAMP_LOCAL_IDENTITY", v),
-            None => std::env::remove_var("FAMP_LOCAL_IDENTITY"),
-        }
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+        let res = temp_env::with_vars(
+            [
+                ("FAMP_LOCAL_IDENTITY", None::<&str>),
+                ("HOME", Some(tmp.path().to_str().unwrap())),
+            ],
+            || resolve_identity(None),
+        );
         let got = res.expect("tier-3 hit expected");
         assert_eq!(got, "charlie");
     }
@@ -192,20 +176,14 @@ mod tests {
     /// Tier 4: nothing matches → hard error with the literal hint.
     #[test]
     fn tier_4_hard_error_with_hint() {
-        let prev_env = std::env::var("FAMP_LOCAL_IDENTITY").ok();
-        let prev_home = std::env::var("HOME").ok();
-        std::env::remove_var("FAMP_LOCAL_IDENTITY");
         let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("HOME", tmp.path());
-        let res = resolve_identity(None);
-        match prev_env {
-            Some(v) => std::env::set_var("FAMP_LOCAL_IDENTITY", v),
-            None => std::env::remove_var("FAMP_LOCAL_IDENTITY"),
-        }
-        match prev_home {
-            Some(v) => std::env::set_var("HOME", v),
-            None => std::env::remove_var("HOME"),
-        }
+        let res = temp_env::with_vars(
+            [
+                ("FAMP_LOCAL_IDENTITY", None::<&str>),
+                ("HOME", Some(tmp.path().to_str().unwrap())),
+            ],
+            || resolve_identity(None),
+        );
         let err = res.expect_err("tier-4 hard error expected");
         let msg = format!("{err}");
         assert!(msg.contains("no identity bound"), "{msg}");

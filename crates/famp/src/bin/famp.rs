@@ -6,6 +6,8 @@
 // else the lib pulls in transitively.
 #[cfg(test)]
 use assert_cmd as _;
+#[cfg(test)]
+use temp_env as _;
 use axum as _;
 use base64 as _;
 use dirs as _;

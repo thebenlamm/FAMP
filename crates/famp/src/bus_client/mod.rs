@@ -213,16 +213,17 @@ mod tests {
 
     #[test]
     fn resolve_sock_path_honours_env_override() {
-        // Use `with_var` semantics manually: env mutation in tests is
-        // race-prone. We isolate via a unique key suffix and restore.
-        let prev = std::env::var("FAMP_BUS_SOCKET").ok();
-        std::env::set_var("FAMP_BUS_SOCKET", "/tmp/famp-test-resolve.sock");
-        let p = resolve_sock_path();
-        assert_eq!(p, PathBuf::from("/tmp/famp-test-resolve.sock"));
-        match prev {
-            Some(v) => std::env::set_var("FAMP_BUS_SOCKET", v),
-            None => std::env::remove_var("FAMP_BUS_SOCKET"),
-        }
+        // WR-06: scoped via temp_env::with_var. Save+restore happens
+        // automatically around the closure — survives test panics and
+        // works under Rust 2024's `unsafe fn` `set_var`.
+        temp_env::with_var(
+            "FAMP_BUS_SOCKET",
+            Some("/tmp/famp-test-resolve.sock"),
+            || {
+                let p = resolve_sock_path();
+                assert_eq!(p, PathBuf::from("/tmp/famp-test-resolve.sock"));
+            },
+        );
     }
 
     #[test]
