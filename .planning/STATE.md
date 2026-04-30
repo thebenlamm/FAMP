@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: Local-First Bus
 status: between-phases
-stopped_at: Phase 02 complete; UATs resolved
-last_updated: "2026-04-30T22:05:00Z"
-last_activity: 2026-04-30 -- Phase 02 verification PASS (UATs resolved)
+stopped_at: Phase 02 complete; tech-debt sweep complete; pending architect counsel on audit_log wrapper before Phase 03 plan
+last_updated: "2026-04-30T23:50:00Z"
+last_activity: 2026-04-30 -- v0.9 tech-debt sweep before Phase 03 (7 commits)
 progress:
   total_phases: 4
   completed_phases: 2
@@ -16,7 +16,7 @@ progress:
 
 # STATE: FAMP — v0.9 Local-First Bus
 
-**Last Updated:** 2026-04-30 — Phase 02 complete; verification PASS (UATs resolved 2026-04-30).
+**Last Updated:** 2026-04-30 — Phase 02 complete; v0.9 tech-debt sweep landed (7 commits, 492/22 still green); audit_log-wrapper protocol-shape question parked for architect counsel.
 
 ## Project Reference
 
@@ -49,8 +49,15 @@ Last activity: 2026-04-30 -- Phase 02 verification PASS (UATs resolved)
 - `BusEnvelope<B>` (private-inner sibling type) and `AnyBusEnvelope` 6-arm dispatch enforce BUS-11 at compile time and at runtime.
 - Broker `decode_lines` calls `AnyBusEnvelope::decode` against each drain line; failure short-circuits to `BusReply::Err{EnvelopeInvalid}` and aborts cursor advance. `RegisterOk.drained` stays `Vec<serde_json::Value>` on the wire to preserve BUS-02/03 round-trip — the swap to `Vec<AnyBusEnvelope>` was abandoned by design (D-09 type-validation-only); documented in 01-03-SUMMARY.md.
 - `just check-spec-version-coherence` and `just check-no-tokio-in-bus` are now permanent CI gates.
-- Pre-existing 8 listener/E2E TLS-loopback timeouts on macOS reproduce on Wave 2 commit `ae905ed`; not a Wave 3 regression. Deferred as a hygiene task.
+- The 8 listener/E2E TLS-loopback timeout note from Phase 01 is moot at HEAD: those tests are now `#[ignore]`'d as v0.8-federation tests parked for Phase 04. The test surface is 492 passed / 22 skipped / 0 failed at HEAD on macOS.
 - HTTP transport URL path `/famp/v0.5.1/inbox/{principal}` intentionally NOT bumped — transport URL versioning is out of Phase 1 scope.
+- `[[profile.default.test-groups]]` `listen-subprocess = max-threads = 4` is now pinned in `.config/nextest.toml` (TD-1 carry-forward closed in 2026-04-30 sweep). Listen-subprocess parallelism flake on macOS is no longer latent.
+- v0.8 federation `#[ignore]` reasons across 14 test files are now uniformly anchored at "Phase 04 (v0.9 federation deletion)"; Phase 04 will delete or migrate them with the v0.8 CLI surface. Two `#[ignore]`'d tests are NOT in this anchor (`cross_machine_happy_path` is v0.7 chicken-and-egg; `provisional_scope_instructions_vector` is a fixture regenerator).
+- Env-var tests in `cli/identity.rs`, `bus_client/mod.rs`, `tests/mcp_register_whoami.rs` migrated to `temp-env` scoped helpers (WR-06 closed 2026-04-30 sweep). Edition 2024 toolchain bump no longer requires test-file changes.
+
+## Open question — pending architect counsel before Phase 03 plan
+
+- **`famp send` audit_log wrapper.** `crates/famp/src/cli/send/mod.rs::build_envelope_value` wraps every local DM, deliver, and channel post payload as an unsigned `audit_log` `BusEnvelope` with the mode-tagged payload (mode/summary/task/body/terminal/more_coming) under `body.details`. Class is hardcoded `"audit_log"`; `event` is `famp.send.{new_task,deliver,deliver_terminal,channel_post}`; from/to are synthetic `agent:local.bus/<name>` Principals. The wrapper exists because Phase 1 D-09 added a typed-decoder gate on the broker's drain path (`AnyBusEnvelope::decode` per drained line) and Phase 2 02-04's mode-tagged envelope had no `class` field. Three options on the table: (1) accept as v0.9 convention and let v1.0 federation gateway translate; (2) add a bus-internal `MessageClass::BusDm`/`LocalRequest` (v0.5.3 spec amendment, AUDIT-05 atomic-bump); (3) loosen D-09 to accept untyped local payloads. Lean is option 1 but the user wants architect counsel before Phase 03 scope locks. Full briefing drafted at .planning/STATE.md Q1 (this entry); architect MCP session was not running at sweep close (2026-04-30), so the question is parked for the next architect session.
 
 ## Decisions
 
