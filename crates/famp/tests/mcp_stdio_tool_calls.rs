@@ -319,9 +319,10 @@ fn mcp_famp_send_body_description_flags_required_for_new_task() {
 /// Starts an in-process `famp listen` daemon on an ephemeral port so that
 /// `famp_send` can actually POST the envelope and receive an HTTP 200.
 #[test]
-#[ignore = "Phase 02 Plan 02-04: famp_send rewired to UDS bus path; this v0.8 \
-            HTTPS-via-listen test will be migrated to a broker-backed harness \
-            in plan 02-09 (MCP rewire) or Phase 4 (federation gateway)"]
+#[ignore = "Phase 04 (v0.9 federation deletion): tests v0.8 HTTPS-via-listen \
+            from MCP. v0.9 broker-backed coverage already lives in \
+            crates/famp/tests/mcp_bus_e2e.rs (test_mcp_bus_e2e). Phase 04 will \
+            delete or migrate this file with the v0.8 CLI surface."]
 fn mcp_famp_send_new_task_returns_structured() {
     // Build a multi-thread tokio runtime to drive the async listener while the
     // blocking MCP subprocess I/O runs on the main test thread.
@@ -438,8 +439,10 @@ fn mcp_famp_send_new_task_returns_structured() {
 /// is also removed (v0.9 has no `add_peer` since federation isn't local).
 /// A v0.9-shaped equivalent test belongs in the broker integration suite.
 #[test]
-#[ignore = "Plan 02-09: v0.8 peers.toml shape; v0.9 famp_peers returns \
-            broker-memory `online` list. Rewrite in plan 02-13 (E2E)."]
+#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 peers.toml fixture shape; \
+            v0.9 famp_peers returns the broker-memory `online` list (covered by \
+            mcp_bus_e2e.rs). Phase 04 will delete this with the v0.8 peer-file \
+            surface."]
 fn mcp_famp_peers_list_returns_entries() {
     let mut h = McpHarness::new();
     let pubkey = h.self_pubkey_b64();
@@ -559,9 +562,10 @@ fn entries_from_response(resp: &serde_json::Value) -> Vec<serde_json::Value> {
 }
 
 #[test]
-#[ignore = "Plan 02-09: v0.8 file-fixture (writes inbox.jsonl directly). \
-            v0.9 broker reads from in-memory mailbox state; rewrite this \
-            in plan 02-13 (broker-driven E2E)."]
+#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 file-fixture test (writes \
+            inbox.jsonl directly). v0.9 broker reads from in-memory mailbox state; \
+            broker-driven E2E coverage already lives in mcp_bus_e2e.rs. Phase 04 \
+            will delete this with the v0.8 file-fixture surface."]
 fn famp_inbox_list_filters_terminal_by_default() {
     let mut h = McpHarness::new();
     seed_filter_fixture(&h.home());
@@ -578,9 +582,10 @@ fn famp_inbox_list_filters_terminal_by_default() {
 }
 
 #[test]
-#[ignore = "Plan 02-09: v0.8 file-fixture (writes inbox.jsonl directly). \
-            v0.9 broker reads from in-memory mailbox state; rewrite this \
-            in plan 02-13 (broker-driven E2E)."]
+#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 file-fixture test (writes \
+            inbox.jsonl directly). v0.9 broker reads from in-memory mailbox state; \
+            broker-driven E2E coverage already lives in mcp_bus_e2e.rs. Phase 04 \
+            will delete this with the v0.8 file-fixture surface."]
 fn famp_inbox_list_include_terminal_true_returns_all() {
     let mut h = McpHarness::new();
     seed_filter_fixture(&h.home());
@@ -595,9 +600,11 @@ fn famp_inbox_list_include_terminal_true_returns_all() {
 
 /// Calling `famp_send` with an unknown peer alias returns `famp_error_kind == "peer_not_found"`.
 #[test]
-#[ignore = "Phase 02 Plan 02-04: famp_send rewired to UDS bus path; v0.9's `peer_not_found` \
-            failure mode is replaced by `not_registered_hint` (D-10). \
-            Plan 02-09 will migrate this assertion to the new error_kind."]
+#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 `peer_not_found` failure mode \
+            is replaced by D-10 `not_registered_hint` on the v0.9 bus path. The \
+            v0.9 negative path is covered via mcp_error_kind_exhaustive.rs and the \
+            broker proxy semantics tests. Phase 04 will delete this with the v0.8 \
+            CLI surface."]
 fn mcp_error_has_famp_error_kind() {
     let mut h = McpHarness::new();
     h.initialize();

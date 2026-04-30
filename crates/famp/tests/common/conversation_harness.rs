@@ -146,8 +146,9 @@ pub fn update_peer_endpoint(home: &Path, alias: &str, addr: SocketAddr) {
 /// v0.9 (the broker is keyed by `~/.famp/bus.sock`, not by `FAMP_HOME`),
 /// but enough to keep this shared test-helper compiling. Every consumer
 /// of `new_task` / `deliver` / `try_deliver` is a v0.8 federation test
-/// gated off behind `#[ignore]` or `#![cfg(any())]` for Phase 02; Phase 4
-/// will either delete this harness or migrate it onto the bus surface.
+/// gated off behind `#[ignore]` or `#![cfg(any())]`; Phase 04 (v0.9
+/// federation deletion) will either delete this harness with the v0.8
+/// CLI surface or migrate it onto the bus surface.
 pub async fn new_task(home: &Path, alias: &str, summary: &str) -> String {
     send_run_at(
         home,

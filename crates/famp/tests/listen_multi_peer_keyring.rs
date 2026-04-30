@@ -100,8 +100,11 @@ fn build_signed_request_bytes(
 // ---------------------------------------------------------------------------
 // Test A: envelope from a peer registered in daemon's peers.toml is accepted.
 // ---------------------------------------------------------------------------
-#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
-revisit / migrate in Phase 4 federation gateway"]
+#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
+            surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
+            old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
+            the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
+            it with the v0.8 CLI surface."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn accepts_envelope_from_registered_peer() {
     // Setup daemon home D and sender home S.
@@ -149,8 +152,11 @@ async fn accepts_envelope_from_registered_peer() {
 // ---------------------------------------------------------------------------
 // Test B: envelope where from == to == self still accepted (backward compat).
 // ---------------------------------------------------------------------------
-#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
-revisit / migrate in Phase 4 federation gateway"]
+#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
+            surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
+            old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
+            the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
+            it with the v0.8 CLI surface."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn accepts_envelope_from_self() {
     let tmp = setup_home();
@@ -194,8 +200,11 @@ async fn accepts_envelope_from_self() {
 // ---------------------------------------------------------------------------
 // Test C: envelope from an unknown principal is rejected (non-2xx).
 // ---------------------------------------------------------------------------
-#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
-revisit / migrate in Phase 4 federation gateway"]
+#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
+            surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
+            old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
+            the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
+            it with the v0.8 CLI surface."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rejects_envelope_from_unknown_principal() {
     // Daemon home D — no peers registered (clean).

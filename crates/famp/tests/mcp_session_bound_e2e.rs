@@ -77,8 +77,11 @@ fn assert_bob_inbox_has_task(win_b: &mut Harness, task_id: &str) {
 ///   |<-- famp_await terminal ---|<----------------------------|
 ///   [assert alice's task record == COMPLETED + terminal=true]
 /// ```
-#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
-revisit / migrate in Phase 4 federation gateway"]
+#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
+            surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
+            old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
+            the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
+            it with the v0.8 CLI surface."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn two_windows_register_as_different_identities_and_full_lifecycle() {
     famp::cli::send::client::allow_tofu_bootstrap_for_tests();

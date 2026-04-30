@@ -26,8 +26,11 @@ use common::{
     read_inbox_lines, self_principal, wait_for_tls_listener_ready,
 };
 
-#[ignore = "Phase 02 Plan 02-04: rewired send to bus path; v0.8 HTTPS shape; \
-revisit / migrate in Phase 4 federation gateway"]
+#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
+            surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
+            old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
+            the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
+            it with the v0.8 CLI surface."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn smoke_post_delivers_to_inbox() {
     let tmp = tempfile::TempDir::new().unwrap();
