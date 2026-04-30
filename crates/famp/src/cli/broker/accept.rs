@@ -43,9 +43,26 @@ pub async fn client_task(
 
     let read_handle = tokio::spawn(async move {
         loop {
-            let Ok(msg) = codec::read_frame::<_, BusMessage>(&mut reader).await else {
-                let _ = read_tx.send(BrokerMsg::Disconnect(id)).await;
-                return;
+            let msg = match codec::read_frame::<_, BusMessage>(&mut reader).await {
+                Ok(m) => m,
+                Err(e) => {
+                    // IN-01: distinguish clean EOF from a real codec/wire error
+                    // so operators triaging "why was this client dropped?" see
+                    // the framing failure (FrameTooLarge, malformed JSON, etc.)
+                    // not a silent disconnect. UnexpectedEof on the length
+                    // prefix is the normal close path; anything else is a
+                    // protocol violation worth surfacing.
+                    let clean_eof = matches!(
+                        &e,
+                        crate::bus_client::BusClientError::Io(io_err)
+                            if io_err.kind() == std::io::ErrorKind::UnexpectedEof
+                    );
+                    if !clean_eof {
+                        eprintln!("client {id:?} frame read error: {e:?}");
+                    }
+                    let _ = read_tx.send(BrokerMsg::Disconnect(id)).await;
+                    return;
+                }
             };
             if read_tx.send(BrokerMsg::Frame(id, msg)).await.is_err() {
                 return; // broker shut down
