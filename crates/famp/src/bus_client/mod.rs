@@ -156,7 +156,17 @@ impl BusClient {
         // even an unsolicited byte (protocol violation) — means the
         // request/reply session is no longer usable. Return so the
         // outer loop tears down and reconnects.
-        let _ = self.stream.read(&mut probe).await;
+        match self.stream.read(&mut probe).await {
+            // IN-04: a non-zero read is a Phase-1 contract violation
+            // (broker MUST NOT send unsolicited frames). Surface it so
+            // a future broker bug doesn't manifest as a silent reconnect
+            // storm.
+            Ok(n) if n > 0 => eprintln!(
+                "warning: broker sent {n} unsolicited byte(s) (0x{:02x}); disconnecting",
+                probe[0]
+            ),
+            Ok(_) | Err(_) => {} // expected disconnect path
+        }
     }
 }
 
