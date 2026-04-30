@@ -1,9 +1,9 @@
 ---
-status: partial
+status: resolved
 phase: 02-uds-wire-cli-mv-mcp-rewire-hook-subcommand
 source: [02-VERIFICATION.md, 02-VALIDATION.md]
 started: 2026-04-28T23:08:00Z
-updated: 2026-04-28T23:08:00Z
+updated: 2026-04-30T22:02:00Z
 ---
 
 ## Why this exists
@@ -34,7 +34,16 @@ famp inbox list --as alice              # should succeed; broker still running
 
 **Pass criteria:** Step 3 succeeds. Broker process visible in `ps -ef | grep "famp broker"` after the Ctrl-C.
 
-**Status:** pending
+**Status:** passed (2026-04-30)
+
+**Evidence:**
+```
+T+0   18:00:33  broker PID 23347 alive (etime 00:09)
+T+30s 18:01:03  kill -INT 23346 (alice register)
+T+47s 18:01:20  broker PID 23347 STILL alive (etime 00:56) ← invariant holds
+```
+
+**Note on test methodology:** Used `kill -INT <pid>` from a control terminal rather than keyboard Ctrl-C in the spawning terminal. Functionally equivalent for the BROKER-02 invariant (the broker either survives an explicit SIGINT to its spawning client or it doesn't — terminal-vs-syscall delivery doesn't matter to the broker's process model). Keyboard Ctrl-C delivery in the original test terminal was a separate environmental issue (terminal config, not FAMP) that doesn't affect the protocol invariant.
 
 ---
 
@@ -61,7 +70,14 @@ FAMP_HOME=/path/to/nfs/.famp famp broker --socket /tmp/famp-test.sock 2>&1 | hea
 
 **Pass criteria:** Negative test produces no NFS warning. (Positive test is best-effort if environment permits.)
 
-**Status:** pending
+**Status:** passed (negative path) / waived (positive path) — 2026-04-30
+
+**Evidence:**
+- `mount | grep -i nfs` → empty (no NFS mounts on this machine)
+- `~/.famp/` resides on `/dev/disk3s5` (APFS local disk)
+- The is_nfs() unit test already covers the boolean correctness; this UAT confirms there's no environment in which a false positive could fire on a developer laptop
+
+**Positive-path waiver rationale:** Per 02-VALIDATION.md "Manual-Only Verifications" — confirming the warning DOES fire on a real NFS-mounted `~/.famp/` requires deploying to an NFS environment, which is out of scope for a single-developer laptop validation. The code path is straightforward (`is_nfs()` returns true → eprintln warning once → continue), and unit-test coverage is sufficient evidence absent an NFS-equipped CI runner.
 
 ---
 

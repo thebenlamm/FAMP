@@ -2,21 +2,21 @@
 gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: Local-First Bus
-status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-04-28T22:52:36.515Z"
-last_activity: 2026-04-28 -- Phase 02 execution started
+status: between-phases
+stopped_at: Phase 02 complete; UATs resolved
+last_updated: "2026-04-30T22:05:00Z"
+last_activity: 2026-04-30 -- Phase 02 verification PASS (UATs resolved)
 progress:
-  total_phases: 7
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 4
+  completed_phases: 2
+  total_plans: 17
+  completed_plans: 17
+  percent: 50
 ---
 
 # STATE: FAMP — v0.9 Local-First Bus
 
-**Last Updated:** 2026-04-28 — Phase 01 complete; verification PASS.
+**Last Updated:** 2026-04-30 — Phase 02 complete; verification PASS (UATs resolved 2026-04-30).
 
 ## Project Reference
 
@@ -24,14 +24,14 @@ See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 02 — uds-wire-cli-mv-mcp-rewire-hook-subcommand
+**Current focus:** Between phases — Phase 03 (Claude Code integration polish) is next.
 
 ## Current Position
 
-Phase: 02 (uds-wire-cli-mv-mcp-rewire-hook-subcommand) — EXECUTING
-Plan: 1 of 14
-Status: Executing Phase 02
-Last activity: 2026-04-28 -- Phase 02 execution started
+Phase: 02 (uds-wire-cli-mv-mcp-rewire-hook-subcommand) — COMPLETE
+Plans: 14 of 14 complete
+Status: Phase 02 verification PASSED; UATs resolved
+Last activity: 2026-04-30 -- Phase 02 verification PASS (UATs resolved)
 
 ## Last Shipped
 
@@ -39,6 +39,7 @@ Last activity: 2026-04-28 -- Phase 02 execution started
 - **Plan 01-02: pure broker actor and property suite** (2026-04-27) — tokio-free `Broker::handle(BrokerInput, Instant) -> Vec<Out>` actor, exhaustive dispatch for all nine `BusMessage` variants plus `Disconnect`/`Tick`, ordered `Out` intents, TDD-02/03/04 GREEN, and PROP-01..05 GREEN against temporary `Vec<serde_json::Value>` drained payloads. Commits: `86599aa`, `093c8f9`, `ae905ed`.
 - **Plan 01-03: atomic v0.5.1→v0.5.2 bump + audit_log MessageClass + BusEnvelope (BUS-11) + broker drain typed-decoder (D-09)** (2026-04-28) — Single atomic commit landing `MessageClass::AuditLog`, `AuditLogBody`, `Relation::Audits`, `AnySignedEnvelope::AuditLog` dispatch, `BusEnvelope<B>` sibling type with private inner + 2 `compile_fail` doctests, `AnyBusEnvelope` 6-arm dispatch, `EnvelopeDecodeError::UnexpectedSignature`, `FAMP_SPEC_VERSION = "0.5.2"` flip + T5 lag block deletion, vector_1 worked example, broker drain typed-decoder gate (D-09 type-validation-only implementation), PROP-04 re-asserted with malformed-line negative case, `just check-spec-version-coherence` recipe wired into `ci:`. Commit: `9ca6e13`.
 - **Phase 01 verification** (2026-04-28) — Goal-backward audit PASS; 28/28 in-scope requirements satisfied or formally deferred per policy. See `.planning/phases/01-famp-bus-library-and-audit-log/01-VERIFICATION.md`.
+- **Phase 02: UDS wire + CLI + MCP rewire + hook subcommand** (2026-04-28..30) — 14 plans across 7 waves; `famp broker` UDS daemon, `famp register/send/inbox/await/join/leave/sessions/whoami` CLI surface, MCP rewired to bus (8-tool surface), `famp-local hook add/list/remove`. 492 tests green, 22 skipped. Code review: 22 findings, 15 fixed across 14 atomic `fix(02)` commits (WR-06 deferred — env-var test races, currently safe under nextest). Verification PASS 36/36 (2 manual UATs resolved 2026-04-30: BROKER-02 broker-survives-SIGINT-to-holder confirmed; BROKER-05 negative path passed, positive path waived absent NFS environment).
 
 ## Accumulated Context
 

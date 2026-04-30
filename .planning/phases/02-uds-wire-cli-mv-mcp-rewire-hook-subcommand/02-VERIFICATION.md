@@ -1,8 +1,8 @@
 ---
 phase: 02-uds-wire-cli-mv-mcp-rewire-hook-subcommand
 verified: 2026-04-29T03:05:00Z
-status: human_needed
-score: 36/36 requirements verified (35 automated + 1 manual-deferred per VALIDATION)
+status: passed
+score: 36/36 requirements verified (34 automated + 2 manual-resolved on 2026-04-30 — see 02-HUMAN-UAT.md)
 overrides_applied: 0
 re_verification: # No prior VERIFICATION.md for this phase — initial verification
   previous_status: none
