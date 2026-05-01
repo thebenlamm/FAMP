@@ -6,8 +6,6 @@
 // else the lib pulls in transitively.
 #[cfg(test)]
 use assert_cmd as _;
-#[cfg(test)]
-use temp_env as _;
 use axum as _;
 use base64 as _;
 use dirs as _;
@@ -34,6 +32,8 @@ use rustls as _;
 use serde as _;
 use serde_json as _;
 use sha2 as _;
+#[cfg(test)]
+use temp_env as _;
 use tempfile as _;
 use thiserror as _;
 use time as _;

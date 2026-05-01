@@ -202,9 +202,7 @@ fn test_proxy_inbox_unregistered_fails() {
                     "Hello must fail with NotRegistered (D-10), got: {kind:?}"
                 );
             }
-            Err(other) => panic!(
-                "expected HelloFailed{{NotRegistered}}, got error: {other:?}"
-            ),
+            Err(other) => panic!("expected HelloFailed{{NotRegistered}}, got error: {other:?}"),
             Ok(_) => panic!(
                 "BusClient::connect MUST fail when bind_as references an unregistered holder (D-10)"
             ),
@@ -266,9 +264,7 @@ fn test_proxy_send_after_holder_dies() {
                     "Hello must fail with NotRegistered after holder dies (D-10), got: {kind:?}"
                 );
             }
-            Err(other) => panic!(
-                "expected HelloFailed{{NotRegistered}}, got error: {other:?}"
-            ),
+            Err(other) => panic!("expected HelloFailed{{NotRegistered}}, got error: {other:?}"),
             Ok(mut client) => {
                 // If we got past Hello, a per-op liveness re-check on
                 // Send must catch it. Either path satisfies D-10.

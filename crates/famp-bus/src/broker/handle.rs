@@ -25,8 +25,7 @@ fn handle_wire<E: BrokerEnv>(
     msg: BusMessage,
     now: Instant,
 ) -> Vec<Out> {
-    let already_handshaked =
-        broker.state.clients.get(&client).map(|c| c.handshaked) == Some(true);
+    let already_handshaked = broker.state.clients.get(&client).map(|c| c.handshaked) == Some(true);
     if !matches!(msg, BusMessage::Hello { .. }) && !already_handshaked {
         return vec![err(
             client,
@@ -541,9 +540,9 @@ fn disconnect<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) -> Vec<Out
                 None
             } else {
                 state.name.clone().and_then(|name| {
-                    state.pid.map(|pid| {
-                        (name, pid, state.joined.iter().cloned().collect::<Vec<_>>())
-                    })
+                    state
+                        .pid
+                        .map(|pid| (name, pid, state.joined.iter().cloned().collect::<Vec<_>>()))
                 })
             };
             (snapshot, is_proxy)

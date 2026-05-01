@@ -122,25 +122,25 @@ fn whoami_unregistered_returns_null_active() {
 #[test]
 fn tools_list_returns_eight_tools() {
     with_fresh_socket(|| {
-    let mut h = Harness::with_agents(&[]);
-    let r = h.call("tools/list", &serde_json::json!({}));
-    let tools = r["result"]["tools"].as_array().expect("tools array");
-    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-    assert_eq!(names.len(), 8, "expected 8 tools, got: {names:?}");
-    for expected in [
-        "famp_send",
-        "famp_await",
-        "famp_inbox",
-        "famp_peers",
-        "famp_register",
-        "famp_whoami",
-        "famp_join",
-        "famp_leave",
-    ] {
-        assert!(
-            names.contains(&expected),
-            "missing tool: {expected}; got {names:?}"
-        );
-    }
+        let mut h = Harness::with_agents(&[]);
+        let r = h.call("tools/list", &serde_json::json!({}));
+        let tools = r["result"]["tools"].as_array().expect("tools array");
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert_eq!(names.len(), 8, "expected 8 tools, got: {names:?}");
+        for expected in [
+            "famp_send",
+            "famp_await",
+            "famp_inbox",
+            "famp_peers",
+            "famp_register",
+            "famp_whoami",
+            "famp_join",
+            "famp_leave",
+        ] {
+            assert!(
+                names.contains(&expected),
+                "missing tool: {expected}; got {names:?}"
+            );
+        }
     });
 }

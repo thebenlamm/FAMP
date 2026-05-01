@@ -138,11 +138,7 @@ fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Result<(), CliE
 /// stdout into a buffer and drive the bus over a tempdir socket via
 /// `$FAMP_BUS_SOCKET`. The writer is consumed AFTER the bus round-trip
 /// so the future stays `Send` regardless of the writer type.
-pub async fn run_at(
-    sock: &Path,
-    args: AwaitArgs,
-    out: impl Write,
-) -> Result<(), CliError> {
+pub async fn run_at(sock: &Path, args: AwaitArgs, out: impl Write) -> Result<(), CliError> {
     let outcome = run_at_structured(sock, args).await?;
     write_outcome(&outcome, out)
 }
@@ -153,10 +149,7 @@ pub async fn run_at(
 /// without printing. Used by the MCP tool wrapper
 /// (`cli::mcp::tools::await_::call`) so the JSON-RPC result shape is
 /// owned by the MCP layer, not by this CLI.
-pub async fn run_at_structured(
-    sock: &Path,
-    args: AwaitArgs,
-) -> Result<AwaitOutcome, CliError> {
+pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutcome, CliError> {
     // 1. D-01 four-tier identity resolution.
     let identity = resolve_identity(args.act_as.as_deref())?;
 
