@@ -10,7 +10,9 @@
 //!
 //! INVARIANT (BUS-11): bus-side envelopes carry NO signature. The
 //! type-level enforcement lives in `famp-envelope::bus::BusEnvelope`
-//! (added in Plan 01-03's atomic v0.5.2 commit).
+//! (added in Plan 01-03's atomic v0.5.2 commit). Bus ↔ federation
+//! translation table:
+//! `docs/superpowers/specs/2026-04-30-bus11-translation-table.md`.
 //!
 //! CARRY-04: Nyquist VALIDATION.md backfill for v0.8 phases is formally
 //! deferred to the v0.9 milestone-close audit per D-18.
