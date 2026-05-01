@@ -14,6 +14,20 @@
 //! translation table:
 //! `docs/superpowers/specs/2026-04-30-bus11-translation-table.md`.
 //!
+//! CONVENTION (BUS-11 / v0.9): the bus path carries DMs, deliveries, and
+//! channel posts as **unsigned `audit_log` envelopes** with event prefix
+//! `famp.send.*` and a mode-tagged inner payload under `body.details`
+//! (`mode ∈ {new_task, deliver, deliver_terminal, channel_post}`). This
+//! is bus-only — no `famp.send.*` envelope ever crosses the federation
+//! gateway. Real `audit_log` envelopes (non-`famp.send.*` event) retain
+//! their actual audit-event semantics on both surfaces. The gateway
+//! disambiguates by `body.event` (architect-counseled, Option 1+).
+//! Single construction site: `famp::cli::send::build_envelope_value`.
+//! Drift constraints in
+//! `docs/superpowers/specs/2026-04-30-bus11-translation-table.md`
+//! "Drift Invariant" — any second construction site or new event prefix
+//! requires a translation-table amendment in the same commit.
+//!
 //! CARRY-04: Nyquist VALIDATION.md backfill for v0.8 phases is formally
 //! deferred to the v0.9 milestone-close audit per D-18.
 
