@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -19,7 +20,6 @@ fn stage_fake_famp(bin_dir: &std::path::Path) -> PathBuf {
         "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> \"$FAKE_FAMP_LOG\"\nexit 0\n",
     )
     .unwrap();
-    use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
     famp
 }

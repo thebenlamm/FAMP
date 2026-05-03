@@ -10,7 +10,7 @@
 //!     filesystem.
 //!
 //! Pattern derives from `crates/famp/src/cli/config.rs::write_peers_atomic`
-//! (TOML version of the same idiom). [Reused: tempfile + NamedTempFile + persist.]
+//! (TOML version of the same idiom). [Reused: tempfile + `NamedTempFile` + persist.]
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -149,7 +149,7 @@ fn backup_if_exists(path: &Path) -> Result<(), CliError> {
 }
 
 fn persist_json(path: &Path, display_path: &Path, root: &Value) -> Result<(), CliError> {
-    let parent_dir = path.parent().unwrap_or(Path::new("."));
+    let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(parent_dir).map_err(|e| CliError::JsonMergePersist {
         path: parent_dir.to_path_buf(),
         source: e,
@@ -315,7 +315,7 @@ mod tests {
         let _ = upsert_user_json(&path, "mcpServers", "famp", json!({"command": "/x"})).unwrap();
         let baks: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| {
                 e.file_name()
                     .to_string_lossy()

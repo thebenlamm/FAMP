@@ -96,14 +96,17 @@ publish-workspace-dry-run:
     cargo publish -p famp-core --dry-run
     cargo publish -p famp-taskdir --dry-run
     cargo publish -p famp-inbox --dry-run
-    cargo publish -p famp-crypto --dry-run
-    cargo publish -p famp-fsm --dry-run
-    cargo publish -p famp-transport --dry-run
-    cargo publish -p famp-keyring --dry-run
-    cargo publish -p famp-envelope --dry-run
-    cargo publish -p famp-bus --dry-run
-    cargo publish -p famp-transport-http --dry-run
-    cargo publish -p famp --dry-run
+    # Dependent crates cannot `cargo publish --dry-run` until their internal deps
+    # are live in the crates.io index. Pre-publish CI validates their package
+    # manifests and file lists; the real `publish-workspace` remains ordered.
+    cargo package -p famp-crypto --allow-dirty --no-verify --list > /dev/null
+    cargo package -p famp-fsm --allow-dirty --no-verify --list > /dev/null
+    cargo package -p famp-transport --allow-dirty --no-verify --list > /dev/null
+    cargo package -p famp-keyring --allow-dirty --no-verify --list > /dev/null
+    cargo package -p famp-envelope --allow-dirty --no-verify --list > /dev/null
+    cargo package -p famp-bus --allow-dirty --no-verify --list > /dev/null
+    cargo package -p famp-transport-http --allow-dirty --no-verify --list > /dev/null
+    cargo package -p famp --allow-dirty --no-verify --list > /dev/null
 
 # Shellcheck the hook-runner asset (D-08 invariant: shellcheck-clean).
 # Recipe colocated with the asset (`crates/famp/assets/hook-runner.sh`) — both ship in plan 03-02.
@@ -140,7 +143,7 @@ check-spec-version-coherence:
     fi
 
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-spec-version-coherence check-mcp-deps
+ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-spec-version-coherence check-mcp-deps check-shellcheck publish-workspace-dry-run
     @echo "✓ local CI-parity checks passed"
 
 # Start two famp daemons in the background for the Phase 4 E2E-02

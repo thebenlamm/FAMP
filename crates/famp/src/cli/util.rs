@@ -28,8 +28,10 @@ const CHANNEL_PATTERN: &str = r"^#[a-z0-9][a-z0-9_-]{0,31}$";
 /// side already does this in `famp_bus::proto`; we mirror the pattern
 /// so MCP tool loops (`famp_send`, `famp_join`, `famp_leave`) do not
 /// pay the regex-compile cost per invocation.
-static CHANNEL_RE: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(CHANNEL_PATTERN).expect("static channel regex compiles"));
+static CHANNEL_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(CHANNEL_PATTERN)
+        .unwrap_or_else(|err| panic!("static channel regex compiles: {err}"))
+});
 
 /// Normalize a channel name: accept both `planning` and `#planning`;
 /// reject `##planning`; validate against the bus channel regex.

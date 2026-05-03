@@ -130,7 +130,7 @@ fn backup_if_exists(path: &Path) -> Result<(), CliError> {
 }
 
 fn persist_toml(path: &Path, display_path: &Path, root: &toml::Table) -> Result<(), CliError> {
-    let parent_dir = path.parent().unwrap_or(Path::new("."));
+    let parent_dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(parent_dir).map_err(|source| CliError::Io {
         path: parent_dir.to_path_buf(),
         source,

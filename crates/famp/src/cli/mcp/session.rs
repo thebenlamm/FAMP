@@ -111,6 +111,7 @@ pub async fn ensure_bus() -> Result<(), BusErrorKind> {
         .await
         .map_err(|_| BusErrorKind::BrokerUnreachable)?;
     guard.bus = Some(client);
+    drop(guard);
     Ok(())
 }
 

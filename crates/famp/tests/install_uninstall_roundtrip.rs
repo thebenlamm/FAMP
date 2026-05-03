@@ -67,8 +67,7 @@ fn install_then_uninstall_restores_pre_state_for_realistic_files() {
     famp::cli::uninstall::claude_code::run_at(home, &mut out2, &mut err2).unwrap();
 
     let post_claude: Value =
-        serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
-            .unwrap();
+        serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap()).unwrap();
     let post_settings: Value =
         serde_json::from_str(&std::fs::read_to_string(home.join(".claude/settings.json")).unwrap())
             .unwrap();
@@ -102,8 +101,7 @@ fn install_then_uninstall_on_empty_home_leaves_clean_state() {
     famp::cli::uninstall::claude_code::run_at(home, &mut out2, &mut err2).unwrap();
 
     let post: Value =
-        serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
-            .unwrap();
+        serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap()).unwrap();
     let has_famp = post
         .get("mcpServers")
         .and_then(|servers| servers.get("famp"))

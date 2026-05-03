@@ -75,12 +75,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     .ok();
 
     hook_runner::remove_shim(&shim_path)?;
-    writeln!(
-        err,
-        "  [3/4] {} :: bash shim removed",
-        shim_path.display()
-    )
-    .ok();
+    writeln!(err, "  [3/4] {} :: bash shim removed", shim_path.display()).ok();
 
     surgical_remove_stop_entry(&settings_path, &shim_path, err)?;
 
@@ -156,8 +151,7 @@ fn surgical_remove_stop_entry(
     let filtered: Vec<Value> = prior_stop
         .iter()
         .filter(|elem| {
-            elem
-                .get("command")
+            elem.get("command")
                 .and_then(Value::as_str)
                 .is_none_or(|command| command != shim_str)
         })
@@ -246,7 +240,11 @@ mod tests {
                 .unwrap();
         assert_eq!(post["numStartups"], serde_json::json!(7));
         assert_eq!(post["mcpServers"]["github"]["command"], "/x");
-        assert!(post["mcpServers"].as_object().unwrap().get("famp").is_none());
+        assert!(post["mcpServers"]
+            .as_object()
+            .unwrap()
+            .get("famp")
+            .is_none());
     }
 
     #[test]
@@ -267,7 +265,11 @@ mod tests {
             "command": "/some/other/hook.sh",
             "timeout": 5
         }));
-        std::fs::write(&settings_path, serde_json::to_string_pretty(&settings).unwrap()).unwrap();
+        std::fs::write(
+            &settings_path,
+            serde_json::to_string_pretty(&settings).unwrap(),
+        )
+        .unwrap();
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();
@@ -305,7 +307,13 @@ mod tests {
         let settings_path = home.join(".claude/settings.json");
         let post: Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
-        let has_stop = post.get("hooks").and_then(|hooks| hooks.get("Stop")).is_some();
-        assert!(!has_stop, "Stop key should be removed when filtered array is empty");
+        let has_stop = post
+            .get("hooks")
+            .and_then(|hooks| hooks.get("Stop"))
+            .is_some();
+        assert!(
+            !has_stop,
+            "Stop key should be removed when filtered array is empty"
+        );
     }
 }

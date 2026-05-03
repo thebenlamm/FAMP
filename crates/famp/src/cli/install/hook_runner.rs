@@ -40,7 +40,7 @@ pub fn install_shim(path: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Remove the shim. Tolerates NotFound. Used by `uninstall-claude-code`.
+/// Remove the shim. Tolerates `NotFound`. Used by `uninstall-claude-code`.
 pub fn remove_shim(path: &Path) -> Result<(), CliError> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),

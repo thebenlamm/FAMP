@@ -1,14 +1,14 @@
 //! `famp install-claude-code` subcommand handler (CC-01 + HOOK-04b install).
 //!
 //! Mutates four user-scope artifacts (D-04 atomic - install/uninstall symmetric):
-//!  1. `~/.claude.json :: mcpServers.famp` - JSON merge (json_merge::upsert_user_json)
-//!  2. `~/.claude/commands/famp-*.md` - 7 markdown files (slash_commands::write_all)
-//!  3. `~/.famp/hook-runner.sh` - bash shim at mode 0755 (hook_runner::install_shim)
+//!  1. `~/.claude.json :: mcpServers.famp` - JSON merge (`json_merge::upsert_user_json`)
+//!  2. `~/.claude/commands/famp-*.md` - 7 markdown files (`slash_commands::write_all`)
+//!  3. `~/.famp/hook-runner.sh` - bash shim at mode 0755 (`hook_runner::install_shim`)
 //!  4. `~/.claude/settings.json :: hooks.Stop` - array merge with sentinel
 //!     `command` prefix `<home>/.famp/hook-runner.sh` (D-09 amended target)
 //!
 //! Idempotent: re-running is a no-op when state already matches (D-02).
-//! Atomic: each JSON write goes through tempfile::NamedTempFile::persist
+//! Atomic: each JSON write goes through `tempfile::NamedTempFile::persist`
 //! (rename(2)) and creates a `.bak.<unix-ts>` of pre-state. No partial states.
 
 use std::io::Write;
@@ -146,8 +146,7 @@ fn build_stop_array(settings_path: &Path, shim_path: &Path) -> Result<Vec<Value>
         .get("hooks")
         .and_then(|h| h.get("Stop"))
         .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .map_or(&[], Vec::as_slice);
 
     let shim_str = shim_path.display().to_string();
     let mut new_stop: Vec<Value> = prior_stop

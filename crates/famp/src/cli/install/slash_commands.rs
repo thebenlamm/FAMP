@@ -65,7 +65,7 @@ pub fn write_all(commands_dir: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Remove all 7 markdown templates from `commands_dir`. Tolerates NotFound
+/// Remove all 7 markdown templates from `commands_dir`. Tolerates `NotFound`
 /// per-file. Used by `uninstall-claude-code` (plan 03-04).
 pub fn remove_all(commands_dir: &Path) -> Result<(), CliError> {
     for (filename, _) in TEMPLATES {

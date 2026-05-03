@@ -118,7 +118,7 @@ mod tests {
     ///
     /// WR-06: env mutation is process-global; `temp_env::with_var` saves
     /// + restores around the closure so a panic doesn't leak state and
-    /// `set_var` doesn't need an `unsafe` block under Rust 2024.
+    ///   `set_var` doesn't need an `unsafe` block under Rust 2024.
     #[test]
     fn tier_2_env_var_wins_when_no_flag() {
         temp_env::with_var("FAMP_LOCAL_IDENTITY", Some("bob"), || {

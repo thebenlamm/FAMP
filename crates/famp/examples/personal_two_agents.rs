@@ -36,6 +36,7 @@ use reqwest as _;
 use rustls as _;
 use serde as _;
 use sha2 as _;
+use temp_env as _;
 use tempfile as _;
 use thiserror as _;
 use time as _;

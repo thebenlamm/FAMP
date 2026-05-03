@@ -23,7 +23,7 @@ use common::mcp_harness::Harness;
 /// Run `test` with a fresh `$FAMP_BUS_SOCKET` pointing into a private
 /// tempdir. WR-06: scoped via `temp_env::with_var` so save+restore
 /// survives panics and the call site doesn't need an `unsafe` block
-/// under Rust 2024. The TempDir outlives the closure (created here,
+/// under Rust 2024. The `TempDir` outlives the closure (created here,
 /// dropped on return), and the MCP child spawned by `Harness::with_agents`
 /// inherits the env at spawn time — by the time the closure returns and
 /// `with_var` restores the parent env, the child already has its own

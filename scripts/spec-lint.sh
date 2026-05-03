@@ -36,7 +36,7 @@ check() {
   fi
 }
 
-check SPEC-01 "v0.5.1 Changelog heading"        rg -q 'v0.5.1 Changelog'               "$SPEC"
+check SPEC-01 "v0.5.x Changelog heading"        rg -q 'v0\.5\.[12] Changelog'          "$SPEC"
 check SPEC-02 "RFC 8785 citation"                rg -q 'RFC 8785'                       "$SPEC"
 check SPEC-03 "FAMP-sig-v1 domain separator"     rg -q 'FAMP-sig-v1'                    "$SPEC"
 check SPEC-04 "recipient anti-replay binding"    rg -q 'recipient.{0,20}anti-replay|binds.{0,10}`to`' "$SPEC"

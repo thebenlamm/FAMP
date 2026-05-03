@@ -41,7 +41,7 @@ pub enum Out {
     /// `~/.famp/sessions.jsonl` so post-mortem operators can see which
     /// channels the session held when it disconnected. Proxy
     /// disconnects do NOT emit this variant (proxies never appended a
-    /// SessionRow on register).
+    /// `SessionRow` on register).
     SessionEnded {
         name: String,
         pid: u32,
