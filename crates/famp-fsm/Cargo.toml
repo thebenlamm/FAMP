@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — famp-fsm crate (stub)"
+description = "FAMP — task finite-state machine (REQUESTED → COMMITTED → COMPLETED|FAILED|CANCELLED) with absorbing terminals."
 
 [lints]
 workspace = true

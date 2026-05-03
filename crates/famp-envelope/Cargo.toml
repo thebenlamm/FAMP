@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — famp-envelope crate (stub)"
+description = "FAMP — wire envelope construction, Ed25519 signing under the FAMP-sig-v1 domain prefix (INV-10)."
 
 [lints]
 workspace = true

@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — famp-transport crate (stub)"
+description = "FAMP — transport trait abstraction: MemoryTransport for tests, HTTPS binding lives in famp-transport-http."
 
 [lints]
 workspace = true

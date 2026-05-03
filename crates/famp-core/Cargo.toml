@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — famp-core crate (stub)"
+description = "FAMP — core protocol primitives: Principal, Instance, ArtifactId, MessageClass, ProtocolErrorKind, AuthorityScope."
 
 [lints]
 workspace = true
