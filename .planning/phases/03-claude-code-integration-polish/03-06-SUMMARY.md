@@ -111,6 +111,7 @@ The publishability recipe runs true `cargo publish --dry-run` for independent cr
 2. **Task 2: Ship ONBOARDING.md + CC-10 gate** - `3f6fa48` (`test`)
 3. **Task 3: Wire check-shellcheck + publish-workspace-dry-run into ci** - `37ebf51` (`chore`)
 4. **Task 4: Manual UAT hook-schema fix** - `feab58b` (`fix`)
+5. **Task 4 follow-up: Real Claude transcript parser + identity fix** - `fa9f76b` (`fix`)
 
 ## Verification
 
@@ -119,11 +120,15 @@ The publishability recipe runs true `cargo publish --dry-run` for independent cr
 - `wc -l docs/ONBOARDING.md` - `58`.
 - `just ci` - passed after Task 3 wiring and CI blocker fixes. A sandboxed run failed on broker-spawn permissions; the approved non-sandbox run then passed through workspace tests, doctests, spec lint, shellcheck, and publishability checks.
 - Post-checkpoint user verification: real-home `cargo run --release -p famp -- install-claude-code` updated `~/.claude/settings.json`, JSON parsed, current Stop-hook shape was valid, and an existing non-FAMP Stop hook was preserved.
+- `cargo test -p famp --test hook_runner_dispatch --test hook_runner_failure_modes -- --nocapture` - passed: 9 tests after the real Claude transcript parser fix.
+- `shellcheck crates/famp/assets/hook-runner.sh` - passed after the real Claude transcript parser fix.
+- Final real Stop-hook UAT: Alice edited `STOP_HOOK_UAT.md`; Bob's inbox received `Edit hook fired: *STOP_HOOK_UAT.md matched in last turn` at 2026-05-03T21:19:11Z.
 
 ## Manual UAT
 
 - CC-09 second-window install gate: checkpointed for real macOS/Claude Code verification; user resumed with corrected real-home install result.
 - HOOK-04b Stop-hook fire path: initial real Claude Code UAT failed because `~/.claude/settings.json` had an old flat FAMP Stop hook shape. Commit `feab58b` updated install/uninstall to write current `Stop[]` entries with `matcher` and nested `hooks[]`, preserve unrelated hooks, and clean up legacy malformed FAMP entries.
+- HOOK-04b transcript dispatch path: follow-up UAT found that Claude's real transcript nests tool calls under `message.content` and emits tool-result user messages after writes. Commit `fa9f76b` updated the shim to parse real Claude transcript shape, preserve the last assistant edit across tool results, extract the latest `famp_register` identity, and dispatch with `famp send --as <identity>`. Final Bob inbox verification passed.
 - README + ONBOARDING render UAT: Markdown structure is standard fenced bash plus H2 sections; automated source gates pass.
 
 ## Deviations from Plan
@@ -162,7 +167,15 @@ The publishability recipe runs true `cargo publish --dry-run` for independent cr
 - **Verification:** Focused install/uninstall tests passed; user verified real-home JSON parse and hook shape.
 - **Committed in:** `feab58b`
 
-**Total deviations:** 4 auto-fixed issues.
+**5. [Rule 1 - Bug] Updated hook-runner transcript parsing after real Stop-hook UAT**
+- **Found during:** Task 4 follow-up manual UAT
+- **Issue:** Real Claude Code transcripts nest tool calls under `message.content`; the shim only read top-level `content`. After that was fixed, shell dispatch still needed the MCP-registered identity because the hook process does not inherit MCP session state.
+- **Fix:** Hook runner now supports real Claude transcript shape, preserves edited files across tool-result messages, extracts the latest `famp_register` identity, and passes `--as <identity>` to `famp send`.
+- **Files modified:** `crates/famp/assets/hook-runner.sh`, `crates/famp/tests/hook_runner_dispatch.rs`
+- **Verification:** Focused hook-runner tests and shellcheck passed; final real Claude Stop-hook UAT delivered the expected Bob inbox message.
+- **Committed in:** `fa9f76b`
+
+**Total deviations:** 5 auto-fixed issues.
 
 ## Issues Encountered
 
