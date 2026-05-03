@@ -121,7 +121,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   4. Onboarding doc (`docs/ONBOARDING.md` or equivalent) ships as part of this phase and walks a new user from zero install to first cross-window message; ready to ship at v0.9.0 tag.
   5. HOOK-04b execution runner ships in this phase: the Edit-event trigger registered in Claude Code's `~/.claude/hooks.json` reads `~/.famp-local/hooks.tsv` (registered in Phase 2 by HOOK-04a's `famp-local hook add`) and dispatches `famp send --to <to> --new-task "Edit hook: <glob> matched <file>"` per matching row. Phase 2 ships HOOK-04a (registration surface); Phase 3 closes HOOK-04b (execution runner). `famp install-claude-code` is the natural surface for installing the hooks.json fragment.
 **Plans:** 6 plans
-- [ ] 03-01-PLAN.md — crates.io publishability remediation (path-dep version pins, stub description rewords, publish-workspace + publish-workspace-dry-run Justfile recipes)
+- [x] 03-01-PLAN.md — crates.io publishability remediation (path-dep version pins, stub description rewords, publish-workspace + publish-workspace-dry-run Justfile recipes)
 - [ ] 03-02-PLAN.md — D-05/D-09/D-11 atomic amendments + install module skeleton + json_merge helper + 7 slash-command markdown assets + hook-runner.sh shim + check-shellcheck Justfile recipe (colocated with shim asset)
 - [ ] 03-03-PLAN.md — install-claude-code orchestrator + integration tests (CC-01 + HOOK-04b dispatch + failure-modes)
 - [ ] 03-04-PLAN.md — uninstall-claude-code orchestrator + install→uninstall byte-equality roundtrip test (D-04)
