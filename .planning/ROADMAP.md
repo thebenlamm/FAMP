@@ -125,7 +125,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 - [x] 03-02-PLAN.md — D-05/D-09/D-11 atomic amendments + install module skeleton + json_merge helper + 7 slash-command markdown assets + hook-runner.sh shim + check-shellcheck Justfile recipe (colocated with shim asset)
 - [x] 03-03-PLAN.md — install-claude-code orchestrator + integration tests (CC-01 + HOOK-04b dispatch + failure-modes)
 - [x] 03-04-PLAN.md — uninstall-claude-code orchestrator + install→uninstall byte-equality roundtrip test (D-04)
-- [ ] 03-05-PLAN.md — install-codex + uninstall-codex (D-12 MCP-only) + toml_merge helper + Codex roundtrip test
+- [x] 03-05-PLAN.md — install-codex + uninstall-codex (D-12 MCP-only) + toml_merge helper + Codex roundtrip test
 - [ ] 03-06-PLAN.md — README Quick Start 12-line gate (CC-09) + docs/ONBOARDING.md (CC-10) + ci recipe wires shellcheck + publish-workspace-dry-run + manual 30s wall-clock UAT
 **UI hint**: yes
 
