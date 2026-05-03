@@ -12,12 +12,12 @@ description = "FAMP v0.5.1 — famp-transport-http crate"
 workspace = true
 
 [dependencies]
-famp-core      = { path = "../famp-core" }
-famp-envelope  = { path = "../famp-envelope" }
-famp-crypto    = { path = "../famp-crypto" }
-famp-keyring   = { path = "../famp-keyring" }
-famp-transport = { path = "../famp-transport" }
-famp-canonical = { path = "../famp-canonical" }
+famp-core      = { path = "../famp-core", version = "0.1.0" }
+famp-envelope  = { path = "../famp-envelope", version = "0.1.0" }
+famp-crypto    = { path = "../famp-crypto", version = "0.1.0" }
+famp-keyring   = { path = "../famp-keyring", version = "0.1.0" }
+famp-transport = { path = "../famp-transport", version = "0.1.0" }
+famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
 
 axum                     = "0.8"
 axum-server              = { version = "0.8", features = ["tls-rustls-no-provider"] }
@@ -35,6 +35,6 @@ url                      = "2"
 futures-util             = "0.3"
 
 [dev-dependencies]
-famp-canonical = { path = "../famp-canonical" }
+famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
 tower          = { version = "0.5", features = ["util"] }
 tokio          = { workspace = true, features = ["macros", "rt"] }

@@ -30,16 +30,16 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 
 [dependencies]
-famp-core = { path = "../famp-core" }
-famp-canonical = { path = "../famp-canonical" }
-famp-crypto = { path = "../famp-crypto" }
-famp-envelope = { path = "../famp-envelope" }
-famp-fsm = { path = "../famp-fsm" }
-famp-transport = { path = "../famp-transport" }
-famp-keyring = { path = "../famp-keyring" }
-famp-transport-http = { path = "../famp-transport-http" }
-famp-inbox = { path = "../famp-inbox" }
-famp-taskdir = { path = "../famp-taskdir" }
+famp-core = { path = "../famp-core", version = "0.1.0" }
+famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
+famp-crypto = { path = "../famp-crypto", version = "0.1.0" }
+famp-envelope = { path = "../famp-envelope", version = "0.1.0" }
+famp-fsm = { path = "../famp-fsm", version = "0.1.0" }
+famp-transport = { path = "../famp-transport", version = "0.1.0" }
+famp-keyring = { path = "../famp-keyring", version = "0.1.0" }
+famp-transport-http = { path = "../famp-transport-http", version = "0.1.0" }
+famp-inbox = { path = "../famp-inbox", version = "0.1.0" }
+famp-taskdir = { path = "../famp-taskdir", version = "0.1.0" }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "io-std", "signal", "net"] }
 axum = "0.8"
 tower = "0.5"
@@ -62,14 +62,14 @@ hex = { workspace = true }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { workspace = true }
 humantime = "2"
-famp-bus = { path = "../famp-bus" }
+famp-bus = { path = "../famp-bus", version = "0.1.0" }
 nix = { version = "0.31", features = ["process", "fs", "signal"] }
 dirs = "5"
 regex = { workspace = true }
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).
-famp-transport = { path = "../famp-transport", features = ["test-util"] }
+famp-transport = { path = "../famp-transport", version = "0.1.0", features = ["test-util"] }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "test-util", "process", "io-util", "signal", "net"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 axum = "0.8"

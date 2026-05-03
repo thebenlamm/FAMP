@@ -17,9 +17,9 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
-famp-canonical = { path = "../famp-canonical" }
-famp-core = { path = "../famp-core" }
-famp-envelope = { path = "../famp-envelope" }
+famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
+famp-core = { path = "../famp-core", version = "0.1.0" }
+famp-envelope = { path = "../famp-envelope", version = "0.1.0" }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -12,7 +12,7 @@ description = "FAMP v0.5.1 — famp-fsm crate (stub)"
 workspace = true
 
 [dependencies]
-famp-core = { path = "../famp-core" }
+famp-core = { path = "../famp-core", version = "0.1.0" }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 
