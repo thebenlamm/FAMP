@@ -120,7 +120,13 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   3. The README Quick Start passes the **12-line / 30-second acceptance test** on a clean macOS install: `brew install famp && famp install-claude-code` followed by two Claude Code windows registering as different identities and exchanging a message — completed in ≤12 user-visible lines and ≤30 seconds wall-clock.
   4. Onboarding doc (`docs/ONBOARDING.md` or equivalent) ships as part of this phase and walks a new user from zero install to first cross-window message; ready to ship at v0.9.0 tag.
   5. HOOK-04b execution runner ships in this phase: the Edit-event trigger registered in Claude Code's `~/.claude/hooks.json` reads `~/.famp-local/hooks.tsv` (registered in Phase 2 by HOOK-04a's `famp-local hook add`) and dispatches `famp send --to <to> --new-task "Edit hook: <glob> matched <file>"` per matching row. Phase 2 ships HOOK-04a (registration surface); Phase 3 closes HOOK-04b (execution runner). `famp install-claude-code` is the natural surface for installing the hooks.json fragment.
-**Plans:** TBD
+**Plans:** 6 plans
+- [ ] 03-01-PLAN.md — crates.io publishability remediation (path-dep version pins, stub description rewords, publish-workspace + publish-workspace-dry-run Justfile recipes)
+- [ ] 03-02-PLAN.md — D-05/D-09/D-11 atomic amendments + install module skeleton + json_merge helper + 7 slash-command markdown assets + hook-runner.sh shim + check-shellcheck Justfile recipe (colocated with shim asset)
+- [ ] 03-03-PLAN.md — install-claude-code orchestrator + integration tests (CC-01 + HOOK-04b dispatch + failure-modes)
+- [ ] 03-04-PLAN.md — uninstall-claude-code orchestrator + install→uninstall byte-equality roundtrip test (D-04)
+- [ ] 03-05-PLAN.md — install-codex + uninstall-codex (D-12 MCP-only) + toml_merge helper + Codex roundtrip test
+- [ ] 03-06-PLAN.md — README Quick Start 12-line gate (CC-09) + docs/ONBOARDING.md (CC-10) + ci recipe wires shellcheck + publish-workspace-dry-run + manual 30s wall-clock UAT
 **UI hint**: yes
 
 ### Phase 4: Federation CLI unwire + federation-CI preservation
