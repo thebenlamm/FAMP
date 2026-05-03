@@ -141,43 +141,24 @@ What needs a real backend, not FAMP:
 
 Rule of thumb: **if the use case survives a closed laptop, FAMP is not the right layer.** Use a database, a queue, a webhook, or whatever your platform's actual sync primitive is. FAMP coordinates the agents working on those systems — not the systems themselves.
 
-## Quick Start (local)
-
-Two Claude Code or Codex windows on the same Mac, exchanging signed messages.
-Claude Code is four commands; Codex adds one MCP registration command:
+## Quick Start
 
 ```bash
-# 1. Install the famp binary to ~/.cargo/bin
-cargo install --path crates/famp
+# Install once (one-time compile, ~60-120s)
+cargo install famp
+famp install-claude-code
 
-# 2. Wire each repo directory into the mesh
-#    - creates an identity (default name = basename of the dir)
-#    - exchanges peer cards, pre-pins TLS fingerprints
-#    - starts background daemons
-#    - drops a project-scoped .mcp.json
-#    - updates ~/.zprofile so daemons come back at next login
-scripts/famp-local wire ~/Workspace/RepoA
-scripts/famp-local wire ~/Workspace/RepoB
+# In one Claude Code window:
+/famp-register alice
 
-# 3a. Claude Code: restart the windows for RepoA and RepoB
-#     (`famp-local wire` dropped a project-scoped .mcp.json)
-#
-# 3b. Codex: register both identities once, then restart the windows
-#     (global user-scope registration in ~/.codex/config.toml)
-scripts/famp-local mcp-add --client codex RepoA RepoB
+# In another Claude Code window:
+/famp-register bob
 
-# 4. In each window, register the identity once:
-#    In the RepoA window:  "register as RepoA"
-#    In the RepoB window:  "register as RepoB"
-#    (Or call `famp_register` directly with identity=RepoA / RepoB.)
-#    Skipping this step means famp_send and the other messaging tools
-#    will return a typed `not_registered` error.
-
-# 5. Now send a message:
-#    "send a message to RepoB saying hello"
-#    The MCP client picks up the `famp_send` / `famp_inbox` / `famp_await`
-#    MCP tools and the message lands on the other side.
+# Then ask alice's Claude: "send bob a message saying ship it"
+# Then ask bob's Claude:   "what's in my inbox?"
 ```
+
+> First install includes a one-time compile (~60-120 s); subsequent windows: <30 s. The 12-line block above is the entire onboarding.
 
 Override the identity name per-directory if the repo name doesn't fit:
 
