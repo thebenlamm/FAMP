@@ -45,6 +45,13 @@ pub enum Commands {
     Init(InitArgs),
     /// One-command setup: init + port selection + peer card output.
     Setup(setup::SetupArgs),
+    /// Install Claude Code integration: writes user-scope MCP entry to
+    /// `~/.claude.json`, drops 7 slash-command files into
+    /// `~/.claude/commands/`, merges a Stop hook into
+    /// `~/.claude/settings.json` (D-09 amended), and installs the
+    /// hook-runner shim at `~/.famp/hook-runner.sh` (mode 0755).
+    /// Idempotent (D-02).
+    InstallClaudeCode(install::claude_code::InstallClaudeCodeArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),
     /// Run the FAMP daemon: bind the HTTPS listener and append inbound
@@ -125,6 +132,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         // Sync arms (no tokio runtime needed).
         Commands::Init(args) => init::run(args).map(|_| ()),
         Commands::Setup(args) => setup::run(&args).map(|_| ()),
+        Commands::InstallClaudeCode(args) => install::claude_code::run(args),
         Commands::Info(args) => info::run(&args).map(|_| ()),
         Commands::Peer(args) => peer::run(args),
         // Async arms: each boots a multi-thread tokio runtime via

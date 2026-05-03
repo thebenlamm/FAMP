@@ -45,6 +45,7 @@ use tower as _;
 use tower_http as _;
 use url as _;
 use uuid as _;
+use which as _;
 
 use rcgen::generate_simple_self_signed;
 use std::path::PathBuf;

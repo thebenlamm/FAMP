@@ -43,6 +43,7 @@ use tower as _;
 use tower_http as _;
 use url as _;
 use uuid as _;
+use which as _;
 
 use clap::Parser;
 

@@ -51,7 +51,7 @@ ed25519-dalek = { workspace = true }
 rand = { workspace = true }
 url = "2"
 base64 = { workspace = true }
-clap = { version = "4.6", features = ["derive"] }
+clap = { version = "4.6", features = ["derive", "env"] }
 toml = "1.1"
 rcgen = "0.14"
 tempfile = "3"
@@ -66,6 +66,7 @@ famp-bus = { path = "../famp-bus", version = "0.1.0" }
 nix = { version = "0.31", features = ["process", "fs", "signal"] }
 dirs = "5"
 regex = { workspace = true }
+which = "7"
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).

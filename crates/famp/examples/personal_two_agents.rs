@@ -43,6 +43,7 @@ use tower as _;
 use tower_http as _;
 use url as _;
 use uuid as _;
+use which as _;
 
 use famp::runtime::{adapter, process_one_message, RuntimeError};
 use famp_core::{AuthorityScope, MessageId, Principal};
