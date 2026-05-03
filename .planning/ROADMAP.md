@@ -126,7 +126,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 - [x] 03-03-PLAN.md — install-claude-code orchestrator + integration tests (CC-01 + HOOK-04b dispatch + failure-modes)
 - [x] 03-04-PLAN.md — uninstall-claude-code orchestrator + install→uninstall byte-equality roundtrip test (D-04)
 - [x] 03-05-PLAN.md — install-codex + uninstall-codex (D-12 MCP-only) + toml_merge helper + Codex roundtrip test
-- [ ] 03-06-PLAN.md — README Quick Start 12-line gate (CC-09) + docs/ONBOARDING.md (CC-10) + ci recipe wires shellcheck + publish-workspace-dry-run + manual 30s wall-clock UAT
+- [x] 03-06-PLAN.md — README Quick Start 12-line gate (CC-09) + docs/ONBOARDING.md (CC-10) + ci recipe wires shellcheck + publish-workspace-dry-run + manual 30s wall-clock UAT
 **UI hint**: yes
 
 ### Phase 4: Federation CLI unwire + federation-CI preservation
@@ -248,7 +248,7 @@ Rough ordering (not committed):
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 3/3 | Complete | 2026-04-15 |
 | 1. `famp-bus` library + audit-log MessageClass | v0.9 | 0/3 | Not started | — |
 | 2. UDS wire + CLI + MV-MCP rewire + hook subcommand | v0.9 | 0/14 | Not started | — |
-| 3. Claude Code integration polish | v0.9 | 0/0 | Not started | — |
+| 3. Claude Code integration polish | v0.9 | 6/6 | Complete | 2026-05-03 |
 | 4. Federation CLI unwire + federation-CI preservation | v0.9 | 0/0 | Not started | — |
 
 ## Backlog
