@@ -58,6 +58,9 @@ pub enum CliError {
         source: toml::de::Error,
     },
 
+    #[error("toml table expected at {}", path.display())]
+    TomlTableExpected { path: PathBuf },
+
     #[error("another famp listen is already bound to {addr}")]
     PortInUse { addr: SocketAddr },
 

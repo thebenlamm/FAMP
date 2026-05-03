@@ -59,6 +59,13 @@ pub enum Commands {
     /// `~/.claude/settings.json` while preserving any other Stop hooks, and
     /// removes `~/.famp/hook-runner.sh`. Idempotent (D-04).
     UninstallClaudeCode(uninstall::claude_code::UninstallClaudeCodeArgs),
+    /// Install Codex MCP integration: writes `[mcp_servers.famp]` table to
+    /// `~/.codex/config.toml`. MCP-only - no slash commands, no hooks (D-12).
+    /// Idempotent (D-02).
+    InstallCodex(install::codex::InstallCodexArgs),
+    /// Uninstall Codex MCP integration: removes only `[mcp_servers.famp]`
+    /// from `~/.codex/config.toml`, preserving every other section (D-12).
+    UninstallCodex(uninstall::codex::UninstallCodexArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),
     /// Run the FAMP daemon: bind the HTTPS listener and append inbound
@@ -141,6 +148,8 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Setup(args) => setup::run(&args).map(|_| ()),
         Commands::InstallClaudeCode(args) => install::claude_code::run(args),
         Commands::UninstallClaudeCode(args) => uninstall::claude_code::run(args),
+        Commands::InstallCodex(args) => install::codex::run(args),
+        Commands::UninstallCodex(args) => uninstall::codex::run(args),
         Commands::Info(args) => info::run(&args).map(|_| ()),
         Commands::Peer(args) => peer::run(args),
         // Async arms: each boots a multi-thread tokio runtime via

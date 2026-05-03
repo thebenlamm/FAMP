@@ -31,7 +31,7 @@ use crate::cli::error::CliError::{
     NotRegistered, NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
     PeerNotFound, PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed,
     TaskDir, TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused,
-    TomlParse, TomlSerialize, UnknownIdentity,
+    TomlParse, TomlSerialize, TomlTableExpected, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -57,6 +57,7 @@ impl crate::cli::error::CliError {
             Io { .. } => "io_error",
             TomlSerialize(_) => "toml_serialize",
             TomlParse { .. } => "toml_parse",
+            TomlTableExpected { .. } => "toml_table_expected",
             PortInUse { .. } => "port_in_use",
             Inbox(_) => "inbox_error",
             Tls(_) => "tls_error",
