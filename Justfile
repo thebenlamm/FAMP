@@ -105,6 +105,11 @@ publish-workspace-dry-run:
     cargo publish -p famp-transport-http --dry-run
     cargo publish -p famp --dry-run
 
+# Shellcheck the hook-runner asset (D-08 invariant: shellcheck-clean).
+# Recipe colocated with the asset (`crates/famp/assets/hook-runner.sh`) — both ship in plan 03-02.
+check-shellcheck:
+    shellcheck crates/famp/assets/hook-runner.sh
+
 # Run the FAMP v0.5.1 spec anchor lint (ripgrep-based; see scripts/spec-lint.sh).
 spec-lint:
     bash scripts/spec-lint.sh
