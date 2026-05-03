@@ -60,6 +60,51 @@ install-hooks:
 audit:
     cargo audit
 
+# Publish all 12 workspace crates to crates.io in dependency order (D-10).
+# 45s sleep between publishes covers crates.io index-update lag (Pitfall 6).
+# Requires `cargo login` first; manual gate, not run from CI.
+publish-workspace:
+    cargo publish -p famp-canonical
+    sleep 45
+    cargo publish -p famp-core
+    sleep 45
+    cargo publish -p famp-taskdir
+    sleep 45
+    cargo publish -p famp-inbox
+    sleep 45
+    cargo publish -p famp-crypto
+    sleep 45
+    cargo publish -p famp-fsm
+    sleep 45
+    cargo publish -p famp-transport
+    sleep 45
+    cargo publish -p famp-keyring
+    sleep 45
+    cargo publish -p famp-envelope
+    sleep 45
+    cargo publish -p famp-bus
+    sleep 45
+    cargo publish -p famp-transport-http
+    sleep 45
+    cargo publish -p famp
+    @echo "✓ all 12 crates published — verify at https://crates.io/crates/famp"
+
+# Dry-run all 12 in dependency order. Catches Cargo.toml-publishability issues
+# (path-deps without version, missing description, etc. — Pitfall 5).
+publish-workspace-dry-run:
+    cargo publish -p famp-canonical --dry-run
+    cargo publish -p famp-core --dry-run
+    cargo publish -p famp-taskdir --dry-run
+    cargo publish -p famp-inbox --dry-run
+    cargo publish -p famp-crypto --dry-run
+    cargo publish -p famp-fsm --dry-run
+    cargo publish -p famp-transport --dry-run
+    cargo publish -p famp-keyring --dry-run
+    cargo publish -p famp-envelope --dry-run
+    cargo publish -p famp-bus --dry-run
+    cargo publish -p famp-transport-http --dry-run
+    cargo publish -p famp --dry-run
+
 # Run the FAMP v0.5.1 spec anchor lint (ripgrep-based; see scripts/spec-lint.sh).
 spec-lint:
     bash scripts/spec-lint.sh
