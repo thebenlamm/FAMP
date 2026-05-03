@@ -24,6 +24,7 @@ pub mod register;
 pub mod send;
 pub mod sessions;
 pub mod setup;
+pub mod uninstall;
 pub mod util;
 pub mod whoami;
 
@@ -52,6 +53,12 @@ pub enum Commands {
     /// hook-runner shim at `~/.famp/hook-runner.sh` (mode 0755).
     /// Idempotent (D-02).
     InstallClaudeCode(install::claude_code::InstallClaudeCodeArgs),
+    /// Uninstall Claude Code integration: reverses every `install-claude-code`
+    /// mutation. Removes `mcpServers.famp` from `~/.claude.json`, drops the
+    /// 7 slash-command files, surgically drops only the famp Stop hook from
+    /// `~/.claude/settings.json` while preserving any other Stop hooks, and
+    /// removes `~/.famp/hook-runner.sh`. Idempotent (D-04).
+    UninstallClaudeCode(uninstall::claude_code::UninstallClaudeCodeArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),
     /// Run the FAMP daemon: bind the HTTPS listener and append inbound
@@ -133,6 +140,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Init(args) => init::run(args).map(|_| ()),
         Commands::Setup(args) => setup::run(&args).map(|_| ()),
         Commands::InstallClaudeCode(args) => install::claude_code::run(args),
+        Commands::UninstallClaudeCode(args) => uninstall::claude_code::run(args),
         Commands::Info(args) => info::run(&args).map(|_| ()),
         Commands::Peer(args) => peer::run(args),
         // Async arms: each boots a multi-thread tokio runtime via
