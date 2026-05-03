@@ -4,8 +4,8 @@
 //!  1. `~/.claude.json :: mcpServers.famp` - JSON merge (`json_merge::upsert_user_json`)
 //!  2. `~/.claude/commands/famp-*.md` - 7 markdown files (`slash_commands::write_all`)
 //!  3. `~/.famp/hook-runner.sh` - bash shim at mode 0755 (`hook_runner::install_shim`)
-//!  4. `~/.claude/settings.json :: hooks.Stop` - array merge with sentinel
-//!     `command` prefix `<home>/.famp/hook-runner.sh` (D-09 amended target)
+//!  4. `~/.claude/settings.json :: hooks.Stop` - Claude Code hook entry
+//!     merge with sentinel command `<home>/.famp/hook-runner.sh`
 //!
 //! Idempotent: re-running is a no-op when state already matches (D-02).
 //! Atomic: each JSON write goes through `tempfile::NamedTempFile::persist`
@@ -151,22 +151,58 @@ fn build_stop_array(settings_path: &Path, shim_path: &Path) -> Result<Vec<Value>
     let shim_str = shim_path.display().to_string();
     let mut new_stop: Vec<Value> = prior_stop
         .iter()
-        .filter(|elem| {
-            !elem
+        .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &shim_str))
+        .collect();
+
+    new_stop.push(json!({
+        "matcher": "",
+        "hooks": [{
+            "type": "command",
+            "command": shim_str,
+            "timeout": 30,
+        }],
+    }));
+
+    Ok(new_stop)
+}
+
+fn remove_famp_hook_from_stop_entry(entry: &Value, shim: &str) -> Option<Value> {
+    if entry
+        .get("command")
+        .and_then(Value::as_str)
+        .is_some_and(|command| command.starts_with(shim))
+    {
+        return None;
+    }
+
+    let Some(hooks) = entry.get("hooks").and_then(Value::as_array) else {
+        return Some(entry.clone());
+    };
+    let filtered_hooks: Vec<Value> = hooks
+        .iter()
+        .filter(|hook| {
+            !hook
                 .get("command")
                 .and_then(Value::as_str)
-                .is_some_and(|command| command.starts_with(&shim_str))
+                .is_some_and(|command| command.starts_with(shim))
         })
         .cloned()
         .collect();
 
-    new_stop.push(json!({
-        "type": "command",
-        "command": shim_str,
-        "timeout": 30,
-    }));
+    if filtered_hooks.len() == hooks.len() {
+        return Some(entry.clone());
+    }
+    if filtered_hooks.is_empty() {
+        return None;
+    }
 
-    Ok(new_stop)
+    let mut updated = entry.clone();
+    if let Some(obj) = updated.as_object_mut() {
+        obj.insert("hooks".to_string(), Value::Array(filtered_hooks));
+        Some(updated)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -199,13 +235,13 @@ mod tests {
         .unwrap();
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 1);
-        let cmd = stop[0]["command"].as_str().unwrap();
+        assert_eq!(stop[0]["matcher"], "");
+        let hooks = stop[0]["hooks"].as_array().unwrap();
+        assert_eq!(hooks.len(), 1);
+        let cmd = hooks[0]["command"].as_str().unwrap();
         assert!(cmd.ends_with("/.famp/hook-runner.sh"), "command = {cmd}");
-        assert_eq!(stop[0]["type"], "command");
-        assert!(
-            stop[0].get("matcher").is_none(),
-            "Stop must not have matcher"
-        );
+        assert_eq!(hooks[0]["type"], "command");
+        assert_eq!(hooks[0]["timeout"], 30);
     }
 
     #[test]
@@ -274,7 +310,7 @@ mod tests {
         std::fs::write(
             home.join(".claude/settings.json"),
             format!(
-                r#"{{"hooks":{{"Stop":[{{"type":"command","command":"{shim}","timeout":99}},{{"type":"command","command":"/other/hook.sh","timeout":10}}]}}}}"#,
+                r#"{{"hooks":{{"Stop":[{{"matcher":"","hooks":[{{"type":"command","command":"{shim}","timeout":99}},{{"type":"command","command":"/other/hook.sh","timeout":10}}]}},{{"type":"command","command":"{shim} legacy","timeout":99}},{{"matcher":"Edit|Write","hooks":[{{"type":"command","command":"/another/hook.sh","timeout":10}}]}}]}}}}"#,
             ),
         )
         .unwrap();
@@ -288,13 +324,34 @@ mod tests {
         )
         .unwrap();
         let stop = post["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2, "should preserve other hook + replace ours");
-        let ours = stop.iter().find(|e| e["command"] == shim).unwrap();
-        assert_eq!(ours["timeout"], json!(30));
-        let other = stop
+        assert_eq!(
+            stop.len(),
+            3,
+            "should preserve other hooks and replace ours"
+        );
+        let ours_group = stop
             .iter()
-            .find(|e| e["command"] == "/other/hook.sh")
+            .find(|e| {
+                e["matcher"] == ""
+                    && e["hooks"]
+                        .as_array()
+                        .is_some_and(|hooks| hooks.iter().any(|hook| hook["command"] == shim))
+            })
             .unwrap();
-        assert_eq!(other["timeout"], json!(10));
+        assert_eq!(ours_group["hooks"][0]["timeout"], json!(30));
+        let other_group = stop
+            .iter()
+            .find(|e| {
+                e["hooks"].as_array().is_some_and(|hooks| {
+                    hooks.iter().any(|hook| hook["command"] == "/other/hook.sh")
+                })
+            })
+            .unwrap();
+        assert_eq!(other_group["hooks"][0]["timeout"], json!(10));
+        assert!(stop.iter().all(|e| {
+            e.get("command")
+                .and_then(Value::as_str)
+                .is_none_or(|command| !command.starts_with(&shim))
+        }));
     }
 }

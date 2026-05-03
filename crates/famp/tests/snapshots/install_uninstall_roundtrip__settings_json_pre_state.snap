@@ -9,15 +9,25 @@ expression: post_settings
   "hooks": {
     "PreToolUse": [
       {
-        "command": "/some/pre-hook.sh",
-        "type": "command"
+        "hooks": [
+          {
+            "command": "/some/pre-hook.sh",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write"
       }
     ],
     "Stop": [
       {
-        "command": "/some/other-stop.sh",
-        "timeout": 60,
-        "type": "command"
+        "hooks": [
+          {
+            "command": "/some/other-stop.sh",
+            "timeout": 60,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
       }
     ]
   },

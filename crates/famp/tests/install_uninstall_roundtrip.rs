@@ -42,10 +42,10 @@ const REALISTIC_SETTINGS_JSON: &str = r#"{
   "model": "opus",
   "hooks": {
     "PreToolUse": [
-      {"type": "command", "command": "/some/pre-hook.sh"}
+      {"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/some/pre-hook.sh"}]}
     ],
     "Stop": [
-      {"type": "command", "command": "/some/other-stop.sh", "timeout": 60}
+      {"matcher": "", "hooks": [{"type": "command", "command": "/some/other-stop.sh", "timeout": 60}]}
     ]
   }
 }"#;

@@ -5,8 +5,8 @@
 //!  1. `json_merge::remove_user_json("mcpServers", "famp")` against `~/.claude.json`
 //!  2. `slash_commands::remove_all` against `~/.claude/commands/`
 //!  3. `hook_runner::remove_shim` against `~/.famp/hook-runner.sh`
-//!  4. Surgical drop of the famp-tagged Stop entry in `~/.claude/settings.json`
-//!     while preserving every other Stop hook and every other settings key.
+//!  4. Surgical drop of the famp-tagged Stop hook in `~/.claude/settings.json`
+//!     while preserving every other hook and every other settings key.
 //!
 //! Idempotent: re-running on already-uninstalled state is a no-op.
 
@@ -150,12 +150,7 @@ fn surgical_remove_stop_entry(
     let shim_str = shim_path.display().to_string();
     let filtered: Vec<Value> = prior_stop
         .iter()
-        .filter(|elem| {
-            elem.get("command")
-                .and_then(Value::as_str)
-                .is_none_or(|command| command != shim_str)
-        })
-        .cloned()
+        .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &shim_str))
         .collect();
 
     if filtered.len() == prior_stop.len() {
@@ -181,6 +176,45 @@ fn surgical_remove_stop_entry(
     )
     .ok();
     Ok(())
+}
+
+fn remove_famp_hook_from_stop_entry(entry: &Value, shim: &str) -> Option<Value> {
+    if entry
+        .get("command")
+        .and_then(Value::as_str)
+        .is_some_and(|command| command.starts_with(shim))
+    {
+        return None;
+    }
+
+    let Some(hooks) = entry.get("hooks").and_then(Value::as_array) else {
+        return Some(entry.clone());
+    };
+    let filtered_hooks: Vec<Value> = hooks
+        .iter()
+        .filter(|hook| {
+            !hook
+                .get("command")
+                .and_then(Value::as_str)
+                .is_some_and(|command| command.starts_with(shim))
+        })
+        .cloned()
+        .collect();
+
+    if filtered_hooks.len() == hooks.len() {
+        return Some(entry.clone());
+    }
+    if filtered_hooks.is_empty() {
+        return None;
+    }
+
+    let mut updated = entry.clone();
+    if let Some(obj) = updated.as_object_mut() {
+        obj.insert("hooks".to_string(), Value::Array(filtered_hooks));
+        Some(updated)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -261,9 +295,12 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
         let stop = settings["hooks"]["Stop"].as_array_mut().unwrap();
         stop.push(serde_json::json!({
-            "type": "command",
-            "command": "/some/other/hook.sh",
-            "timeout": 5
+            "matcher": "Edit|Write",
+            "hooks": [{
+                "type": "command",
+                "command": "/some/other/hook.sh",
+                "timeout": 5
+            }]
         }));
         std::fs::write(
             &settings_path,
@@ -279,7 +316,8 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
         let stop = post["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 1);
-        assert_eq!(stop[0]["command"], "/some/other/hook.sh");
+        assert_eq!(stop[0]["matcher"], "Edit|Write");
+        assert_eq!(stop[0]["hooks"][0]["command"], "/some/other/hook.sh");
     }
 
     #[test]

@@ -56,15 +56,15 @@ fn install_claude_code_writes_all_artifacts() {
     let s: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
     let stop = s["hooks"]["Stop"].as_array().unwrap();
     assert_eq!(stop.len(), 1);
-    assert_eq!(stop[0]["type"], "command");
-    assert!(stop[0]["command"]
+    assert_eq!(stop[0]["matcher"], "");
+    let hooks = stop[0]["hooks"].as_array().unwrap();
+    assert_eq!(hooks.len(), 1);
+    assert_eq!(hooks[0]["type"], "command");
+    assert!(hooks[0]["command"]
         .as_str()
         .unwrap()
         .ends_with("/.famp/hook-runner.sh"));
-    assert!(
-        stop[0].get("matcher").is_none(),
-        "Stop must not have matcher (Pitfall 4)"
-    );
+    assert_eq!(hooks[0]["timeout"], 30);
 }
 
 #[test]
