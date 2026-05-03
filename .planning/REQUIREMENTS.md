@@ -108,7 +108,7 @@
 - [ ] **CC-02**: Slash command `/famp-register <name>` → `famp_register(name=...)`
 - [ ] **CC-03**: Slash command `/famp-join <#channel>` → `famp_join(channel=...)`
 - [ ] **CC-04**: Slash command `/famp-leave <#channel>` → `famp_leave(channel=...)`
-- [ ] **CC-05**: Slash command `/famp-msg <to> <body>` → `famp_send(to={kind:"agent",name:...}, new_task=body)` (DM convenience). Naming bikeshed (`msg` vs `send` vs `dm`) deferred to Phase 3.
+- [ ] **CC-05**: Slash command `/famp-send <to> <body>` → `famp_send(to={kind:"agent",name:...}, new_task=body)` (DM convenience). Renamed from `/famp-msg` per Phase 3 D-05 (slash command names mirror CLI verbs exactly: `famp send` ↔ `/famp-send`).
 - [ ] **CC-06**: Slash command `/famp-channel <#channel> <body>` → `famp_send(to={kind:"channel",name:...}, new_task=body)`
 - [ ] **CC-07**: Slash command `/famp-who [#channel?]` → `famp_sessions` filtered
 - [ ] **CC-08**: Slash command `/famp-inbox` → `famp_inbox`
