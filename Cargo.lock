@@ -697,6 +697,7 @@ dependencies = [
  "famp-transport-http",
  "hex",
  "humantime",
+ "insta",
  "nix 0.31.2",
  "rand 0.8.5",
  "rcgen",

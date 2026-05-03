@@ -1,0 +1,32 @@
+---
+source: crates/famp/tests/install_uninstall_roundtrip.rs
+expression: post_settings
+---
+{
+  "env": {
+    "MY_VAR": "abc"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "command": "/some/pre-hook.sh",
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "/some/other-stop.sh",
+        "timeout": 60,
+        "type": "command"
+      }
+    ]
+  },
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "WebFetch(*)"
+    ],
+    "deny": []
+  }
+}

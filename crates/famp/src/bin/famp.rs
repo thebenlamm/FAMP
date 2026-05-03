@@ -23,6 +23,8 @@ use famp_transport as _;
 use famp_transport_http as _;
 use hex as _;
 use humantime as _;
+#[cfg(test)]
+use insta as _;
 use nix as _;
 use rand as _;
 use rcgen as _;

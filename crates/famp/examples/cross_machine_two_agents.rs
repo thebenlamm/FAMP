@@ -46,6 +46,7 @@ use famp_taskdir as _;
 use famp_transport as _;
 use hex as _;
 use humantime as _;
+use insta as _;
 use nix as _;
 use regex as _;
 use reqwest as _;

@@ -45,6 +45,8 @@ use uuid as _;
 // (`crates/famp/tests/*`); silence it in the library test compile unit.
 #[cfg(test)]
 use assert_cmd as _;
+#[cfg(test)]
+use insta as _;
 
 pub use famp_canonical::{canonicalize, from_slice_strict, from_str_strict, CanonicalError};
 pub use famp_core::{

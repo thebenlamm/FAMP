@@ -28,6 +28,7 @@ use famp_taskdir as _;
 use famp_transport_http as _;
 use hex as _;
 use humantime as _;
+use insta as _;
 use nix as _;
 use rcgen as _;
 use regex as _;

@@ -1,0 +1,35 @@
+---
+source: crates/famp/tests/install_uninstall_roundtrip.rs
+expression: post_claude
+---
+{
+  "cachedDynamicConfigs": {
+    "knownTools": [
+      "bash",
+      "grep",
+      "edit"
+    ],
+    "modelDefault": "sonnet"
+  },
+  "installMethod": "native",
+  "mcpServers": {
+    "filesystem": {
+      "args": [],
+      "command": "/opt/fs-mcp",
+      "type": "stdio"
+    },
+    "github": {
+      "args": [
+        "serve"
+      ],
+      "command": "/usr/local/bin/github-mcp",
+      "type": "stdio"
+    }
+  },
+  "numStartups": 137,
+  "tipsHistory": [
+    "welcome",
+    "first-edit",
+    "slash-commands"
+  ]
+}
