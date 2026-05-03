@@ -255,6 +255,40 @@ pub enum CliError {
     /// is a higher-level alias used by transport-failure paths).
     #[error("bus client error: {detail}")]
     BusClient { detail: String },
+
+    #[error("json merge: failed to read {}: {source}", path.display())]
+    JsonMergeRead {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("json merge: failed to parse {}: {source}", path.display())]
+    JsonMergeParse {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("json merge: file root is not an object at {}", path.display())]
+    JsonMergeNotObject { path: PathBuf },
+
+    #[error("json merge: failed to back up {}: {source}", path.display())]
+    JsonMergeBackup {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("json merge: failed to persist {}: {source}", path.display())]
+    JsonMergePersist {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("not implemented: {what}")]
+    NotImplemented { what: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

@@ -12,6 +12,7 @@ pub mod identity;
 pub mod inbox;
 pub mod info;
 pub mod init;
+pub mod install;
 pub mod join;
 pub mod leave;
 pub mod listen;

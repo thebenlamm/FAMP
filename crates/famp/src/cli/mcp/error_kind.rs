@@ -26,7 +26,8 @@ use crate::cli::error::CliError::{
     AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, CertgenFailed,
     Disconnected, Envelope, FsmTransition, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute,
     HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
-    InvalidTaskState, Io, KeygenFailed, KeyringBuildFailed, NameTaken, NoIdentityBound,
+    InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
+    JsonMergeRead, KeygenFailed, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented,
     NotRegistered, NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
     PeerNotFound, PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed,
     TaskDir, TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused,
@@ -97,6 +98,12 @@ impl crate::cli::error::CliError {
             BusError { .. } => "bus_error",
             NotRegisteredHint { .. } => "not_registered_hint",
             BusClient { .. } => "bus_client_error",
+            JsonMergeRead { .. } => "json_merge_read",
+            JsonMergeParse { .. } => "json_merge_parse",
+            JsonMergeNotObject { .. } => "json_merge_not_object",
+            JsonMergeBackup { .. } => "json_merge_backup",
+            JsonMergePersist { .. } => "json_merge_persist",
+            NotImplemented { .. } => "not_implemented",
         }
     }
 }
