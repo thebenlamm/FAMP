@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: Local-First Bus
 status: milestone_complete
-stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-05-04T01:23:57.243Z"
+stopped_at: Completed 04-08-PLAN.md
+last_updated: "2026-05-04T02:28:44Z"
 last_activity: 2026-05-04
 progress:
   total_phases: 4
   completed_phases: 4
   total_plans: 31
-  completed_plans: 29
+  completed_plans: 31
   percent: 100
 ---
 
 # STATE: FAMP — v0.9 Local-First Bus
 
-**Last Updated:** 2026-04-30 — Phase 02 complete; v0.9 tech-debt sweep landed (7 commits, 492/22 still green); audit_log-wrapper protocol-shape question parked for architect counsel.
+**Last Updated:** 2026-05-04 — v0.9 milestone complete; Phase 04 removed the user-facing federation CLI, preserved federation internals/tests for v1.0, cut `v0.8.1-federation-preserved`, and landed the v0.8→v0.9 migration guide.
 
 ## Project Reference
 
@@ -24,13 +24,13 @@ See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 04 — federation-cli-unwire-federation-ci-preservation
+**Current focus:** v0.9 milestone complete — next milestone is trigger-gated v1.0 Federation Profile.
 
 ## Current Position
 
 Phase: 04
 Plan: Not started
-Plans: 14 of 14 complete
+Plans: 8 of 8 complete
 Status: Milestone complete
 Last activity: 2026-05-04
 
