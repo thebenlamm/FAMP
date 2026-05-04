@@ -4,8 +4,8 @@ milestone: v0.9
 milestone_name: Local-First Bus
 status: executing
 stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-05-04T03:12:26.337Z"
-last_activity: 2026-05-04 -- Phase 05 planning complete
+last_updated: "2026-05-04T03:14:15.069Z"
+last_activity: 2026-05-04 -- Phase 05 execution started
 progress:
   total_phases: 4
   completed_phases: 4
@@ -24,15 +24,15 @@ See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** v0.9 milestone complete — next milestone is trigger-gated v1.0 Federation Profile.
+**Current focus:** Phase 05 — v0.9-milestone-close-fixes
 
 ## Current Position
 
-Phase: 04
-Plan: Not started
+Phase: 05 (v0.9-milestone-close-fixes) — EXECUTING
+Plan: 1 of 4
 Plans: 8 of 8 complete
-Status: Ready to execute
-Last activity: 2026-05-04 -- Phase 05 planning complete
+Status: Executing Phase 05
+Last activity: 2026-05-04 -- Phase 05 execution started
 
 ## Last Shipped
 
