@@ -78,7 +78,7 @@ Last activity: 2026-05-04
 ## Issues / Blockers
 
 - **8 pre-existing listener/E2E TLS-loopback timeouts** (`reqwest::Error { kind: Request, source: TimedOut }` against `https://127.0.0.1:.../famp/v0.5.1/inbox/...`). Reproduces on Wave 2 commit `ae905ed`. Not a Phase 1 regression. Documented in `01-03-SUMMARY.md` and `01-VERIFICATION.md`. Triage as a separate hygiene task before Phase 4.
-- **Plan 04-05 CI blocker:** `just ci` is blocked by out-of-scope clippy `option_if_let_else` warnings in `crates/famp/src/cli/install/claude_code.rs` and `crates/famp/src/cli/uninstall/claude_code.rs`.
+- **Plan 04-06 D-20 gate resolved:** pre-tag `just ci` blockers were fixed in `debed78`; lightweight tag `v0.8.1-federation-preserved` now points at `debed78f1b55df44fb2ca18687c5794147226a40`.
 
 ## Performance Metrics
 
