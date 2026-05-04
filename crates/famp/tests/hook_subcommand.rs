@@ -2,7 +2,7 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! HOOK-04a integration tests for `scripts/famp-local hook add|list|remove`.
+//! HOOK-04a integration tests for archived `famp-local hook add|list|remove`.
 //!
 //! Spawns the bash script with a sandboxed `FAMP_LOCAL_ROOT` so each test
 //! gets its own hooks.tsv. NOTE: the script's state dir env is
@@ -21,14 +21,14 @@ fn run_local(state_root: &std::path::Path, args: &[&str]) -> std::process::Outpu
         .unwrap()
         .parent()
         .unwrap()
-        .join("scripts/famp-local");
+        .join("docs/history/v0.9-prep-sprint/famp-local/famp-local");
     Command::new("bash")
         .arg(&script)
         .args(args)
         .env("FAMP_LOCAL_ROOT", state_root)
         .env_remove("FAMP_HOME")
         .output()
-        .expect("scripts/famp-local must run")
+        .expect("archived famp-local must run")
 }
 
 #[test]

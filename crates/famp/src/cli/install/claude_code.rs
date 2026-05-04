@@ -197,12 +197,9 @@ fn remove_famp_hook_from_stop_entry(entry: &Value, shim: &str) -> Option<Value> 
     }
 
     let mut updated = entry.clone();
-    if let Some(obj) = updated.as_object_mut() {
-        obj.insert("hooks".to_string(), Value::Array(filtered_hooks));
-        Some(updated)
-    } else {
-        None
-    }
+    let obj = updated.as_object_mut()?;
+    obj.insert("hooks".to_string(), Value::Array(filtered_hooks));
+    Some(updated)
 }
 
 #[cfg(test)]

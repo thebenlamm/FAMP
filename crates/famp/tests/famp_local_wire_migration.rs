@@ -1,6 +1,6 @@
 //! Integration tests for the FAMP_HOME → register-first migration in
-//! `scripts/famp-local`. Drives bash via `Command::new` for shell-portable
-//! CI coverage. Spec: 01-CONTEXT.md "Migration in scripts/famp-local".
+//! archived `famp-local` script. Drives bash via `Command::new` for
+//! shell-portable CI coverage. Spec: 01-CONTEXT.md "Migration in scripts/famp-local".
 
 #![allow(
     unused_crate_dependencies,
@@ -22,7 +22,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn script_path() -> PathBuf {
-    workspace_root().join("scripts/famp-local")
+    workspace_root().join("docs/history/v0.9-prep-sprint/famp-local/famp-local")
 }
 
 /// Place a stub `famp` binary on a synthetic PATH so `cmd_wire`'s
@@ -261,7 +261,7 @@ fn mcp_add_does_not_emit_famp_home() {
             && line.contains("FAMP_HOME")
         {
             panic!(
-                "scripts/famp-local line {}: mcp-add invocation still emits FAMP_HOME:\n  {}",
+                "archived famp-local line {}: mcp-add invocation still emits FAMP_HOME:\n  {}",
                 idx + 1,
                 line
             );

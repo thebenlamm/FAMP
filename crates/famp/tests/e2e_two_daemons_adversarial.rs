@@ -1,4 +1,4 @@
-//! Phase 4 plumb-line-2 sentinel (D-09): the FampSigVerifyLayer middleware
+//! Phase 4 plumb-line-2 sentinel (D-09): the `FampSigVerifyLayer` middleware
 //! rejects an unsigned envelope BEFORE the inbox handler closure is entered.
 //! Cheapest possible sentinel; full adversarial matrix lives in
 //! `tests/adversarial/http.rs` per D-13 (not duplicated here).
@@ -26,9 +26,9 @@ fn bob() -> Principal {
 }
 
 fn build_bob_keyring() -> Arc<Keyring> {
-    let bob_sk = FampSigningKey::from_bytes([2u8; 32]);
-    let bob_vk: TrustedVerifyingKey = bob_sk.verifying_key();
-    Arc::new(Keyring::new().with_peer(bob(), bob_vk).unwrap())
+    let signing_key = FampSigningKey::from_bytes([2u8; 32]);
+    let verifying_key: TrustedVerifyingKey = signing_key.verifying_key();
+    Arc::new(Keyring::new().with_peer(bob(), verifying_key).unwrap())
 }
 
 struct HttpRig {
