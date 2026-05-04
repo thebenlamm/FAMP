@@ -4,14 +4,14 @@ milestone: v0.9
 milestone_name: Local-First Bus
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-05-04T00:37:25.876Z"
-last_activity: 2026-05-04 -- Phase 4 planning complete
+last_updated: "2026-05-04T00:52:10.410Z"
+last_activity: 2026-05-04 -- Phase 04 execution started
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 31
-  completed_plans: 23
-  percent: 74
+  completed_plans: 24
+  percent: 77
 ---
 
 # STATE: FAMP — v0.9 Local-First Bus
@@ -24,15 +24,15 @@ See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 03 — claude-code-integration-polish
+**Current focus:** Phase 04 — federation-cli-unwire-federation-ci-preservation
 
 ## Current Position
 
-Phase: 03 (claude-code-integration-polish) — EXECUTING
-Plan: 1 of 6
+Phase: 04 (federation-cli-unwire-federation-ci-preservation) — EXECUTING
+Plan: 1 of 8
 Plans: 14 of 14 complete
-Status: Ready to execute
-Last activity: 2026-05-04 -- Phase 4 planning complete
+Status: Executing Phase 04
+Last activity: 2026-05-04 -- Phase 04 execution started
 
 ## Last Shipped
 
@@ -69,6 +69,8 @@ Last activity: 2026-05-04 -- Phase 4 planning complete
 - [Phase 01]: Exact all-target clippy remains blocked by pre-existing `famp-envelope` doc markdown; `famp-bus` all-target clippy passes with `--no-deps`.
 - [Phase 01]: AUDIT-05 atomic-bump invariant honored — constant flip + impl + dispatch + body + doc-comment removal + Justfile recipe in ONE commit (`9ca6e13`). Necessary exhaustive-match fallout in `crates/famp/src/runtime/adapter.rs` and `crates/famp-transport-http/src/server.rs` rode the same commit.
 - [Phase 01]: `audit_log` is non-FSM-firing per Δ31 / D-15. `git diff HEAD~1 HEAD -- crates/famp-fsm/` is empty; `fsm_input_from_envelope` returns `None` for `AuditLog` (joining `Ack` precedent).
+- [Phase 04]: Plan 04-01 copied http_happy_path.rs library-API body into e2e_two_daemons.rs, changing only the Phase 4 doc comment and test function name.
+- [Phase 04]: Plan 04-01 kept e2e_two_daemons_adversarial.rs independent of famp::runtime because runtime is removed later in Phase 4.
 
 ## Issues / Blockers
 
@@ -84,6 +86,6 @@ Last activity: 2026-05-04 -- Phase 4 planning complete
 
 ## Session
 
-**Last session:** 2026-05-03T22:54:52.782Z
+**Last session:** 2026-05-04T00:51:35.573Z
 **Stopped At:** Phase 4 context gathered
-**Resume File:** .planning/phases/04-federation-cli-unwire-federation-ci-preservation/04-CONTEXT.md
+**Resume File:** None

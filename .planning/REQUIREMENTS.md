@@ -119,7 +119,7 @@
 
 - [ ] **FED-01**: Top-level CLI removals — `famp setup`, `famp listen`, `famp init`, `famp peer add`, `famp peer import`, old `famp send` (TLS form) — moved out of user-facing CLI
 - [ ] **FED-02**: `famp-transport-http` + `famp-keyring` relabeled "v1.0 federation internals" in workspace `Cargo.toml` comments; remain compiling and tested
-- [ ] **FED-03**: **`e2e_two_daemons` refactored to library API** — no dependency on deleted CLI subcommands; instantiates two `famp-transport-http` server instances directly, exchanges full signed `request → commit → deliver → ack` cycle over HTTPS, verifies canonical JSON + Ed25519 end-to-end
+- [x] **FED-03**: **`e2e_two_daemons` refactored to library API** — no dependency on deleted CLI subcommands; instantiates two `famp-transport-http` server instances directly, exchanges full signed `request → commit → deliver → ack` cycle over HTTPS, verifies canonical JSON + Ed25519 end-to-end
 - [ ] **FED-04**: Federation e2e test green in `just ci` on every commit (plumb-line-2 commitment against mummification)
 - [ ] **FED-05**: Tag `v0.8.1-federation-preserved` cut on the commit BEFORE Phase 4 deletions land — escape hatch for federation-needed users
 - [ ] **FED-06**: `cargo tree` shows federation crates are consumed only by the refactored e2e test, no top-level CLI usage
@@ -253,7 +253,7 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | CC-10 | Phase 3 | Complete |
 | FED-01 | Phase 4 | Pending |
 | FED-02 | Phase 4 | Pending |
-| FED-03 | Phase 4 | Pending |
+| FED-03 | Phase 4 | Complete |
 | FED-04 | Phase 4 | Pending |
 | FED-05 | Phase 4 | Pending |
 | FED-06 | Phase 4 | Pending |
