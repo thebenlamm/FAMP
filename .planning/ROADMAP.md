@@ -141,7 +141,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   5. `[[profile.default.test-groups]]` is pinned for listen-subprocess tests (max-threads = 4, carry-forward TD-1) before listen subprocess tests proliferate further — addressed alongside the `e2e_two_daemons` refactor.
 **Plans:** 8 plans
 - [x] 04-01-PLAN.md — Refactor e2e_two_daemons.rs to library-API happy path + adversarial sentinel (FED-03/04, TEST-06)
-- [ ] 04-02-PLAN.md — Freeze ~27 federation-coupled tests under crates/famp/tests/_deferred_v1/ via git mv + freeze README (FED-01 enabler)
+- [x] 04-02-PLAN.md — Freeze ~27 federation-coupled tests under crates/famp/tests/_deferred_v1/ via git mv + freeze README (FED-01 enabler)
 - [ ] 04-03-PLAN.md — Archive scripts/famp-local under docs/history/v0.9-prep-sprint/famp-local/ + ROADMAP 999.6 path update (MIGRATE-04)
 - [ ] 04-04-PLAN.md — Create docs/MIGRATION-v0.8-to-v0.9.md with CLI mapping table (MIGRATE-01/02/04)
 - [ ] 04-05-PLAN.md — Staged-framing edits across README/CLAUDE/ROADMAP/MILESTONES/ARCHITECTURE (MIGRATE-03)

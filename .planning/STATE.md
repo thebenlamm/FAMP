@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: Local-First Bus
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-05-04T00:52:10.410Z"
-last_activity: 2026-05-04 -- Phase 04 execution started
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-05-04T01:03:34.137Z"
+last_activity: 2026-05-04
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 31
-  completed_plans: 24
-  percent: 77
+  completed_plans: 25
+  percent: 81
 ---
 
 # STATE: FAMP — v0.9 Local-First Bus
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0
 ## Current Position
 
 Phase: 04 (federation-cli-unwire-federation-ci-preservation) — EXECUTING
-Plan: 1 of 8
+Plan: 2 of 8
 Plans: 14 of 14 complete
-Status: Executing Phase 04
-Last activity: 2026-05-04 -- Phase 04 execution started
+Status: Ready to execute
+Last activity: 2026-05-04
 
 ## Last Shipped
 
@@ -71,6 +71,8 @@ Last activity: 2026-05-04 -- Phase 04 execution started
 - [Phase 01]: `audit_log` is non-FSM-firing per Δ31 / D-15. `git diff HEAD~1 HEAD -- crates/famp-fsm/` is empty; `fsm_input_from_envelope` returns `None` for `AuditLog` (joining `Ack` precedent).
 - [Phase 04]: Plan 04-01 copied http_happy_path.rs library-API body into e2e_two_daemons.rs, changing only the Phase 4 doc comment and test function name.
 - [Phase 04]: Plan 04-01 kept e2e_two_daemons_adversarial.rs independent of famp::runtime because runtime is removed later in Phase 4.
+- [Phase 04]: Plan 04-02 moved info_happy_path.rs into _deferred_v1 because the live tree still imported famp::cli::setup; the planned keep condition had not landed.
+- [Phase 04]: Plan 04-02 resolved D-03 row 7 as MOVE via active send unit coverage and row 13 as MOVE via active TaskNotFound error-surface mapping; full stale-task broker validation remains out of scope.
 
 ## Issues / Blockers
 
@@ -86,6 +88,6 @@ Last activity: 2026-05-04 -- Phase 04 execution started
 
 ## Session
 
-**Last session:** 2026-05-04T00:51:35.573Z
-**Stopped At:** Phase 4 context gathered
+**Last session:** 2026-05-04T01:03:34.111Z
+**Stopped At:** Completed 04-02-PLAN.md
 **Resume File:** None
