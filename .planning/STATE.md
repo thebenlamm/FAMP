@@ -1,30 +1,30 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.9
-milestone_name: milestone
-status: completed
-stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-05-04T03:47:04.831Z"
-last_activity: 2026-05-04 -- Phase 05 marked complete
+milestone_name: Local-First Bus
+status: shipped
+stopped_at: v0.9 milestone closed 2026-05-04
+last_updated: "2026-05-04T04:23:20.820Z"
+last_activity: 2026-05-04 -- v0.9 archived; planning next milestone
 progress:
-  total_phases: 7
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_phases: 5
+  completed_phases: 5
+  total_plans: 35
+  completed_plans: 35
   percent: 100
 ---
 
-# STATE: FAMP — v0.9 Local-First Bus
+# STATE: FAMP — between milestones (v0.9 shipped 2026-05-04)
 
-**Last Updated:** 2026-05-04 — v0.9 milestone complete; Phase 04 removed the user-facing federation CLI, preserved federation internals/tests for v1.0, cut `v0.8.1-federation-preserved`, and landed the v0.8→v0.9 migration guide.
+**Last Updated:** 2026-05-04 — v0.9 Local-First Bus shipped (85/85 reqs, audit `passed`); next milestone is v1.0 Federation Profile, trigger-gated (Sofer-from-different-machine; 4-week clock 2026-05-04 → 2026-06-01).
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0 Federation Profile remains trigger-gated on Sofer (or named equivalent) interop from a different machine.
+See: .planning/PROJECT.md — v0.9 Local-First Bus archived to `.planning/milestones/v0.9-*`. v1.0 Federation Profile is the next planned milestone but is trigger-gated; do not run `/gsd-new-milestone v1.0` until Sofer (or named equivalent) runs FAMP from a different machine and exchanges a signed envelope.
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
-**Current focus:** Phase 05 — v0.9-milestone-close-fixes
+**Current focus:** Planning next milestone (v1.0, trigger-gated).
 
 ## Current Position
 
@@ -32,7 +32,7 @@ Phase: 05 — COMPLETE
 Plan: 1 of 4
 Plans: 8 of 8 complete
 Status: Phase 05 complete
-Last activity: 2026-05-04 -- Phase 05 marked complete
+Last activity: 2026-05-04
 
 ## Last Shipped
 
@@ -79,6 +79,48 @@ Last activity: 2026-05-04 -- Phase 05 marked complete
 
 - **8 pre-existing listener/E2E TLS-loopback timeouts** (`reqwest::Error { kind: Request, source: TimedOut }` against `https://127.0.0.1:.../famp/v0.5.1/inbox/...`). Reproduces on Wave 2 commit `ae905ed`. Not a Phase 1 regression. Documented in `01-03-SUMMARY.md` and `01-VERIFICATION.md`. Triage as a separate hygiene task before Phase 4.
 - **Plan 04-06 D-20 gate resolved:** pre-tag `just ci` blockers were fixed in `debed78`; lightweight tag `v0.8.1-federation-preserved` now points at `debed78f1b55df44fb2ca18687c5794147226a40`.
+
+## Deferred Items
+
+Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-sdk query audit-open`):
+
+| Category | Item | Status |
+|----------|------|--------|
+| quick_task | 260414-cme-remove-obsolete-wave2-impl-feature-gate- | missing |
+| quick_task | 260414-ecp-wire-unsupportedversion-error-on-envelop | missing |
+| quick_task | 260414-esi-seal-famp-field-visibility-and-cover-adv | missing |
+| quick_task | 260414-f4i-docs-pr-famp-crypto-rustdoc-readme-overv | missing |
+| quick_task | 260414-fjo-pr-4-architectural-cleanup-drop-signer-v | missing |
+| quick_task | 260414-g32-pr-4-1-fix-weakkey-docstring-drop-dead-v | missing |
+| quick_task | 260420-viu-fail-open-on-invaliduuid-in-inbox-list-f | missing |
+| quick_task | 260424-7z5-fix-famp-send-new-task-body-loss-scope-i | missing |
+| quick_task | 260425-cic-bump-rustls-webpki-2026-0104 | missing |
+| quick_task | 260425-gst-fix-famp-fsm-commit-receipt-error-suppre | missing |
+| quick_task | 260425-ho8-fix-lost-update-race-in-await-commit-rec | missing |
+| quick_task | 260425-kbx-harden-await-commit-receipt-red-test-tig | missing |
+| quick_task | 260425-lg7-tighten-try-update-closure-err-docstring | missing |
+| quick_task | 260425-lny-fix-b2-class-bug-at-send-mod-rs-514-surf | missing |
+| quick_task | 260425-m0f-write-scripts-redeploy-listeners-sh-safe | missing |
+| quick_task | 260425-of2-t1-2-tighten-mcp-body-schema-docstring | missing |
+| quick_task | 260425-pc7-add-more-coming-flag-to-new-task-envelop | missing |
+| quick_task | 260425-re1-t2-2-readme-redeploy-verification-spot-c | missing |
+| quick_task | 260425-rz6-fix-clierror-envelope-masking-fsm-transi | missing |
+| quick_task | 260425-sl0-t3-x-file-three-backlog-items-999-3-999- | missing |
+| quick_task | 260425-so2-absorb-format-drift-in-send-mod-rs-after | missing |
+| quick_task | 260425-tey-absorb-rz6-adversarial-review-findings-d | missing |
+| quick_task | 260426-q1q-fix-famp-local-wire-first-call-mesh-size | missing |
+| quick_task | 260426-s2j-add-famp-local-identity-of-subcommand-an | missing |
+| quick_task | 260426-stp-align-bash-validate-identity-name-with-r | missing |
+| quick_task | 260426-u2t-t5-spec-amendment-v0-5-1-to-v0-5-2-audit | missing |
+| quick_task | 260427-k7v-add-clear-subcommand-to-scripts-famp-loc | missing |
+| quick_task | 260427-kna-add-famp-local-doctor-subcommand-and-fam | missing |
+| quick_task | 260427-l2t-fix-doctor-walk-up-to-read-input-dir-mcp | missing |
+| quick_task | 260427-lb8-fix-adversarial-review-findings-doctor-i | missing |
+| seed | SEED-001-serde-jcs-conformance-gate | dormant |
+| seed | SEED-002-harness-adapter-push-notifications | dormant |
+| uat_gap | 02 (02-HUMAN-UAT.md, 0 pending scenarios) | unknown |
+
+**Notes:** All 30 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint work; no completion artifacts but no active obligations). Both seeds explicitly v1.0-gated by design (SEED-001 = vector pack interop, SEED-002 = push-notification harness). UAT gap header status drift only — 0 pending scenarios.
 
 ## Performance Metrics
 

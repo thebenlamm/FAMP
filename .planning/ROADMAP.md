@@ -8,17 +8,12 @@
 - ✅ **v0.6 Foundation Crates** — Phases 1–3 (shipped 2026-04-13). Substrate shipped: `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements satisfied, 112/112 tests green. See [milestones/v0.6-ROADMAP.md](milestones/v0.6-ROADMAP.md).
 - ✅ **v0.7 Personal Runtime** — Phases 1–4 (shipped 2026-04-14). Minimal usable library on two transports. 4/4 phases, 15/15 plans, 253/253 tests green.
 - ✅ **v0.8 Usable from Claude Code** — Phases 1–4 + v0.8.x bridge (shipped 2026-04-26). CLI + daemon + inbox + MCP server + session-bound identity (`famp_register`/`famp_whoami`, `FAMP_LOCAL_ROOT`-only). 5/5 phases, 18/18 plans, 39/39 requirements (37 + 2 bridge), 419/419 tests green. See [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · [milestones/v0.8-MILESTONE-AUDIT.md](milestones/v0.8-MILESTONE-AUDIT.md).
-- 📋 **v0.9 Local-First Bus** *(active 2026-04-27)* — UDS-backed broker replacing the per-identity TLS listener mesh for same-host agents. Zero crypto on the local path; IRC-style channels; durable per-name mailboxes; stable MCP tool surface carried forward to v1.0. **4 phases, 85 requirements** locked to the [design spec phasing](../docs/superpowers/specs/2026-04-17-local-first-bus-design.md): (1) `famp-bus` library + audit-log MessageClass v0.5.2 atomic constant bump, (2) UDS wire + CLI + MV-MCP rewire + `famp-local hook add`, (3) Claude Code integration polish (12-line / 30-second README acceptance gate), (4) federation CLI unwire + `e2e_two_daemons` library-API refactor + `v0.8.1-federation-preserved` tag.
-  **Today (v0.9):** local-first; broker handles same-host messaging. **Trigger to v1.0:** Sofer-from-different-machine; 4-week clock starts at v0.9.0.
-- 📋 **v1.0 Federation Profile** — trigger-gated; fires when Sofer (or named equivalent) runs FAMP from a different machine and exchanges a signed envelope. 4-week clock starts at v0.9.0. Cross-host FAMP-over-HTTPS via a `famp-gateway` wrapping the local bus. Agent Cards, causality & replay defense, negotiation, delegation, provenance, extensions, adversarial conformance + Level 2/3 badges + conformance vector pack.
+- ✅ **v0.9 Local-First Bus** — Phases 1–4 + close-fix Phase 5 (shipped 2026-05-04). UDS-backed broker replacing the per-identity TLS listener mesh; zero crypto on the local path; IRC-style channels; durable per-name mailboxes; 8-tool stable MCP surface. 5/5 phases, 35 plans, **85/85 requirements**, audit `passed`. Federation internals (`famp-transport-http`, `famp-keyring`) preserved in CI via library-API `e2e_two_daemons`; escape-hatch tag `v0.8.1-federation-preserved`. See [milestones/v0.9-ROADMAP.md](milestones/v0.9-ROADMAP.md) · [milestones/v0.9-REQUIREMENTS.md](milestones/v0.9-REQUIREMENTS.md) · [milestones/v0.9-MILESTONE-AUDIT.md](milestones/v0.9-MILESTONE-AUDIT.md).
+- 📋 **v1.0 Federation Profile** — trigger-gated; fires when Sofer (or named equivalent) runs FAMP from a different machine and exchanges a signed envelope. **4-week clock starts at v0.9.0 (2026-05-04).** Cross-host FAMP-over-HTTPS via a `famp-gateway` wrapping the local bus. Agent Cards, causality & replay defense, negotiation, delegation, provenance, extensions, adversarial conformance + Level 2/3 badges + conformance vector pack.
 
 ## Phases
 
-- [x] **v0.9 Phase 1: `famp-bus` library + audit-log MessageClass** — pure state machine, codec, types, four TDD gates, proptest coverage, atomic v0.5.2 constant bump *(completed 2026-04-28; 28/28 reqs, see [01-VERIFICATION.md](phases/01-famp-bus-library-and-audit-log/01-VERIFICATION.md))*
-- [ ] **v0.9 Phase 2: UDS wire + CLI + MV-MCP rewire + hook subcommand** — `famp broker`, top-level CLI surface, MCP rewired to bus, `famp-local hook add`, integration tests
-- [ ] **v0.9 Phase 3: Claude Code integration polish** — `famp install-claude-code`, slash commands, 12-line / 30-second README Quick Start
-- [x] **v0.9 Phase 4: Federation CLI unwire + federation-CI preservation** — top-level CLI removals, `e2e_two_daemons` library-API refactor, `v0.8.1-federation-preserved` tag, migration doc
-- [x] **v0.9 Phase 5: Milestone close — CC-07 fix + HOOK-04b path parity + Phase 3 verification backfill** *(completed 2026-05-04; 4/4 plans, 47/47 reqs verified, 5/5 regression tests green)* — closes gaps from [v0.9-MILESTONE-AUDIT.md](v0.9-MILESTONE-AUDIT.md): (1) `/famp-who [#channel?]` slash command edited to call only `famp_peers` with client-side channel projection (CC-07 BROKEN → satisfied; keeps MCP surface stable at 8 tools); (2) `crates/famp/assets/hook-runner.sh` parameterized to honor `${FAMP_LOCAL_ROOT:-$HOME/.famp-local}/hooks.tsv` (HOOK-04b PARTIAL → fully wired); (3) retroactive `03-VERIFICATION.md` covering CC-01..10 + HOOK-04b post-fix; (4) REQUIREMENTS.md sweep — flip Phase 2 body checkboxes `[ ]` → `[x]` and traceability rows Pending → Complete (BROKER-01..05, CLI-01..11, MCP-01..10, HOOK-01..03 + HOOK-04a, TEST-01..05, CARRY-02 = 36 IDs), refresh coverage count.
+*No active phases — between milestones. Next milestone (v1.0) is trigger-gated; run `/gsd-new-milestone v1.0` once the trigger fires.*
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
@@ -66,90 +61,16 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 
 </details>
 
----
-
 <details>
-<summary>v0.9 Local-First Bus (active) — Phase Details</summary>
+<summary>✅ v0.9 Local-First Bus (Phases 1–4 + close-fix Phase 5) — SHIPPED 2026-05-04</summary>
 
-### Phase 1: `famp-bus` library + audit-log MessageClass (v0.5.2 atomic bump)
-**Goal:** Ship the protocol-primitive substrate for the local bus — pure state machine, types, codec, in-memory mailbox, four RED-first TDD gates, full proptest coverage — and atomically close the v0.5.1→v0.5.2 spec-vs-constant lag T5 intentionally introduced. Library only: no UDS, no tokio in broker core, no I/O.
-**Depends on:** v0.8 substrate (`famp-canonical`, `famp-crypto`, `famp-core`, `famp-fsm`, `famp-envelope` unchanged)
-**Requirements:** BUS-01..11 (11), TDD-01..04 (4), PROP-01..05 (5), AUDIT-01..06 (6), CARRY-03, CARRY-04 (28 requirements total)
-**Success Criteria** (what must be TRUE):
-  1. `cargo test -p famp-bus` is fully green including the four RED-first TDD gates (codec fuzz, drain cursor atomicity, PID reuse race, EOF cleanup mid-await) and all five proptest properties (DM fan-in ordering, channel fan-out, join/leave idempotency, drain completeness, PID-table uniqueness) — verifiable from a fresh checkout.
-  2. The pure broker state machine `Broker::handle(from: ClientId, msg: BusMessage) -> Vec<Out>` exercises every `BusMessage` and `BusReply` variant under proptest with zero `tokio`, zero I/O, and zero `RwLock` / `Mutex<HashMap>` on broker state — provable by `cargo tree -p famp-bus` showing no `tokio` dependency in the core module.
-  3. The single commit that adds `MessageClass::AuditLog` enum variant + dispatch + `event`/`subject`/`details` body validation MUST also bump `FAMP_SPEC_VERSION` from `"0.5.1"` → `"0.5.2"` in `crates/famp-envelope/src/version.rs`, and the doc-comment lag note T5 deliberately introduced is removed in the same commit. A signed envelope produced after Phase 1 declares conformance to `"0.5.2"` and a receiver MUST store the `audit_log` envelope and MUST NOT emit `ack` (Δ31 normative).
-  4. `just ci` is unaffected — every conformance gate that was green at v0.8 close (RFC 8785 byte-exact, §7.1c worked example, RFC 8032 KATs, NIST FIPS 180-2 KATs) is still green; no envelope-type, canonical-JSON, or crypto regression.
-  5. Carry-forward debt addressed: TD-4 (broker auto-creates `REQUESTED` task record on inbound request, eliminating the v0.8 receiver-side test seed) is naturally absorbed by the broker state-machine design; TD-7 (Nyquist `VALIDATION.md` for v0.8 phases 02-04 + bridge) is either backfilled in this phase or formally deferred per project policy.
-**Plans:** 3 plans
-- [x] 01-01-PLAN.md — `famp-bus` crate scaffold + types + codec + InMemoryMailbox + four TDD-RED gates (TDD-01 GREEN; TDD-02/03/04 RED-first scaffolds)
-- [x] 01-02-PLAN.md — Pure `Broker` actor + dispatch + TDD-02/03/04 GREEN + five proptest properties PROP-01..05 GREEN
-- [x] 01-03-PLAN.md — Atomic v0.5.2 bump (single commit): `MessageClass::AuditLog` + body schema + `Relation::Audits` + `AnySignedEnvelope::AuditLog` dispatch + `BusEnvelope<B>` sibling type (BUS-11) + `AnyBusEnvelope` 6-arm dispatch + `UnexpectedSignature` + `FAMP_SPEC_VERSION` flip + T5 doc-comment removal + vector_1 fixture + `just check-spec-version-coherence` CI guard *(commit `9ca6e13`)*
+- [x] Phase 1: `famp-bus` library + audit-log MessageClass (3/3 plans) — completed 2026-04-28 — pure state machine, codec, types, four TDD gates, proptest coverage, atomic v0.5.2 constant bump
+- [x] Phase 2: UDS wire + CLI + MV-MCP rewire + hook subcommand (14/14 plans) — completed 2026-04-30 — `famp broker`, top-level CLI surface, MCP rewired to bus (8 tools), `famp-local hook add`, integration tests
+- [x] Phase 3: Claude Code integration polish (6/6 plans) — completed 2026-05-03 — `famp install-claude-code`, slash commands, 12-line / 30-second README acceptance gate, Codex parity
+- [x] Phase 4: Federation CLI unwire + federation-CI preservation (8/8 plans) — completed 2026-05-04 — top-level CLI removals, `e2e_two_daemons` library-API refactor, `v0.8.1-federation-preserved` tag, migration doc
+- [x] Phase 5: Milestone close — CC-07 fix + HOOK-04b path parity + Phase 3 verification backfill (4/4 plans) — completed 2026-05-04 — closes gaps from v0.9-MILESTONE-AUDIT.md (CC-07 BROKEN→satisfied via `famp_peers` projection; HOOK-04b PARTIAL→fully wired via `FAMP_LOCAL_ROOT` parameterization; retroactive `03-VERIFICATION.md`; REQUIREMENTS sweep)
 
-### Phase 2: UDS wire + CLI + MV-MCP rewire + `famp-local hook add`
-**Goal:** Wrap the Phase 1 library in a real wire and a real CLI so a developer can `famp register alice &; famp register bob &; famp send --to bob "hi"` from two terminals on one laptop with no MCP plumbing yet. Rewire `famp mcp` to the bus (drops TLS / `reqwest`), expose the eight-tool stable surface, and ship Sofer's biggest leverage gap as a declarative `famp-local hook add` subcommand.
-**Depends on:** Phase 1
-**Requirements:** BROKER-01..05 (5), CLI-01..11 (11), MCP-01..10 (10), HOOK-01..03 + HOOK-04a (4), TEST-01..05 (5), CARRY-02 (36 requirements total)
-**Success Criteria** (what must be TRUE):
-  1. Shell-level usability works end-to-end: two terminals running `famp register alice` and `famp register bob` (with the broker auto-spawned via `posix_spawn` + `setsid` on first invocation) can exchange `famp send --to <name>` DMs and `famp send --channel <#name>` channel messages, with `famp inbox list`, `famp await`, `famp join`, `famp leave`, `famp sessions`, `famp whoami` all observable from the user's shell.
-  2. Single-broker exclusion is provable at the OS level: two near-simultaneous `famp register` invocations produce exactly one surviving broker (TEST-04), `kill -9` mid-`Send` followed by client reconnect recovers the mailbox without loss (TEST-03), 5-minute idle timer triggers a clean shutdown that fsyncs mailbox handles and unlinks `bus.sock`, and a startup warning fires when `~/.famp/` is detected on NFS.
-  3. `famp mcp` connects to the UDS bus instead of TLS — `cargo tree -p famp` shows `reqwest` and `rustls` are no longer reached from the MCP startup path; the eight-tool surface (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) round-trips through the MCP E2E harness with two stdio processes scripted from both sides (TEST-05), bus-side equivalent of v0.8's `e2e_two_daemons`. The MCP error-mapping layer is exhaustive `match` over `BusErrorKind` with no wildcard — adding a `BusErrorKind` variant fails compile until MCP error mapping handles it.
-  4. `famp-local hook add --on Edit:<glob> --to <peer-or-#channel>` declaratively wires hooks (replacing hand-written bash scripts), persists to `~/.famp-local/hooks.tsv`, and round-trips through `famp-local hook list` + `famp-local hook remove <id>`.
-  5. INBOX-01 wording (carry-forward TD-3) is rewritten to match the raw-bytes-per-line implementation (or a structured wrapper added) alongside the CLI inbox rework; `just ci` is full green at every commit.
-**Plans:** 14 plans
-- [x] 02-00-PLAN.md — Wave-1 stub-file infrastructure: 9 Wave-0 test stubs (broker_lifecycle, broker_spawn_race, broker_crash_recovery, cli_dm_roundtrip, cli_channel_fanout, cli_inbox, cli_sessions, mcp_bus_e2e, hook_subcommand) created with #[ignore] gates so 02-01 stays under the 15-file blocker threshold (no requirement IDs — pure infra)
-- [x] 02-01-PLAN.md — Wave-2 substantive foundation: deps (nix, assert_cmd, tokio test-util), bus_client/{mod,codec,spawn}, cli/identity, cli/broker/nfs_check, scripts/check-mcp-deps.sh
-- [x] 02-02-PLAN.md — Broker actor and UDS lifecycle: bind-exclusion, accept loop, Out executor (D-04 ordering), idle timer, NFS warning, DiskMailboxEnv + cursor_exec + sessions_log
-- [x] 02-03-PLAN.md — `famp register` foreground subcommand (CLI-01) with --tail / --no-reconnect / bounded exp backoff reconnect
-- [x] 02-04-PLAN.md — `famp send` rewire to BusClient + additive `send_as: Option<String>` field on BusMessage::Send (BUS-02 round-trip preserved)
-- [x] 02-05-PLAN.md — `famp inbox list` / `famp inbox ack` rewire; CLI-04/CLI-10 atomic cursor advance is local-only (no broker round-trip)
-- [x] 02-06-PLAN.md — `famp await` rewire to BusClient with humantime --timeout
-- [x] 02-07-PLAN.md — New CLI subcommands: `join`, `leave`, `sessions [--me]`, `whoami`; channel normalization helper
-- [x] 02-08-PLAN.md — MCP session reshape (drop home_path; add bus + active_identity); error_kind retargeted at BusErrorKind exhaustively (MCP-10)
-- [x] 02-09-PLAN.md — Rewrite all 8 MCP tools (register/send/inbox/await_/peers/whoami/join/leave) against bus
-- [x] 02-10-PLAN.md — `scripts/famp-local hook add|list|remove` (HOOK-01..04) ~110 LoC bash addition
-- [x] 02-11-PLAN.md — Broker integration tests: idle exit (BROKER-04), spawn race (TEST-04), kill -9 recovery (TEST-03), sessions.jsonl diagnostic (CLI-11), NFS warning (BROKER-05)
-- [x] 02-12-PLAN.md — CLI integration tests: DM round-trip (TEST-01), channel fan-out (TEST-02), sessions list, whoami; CARRY-02 INBOX-01 wording rewrite
-- [x] 02-13-PLAN.md — TEST-05: two stdio MCP processes round-trip register/send/await over UDS bus
-
-### Phase 3: Claude Code integration polish
-**Goal:** Make the user-facing onboarding hit the milestone acceptance gate — two Claude Code windows exchange a message in **≤12 lines of instruction and ≤30 seconds elapsed** on a fresh macOS install. This phase is the gate; if the gate fails, the design is too heavy and must be revisited before v0.9.0 tags.
-**Depends on:** Phase 2
-**Requirements:** CC-01..10 + HOOK-04b (11 requirements total)
-**Success Criteria** (what must be TRUE):
-  1. `famp install-claude-code` writes a user-scope MCP config to `~/.claude.json` (or invokes `claude mcp add`) and drops slash-command markdown files into `~/.claude/commands/` — verifiable by inspecting the resulting files and round-tripping through Claude Code without any further manual edits.
-  2. The seven slash commands (`/famp-register`, `/famp-join`, `/famp-leave`, `/famp-send`, `/famp-channel`, `/famp-who`, `/famp-inbox`) each invoke the corresponding MCP tool with the right argument shape — `/famp-register alice` calls `famp_register(name="alice")`, `/famp-send bob "ship it"` calls `famp_send(to={kind:"agent",name:"bob"}, new_task="ship it")`, etc.
-  3. The README Quick Start passes the **12-line / 30-second acceptance test** on a clean macOS install: `cargo install famp && famp install-claude-code` followed by two Claude Code windows registering as different identities and exchanging a message — completed in ≤12 user-visible lines on the rendered README and ≤30 seconds wall-clock for the *second-window* install (after `cargo install famp` has populated `~/.cargo/bin/`; first-time install includes a one-time ~60-120s compile, called out in the README).
-  4. Onboarding doc (`docs/ONBOARDING.md` or equivalent) ships as part of this phase and walks a new user from zero install to first cross-window message; ready to ship at v0.9.0 tag.
-  5. HOOK-04b execution runner ships in this phase: the Stop-event trigger registered in Claude Code's `~/.claude/settings.json` (under the `hooks.Stop` array — official CC schema, NOT `~/.claude/hooks.json` which does not exist) invokes `~/.famp/hook-runner.sh`, which reads `~/.famp-local/hooks.tsv` (registered in Phase 2 by HOOK-04a's `famp-local hook add`) and dispatches `famp send --to <to> --new-task "Edit hook: <glob> matched in last turn"` per matching row (one dispatch per row, NOT per file — Stop coalesces; D-07). Phase 2 ships HOOK-04a (registration surface); Phase 3 closes HOOK-04b (execution runner). `famp install-claude-code` installs both the `hooks.Stop` settings.json entry and the `~/.famp/hook-runner.sh` shim.
-**Plans:** 6 plans
-- [x] 03-01-PLAN.md — crates.io publishability remediation (path-dep version pins, stub description rewords, publish-workspace + publish-workspace-dry-run Justfile recipes)
-- [x] 03-02-PLAN.md — D-05/D-09/D-11 atomic amendments + install module skeleton + json_merge helper + 7 slash-command markdown assets + hook-runner.sh shim + check-shellcheck Justfile recipe (colocated with shim asset)
-- [x] 03-03-PLAN.md — install-claude-code orchestrator + integration tests (CC-01 + HOOK-04b dispatch + failure-modes)
-- [x] 03-04-PLAN.md — uninstall-claude-code orchestrator + install→uninstall byte-equality roundtrip test (D-04)
-- [x] 03-05-PLAN.md — install-codex + uninstall-codex (D-12 MCP-only) + toml_merge helper + Codex roundtrip test
-- [x] 03-06-PLAN.md — README Quick Start 12-line gate (CC-09) + docs/ONBOARDING.md (CC-10) + ci recipe wires shellcheck + publish-workspace-dry-run + manual 30s wall-clock UAT
-**UI hint**: yes
-
-### Phase 4: Federation CLI unwire + federation-CI preservation
-**Goal:** Remove federation-grade plumbing from the user-facing CLI (no more `famp setup` / `famp listen` / `famp init` / `famp peer add` / `famp peer import` / old TLS-form `famp send`), relabel `famp-transport-http` + `famp-keyring` as "v1.0 federation internals" — and **preserve** them in CI so they don't mummify before the v1.0 federation gateway lands. This is the plumb-line-2 commitment against the Architect's "local-case black hole" risk.
-**Depends on:** Phase 3
-**Requirements:** FED-01..06 (6), MIGRATE-01..04 (4), TEST-06, CARRY-01 (12 requirements total)
-**Success Criteria** (what must be TRUE):
-  1. `cargo tree` shows the federation crates (`famp-transport-http`, `famp-keyring`) are consumed only by the refactored `e2e_two_daemons` integration test — no top-level CLI subcommand reaches them. The six removed CLI verbs (`famp setup`, `famp listen`, `famp init`, `famp peer add`, `famp peer import`, old TLS-form `famp send`) are gone from `famp --help` output.
-  2. `e2e_two_daemons` is refactored to target `famp-transport-http`'s library API directly — instantiates two server instances in-process, exchanges a full signed `request → commit → deliver → ack` cycle over real HTTPS, verifies canonical JSON + Ed25519 end-to-end — and runs green in `just ci` on every commit (FED-04, plumb-line-2 commitment). Conformance gates (RFC 8785, §7.1c) continue running unchanged on every CI run (TEST-06).
-  3. Tag `v0.8.1-federation-preserved` is cut on the commit BEFORE Phase 4 deletions land, providing an escape hatch for federation-needed users; `v0.9.0` tag is cut at the end of Phase 4 with `just ci` fully green and `cargo tree -i openssl` empty.
-  4. `docs/MIGRATION-v0.8-to-v0.9.md` ships with the CLI mapping table (`famp setup` → `famp register`, `famp listen` → gone, `famp peer add` → gone, etc.), `.mcp.json` cleanup instructions, and `famp install-claude-code` auto-update guidance; `README.md`, `CLAUDE.md`, `.planning/MILESTONES.md` updated so local-first is the headline and federation is the v1.0 promise; `docs/history/v0.9-prep-sprint/famp-local/famp-local` (archived prep-sprint scaffolding) marked frozen.
-  5. `[[profile.default.test-groups]]` is pinned for listen-subprocess tests (max-threads = 4, carry-forward TD-1) before listen subprocess tests proliferate further — addressed alongside the `e2e_two_daemons` refactor.
-**Plans:** 8 plans
-- [x] 04-01-PLAN.md — Refactor e2e_two_daemons.rs to library-API happy path + adversarial sentinel (FED-03/04, TEST-06)
-- [x] 04-02-PLAN.md — Freeze ~27 federation-coupled tests under crates/famp/tests/_deferred_v1/ via git mv + freeze README (FED-01 enabler)
-- [x] 04-03-PLAN.md — Archive scripts/famp-local under docs/history/v0.9-prep-sprint/famp-local/ + ROADMAP 999.6 path update (MIGRATE-04)
-- [x] 04-04-PLAN.md — Create docs/MIGRATION-v0.8-to-v0.9.md with CLI mapping table (MIGRATE-01/02/04)
-- [x] 04-05-PLAN.md — Staged-framing edits across README/CLAUDE/ROADMAP/MILESTONES/ARCHITECTURE (MIGRATE-03)
-- [x] 04-06-PLAN.md — Workspace Cargo.toml v1.0-federation-internals relabel + cut v0.8.1-federation-preserved tag (FED-02, FED-05)
-- [x] 04-07-PLAN.md — REQUIREMENTS/ROADMAP CARRY-01 bookkeeping flip to closing SHA ebd0854 (CARRY-01 Complete)
-- [x] 04-08-PLAN.md — Hard-delete 6 federation CLI verbs + Risk #1 Info refactor + final REQUIREMENTS/ROADMAP closeout (FED-01, FED-05, FED-06, MIGRATE-01..04)
+Archive: [milestones/v0.9-ROADMAP.md](milestones/v0.9-ROADMAP.md) · Requirements: [milestones/v0.9-REQUIREMENTS.md](milestones/v0.9-REQUIREMENTS.md) · Audit: [milestones/v0.9-MILESTONE-AUDIT.md](milestones/v0.9-MILESTONE-AUDIT.md)
 
 </details>
 
@@ -167,12 +88,6 @@ See [milestones/v0.8-phases/](milestones/v0.8-phases/) for full plan and summary
 **Goal:** `famp-envelope` encodes, decodes, and signature-verifies every message class the Personal Runtime actually emits, and rejects anything else at the type level.
 **Depends on:** v0.6 substrate (`famp-canonical`, `famp-crypto`, `famp-core`)
 **Requirements:** ENV-01, ENV-02, ENV-03, ENV-06, ENV-07, ENV-09 (narrowed), ENV-10, ENV-12 (cancel-only), ENV-14, ENV-15 (10 requirements)
-**Success Criteria** (what must be TRUE):
-  1. `famp-envelope` round-trips every shipped message class (`request`, `commit`, `deliver`, `ack`, `control/cancel`) through `famp-canonical` and `famp-crypto::verify_strict` under a `proptest` generator, byte-exact both directions.
-  2. Decoding an envelope without a signature returns a typed `ProtocolError` (INV-10 enforced) — unsigned messages are unreachable from any downstream consumer, not merely logged.
-  3. Every body struct uses `#[serde(deny_unknown_fields)]`; adding an unknown key at any depth produces a decode error in a committed fixture test.
-  4. `ENV-12 (cancel-only)` is enforced at the type level: there is no constructor or deserialize path that yields a `control` body with `supersede` or `close`; the wider v0.6-catalog form is explicitly gated out for v0.7.
-  5. `ENV-09 (narrowed)` contains no capability-snapshot binding; the commit body schema compiles and round-trips without any reference to Agent Cards, and this omission is documented inline with a pointer to v0.8.
 **Plans:** 3/3 plans complete
 - [x] 01-01-PLAN.md — Crate scaffold + primitive types (class/scope/version/timestamp) + error skeleton + §7.1c vector 0 fixtures on disk
 - [x] 01-02-PLAN.md — Sealed BodySchema trait + five shipped body types with ENV-09 and ENV-12 narrowings enforced at the type level
@@ -182,11 +97,6 @@ See [milestones/v0.8-phases/](milestones/v0.8-phases/) for full plan and summary
 **Goal:** The 5-state task FSM (`REQUESTED → COMMITTED → {COMPLETED | FAILED | CANCELLED}`) is compiler-checked and every illegal transition is unreachable, not merely rejected at runtime.
 **Depends on:** Phase 1
 **Requirements:** FSM-02 (narrowed), FSM-03, FSM-04, FSM-05, FSM-08 (5 requirements)
-**Success Criteria** (what must be TRUE):
-  1. `TaskFsm` exposes exactly 5 states (1 initial + 1 intermediate + 3 terminals); adding or removing a variant causes a hard compile error in a downstream consumer stub under `#![deny(unreachable_patterns)]` (INV-5, FSM-03).
-  2. `FSM-02 (narrowed)` is enforced: no `REJECTED`, no `EXPIRED`, no timeout-driven transitions exist in the public API. The wider v0.6-catalog form is gated out for v0.7.
-  3. `proptest` transition-legality tests enumerate the full `(class, relation, terminal_status, current_state)` tuple space and assert: every legal tuple is accepted, every illegal tuple is rejected with a typed error, zero panics.
-  4. FSM state types are fully owned (no lifetimes, no `&str`/`&[u8]` in the public enum), so state can be moved across threads and stored without borrow gymnastics.
 **Plans:** 3/3 plans complete
 - [x] 02-01-PLAN.md — Lift MessageClass + TerminalStatus into famp-core (layering prerequisite for famp-fsm)
 - [x] 02-02-PLAN.md — famp-fsm TaskState/TaskFsm engine + deterministic fixture tests (FSM-02, FSM-04, FSM-05)
@@ -196,12 +106,6 @@ See [milestones/v0.8-phases/](milestones/v0.8-phases/) for full plan and summary
 **Goal:** A single developer runs `request → commit → deliver → ack` end-to-end in one binary, signatures verified against a local-file TOFU keyring, and the three adversarial cases fail closed on `MemoryTransport`.
 **Depends on:** Phase 2
 **Requirements:** TRANS-01, TRANS-02, KEY-01, KEY-02, KEY-03, EX-01, CONF-03, CONF-05, CONF-06, CONF-07 (10 requirements)
-**Success Criteria** (what must be TRUE):
-  1. `famp-transport` exposes a `Transport` trait (async send + incoming stream); `MemoryTransport` is an in-process implementation (~50 LoC, no network, no TLS) usable as a `dev-dependency` from any crate that needs an end-to-end fixture.
-  2. The TOFU keyring is a local-file `HashMap<Principal, VerifyingKey>` where principal = raw 32-byte Ed25519 pubkey. It loads from a one-line-per-principal file (base64url-unpadded) **or** from `--peer <principal>:<pubkey>` CLI flags. There is no Agent Card, no federation credential, no pluggable trust store — that scope is v0.8.
-  3. `cargo run --example personal_two_agents` exits `0` and prints a typed conversation trace containing, in order, a signed `request`, `commit`, `deliver`, and `ack` over `MemoryTransport` (CONF-03).
-  4. The three adversarial cases (CONF-05 unsigned / CONF-06 wrong-key / CONF-07 canonical divergence) each fail closed with a distinct typed `ProtocolError` when injected into `MemoryTransport`; no panics, no silent drops, no generic `Error::Other`.
-  5. The keyring file format is round-trip tested (load → save → load produces byte-identical bytes) and committed as a fixture.
 **Plans:** 4 plans
 - [x] 03-01-PLAN.md — famp-transport: Transport trait + MemoryTransport + test-util feature (TRANS-01, TRANS-02)
 - [x] 03-02-PLAN.md — famp-keyring: Keyring + file format + TOFU + --peer flag + round-trip fixture (KEY-01, KEY-02, KEY-03)
@@ -212,12 +116,6 @@ See [milestones/v0.8-phases/](milestones/v0.8-phases/) for full plan and summary
 **Goal:** The same signed cycle runs across two processes over HTTPS, bootstrapped from the same TOFU keyring, and the Phase 3 adversarial matrix is extended to `HttpTransport` — no new conformance categories are introduced.
 **Depends on:** Phase 3
 **Requirements:** TRANS-03, TRANS-04, TRANS-06, TRANS-07, TRANS-09, EX-02, CONF-04 (7 requirements)
-**Success Criteria** (what must be TRUE):
-  1. `famp-transport-http` exposes an axum `POST /famp/v0.5.1/inbox` endpoint per principal and a `reqwest` client send path, both running on `rustls` via `rustls-platform-verifier` (no OpenSSL), with a 1 MB request-body limit enforced as a `tower` layer (TRANS-03/04/06/07).
-  2. Signature verification runs as HTTP middleware **before** routing (TRANS-09): unsigned or wrong-key requests are rejected at the tower layer and never reach handler code — verified by a test that asserts the handler closure is not entered on an adversarial case.
-  3. Running `cross_machine_two_agents` as a server in one shell and a client in another completes a signed `request → commit → deliver → ack` cycle over real HTTPS, with both ends loading the other's pubkey from a local keyring file or `--peer` flag (CONF-04, EX-02). Exit code `0`.
-  4. **The existing Phase 3 adversarial matrix is extended to `HttpTransport`.** The same three cases (unsigned / wrong-key / canonical divergence) that passed on `MemoryTransport` now also fail closed on HTTP with the same typed errors — six test rows total across the two transports, derivative of CONF-05/06/07, no new CONF-0x requirements introduced in this phase.
-  5. `.well-known` Agent Card distribution (TRANS-05) and the cancellation-safe spawn-channel send path (TRANS-08) are explicitly absent; the crate compiles and the examples run without them, and their omission is documented inline with a pointer to v0.8+.
 **Plans:** 5 plans
 - [x] 04-01-PLAN.md — famp-transport-http skeleton: deps + error enums (MiddlewareError, HttpTransportError) + lift peek_sender into famp-envelope
 - [x] 04-02-PLAN.md — Server side: build_router + FampSigVerifyLayer (two-phase decode) + RequestBodyLimitLayer + sentinel layering tests (TRANS-04, TRANS-07, TRANS-09 partial)
@@ -229,7 +127,7 @@ See [milestones/v0.8-phases/](milestones/v0.8-phases/) for full plan and summary
 
 ## Future Milestone Sketch (v1.0 Federation Profile)
 
-**Trigger (set 2026-04-27 in v0.9 prep sprint T7):** Sofer (or named equivalent) runs FAMP from a different machine and exchanges a signed envelope. 4-week clock starts at v0.9.0; if untriggered, federation framing is reconsidered. Conformance vector pack ships at the same trigger.
+**Trigger (set 2026-04-27 in v0.9 prep sprint T7; clock started 2026-05-04 at v0.9.0):** Sofer (or named equivalent) runs FAMP from a different machine and exchanges a signed envelope. 4-week clock; if untriggered by 2026-06-01, federation framing is reconsidered. Conformance vector pack ships at the same trigger.
 
 Rough ordering (not committed):
 
@@ -256,10 +154,11 @@ Rough ordering (not committed):
 | 2. Daemon & Inbox | v0.8 | 3/3 | Complete | 2026-04-14 |
 | 3. Conversation CLI | v0.8 | 4/4 | Complete | 2026-04-14 |
 | 4. MCP Server & Same-Laptop E2E | v0.8 | 3/3 | Complete | 2026-04-15 |
-| 1. `famp-bus` library + audit-log MessageClass | v0.9 | 0/3 | Not started | — |
-| 2. UDS wire + CLI + MV-MCP rewire + hook subcommand | v0.9 | 0/14 | Not started | — |
+| 1. `famp-bus` library + audit-log MessageClass | v0.9 | 3/3 | Complete | 2026-04-28 |
+| 2. UDS wire + CLI + MV-MCP rewire + hook subcommand | v0.9 | 14/14 | Complete | 2026-04-30 |
 | 3. Claude Code integration polish | v0.9 | 6/6 | Complete | 2026-05-03 |
 | 4. Federation CLI unwire + federation-CI preservation | v0.9 | 8/8 | Complete | 2026-05-04 |
+| 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 4/4 | Complete | 2026-05-04 |
 
 ## Backlog
 
@@ -333,20 +232,5 @@ Plans:
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
-### Phase 1: Session-bound MCP identity
-
-**Goal:** Two Claude Code (or Codex) windows opened in the same repo can register as different FAMP identities and exchange messages successfully, without per-window startup configuration encoding the identity. Delivers `famp_register` / `famp_whoami` MCP tools, pre-registration `not_registered` gating on the four messaging tools, removal of `FAMP_HOME` from the `famp mcp` startup path, `scripts/famp-local` migration (auto-rewrite-on-touch), and a two-MCP-server E2E test.
-**Spec:** [`docs/superpowers/specs/2026-04-25-session-bound-identity-selection.md`](../docs/superpowers/specs/2026-04-25-session-bound-identity-selection.md) — pull-forward of the v0.9 `famp_register` / `famp_whoami` MCP contract onto the v0.8 substrate. Adopted variant: **B-strict** (no `legacy_famp_home` grace period; `FAMP_HOME` no longer pre-binds the MCP server; pre-registration tool calls return typed `not_registered`; `famp-local wire`/`mcp-add` stop emitting `FAMP_HOME` and auto-rewrite existing entries on re-touch).
-**Requirements:** MCP-07..16, E2E-04 (numbering continues v0.8 MCP-01..06 / E2E-01..03).
-**Depends on:** v0.8 milestone (shipped 2026-04-15) — `famp mcp` server, `famp-inbox` PID+liveness lock, `famp-local` wrapper.
-**Plans:** 5/5 complete (2026-04-26) — 14 commits, 419/419 tests green (+53 new), clippy clean, B-strict invariants verified.
-
-Plans:
-- [x] 01-01-PLAN.md — CliError variants (NotRegistered/UnknownIdentity/InvalidIdentityName) + exhaustive mcp_error_kind arms + cli::mcp::session module skeleton — completed 2026-04-26
-- [x] 01-02-PLAN.md — Internal refactor: server::run drops home arg, dispatch_tool reads session::current(), four messaging tools take &IdentityBinding, NotRegistered gating with pinned hint string — completed 2026-04-26
-- [x] 01-03-PLAN.md — famp_register + famp_whoami tool implementations, six-tool tool_descriptors(), dispatch routes register/whoami pre-binding; mcp::mod::run reads FAMP_LOCAL_ROOT only (FAMP_HOME removed from MCP startup path) — completed 2026-04-26
-- [x] 01-04-PLAN.md — scripts/famp-local migration: cmd_wire/cmd_mcp_add stop emitting FAMP_HOME; cmd_wire auto-rewrites legacy .mcp.json files in place idempotently; Rust integration test driving bash — completed 2026-04-26
-- [x] 01-05-PLAN.md — Two-MCP-server E2E test (full request→commit→deliver→terminal cycle through two windows registered as different identities); README onboarding rewrite with v0.9 sunset callout; bonus fix: await_cmd/mod.rs terminal-deliver FSM advance — completed 2026-04-26
-
 ---
-*Roadmap updated: 2026-04-29 — D-12 HOOK-04 split landed in plan 02-12: HOOK-04 → HOOK-04a (Phase 2 registration surface) + HOOK-04b (Phase 3 execution runner). 4 phases, 85 requirements (was 84), 100% coverage, milestone-local phase numbering (v0.9 resets to Phase 1 per FAMP convention; v0.7 reset to Phase 1, v0.8 reset to Phase 1). Phase shape locked by [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](../docs/superpowers/specs/2026-04-17-local-first-bus-design.md) "Phasing" section + [`.planning/V0-9-PREP-SPRINT.md`](V0-9-PREP-SPRINT.md) T9. v0.5.1/v0.6/v0.7/v0.8 entries above are LOCKED — completed-milestone history.*
+*Roadmap updated: 2026-05-04 — v0.9 Local-First Bus shipped (5 phases, 35 plans, 85/85 reqs, audit `passed`). Active phases section emptied; v0.9 collapsed into <details> alongside v0.5.1/v0.6/v0.7/v0.8. v1.0 trigger 4-week clock starts now (2026-06-01 expiration). Phase numbering remains milestone-local (FAMP convention; v0.7 reset to Phase 1, v0.8 reset to Phase 1, v0.9 reset to Phase 1; v1.0 will reset to Phase 1).*

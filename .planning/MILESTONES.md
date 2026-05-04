@@ -1,5 +1,34 @@
 # Milestones
 
+## v0.9 Local-First Bus (Shipped: 2026-05-04)
+
+**Phases completed:** 5 phases (1 + 2 + 3 + 4 + close-fix Phase 5), 35 plans
+**Timeline:** 2026-04-27 → 2026-05-04 (8 days, 193 commits)
+**Test footprint:** workspace green; `cargo tree -i openssl` empty for the user-facing local path
+**Requirements:** 85/85 satisfied (BUS-01..11, TDD-01..04, PROP-01..05, AUDIT-01..06, BROKER-01..05, CLI-01..11, MCP-01..10, HOOK-01..04a/04b, TEST-01..06, CC-01..10, FED-01..06, MIGRATE-01..04, CARRY-01..04)
+
+**Delivered:** Two Claude Code windows on the same Mac exchange a signed-on-the-bus message in **≤12 lines of README and ≤30 seconds wall-clock** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. Federation-grade primitives stay in the workspace as v1.0 internals (`famp-transport-http`, `famp-keyring`), exercised by a refactored `e2e_two_daemons` library-API test that runs in CI on every commit.
+
+**Key accomplishments:**
+
+- **`famp-bus` Layer 1 substrate** (Phase 1) — pure-state broker `Broker::handle(BrokerInput, Instant) -> Vec<Out>` with zero `tokio` and zero I/O in core; nine `BusMessage` / eleven `BusReply` variants byte-exact through `famp-canonical`; length-prefixed canonical-JSON codec (4-byte BE, 16 MiB cap); four RED-first TDD gates (codec fuzz, drain cursor atomicity, PID reuse race, EOF cleanup mid-await) all GREEN; five proptest properties (DM fan-in ordering, channel fan-out, join/leave idempotency, drain completeness, PID-table uniqueness) all GREEN. `just check-no-tokio-in-bus` permanent CI gate.
+- **Atomic v0.5.1 → v0.5.2 spec bump** (Phase 1) — single commit `9ca6e13` lands `MessageClass::AuditLog` + `Relation::Audits` + `AuditLogBody` + `BusEnvelope<B>` (BUS-11 sibling type with private inner + 2 `compile_fail` doctests) + `AnyBusEnvelope` 6-arm dispatch + `EnvelopeDecodeError::UnexpectedSignature` + `FAMP_SPEC_VERSION = "0.5.2"` + T5 lag-block deletion + `vector_1` worked example + `just check-spec-version-coherence` CI guard. AUDIT-05 atomic-bump invariant honored end-to-end.
+- **UDS broker daemon + 8-verb CLI** (Phase 2) — `famp broker` UDS daemon at `~/.famp/bus.sock` with `posix_spawn`+`setsid` auto-spawn (no double-fork), `bind()`-IS-the-lock single-broker exclusion, 5-minute idle exit with fsync+unlink, NFS-mount startup warning. User-facing `famp register | send | inbox | await | join | leave | sessions | whoami` rewires the v0.8 surface onto the bus; `~/.famp/mailboxes/<name>.jsonl` reuses `famp-inbox` JSONL with atomic temp-file+rename cursor advance. 14 plans across 7 waves; `kill -9` mid-Send recovery, two-near-simultaneous-register race, and bus-side MCP E2E (TEST-05) all green.
+- **MCP rewire to bus + `famp-local hook add` declarative wiring** (Phase 2) — `famp mcp` drops `reqwest` + `rustls` from the startup path; `cargo tree -p famp` shows zero TLS reach for MCP. Eight stable tools (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) round-trip via stdio; MCP error-mapping is exhaustive `match` over `BusErrorKind` (no wildcard — adding a variant fails compile). `famp-local hook add --on Edit:<glob> --to <peer-or-#channel>` registers TSV rows to `~/.famp-local/hooks.tsv`; `list`/`remove` round-trip.
+- **Claude Code integration polish** (Phase 3) — `famp install-claude-code` writes user-scope MCP config to `~/.claude.json` and drops 7 slash-command markdown files (`/famp-register`, `/famp-join`, `/famp-leave`, `/famp-send`, `/famp-channel`, `/famp-who`, `/famp-inbox`) into `~/.claude/commands/`. README Quick Start passes the **12-line / 30-second acceptance test** on a fresh macOS install. Codex parity ships as MCP-only install/uninstall via TOML structural merge. HOOK-04b execution runner registers a `hooks.Stop` entry pointing at `~/.famp/hook-runner.sh` (sourced from `crates/famp/assets/hook-runner.sh`, parameterized on `${FAMP_LOCAL_ROOT:-$HOME/.famp-local}`).
+- **Federation CLI unwire + plumb-line-2 preservation** (Phase 4) — six federation CLI verbs deleted (`famp setup`, `famp listen`, `famp init`, `famp peer add`, `famp peer import`, old TLS-form `famp send`); `famp-transport-http` + `famp-keyring` relabeled "v1.0 federation internals" in workspace `Cargo.toml`. `e2e_two_daemons` refactored to library-API direct instantiation (full signed `request → commit → deliver → ack` over real HTTPS in-process), runs green in `just ci` every commit (FED-04 plumb-line-2 commitment against mummification). Tag `v0.8.1-federation-preserved` cut at `debed78` as escape hatch BEFORE deletions land. `docs/MIGRATION-v0.8-to-v0.9.md` ships table-first; `~27` federation-coupled tests parked under `crates/famp/tests/_deferred_v1/` for v1.0 reactivation.
+- **Milestone-close fixes** (Phase 5, 2026-05-04) — `/famp-who [#channel?]` rewritten to call only `famp_peers` with client-side channel projection (CC-07 BROKEN → satisfied; keeps MCP surface stable at 8 tools); `crates/famp/assets/hook-runner.sh` parameterized to honor `FAMP_LOCAL_ROOT` (HOOK-04b PARTIAL → fully wired); retroactive `03-VERIFICATION.md` covering CC-01..10 + post-fix HOOK-04b; REQUIREMENTS.md sweep flipped 36 Phase-2 traceability rows Pending → Complete.
+
+**Design authority:** [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](../docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
+
+**v1.0 trigger named:** Sofer (or named equivalent) runs FAMP from a different machine and exchanges a signed envelope. 4-week clock starts at v0.9.0; if untriggered, federation framing is reconsidered. Conformance vector pack ships at the same trigger.
+
+**Audit:** `passed` (85/85 reqs, 5/5 phases verified, 6/6 flows wired) — see [milestones/v0.9-MILESTONE-AUDIT.md](milestones/v0.9-MILESTONE-AUDIT.md). Tech debt deferred per audit (8 pre-existing TLS-loopback test timeouts on macOS; WR-06 env-var test races; 6 IN-* info-level review findings; minor doc stale references) documented in audit `tech_debt` block.
+
+**Known deferred items at close:** 33 (30 orphan quick_task slugs from federation-era + v0.9 prep-sprint drift + 2 v1.0-gated dormant seeds + 1 UAT header status drift; see STATE.md `## Deferred Items`).
+
+---
+
 ## v0.8 Usable from Claude Code (Shipped: 2026-04-26)
 
 **Phases completed:** 5 phases (4 archived 2026-04-15 + 1 bridge phase 2026-04-26), 18 plans, 419/419 tests green
@@ -21,41 +50,6 @@
 
 ---
 
-## v0.9 Local-First Bus (Shipped: TBD-2026-05-XX)
-
-4 phases, 85 requirements. UDS-backed broker, zero crypto on local path,
-IRC-style channels, durable per-name mailboxes, stable MCP tool surface.
-**FAMP today is local-first; FAMP at v1.0 is federated.** Federation-tagged
-tests preserved under `crates/famp/tests/_deferred_v1/`; escape-hatch tag
-`v0.8.1-federation-preserved` exists for federation users.
-
-**Re-scope rationale.** The original v0.9 slot was "Federation Profile"
-(Agent Cards, delegation, provenance, cross-host trust). During v0.8
-dogfooding it became clear that forcing same-host, same-UID agents to
-pay federation-grade costs (per-identity TLS certs, TOFU pinning, peer
-cards, separate HOME dirs) was the actual onboarding blocker — not
-federation features. v0.9 is re-scoped to introduce a **local bus**
-(UDS, zero-crypto, channels, single broker) that moves same-host traffic
-off TLS entirely. Federation primitives stay as v1.0 internals, wrapped
-by a `famp-gateway` process that bridges the local bus to remote
-FAMP-over-HTTPS.
-
-**Design:** [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](../docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
-
-**Four-phase plan (from spec):**
-
-1. `famp-bus` crate — types, codec, pure-state broker logic, proptest coverage.
-2. UDS wire + CLI surface + minimum-viable MCP rewire.
-3. Claude Code integration polish — `famp install-claude-code`, slash commands, README Quick Start rewrite.
-4. Federation CLI unwire — hard requirement: `e2e_two_daemons` refactored to library API, stays in CI; preserves federation code from mummification.
-
-**Pre-v0.9 scaffolding:** [`docs/history/v0.9-prep-sprint/famp-local/famp-local`](../docs/history/v0.9-prep-sprint/famp-local/famp-local)
-is a bash wrapper over v0.8 that compressed the 8-step federation
-onboarding into one command (`famp-local wire <dir>`). It validates the
-local-first UX before the broker shipped. The wrapper is redundant
-in v0.9.
-
----
 
 ## v0.8 Usable from Claude Code (Shipped: 2026-04-15)
 
