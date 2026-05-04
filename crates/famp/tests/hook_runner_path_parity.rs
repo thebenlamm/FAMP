@@ -49,7 +49,13 @@ fn write_transcript(path: &Path, files: &[&str]) {
     std::fs::write(path, body).unwrap();
 }
 
-fn run_shim(home: &Path, famp_local_root: Option<&Path>, bin_dir: &Path, log: &Path, transcript: &Path) -> std::process::Output {
+fn run_shim(
+    home: &Path,
+    famp_local_root: Option<&Path>,
+    bin_dir: &Path,
+    log: &Path,
+    transcript: &Path,
+) -> std::process::Output {
     let stop_json = format!(
         r#"{{"transcript_path":"{}","session_id":"s1","cwd":"/tmp","hook_event_name":"Stop"}}"#,
         transcript.display()

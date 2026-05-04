@@ -6,7 +6,7 @@
 set -uo pipefail
 
 LOG="${HOME}/.famp/hook-runner.log"
-HOOKS_TSV="${HOME}/.famp-local/hooks.tsv"
+HOOKS_TSV="${FAMP_LOCAL_ROOT:-${HOME}/.famp-local}/hooks.tsv"
 mkdir -p "${HOME}/.famp" 2>/dev/null || true
 
 log() { printf '[%s] %s\n' "$(date -u +%FT%TZ)" "$*" >> "$LOG" 2>/dev/null || true; }
