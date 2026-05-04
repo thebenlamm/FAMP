@@ -1,6 +1,6 @@
 # Architecture
 
-## Current state (v0.8)
+## Past state (v0.8)
 
 **Federation-first.** Every agent is an independent identity with:
 - A persistent `FAMP_HOME` directory containing its Ed25519 keypair, self-signed
@@ -35,7 +35,7 @@ each identity's keypair, TLS cert, and durable inbox live under that
 directory. The bifurcation (MCP session-bound; federation `FAMP_HOME`-based)
 is intentional and collapses when v0.9's local bus replaces the transport.
 
-## v0.9 direction — local-first bus (in design)
+## v0.9 — local-first bus (shipping at v0.9.0 tag)
 
 Observed during dogfooding: forcing same-host, same-user agents to pay
 federation-grade costs (cert generation, TOFU pinning, per-identity HOME

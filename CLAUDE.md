@@ -210,19 +210,25 @@ Conventions not yet established. Will populate as patterns emerge during develop
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-**Current (v0.8):** federation-first. One `FAMP_HOME` per identity;
-`famp listen` HTTPS daemon per identity; TOFU-pinned peers; every wire
-envelope Ed25519-signed over canonical JSON under the `FAMP-sig-v1\0`
-domain prefix (INV-10). 5-state task FSM (`famp-fsm`): REQUESTED →
-COMMITTED → {COMPLETED | FAILED | CANCELLED}, terminals absorbing.
+**FAMP today is local-first** (v0.9): a UDS-backed broker for same-host agent
+messaging. **FAMP at v1.0 is federated**: cross-host messaging via
+`famp-gateway` wrapping the local bus. See [ARCHITECTURE.md](ARCHITECTURE.md)
+for the full layered model (Layer 0 protocol primitives -> Layer 1 local bus ->
+Layer 2 federation gateway).
+
+In v0.8 the federation transport used `famp listen` HTTPS daemons with
+TOFU-pinned peers; v0.9 replaces this with the local bus. Every federation
+wire envelope stayed Ed25519-signed over canonical JSON under the
+`FAMP-sig-v1\0` domain prefix (INV-10). 5-state task FSM (`famp-fsm`):
+REQUESTED -> COMMITTED -> {COMPLETED | FAILED | CANCELLED}, terminals
+absorbing.
 
 Note: as of v0.8.x (the session-bound MCP identity bridge phase), the
 `famp mcp` server reads identity from session state via `famp_register`,
-not from `FAMP_HOME`. The federation transport (`famp listen`, `famp send`,
-etc.) still uses `FAMP_HOME` per identity. v0.9's local-bus rework collapses
-this distinction.
+not from `FAMP_HOME`. The v0.8 federation transport used `FAMP_HOME` per
+identity; v0.9's local bus collapses this distinction.
 
-**v0.9 direction (in design):** collapse same-host agents onto a single
+**v0.9 shipping path:** collapse same-host agents onto a single
 UDS-backed broker; drop crypto on the local path; treat federation
 (cross-host) as a v1.0 gateway that wraps the bus. IRC-style channels,
 durable per-name mailboxes, stable MCP tool surface across v0.8 / v0.9 / v1.0.
@@ -237,8 +243,8 @@ v0.5.1 wrap, see `.planning/WRAP-V0-5-1-PLAN.md` DEFERRED banner).
 
 Full write-up in [`ARCHITECTURE.md`](ARCHITECTURE.md) and the design spec
 [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
-Pre-v0.9 scaffolding lives in [`scripts/famp-local`](scripts/famp-local) —
-a bash wrapper validating the local-first UX before the broker lands.
+Pre-v0.9 scaffolding moved to
+[`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).
 
 **When working here:** protocol-primitive crates (`famp-canonical`,
 `famp-crypto`, `famp-core`, `famp-fsm`, `famp-envelope`) are

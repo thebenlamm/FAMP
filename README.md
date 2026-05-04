@@ -4,33 +4,30 @@
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](rust-toolchain.toml)
 
-**Status:** `v0.8 Usable from Claude Code; Codex supported via user-scope MCP registration`
+**Status:** `v0.9 Local-First Bus`
 
 > **On the version numbers:** FAMP v0.5.1 is the protocol spec; v0.6 / v0.7 / v0.8 are
-> implementation milestones (all shipped); v0.9 (local-first bus) is in design and v1.0
-> (federation profile) follows. The library version in `Cargo.toml` is `0.1.0` pre-release.
+> implementation milestones (all shipped); v0.9 is the local-first bus; v1.0
+> is the federation gateway. The library version in `Cargo.toml` is `0.1.0` pre-release.
 
-FAMP is a Rust implementation of the Federated Agent Messaging Protocol.
+FAMP today is local-first: a UDS-backed broker for same-host agent messaging
+with zero crypto on the local path. FAMP at v1.0 is federated: cross-host
+messaging via a `famp-gateway` wrapping the local bus, all of v0.5.2's
+signature/canonical-JSON guarantees preserved. The v1.0 trigger condition
+is documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 **The fastest thing to try:** get two Claude Code or Codex windows on your Mac
-exchanging signed messages, via the [`famp-local`](scripts/famp-local)
-wrapper shipped in this repo. See [Quick Start (local)](#quick-start-local)
-below — four commands for Claude Code, plus one Codex registration command;
-no cert wrangling, no peer-card piping.
+exchanging messages via the local bus. See [Quick Start](#quick-start)
+below; no cert wrangling, no peer-card piping.
 
 Under the hood it's a v0.5.1-spec-conformant stack: canonical JSON
 (RFC 8785), Ed25519 signatures with domain separation, typed identity
-and envelope types, a 5-state task FSM, and an HTTPS transport with
-TOFU pinning. The raw federation CLI (`famp setup / listen / send /
-peer add`) is still there if you want manual control or cross-machine
-setup; the local wrapper is just an ergonomics layer over those same
-primitives.
+and envelope types, and a 5-state task FSM. The local bus is the v0.9
+runtime path; federation transport internals remain preserved for v1.0.
 
-- **Local (v0.8 + `famp-local`)** — same-host agents, one command to
-  wire a directory into a mesh.
-- **Federation Profile (v0.9 / v1.0)** — cross-host protocol, Agent
-  Cards, delegation, provenance. v0.9 re-scopes the local path into a
-  proper socket-activated broker; federation moves to a v1.0 gateway.
+- **Local (v0.9)** — same-host agents through a socket-activated broker.
+- **Federation Profile (v1.0)** — cross-host protocol, Agent Cards,
+  delegation, provenance, and remote routing via `famp-gateway`.
   See the [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
 
 ## What Works Today
@@ -52,16 +49,13 @@ primitives.
   - `FAILED`
   - `CANCELLED`
 - `MemoryTransport` for same-process use
-- Minimal HTTPS transport built on `axum`, `reqwest`, and `rustls`
-- TOFU keyring binding `Principal -> VerifyingKey`
 - **Full CLI** with streamlined onboarding:
-  - `famp setup` — one-command identity creation with auto port selection
-  - `famp info` — output peer card for sharing
-  - `famp peer import` — import peer cards from other agents
-  - `famp listen` — run the HTTPS daemon
-  - `famp send` — send signed envelopes
+  - `famp register` — bind a local identity to the broker
+  - `famp whoami` — show the current identity
+  - `famp send` — send local bus messages
   - `famp inbox list` — inspect received messages (hides entries for terminal tasks by default; pass `--include-terminal` to see them)
   - `famp await` — block until new messages arrive (unfiltered; canonical real-time signal, including task completion)
+  - `famp join` / `famp leave` — manage channel membership
 - **MCP server** (`famp mcp`) for Claude Code and Codex
 - Two runnable examples:
   - same-process happy path
@@ -69,7 +63,7 @@ primitives.
 
 ## Not Shipped Yet
 
-**v0.9 — Local-First Bus** (in design):
+**v0.9 — Local-First Bus** (shipping now):
 - UDS-backed broker with socket-activated lifecycle
 - IRC-style channels / broadcast primitive (`#name`)
 - Zero-crypto same-host path (filesystem is the trust boundary)
@@ -143,6 +137,9 @@ Rule of thumb: **if the use case survives a closed laptop, FAMP is not the right
 
 ## Quick Start
 
+This is the v0.9 local-first path; if you need cross-host federation, see
+[docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md).
+
 ```bash
 # Install once (one-time compile, ~60-120s)
 cargo install famp
@@ -176,18 +173,15 @@ Full CLI:
 | `famp-local inbox <name>` | List a name's inbox entries |
 | `famp-local status` | Show all known identities and daemon state |
 | `famp-local stop [<name>...]` | Stop daemon(s); with no args, stops all |
-| `famp-local clear [--all] [--agent <name>] [--dry-run] [--yes]` | Truncate inbox.jsonl files in place. Default scope is all local agent inboxes; `--all` also clears `~/.famp/inbox.jsonl` and `~/.famp-echo/inbox.jsonl`. Inboxes are truncated (not deleted) so a running `famp listen` keeps its file descriptor valid. |
+| `famp-local clear [--all] [--agent <name>] [--dry-run] [--yes]` | Truncate inbox.jsonl files in place. Default scope is all local agent inboxes; `--all` also clears `~/.famp/inbox.jsonl` and `~/.famp-echo/inbox.jsonl`. Inboxes are truncated, not deleted. |
 | `famp-local doctor [<dir>]` | Show whether `<dir>` (default: `$PWD`) is set up for FAMP. Walks up looking for a FAMP-wired `.mcp.json`; reports identity (from `wires.tsv`), daemon status, and inbox count when wired. Read-only. |
 | `famp-local clean` | Stop everything and wipe `~/.famp-local` |
 | `famp-local mcp-add [--client <target>] <name>...` | Register user-scope MCP servers for Claude Code, Codex, or both |
 | `famp-local mcp-remove [--client <target>] <name>...` | Remove user-scope MCP server registrations |
 
-`famp-local` is a bash wrapper around the v0.8 CLI — see
-[`scripts/famp-local`](scripts/famp-local). It exists to compress the raw
-eight-step federation flow (below, under "Advanced") into one command
-while v0.9's proper socket-activated broker is in design. When v0.9 ships,
-the wrapper goes away and `famp-local wire` becomes a single-line install
-of the broker plus one MCP registration.
+The v0.8 `famp-local` wrapper has moved into history at
+[`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).
+v0.9 replaces it with the local bus path above.
 
 ## Redeploying after daemon code changes
 
@@ -217,63 +211,13 @@ should show a fresh `listening on https://127.0.0.1:<port>` line, and
 `ls -l ~/.cargo/bin/famp` should show a binary timestamp at or after the
 rebuild.
 
-## Advanced: manual CLI (federation path)
+## Advanced: v0.8 federation CLI
 
-The raw federation-grade flow. Use this for cross-machine setups, or when
-you want explicit control over ports, HOME directories, TOFU pinning, and
-peer-card exchange. On a single Mac with two Claude Code or Codex windows, the
-[`famp-local`](#quick-start-local) wrapper above will do all of this for
-you.
-
-```bash
-# 1. Build the CLI
-cargo build --release
-
-# 2. Set up two agents with unique ports
-./target/release/famp setup --name alice --home /tmp/famp-alice --port 8443
-./target/release/famp setup --name bob --home /tmp/famp-bob --port 8444
-
-# 3. Exchange peer cards (pipe-friendly!)
-FAMP_HOME=/tmp/famp-alice ./target/release/famp info | \
-  FAMP_HOME=/tmp/famp-bob ./target/release/famp peer import
-FAMP_HOME=/tmp/famp-bob ./target/release/famp info | \
-  FAMP_HOME=/tmp/famp-alice ./target/release/famp peer import
-
-# 4. Start daemons (in separate terminals or background)
-FAMP_HOME=/tmp/famp-alice ./target/release/famp listen &
-FAMP_HOME=/tmp/famp-bob ./target/release/famp listen &
-
-# 5. Send a message from Alice to Bob
-#    First contact requires explicit TOFU opt-in (see "TLS trust" below).
-#    `--new-task "<summary>"` opens a fresh task; `send` prints the task UUID on success.
-FAMP_TOFU_BOOTSTRAP=1 FAMP_HOME=/tmp/famp-alice ./target/release/famp send \
-  --to bob --new-task "hello from alice"
-
-# 6. Inspect Bob's inbox (newest-last; use `inbox ack` to advance the read cursor)
-FAMP_HOME=/tmp/famp-bob ./target/release/famp inbox list
-```
-
-Each `famp setup` outputs a **peer card** — a JSON blob containing endpoint,
-public key, and principal that other agents need to register you as a peer.
-
-### TLS trust (TOFU bootstrap)
-
-FAMP uses self-signed TLS certificates with **Trust-On-First-Use** pinning.
-Once a peer's leaf-cert SHA-256 is recorded in `peers.toml`
-(`tls_fingerprint_sha256`), every subsequent connection rejects on mismatch.
-
-The first connection has nothing to compare against. By default, FAMP
-**refuses** that first connection rather than silently pinning whatever the
-network returns — a one-time on-path attacker could otherwise capture an
-alias permanently. To allow the first connection, set:
-
-```bash
-FAMP_TOFU_BOOTSTRAP=1 famp send --to <alias> ...
-```
-
-Use this only when you trust the path between you and the peer (typically
-loopback or a brand-new private link). Subsequent sends do not need the
-flag — the pinned fingerprint is the trust anchor from then on.
+The v0.8 federation CLI (`famp init / setup / listen / peer add / peer import`)
+was removed in v0.9. See [docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md)
+for the migration path; the `v0.8.1-federation-preserved` git tag is the
+escape hatch for users who genuinely need cross-host messaging today (frozen,
+bug fixes ship via the v1.0 federation gateway when it lands).
 
 ## MCP Integration (Claude Code and Codex)
 
@@ -559,11 +503,9 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `v0.6`: foundation crates, shipped
 - `v0.7`: personal runtime, shipped
 - `v0.8`: usable from Claude Code, with Codex support via user-scope MCP registration, shipped
-- `v0.9`: **local-first bus** — in design. UDS-backed broker replacing
+- `v0.9`: **local-first bus** — shipping now. UDS-backed broker replacing
   the per-identity TLS listener mesh for same-host agents. See the
   [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
-  The `famp-local` wrapper is pre-v0.9 scaffolding that validates the
-  UX before the broker lands.
 - `v1.0`: federation profile — after v0.9. Agent Cards, delegation,
   provenance, cross-host via a `famp-gateway` process.
 
