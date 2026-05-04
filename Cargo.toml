@@ -7,8 +7,10 @@ members = [
   "crates/famp-envelope",
   "crates/famp-fsm",
   "crates/famp-bus",
+  # v1.0 federation internals
   "crates/famp-keyring",
   "crates/famp-transport",
+  # v1.0 federation internals
   "crates/famp-transport-http",
   "crates/famp-inbox",
   "crates/famp-taskdir",
