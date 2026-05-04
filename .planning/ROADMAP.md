@@ -17,7 +17,7 @@
 - [x] **v0.9 Phase 1: `famp-bus` library + audit-log MessageClass** — pure state machine, codec, types, four TDD gates, proptest coverage, atomic v0.5.2 constant bump *(completed 2026-04-28; 28/28 reqs, see [01-VERIFICATION.md](phases/01-famp-bus-library-and-audit-log/01-VERIFICATION.md))*
 - [ ] **v0.9 Phase 2: UDS wire + CLI + MV-MCP rewire + hook subcommand** — `famp broker`, top-level CLI surface, MCP rewired to bus, `famp-local hook add`, integration tests
 - [ ] **v0.9 Phase 3: Claude Code integration polish** — `famp install-claude-code`, slash commands, 12-line / 30-second README Quick Start
-- [ ] **v0.9 Phase 4: Federation CLI unwire + federation-CI preservation** — top-level CLI removals, `e2e_two_daemons` library-API refactor, `v0.8.1-federation-preserved` tag, migration doc
+- [x] **v0.9 Phase 4: Federation CLI unwire + federation-CI preservation** — top-level CLI removals, `e2e_two_daemons` library-API refactor, `v0.8.1-federation-preserved` tag, migration doc
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
@@ -138,7 +138,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
   1. `cargo tree` shows the federation crates (`famp-transport-http`, `famp-keyring`) are consumed only by the refactored `e2e_two_daemons` integration test — no top-level CLI subcommand reaches them. The six removed CLI verbs (`famp setup`, `famp listen`, `famp init`, `famp peer add`, `famp peer import`, old TLS-form `famp send`) are gone from `famp --help` output.
   2. `e2e_two_daemons` is refactored to target `famp-transport-http`'s library API directly — instantiates two server instances in-process, exchanges a full signed `request → commit → deliver → ack` cycle over real HTTPS, verifies canonical JSON + Ed25519 end-to-end — and runs green in `just ci` on every commit (FED-04, plumb-line-2 commitment). Conformance gates (RFC 8785, §7.1c) continue running unchanged on every CI run (TEST-06).
   3. Tag `v0.8.1-federation-preserved` is cut on the commit BEFORE Phase 4 deletions land, providing an escape hatch for federation-needed users; `v0.9.0` tag is cut at the end of Phase 4 with `just ci` fully green and `cargo tree -i openssl` empty.
-  4. `docs/MIGRATION-v0.8-to-v0.9.md` ships with the CLI mapping table (`famp setup` → `famp register`, `famp listen` → gone, `famp peer add` → gone, etc.), `.mcp.json` cleanup instructions, and `famp install-claude-code` auto-update guidance; `README.md`, `CLAUDE.md`, `.planning/MILESTONES.md` updated so local-first is the headline and federation is the v1.0 promise; `scripts/famp-local` (prep-sprint scaffolding) marked deprecated.
+  4. `docs/MIGRATION-v0.8-to-v0.9.md` ships with the CLI mapping table (`famp setup` → `famp register`, `famp listen` → gone, `famp peer add` → gone, etc.), `.mcp.json` cleanup instructions, and `famp install-claude-code` auto-update guidance; `README.md`, `CLAUDE.md`, `.planning/MILESTONES.md` updated so local-first is the headline and federation is the v1.0 promise; `docs/history/v0.9-prep-sprint/famp-local/famp-local` (archived prep-sprint scaffolding) marked frozen.
   5. `[[profile.default.test-groups]]` is pinned for listen-subprocess tests (max-threads = 4, carry-forward TD-1) before listen subprocess tests proliferate further — addressed alongside the `e2e_two_daemons` refactor.
 **Plans:** 8 plans
 - [x] 04-01-PLAN.md — Refactor e2e_two_daemons.rs to library-API happy path + adversarial sentinel (FED-03/04, TEST-06)
@@ -146,9 +146,9 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 - [x] 04-03-PLAN.md — Archive scripts/famp-local under docs/history/v0.9-prep-sprint/famp-local/ + ROADMAP 999.6 path update (MIGRATE-04)
 - [x] 04-04-PLAN.md — Create docs/MIGRATION-v0.8-to-v0.9.md with CLI mapping table (MIGRATE-01/02/04)
 - [x] 04-05-PLAN.md — Staged-framing edits across README/CLAUDE/ROADMAP/MILESTONES/ARCHITECTURE (MIGRATE-03)
-- [ ] 04-06-PLAN.md — Workspace Cargo.toml v1.0-federation-internals relabel + cut v0.8.1-federation-preserved tag (FED-02, FED-05)
+- [x] 04-06-PLAN.md — Workspace Cargo.toml v1.0-federation-internals relabel + cut v0.8.1-federation-preserved tag (FED-02, FED-05)
 - [x] 04-07-PLAN.md — REQUIREMENTS/ROADMAP CARRY-01 bookkeeping flip to closing SHA ebd0854 (CARRY-01 Complete)
-- [ ] 04-08-PLAN.md — Hard-delete 6 federation CLI verbs + Risk #1 Info refactor + final REQUIREMENTS/ROADMAP closeout (FED-01, FED-05, FED-06, MIGRATE-01..04)
+- [x] 04-08-PLAN.md — Hard-delete 6 federation CLI verbs + Risk #1 Info refactor + final REQUIREMENTS/ROADMAP closeout (FED-01, FED-05, FED-06, MIGRATE-01..04)
 
 </details>
 
@@ -258,7 +258,7 @@ Rough ordering (not committed):
 | 1. `famp-bus` library + audit-log MessageClass | v0.9 | 0/3 | Not started | — |
 | 2. UDS wire + CLI + MV-MCP rewire + hook subcommand | v0.9 | 0/14 | Not started | — |
 | 3. Claude Code integration polish | v0.9 | 6/6 | Complete | 2026-05-03 |
-| 4. Federation CLI unwire + federation-CI preservation | v0.9 | 0/8 | Not started | — |
+| 4. Federation CLI unwire + federation-CI preservation | v0.9 | 8/8 | Complete | 2026-05-04 |
 
 ## Backlog
 

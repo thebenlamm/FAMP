@@ -100,7 +100,7 @@
 - [ ] **TEST-03**: Broker-crash recovery — `kill -9` broker mid-`Send`, client reconnects, mailbox drain recovers without loss
 - [ ] **TEST-04**: Broker spawn race — two near-simultaneous CLI invocations; exactly one broker survives
 - [ ] **TEST-05**: MCP E2E harness — two `famp mcp` stdio processes via test harness, JSON-RPC scripted from both sides, round-trip `new_task → commit → deliver → ack` over UDS (bus-side equivalent of v0.8's `e2e_two_daemons` over HTTPS)
-- [ ] **TEST-06**: Conformance gates unchanged (`famp-canonical` RFC 8785, `famp-crypto` §7.1c) continue running on every CI run; envelope-type sharing means any regression surfaces in broker tests immediately
+- [x] **TEST-06**: Conformance gates unchanged (`famp-canonical` RFC 8785, `famp-crypto` §7.1c) continue running on every CI run; envelope-type sharing means any regression surfaces in broker tests immediately
 
 ### CC — Claude Code integration polish
 
@@ -118,18 +118,18 @@
 ### FED — federation CLI unwire + federation-CI preservation (plumb-line-2)
 
 - [x] **FED-01**: Top-level CLI removals — `famp setup`, `famp listen`, `famp init`, `famp peer add`, `famp peer import`, old `famp send` (TLS form) — moved out of user-facing CLI
-- [ ] **FED-02**: `famp-transport-http` + `famp-keyring` relabeled "v1.0 federation internals" in workspace `Cargo.toml` comments; remain compiling and tested
+- [x] **FED-02**: `famp-transport-http` + `famp-keyring` relabeled "v1.0 federation internals" in workspace `Cargo.toml` comments; remain compiling and tested
 - [x] **FED-03**: **`e2e_two_daemons` refactored to library API** — no dependency on deleted CLI subcommands; instantiates two `famp-transport-http` server instances directly, exchanges full signed `request → commit → deliver → ack` cycle over HTTPS, verifies canonical JSON + Ed25519 end-to-end
-- [ ] **FED-04**: Federation e2e test green in `just ci` on every commit (plumb-line-2 commitment against mummification)
-- [ ] **FED-05**: Tag `v0.8.1-federation-preserved` cut on the commit BEFORE Phase 4 deletions land — escape hatch for federation-needed users
-- [ ] **FED-06**: `cargo tree` shows federation crates are consumed only by the refactored e2e test, no top-level CLI usage
+- [x] **FED-04**: Federation e2e test green in `just ci` on every commit (plumb-line-2 commitment against mummification)
+- [x] **FED-05**: Tag `v0.8.1-federation-preserved` cut on the commit BEFORE Phase 4 deletions land — escape hatch for federation-needed users
+- [x] **FED-06**: `cargo tree` shows federation crates are consumed only by the refactored e2e test, no top-level CLI usage
 
 ### MIGRATE — v0.8 → v0.9 migration documentation
 
-- [ ] **MIGRATE-01**: `docs/MIGRATION-v0.8-to-v0.9.md` — CLI mapping table (`famp setup` → `famp register`, `famp listen` → gone, `famp peer add` → gone, etc.)
-- [ ] **MIGRATE-02**: `.mcp.json` cleanup instructions — what to delete (legacy `FAMP_HOME`/`FAMP_LOCAL_ROOT` env vars), what to add (`famp install-claude-code` auto-update path)
+- [x] **MIGRATE-01**: `docs/MIGRATION-v0.8-to-v0.9.md` — CLI mapping table (`famp setup` → `famp register`, `famp listen` → gone, `famp peer add` → gone, etc.)
+- [x] **MIGRATE-02**: `.mcp.json` cleanup instructions — what to delete (legacy `FAMP_HOME`/`FAMP_LOCAL_ROOT` env vars), what to add (`famp install-claude-code` auto-update path)
 - [x] **MIGRATE-03**: `README.md`, `CLAUDE.md`, `.planning/MILESTONES.md` updated — local-first is the headline; federation is the v1.0 promise
-- [ ] **MIGRATE-04**: `scripts/famp-local` (prep-sprint scaffolding) marked deprecated — superseded by native broker + CLI
+- [x] **MIGRATE-04**: `docs/history/v0.9-prep-sprint/famp-local/famp-local` (archived prep-sprint scaffolding) marked frozen — superseded by native broker + CLI
 
 ### CARRY — v0.8 carry-forward debt addressed during v0.9
 
@@ -252,16 +252,16 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | CC-09 | Phase 3 | Complete |
 | CC-10 | Phase 3 | Complete |
 | FED-01 | Phase 4 | Complete |
-| FED-02 | Phase 4 | Pending |
+| FED-02 | Phase 4 | Complete |
 | FED-03 | Phase 4 | Complete |
-| FED-04 | Phase 4 | Pending |
-| FED-05 | Phase 4 | Pending |
-| FED-06 | Phase 4 | Pending |
-| MIGRATE-01 | Phase 4 | Pending |
-| MIGRATE-02 | Phase 4 | Pending |
+| FED-04 | Phase 4 | Complete |
+| FED-05 | Phase 4 | Complete |
+| FED-06 | Phase 4 | Complete |
+| MIGRATE-01 | Phase 4 | Complete |
+| MIGRATE-02 | Phase 4 | Complete |
 | MIGRATE-03 | Phase 4 | Complete |
-| MIGRATE-04 | Phase 4 | Pending |
-| TEST-06 | Phase 4 | Pending |
+| MIGRATE-04 | Phase 4 | Complete |
+| TEST-06 | Phase 4 | Complete |
 | CARRY-01 | Phase 4 | Complete (closed in `ebd0854`) |
 
 **Coverage:** 85/85 v0.9 active requirements mapped to exactly one phase. No orphans. (Future and Out-of-Scope sections do not require phase mapping.) Total bumped from 84 → 85 by the D-12 HOOK-04 split landed in plan 02-12: HOOK-04 → HOOK-04a (Phase 2) + HOOK-04b (Phase 3).
