@@ -1,19 +1,14 @@
-//! Quick task 260424-7z5 — regression test for `famp_send` `new_task` body loss.
+//! Phase 3 Plan 03-02 Task 2 — `famp send --new-task` E2E integration.
 //!
-//! Beta feedback (2026-04-24) reported that `famp send --new-task "<title>"
-//! --body "<prose>"` silently dropped the prose on the wire: receivers saw
-//! `body.scope == {}` and had no way to recover the task content.
-//!
-//! This test locks in the fix: with a body present, the signed request
-//! envelope on the peer's `inbox.jsonl` MUST have
-//! `body.scope.instructions == <prose>` (exact match) and
-//! `body.natural_language_summary == <title>` (title path unchanged).
-//!
-//! On the pre-fix build this test MUST fail with a clear `scope.instructions
-//! did not match …` assertion diff.
+//! Spins up `famp::cli::listen::run_on_listener` in-process on an ephemeral
+//! port, peer-adds the daemon as alias "self" with principal
+//! `agent:localhost/self`, and runs `famp send --new-task --to self`. Asserts
+//! the task record is created in REQUESTED state with a valid `UUIDv7` id and
+//! the daemon's inbox contains exactly one request envelope line.
 //!
 //! Phase 02 Plan 02-04: gated off — v0.8 HTTPS shape incompatible with
-//! v0.9 bus path. See `send_more_coming_requires_new_task.rs` header.
+//! v0.9 bus path (`SendArgs` shape change + `run_at` socket-path swap).
+//! See `send_more_coming_requires_new_task.rs` header for the migration plan.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -25,6 +20,7 @@ use std::time::Duration;
 
 use famp::cli::peer::add::run_add_at;
 use famp::cli::send::{run_at as send_run_at, SendArgs};
+use famp_taskdir::TaskDir;
 
 use common::{init_home_in_process, wait_for_tls_listener_ready};
 
@@ -34,16 +30,14 @@ fn pubkey_b64(home: &std::path::Path) -> String {
     let bytes = std::fs::read(home.join("pub.ed25519")).unwrap();
     URL_SAFE_NO_PAD.encode(bytes)
 }
-
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
             it with the v0.8 CLI surface."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn send_new_task_body_lands_in_scope_instructions() {
-    // Existing tests rely on first-contact TOFU pinning, which is opt-in.
-    // The production env var equivalent is FAMP_TOFU_BOOTSTRAP=1.
+async fn send_new_task_creates_record_and_hits_daemon() {
+    // Existing tests rely on first-contact TOFU pinning, which is now
+    // opt-in. The production env var equivalent is FAMP_TOFU_BOOTSTRAP=1.
     famp::cli::send::client::allow_tofu_bootstrap_for_tests();
 
     let tmp = tempfile::TempDir::new().unwrap();
@@ -78,40 +72,52 @@ async fn send_new_task_body_lands_in_scope_instructions() {
     )
     .expect("peer add");
 
-    // Send a new task WITH a body — this is the behaviour under test.
-    let title = "verify scope.instructions round-trip";
-    let body = "This prose is the real task content. It MUST reach the peer intact.";
+    // Send a new task.
     let args = SendArgs {
         to: Some("self".to_string()),
         channel: None,
-        new_task: Some(title.to_string()),
+        new_task: Some("hello phase 3".to_string()),
         task: None,
         terminal: false,
-        body: Some(body.to_string()),
+        body: None,
         more_coming: false,
         act_as: None,
     };
     send_run_at(&home, args).await.expect("famp send");
 
-    // Give the daemon time to persist the inbound envelope.
+    // Exactly one task record should exist, state REQUESTED, peer=self.
+    let tasks = TaskDir::open(home.join("tasks")).unwrap();
+    let records = tasks.list().unwrap();
+    assert_eq!(records.len(), 1, "exactly one task record expected");
+    let rec = &records[0];
+    assert_eq!(rec.state, "REQUESTED");
+    assert_eq!(rec.peer, "self");
+    assert!(!rec.terminal);
+    assert!(rec.last_send_at.is_some());
+    // UUIDv7 hyphenated form is 36 chars.
+    assert_eq!(rec.task_id.len(), 36);
+
+    // Give the fire-and-forget auto-commit reply time to land.
     tokio::time::sleep(Duration::from_millis(200)).await;
 
+    // Daemon inbox should have exactly two lines: (1) the request envelope, and
+    // (2) the auto-commit reply sent by the daemon when it received the request.
     let lines = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
-    let request = lines
-        .iter()
-        .find(|l| l.get("class").and_then(|c| c.as_str()) == Some("request"))
-        .expect("no request line in inbox");
-
-    let scope = request.pointer("/body/scope").expect("body.scope missing");
     assert_eq!(
-        scope.pointer("/instructions").and_then(|v| v.as_str()),
-        Some(body),
-        "scope.instructions did not match the sent body; actual scope = {scope}"
+        lines.len(),
+        2,
+        "expected two inbox lines (request + auto-commit)"
     );
-    let nls = request
-        .pointer("/body/natural_language_summary")
-        .and_then(|v| v.as_str());
-    assert_eq!(nls, Some(title), "natural_language_summary regressed");
+    let class0 = lines[0]
+        .get("class")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    assert_eq!(class0, "request");
+    let class1 = lines[1]
+        .get("class")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    assert_eq!(class1, "commit");
 
     // Shutdown.
     let _ = shutdown_tx.send(());
@@ -129,7 +135,6 @@ use famp_crypto as _;
 use famp_envelope as _;
 use famp_fsm as _;
 use famp_keyring as _;
-use famp_taskdir as _;
 use famp_transport as _;
 use famp_transport_http as _;
 use hex as _;

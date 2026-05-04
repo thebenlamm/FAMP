@@ -1,14 +1,14 @@
-//! Phase 3 Plan 03-02 Task 2 — `famp send --new-task` E2E integration.
+//! Phase 3 Plan 03-02 Task 2 — `famp send --task` multi-deliver sequence.
 //!
-//! Spins up `famp::cli::listen::run_on_listener` in-process on an ephemeral
-//! port, peer-adds the daemon as alias "self" with principal
-//! `agent:localhost/self`, and runs `famp send --new-task --to self`. Asserts
-//! the task record is created in REQUESTED state with a valid `UUIDv7` id and
-//! the daemon's inbox contains exactly one request envelope line.
+//! After a new task, sends three non-terminal deliver envelopes and asserts:
+//! - the task record stays in REQUESTED (Phase 3 does not step the FSM on
+//!   non-terminal deliver — see `fsm_glue` module docs for the Phase 4 plan)
+//! - `record.terminal` stays false
+//! - `last_send_at` is updated on each call
+//! - the daemon inbox now contains exactly four lines (1 request + 3 deliver)
 //!
 //! Phase 02 Plan 02-04: gated off — v0.8 HTTPS shape incompatible with
-//! v0.9 bus path (`SendArgs` shape change + `run_at` socket-path swap).
-//! See `send_more_coming_requires_new_task.rs` header for the migration plan.
+//! v0.9 bus path. See `send_more_coming_requires_new_task.rs` header.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -30,23 +30,18 @@ fn pubkey_b64(home: &std::path::Path) -> String {
     let bytes = std::fs::read(home.join("pub.ed25519")).unwrap();
     URL_SAFE_NO_PAD.encode(bytes)
 }
-
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
             it with the v0.8 CLI surface."]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn send_new_task_creates_record_and_hits_daemon() {
-    // Existing tests rely on first-contact TOFU pinning, which is now
-    // opt-in. The production env var equivalent is FAMP_TOFU_BOOTSTRAP=1.
+async fn send_deliver_sequence_keeps_record_non_terminal() {
     famp::cli::send::client::allow_tofu_bootstrap_for_tests();
 
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path().to_path_buf();
     init_home_in_process(&home);
 
-    // Bind an ephemeral port and start the daemon in-process.
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
@@ -64,7 +59,6 @@ async fn send_new_task_creates_record_and_hits_daemon() {
 
     wait_for_tls_listener_ready().await;
 
-    // Register the daemon as peer "self" with the daemon's own pubkey.
     run_add_at(
         &home,
         "self".to_string(),
@@ -74,60 +68,77 @@ async fn send_new_task_creates_record_and_hits_daemon() {
     )
     .expect("peer add");
 
-    // Send a new task.
-    let args = SendArgs {
-        to: Some("self".to_string()),
-        channel: None,
-        new_task: Some("hello phase 3".to_string()),
-        task: None,
-        terminal: false,
-        body: None,
-        more_coming: false,
-        act_as: None,
-    };
-    send_run_at(&home, args).await.expect("famp send");
+    // 1. Open task.
+    send_run_at(
+        &home,
+        SendArgs {
+            to: Some("self".to_string()),
+            channel: None,
+            new_task: Some("open task".to_string()),
+            task: None,
+            terminal: false,
+            body: None,
+            more_coming: false,
+            act_as: None,
+        },
+    )
+    .await
+    .expect("new task send");
 
-    // Exactly one task record should exist, state REQUESTED, peer=self.
     let tasks = TaskDir::open(home.join("tasks")).unwrap();
-    let records = tasks.list().unwrap();
-    assert_eq!(records.len(), 1, "exactly one task record expected");
-    let rec = &records[0];
+    let task_id = {
+        let records = tasks.list().unwrap();
+        assert_eq!(records.len(), 1);
+        records[0].task_id.clone()
+    };
+    let first_send_at = tasks
+        .read(&task_id)
+        .unwrap()
+        .last_send_at
+        .expect("last_send_at after first send");
+
+    // 2. Three non-terminal delivers.
+    for i in 1..=3 {
+        // Small sleep so RFC-3339-second timestamps differ across sends.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        send_run_at(
+            &home,
+            SendArgs {
+                to: Some("self".to_string()),
+                channel: None,
+                new_task: None,
+                task: Some(task_id.clone()),
+                terminal: false,
+                body: Some(format!("interim {i}")),
+                more_coming: false,
+                act_as: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|e| panic!("deliver {i} failed: {e}"));
+    }
+
+    // 3. Record should still be non-terminal, last_send_at should have moved.
+    let rec = tasks.read(&task_id).unwrap();
     assert_eq!(rec.state, "REQUESTED");
-    assert_eq!(rec.peer, "self");
     assert!(!rec.terminal);
-    assert!(rec.last_send_at.is_some());
-    // UUIDv7 hyphenated form is 36 chars.
-    assert_eq!(rec.task_id.len(), 36);
+    assert_ne!(rec.last_send_at.as_deref(), Some(first_send_at.as_str()));
 
-    // Give the fire-and-forget auto-commit reply time to land.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    // Daemon inbox should have exactly two lines: (1) the request envelope, and
-    // (2) the auto-commit reply sent by the daemon when it received the request.
+    // 4. Inbox should have 5 lines: 1 request + 1 auto-commit reply + 3 delivers.
+    // Phase 4: the daemon auto-commits on every inbound request, so the commit
+    // reply envelope is stored in the inbox alongside the request and delivers.
     let lines = famp_inbox::read::read_all(home.join("inbox.jsonl")).unwrap();
     assert_eq!(
         lines.len(),
-        2,
-        "expected two inbox lines (request + auto-commit)"
+        5,
+        "expected 1 request + 1 commit reply + 3 delivers"
     );
-    let class0 = lines[0]
-        .get("class")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    assert_eq!(class0, "request");
-    let class1 = lines[1]
-        .get("class")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    assert_eq!(class1, "commit");
 
-    // Shutdown.
     let _ = shutdown_tx.send(());
     let _ = tokio::time::timeout(Duration::from_secs(2), server_task).await;
 }
 
-// Silencers (minimum set that keeps unused_crate_dependencies quiet in this
-// specific test binary).
+// Silencers.
 use axum as _;
 use clap as _;
 use ed25519_dalek as _;
@@ -144,6 +155,7 @@ use rand as _;
 use rcgen as _;
 use rustls as _;
 use serde as _;
+use serde_json as _;
 use sha2 as _;
 use thiserror as _;
 use time as _;

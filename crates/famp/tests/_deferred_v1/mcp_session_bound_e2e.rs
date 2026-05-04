@@ -77,7 +77,6 @@ fn assert_bob_inbox_has_task(win_b: &mut Harness, task_id: &str) {
 ///   |<-- famp_await terminal ---|<----------------------------|
 ///   [assert alice's task record == COMPLETED + terminal=true]
 /// ```
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \

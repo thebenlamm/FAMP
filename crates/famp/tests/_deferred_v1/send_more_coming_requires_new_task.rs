@@ -44,7 +44,6 @@ fn pubkey_b64(home: &std::path::Path) -> String {
 }
 
 #[tokio::test(flavor = "current_thread")]
-#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 HTTPS regression already \
             superseded by the unit test `more_coming_without_new_task_errors_in_run_at_structured` \
             in cli/send/mod.rs::tests. Phase 04 will delete this file with the v0.8 \
             send-via-listen surface."]

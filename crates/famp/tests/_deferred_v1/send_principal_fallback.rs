@@ -47,8 +47,6 @@ fn send_args() -> SendArgs {
         act_as: None,
     }
 }
-
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
@@ -71,8 +69,6 @@ async fn malformed_config_toml_is_a_hard_error() {
         "expected typed TomlParse error, got {err}"
     );
 }
-
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
@@ -99,8 +95,6 @@ async fn malformed_principal_field_is_a_hard_error() {
         "expected typed PrincipalInvalid, got {err}"
     );
 }
-
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \

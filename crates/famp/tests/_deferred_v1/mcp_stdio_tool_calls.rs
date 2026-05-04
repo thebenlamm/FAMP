@@ -319,7 +319,6 @@ fn mcp_famp_send_body_description_flags_required_for_new_task() {
 /// Starts an in-process `famp listen` daemon on an ephemeral port so that
 /// `famp_send` can actually POST the envelope and receive an HTTP 200.
 #[test]
-#[ignore = "Phase 04 (v0.9 federation deletion): tests v0.8 HTTPS-via-listen \
             from MCP. v0.9 broker-backed coverage already lives in \
             crates/famp/tests/mcp_bus_e2e.rs (test_mcp_bus_e2e). Phase 04 will \
             delete or migrate this file with the v0.8 CLI surface."]
@@ -439,7 +438,6 @@ fn mcp_famp_send_new_task_returns_structured() {
 /// is also removed (v0.9 has no `add_peer` since federation isn't local).
 /// A v0.9-shaped equivalent test belongs in the broker integration suite.
 #[test]
-#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 peers.toml fixture shape; \
             v0.9 famp_peers returns the broker-memory `online` list (covered by \
             mcp_bus_e2e.rs). Phase 04 will delete this with the v0.8 peer-file \
             surface."]
@@ -562,7 +560,6 @@ fn entries_from_response(resp: &serde_json::Value) -> Vec<serde_json::Value> {
 }
 
 #[test]
-#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 file-fixture test (writes \
             inbox.jsonl directly). v0.9 broker reads from in-memory mailbox state; \
             broker-driven E2E coverage already lives in mcp_bus_e2e.rs. Phase 04 \
             will delete this with the v0.8 file-fixture surface."]
@@ -582,7 +579,6 @@ fn famp_inbox_list_filters_terminal_by_default() {
 }
 
 #[test]
-#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 file-fixture test (writes \
             inbox.jsonl directly). v0.9 broker reads from in-memory mailbox state; \
             broker-driven E2E coverage already lives in mcp_bus_e2e.rs. Phase 04 \
             will delete this with the v0.8 file-fixture surface."]
@@ -600,7 +596,6 @@ fn famp_inbox_list_include_terminal_true_returns_all() {
 
 /// Calling `famp_send` with an unknown peer alias returns `famp_error_kind == "peer_not_found"`.
 #[test]
-#[ignore = "Phase 04 (v0.9 federation deletion): v0.8 `peer_not_found` failure mode \
             is replaced by D-10 `not_registered_hint` on the v0.9 bus path. The \
             v0.9 negative path is covered via mcp_error_kind_exhaustive.rs and the \
             broker proxy semantics tests. Phase 04 will delete this with the v0.8 \

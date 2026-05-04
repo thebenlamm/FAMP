@@ -100,7 +100,6 @@ fn build_signed_request_bytes(
 // ---------------------------------------------------------------------------
 // Test A: envelope from a peer registered in daemon's peers.toml is accepted.
 // ---------------------------------------------------------------------------
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
@@ -152,7 +151,6 @@ async fn accepts_envelope_from_registered_peer() {
 // ---------------------------------------------------------------------------
 // Test B: envelope where from == to == self still accepted (backward compat).
 // ---------------------------------------------------------------------------
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
@@ -200,7 +198,6 @@ async fn accepts_envelope_from_self() {
 // ---------------------------------------------------------------------------
 // Test C: envelope from an unknown principal is rejected (non-2xx).
 // ---------------------------------------------------------------------------
-#[ignore = "Phase 04 (v0.9 federation deletion): tests the v0.8 HTTPS-via-`famp listen` \
             surface that Phase 04 removes per ROADMAP.md (`famp setup/init/listen/peer add`, \
             old `famp send`). Held at #[ignore] until Phase 04 either migrates this to \
             the `famp-transport-http` library API (alongside `e2e_two_daemons`) or deletes \
