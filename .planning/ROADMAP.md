@@ -143,9 +143,9 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 **Plans:** 8 plans
 - [x] 04-01-PLAN.md — Refactor e2e_two_daemons.rs to library-API happy path + adversarial sentinel (FED-03/04, TEST-06)
 - [x] 04-02-PLAN.md — Freeze ~27 federation-coupled tests under crates/famp/tests/_deferred_v1/ via git mv + freeze README (FED-01 enabler)
-- [ ] 04-03-PLAN.md — Archive scripts/famp-local under docs/history/v0.9-prep-sprint/famp-local/ + ROADMAP 999.6 path update (MIGRATE-04)
-- [ ] 04-04-PLAN.md — Create docs/MIGRATION-v0.8-to-v0.9.md with CLI mapping table (MIGRATE-01/02/04)
-- [ ] 04-05-PLAN.md — Staged-framing edits across README/CLAUDE/ROADMAP/MILESTONES/ARCHITECTURE (MIGRATE-03)
+- [x] 04-03-PLAN.md — Archive scripts/famp-local under docs/history/v0.9-prep-sprint/famp-local/ + ROADMAP 999.6 path update (MIGRATE-04)
+- [x] 04-04-PLAN.md — Create docs/MIGRATION-v0.8-to-v0.9.md with CLI mapping table (MIGRATE-01/02/04)
+- [x] 04-05-PLAN.md — Staged-framing edits across README/CLAUDE/ROADMAP/MILESTONES/ARCHITECTURE (MIGRATE-03)
 - [ ] 04-06-PLAN.md — Workspace Cargo.toml v1.0-federation-internals relabel + cut v0.8.1-federation-preserved tag (FED-02, FED-05)
 - [x] 04-07-PLAN.md — REQUIREMENTS/ROADMAP CARRY-01 bookkeeping flip to closing SHA ebd0854 (CARRY-01 Complete)
 - [ ] 04-08-PLAN.md — Hard-delete 6 federation CLI verbs + Risk #1 Info refactor + final REQUIREMENTS/ROADMAP closeout (FED-01, FED-05, FED-06, MIGRATE-01..04)

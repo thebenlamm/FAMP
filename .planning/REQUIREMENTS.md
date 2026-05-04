@@ -128,7 +128,7 @@
 
 - [ ] **MIGRATE-01**: `docs/MIGRATION-v0.8-to-v0.9.md` — CLI mapping table (`famp setup` → `famp register`, `famp listen` → gone, `famp peer add` → gone, etc.)
 - [ ] **MIGRATE-02**: `.mcp.json` cleanup instructions — what to delete (legacy `FAMP_HOME`/`FAMP_LOCAL_ROOT` env vars), what to add (`famp install-claude-code` auto-update path)
-- [ ] **MIGRATE-03**: `README.md`, `CLAUDE.md`, `.planning/MILESTONES.md` updated — local-first is the headline; federation is the v1.0 promise
+- [x] **MIGRATE-03**: `README.md`, `CLAUDE.md`, `.planning/MILESTONES.md` updated — local-first is the headline; federation is the v1.0 promise
 - [ ] **MIGRATE-04**: `scripts/famp-local` (prep-sprint scaffolding) marked deprecated — superseded by native broker + CLI
 
 ### CARRY — v0.8 carry-forward debt addressed during v0.9
@@ -259,7 +259,7 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | FED-06 | Phase 4 | Pending |
 | MIGRATE-01 | Phase 4 | Pending |
 | MIGRATE-02 | Phase 4 | Pending |
-| MIGRATE-03 | Phase 4 | Pending |
+| MIGRATE-03 | Phase 4 | Complete |
 | MIGRATE-04 | Phase 4 | Pending |
 | TEST-06 | Phase 4 | Pending |
 | CARRY-01 | Phase 4 | Complete (closed in `ebd0854`) |

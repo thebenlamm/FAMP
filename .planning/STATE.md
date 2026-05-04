@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.9
 milestone_name: Local-First Bus
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-05-04T01:03:34.137Z"
+stopped_at: Completed 04-05-PLAN.md
+last_updated: "2026-05-04T01:23:57.243Z"
 last_activity: 2026-05-04
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 31
-  completed_plans: 25
-  percent: 81
+  completed_plans: 29
+  percent: 94
 ---
 
 # STATE: FAMP — v0.9 Local-First Bus
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md — v0.9 Local-First Bus is the active milestone; v1.0
 ## Current Position
 
 Phase: 04 (federation-cli-unwire-federation-ci-preservation) — EXECUTING
-Plan: 2 of 8
+Plan: 6 of 8
 Plans: 14 of 14 complete
 Status: Ready to execute
 Last activity: 2026-05-04
@@ -73,10 +73,12 @@ Last activity: 2026-05-04
 - [Phase 04]: Plan 04-01 kept e2e_two_daemons_adversarial.rs independent of famp::runtime because runtime is removed later in Phase 4.
 - [Phase 04]: Plan 04-02 moved info_happy_path.rs into _deferred_v1 because the live tree still imported famp::cli::setup; the planned keep condition had not landed.
 - [Phase 04]: Plan 04-02 resolved D-03 row 7 as MOVE via active send unit coverage and row 13 as MOVE via active TaskNotFound error-surface mapping; full stale-task broker validation remains out of scope.
+- [Phase 04]: Plan 04-05 uses staged framing rather than identity rewrite: FAMP today is local-first; FAMP at v1.0 is federated.
 
 ## Issues / Blockers
 
 - **8 pre-existing listener/E2E TLS-loopback timeouts** (`reqwest::Error { kind: Request, source: TimedOut }` against `https://127.0.0.1:.../famp/v0.5.1/inbox/...`). Reproduces on Wave 2 commit `ae905ed`. Not a Phase 1 regression. Documented in `01-03-SUMMARY.md` and `01-VERIFICATION.md`. Triage as a separate hygiene task before Phase 4.
+- **Plan 04-05 CI blocker:** `just ci` is blocked by out-of-scope clippy `option_if_let_else` warnings in `crates/famp/src/cli/install/claude_code.rs` and `crates/famp/src/cli/uninstall/claude_code.rs`.
 
 ## Performance Metrics
 
@@ -85,9 +87,10 @@ Last activity: 2026-05-04
 | Phase 01 P01 | 23min | 2 tasks | 17 files |
 | Phase 01 P02 | 15min | 2 tasks | 15 files |
 | Phase 01 P03 | atomic | 1 task | 28 files |
+| Phase 04 P05 | 8min | 1 tasks | 6 files |
 
 ## Session
 
-**Last session:** 2026-05-04T01:03:34.111Z
-**Stopped At:** Completed 04-02-PLAN.md
+**Last session:** 2026-05-04T01:23:57.240Z
+**Stopped At:** Completed 04-05-PLAN.md
 **Resume File:** None
