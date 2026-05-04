@@ -21,7 +21,7 @@ in [ARCHITECTURE.md](../ARCHITECTURE.md)).
 
 ## TL;DR
 
-- Run `famp install-claude-code` -- auto-rewrites your `.mcp.json` and drops new slash commands.
+- Run `famp install-claude-code` -- writes user-scope Claude Code MCP config and drops new slash commands.
 - Switch `famp setup` / `famp init` -> `famp register <name>`.
 - `famp listen` is gone -- the broker auto-spawns on first `famp register`.
 - `famp peer add` / `famp peer import` are gone -- same-host discovery is automatic via the broker.
@@ -29,9 +29,10 @@ in [ARCHITECTURE.md](../ARCHITECTURE.md)).
 
 ## `.mcp.json` cleanup
 
-`famp install-claude-code` does this for you. Manual cleanup, if you must:
+`famp install-claude-code` writes the user-scope `~/.claude.json` entry for
+v0.9. Project-scope `.mcp.json` cleanup is manual:
 
-1. Open `~/.claude.json` or your project-scope `.mcp.json`.
+1. Open your project-scope `.mcp.json`, if the project has one.
 2. Find the `mcpServers.famp` entry.
 3. Delete any `env` keys for `FAMP_HOME` or `FAMP_LOCAL_ROOT`.
 4. Confirm `command` points to your installed `famp` binary, with `args: ["mcp"]`.

@@ -76,17 +76,10 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_peers",
-            "description": "List or add peers in peers.toml.",
+            "description": "List currently online registered identities.",
             "inputSchema": {
                 "type": "object",
-                "properties": {
-                    "action":    { "type": "string", "enum": ["list", "add"] },
-                    "alias":     { "type": "string" },
-                    "endpoint":  { "type": "string" },
-                    "pubkey":    { "type": "string", "description": "base64url-unpadded Ed25519 pubkey" },
-                    "principal": { "type": "string" }
-                },
-                "required": ["action"]
+                "properties": {}
             }
         },
         {

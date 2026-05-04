@@ -157,59 +157,39 @@ famp install-claude-code
 
 > First install includes a one-time compile (~60-120 s); subsequent windows: <30 s. The 12-line block above is the entire onboarding.
 
-Override the identity name per-directory if the repo name doesn't fit:
+Use the live CLI directly when you are not inside Claude Code:
 
 ```bash
-scripts/famp-local wire ~/Workspace/God --as architect
+famp register architect
+famp send --to bob --new-task "ship it"
+famp inbox --as bob
 ```
 
 Full CLI:
 
 | Command | What it does |
 |---|---|
-| `famp-local wire <dir> [--as <name>] [--force]` | Add a directory to the mesh and drop a project-scoped `.mcp.json` for Claude Code |
-| `famp-local unwire <dir>` | Remove `.mcp.json` from a directory (identity and daemon stay) |
-| `famp-local send <from> <to> <text>` | CLI-level send without going through the MCP client |
-| `famp-local inbox <name>` | List a name's inbox entries |
-| `famp-local status` | Show all known identities and daemon state |
-| `famp-local stop [<name>...]` | Stop daemon(s); with no args, stops all |
-| `famp-local clear [--all] [--agent <name>] [--dry-run] [--yes]` | Truncate inbox.jsonl files in place. Default scope is all local agent inboxes; `--all` also clears `~/.famp/inbox.jsonl` and `~/.famp-echo/inbox.jsonl`. Inboxes are truncated, not deleted. |
-| `famp-local doctor [<dir>]` | Show whether `<dir>` (default: `$PWD`) is set up for FAMP. Walks up looking for a FAMP-wired `.mcp.json`; reports identity (from `wires.tsv`), daemon status, and inbox count when wired. Read-only. |
-| `famp-local clean` | Stop everything and wipe `~/.famp-local` |
-| `famp-local mcp-add [--client <target>] <name>...` | Register user-scope MCP servers for Claude Code, Codex, or both |
-| `famp-local mcp-remove [--client <target>] <name>...` | Remove user-scope MCP server registrations |
+| `famp register <name>` | Bind a local identity and start the broker if needed |
+| `famp send --to <name> --new-task "<text>"` | Send a new task over the local bus |
+| `famp send --to <name> --task <id> --body "<text>"` | Reply to an existing task |
+| `famp await [--task <id>]` | Block until a message arrives |
+| `famp inbox [--include-terminal]` | List active inbox work |
+| `famp join <channel>` / `famp leave <channel>` | Manage local bus channel membership |
+| `famp sessions` | Show registered broker sessions |
+| `famp whoami` | Show the resolved local identity |
+| `famp install-claude-code` / `famp uninstall-claude-code` | Install or remove Claude Code MCP/slash-command integration |
+| `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP integration |
 
 The v0.8 `famp-local` wrapper has moved into history at
 [`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).
 v0.9 replaces it with the local bus path above.
 
-## Redeploying after daemon code changes
+## Broker lifecycle
 
-Edits to `crates/famp/` only reach running listeners after the binary at
-`~/.cargo/bin/famp` is rebuilt AND each daemon is restarted. Use:
-
-```bash
-scripts/redeploy-listeners.sh             # interactive: prompts before killing daemons
-scripts/redeploy-listeners.sh --dry-run   # show plan, take no action
-scripts/redeploy-listeners.sh --force     # skip the in-flight-task safety check
-scripts/redeploy-listeners.sh --no-rebuild # cycle daemons against the binary already on disk
-```
-
-The script refuses to run if `crates/famp/` has uncommitted changes or if
-any task TOML under `~/.famp-local/agents/*/tasks/*.toml` is in a
-non-terminal state (REQUESTED or COMMITTED), unless you pass `--force`.
-PID files live at `~/.famp-local/agents/<name>/daemon.pid`; logs at
-`~/.famp-local/agents/<name>/daemon.log` (appended, not truncated).
-
-### Verifying a redeploy succeeded
-
-The script prints a per-agent summary table on completion (`STOP`, `RESTART`,
-`PID`, `LOG` columns) followed by a final `all N agent(s) cycled cleanly`
-line; non-zero exit means at least one daemon failed to come back. To
-spot-check independently: `tail -1 ~/.famp-local/agents/<name>/daemon.log`
-should show a fresh `listening on https://127.0.0.1:<port>` line, and
-`ls -l ~/.cargo/bin/famp` should show a binary timestamp at or after the
-rebuild.
+The local broker auto-spawns on first registration or bus command. For normal
+development, rebuild the binary and open a new CLI/MCP session; the next bus
+connection starts the broker again if needed. Broker diagnostics live under
+`~/.famp/` (`bus.sock`, `broker.log`).
 
 ## Advanced: v0.8 federation CLI
 
@@ -228,12 +208,13 @@ window picks an identity at runtime via `famp_register`.**
 
 ### Onboarding (recommended path)
 
-1. **Wire a repo once with the bundled wrapper:**
+1. **Install the user-scope MCP integration once:**
    ```sh
-   scripts/famp-local wire ./my-repo --as alice
+   famp install-claude-code
    ```
-   This writes `./my-repo/.mcp.json` pointing at `famp mcp`. Note: the
-   `.mcp.json` carries no `FAMP_HOME` — identity is chosen per window.
+   This writes the user-scope Claude Code config and slash commands for
+   `famp mcp`. Project `.mcp.json` files are optional; if you keep one, it
+   should point at `famp mcp` without `FAMP_HOME` or `FAMP_LOCAL_ROOT`.
 
 2. **In every new Claude Code (or Codex) window opened in that repo:**
    ```text
@@ -255,12 +236,11 @@ window picks an identity at runtime via `famp_register`.**
 ### Codex (one server, runtime identity)
 
 ```sh
-scripts/famp-local mcp-add --client codex alice bob
+famp install-codex
 ```
-Registers `famp-alice` and `famp-bob` user-scope. After this lands,
-you still call `register as <name>` per Codex window — the per-server
-names are now just two ways to reach the same `famp mcp` binary; the
-binding happens inside the session.
+Registers the user-scope Codex MCP server. After this lands, call
+`register as <name>` per Codex window; the binding happens inside the
+session.
 
 <details>
 <summary>Why this changed (v0.8.x to v0.9 trajectory)</summary>
@@ -280,9 +260,9 @@ transport. v0.9 (the [local-first bus](docs/superpowers/specs/2026-04-17-local-f
 replaces the transport entirely; the `famp_register` / `famp_whoami`
 tool surface stays the same, so anything you wire today is forward-compatible.
 
-Auto-migration: re-running `scripts/famp-local wire <dir>` against a
-previously-wired repo rewrites the `.mcp.json` to drop `FAMP_HOME` in
-place. No standalone migrate command.
+Migration note: v0.8 project `.mcp.json` files that carry `FAMP_HOME` should
+be edited manually or replaced with the user-scope install above. See
+[docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md).
 </details>
 
 ### Manual MCP server config
