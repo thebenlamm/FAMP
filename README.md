@@ -283,7 +283,8 @@ If you don't use the wrapper, the minimal `.mcp.json` is:
 Optional: set `FAMP_LOCAL_ROOT` in the environment to override the
 default `~/.famp-local` backing-store directory. Identity directories
 live at `$FAMP_LOCAL_ROOT/agents/<name>/`; each must contain a readable
-`config.toml` (created by `famp init` against that dir).
+`config.toml`. Use `famp register <name>` to create or refresh identities
+through the live local-bus CLI.
 
 ## Programmatic Examples
 
