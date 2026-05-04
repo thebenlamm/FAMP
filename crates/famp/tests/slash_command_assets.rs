@@ -36,7 +36,7 @@ fn test_famp_who_allowed_tools_lists_only_famp_peers() {
         .filter(|s| !s.is_empty())
         .collect();
     let expected: std::collections::BTreeSet<&str> =
-        ["mcp__famp__famp_peers"].into_iter().collect();
+        std::iter::once("mcp__famp__famp_peers").collect();
     assert_eq!(tools, expected, "CC-07: allowed-tools surface drift");
 }
 
