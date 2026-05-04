@@ -23,15 +23,15 @@ use famp_bus::BusErrorKind;
 use famp_fsm::TaskFsmError;
 
 use crate::cli::error::CliError::{
-    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, CertgenFailed,
-    Disconnected, Envelope, FsmTransition, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute,
-    HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
+    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, Disconnected,
+    Envelope, FsmTransition, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute, HomeNotSet,
+    IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
     InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
     JsonMergeRead, KeygenFailed, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented,
     NotRegistered, NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
     PeerNotFound, PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed,
-    TaskDir, TaskNotFound, TaskTerminal, Tls, TlsFingerprintMismatch, TofuBootstrapRefused,
-    TomlParse, TomlSerialize, TomlTableExpected, UnknownIdentity,
+    TaskDir, TaskNotFound, TaskTerminal, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse,
+    TomlSerialize, TomlTableExpected, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -53,14 +53,12 @@ impl crate::cli::error::CliError {
             AlreadyInitialized { .. } => "already_initialized",
             IdentityIncomplete { .. } => "identity_incomplete",
             KeygenFailed(_) => "keygen_failed",
-            CertgenFailed(_) => "certgen_failed",
             Io { .. } => "io_error",
             TomlSerialize(_) => "toml_serialize",
             TomlParse { .. } => "toml_parse",
             TomlTableExpected { .. } => "toml_table_expected",
             PortInUse { .. } => "port_in_use",
             Inbox(_) => "inbox_error",
-            Tls(_) => "tls_error",
             PeerNotFound { .. } => "peer_not_found",
             PeerDuplicate { .. } => "peer_duplicate",
             PeerEndpointInvalid { .. } => "peer_endpoint_invalid",

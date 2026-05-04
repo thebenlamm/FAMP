@@ -11,27 +11,21 @@ pub mod home;
 pub mod identity;
 pub mod inbox;
 pub mod info;
-pub mod init;
 pub mod install;
 pub mod join;
 pub mod leave;
-pub mod listen;
 pub mod mcp;
 pub mod paths;
-pub mod peer;
 pub mod perms;
 pub mod register;
 pub mod send;
 pub mod sessions;
-pub mod setup;
 pub mod uninstall;
 pub mod util;
 pub mod whoami;
 
 pub use broker::BrokerArgs;
 pub use error::CliError;
-pub use init::InitOutcome;
-pub use listen::ListenArgs;
 
 #[derive(Parser, Debug)]
 #[command(name = "famp", version, about = "FAMP v0.5.1 reference CLI")]
@@ -42,10 +36,6 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Initialize a FAMP home directory.
-    Init(InitArgs),
-    /// One-command setup: init + port selection + peer card output.
-    Setup(setup::SetupArgs),
     /// Install Claude Code integration: writes user-scope MCP entry to
     /// `~/.claude.json`, drops 7 slash-command files into
     /// `~/.claude/commands/`, merges a Stop hook into
@@ -68,11 +58,6 @@ pub enum Commands {
     UninstallCodex(uninstall::codex::UninstallCodexArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),
-    /// Run the FAMP daemon: bind the HTTPS listener and append inbound
-    /// signed envelopes to `~/.famp/inbox.jsonl`.
-    Listen(ListenArgs),
-    /// Manage the peer registry (`peers.toml`).
-    Peer(peer::PeerArgs),
     /// Send an envelope to a peer — new task, deliver, or terminal.
     Send(send::SendArgs),
     /// Block until a new inbox entry arrives past the cursor.
@@ -115,13 +100,6 @@ pub enum Commands {
     Whoami(whoami::WhoamiArgs),
 }
 
-#[derive(clap::Args, Debug)]
-pub struct InitArgs {
-    /// Overwrite an existing FAMP home (atomic replace).
-    #[arg(long)]
-    pub force: bool,
-}
-
 /// Build a multi-thread tokio runtime and block on `fut`. Shared by every
 /// async dispatch arm in [`run`] so each match arm stays a single-line
 /// `block_on_async(...)` call and the dispatcher does not balloon with
@@ -144,18 +122,14 @@ where
 pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         // Sync arms (no tokio runtime needed).
-        Commands::Init(args) => init::run(args).map(|_| ()),
-        Commands::Setup(args) => setup::run(&args).map(|_| ()),
         Commands::InstallClaudeCode(args) => install::claude_code::run(args),
         Commands::UninstallClaudeCode(args) => uninstall::claude_code::run(args),
         Commands::InstallCodex(args) => install::codex::run(args),
         Commands::UninstallCodex(args) => uninstall::codex::run(args),
         Commands::Info(args) => info::run(&args).map(|_| ()),
-        Commands::Peer(args) => peer::run(args),
         // Async arms: each boots a multi-thread tokio runtime via
         // `block_on_async` and dispatches into the subcommand's
         // `async fn run`. Only async-required arms pay the runtime cost.
-        Commands::Listen(args) => block_on_async(listen::run(args)),
         Commands::Send(args) => block_on_async(send::run(args)),
         Commands::Await(args) => block_on_async(await_cmd::run(args)),
         Commands::Inbox(args) => block_on_async(inbox::run(args)),

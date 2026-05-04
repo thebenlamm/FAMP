@@ -24,8 +24,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
 
 use super::fixtures::{alice, bob, case_bytes, ALICE_SECRET};
-use super::harness::{assert_expected_error, Case};
-use famp::runtime::RuntimeError;
+use super::harness::{assert_expected_error, Case, RuntimeError};
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
 use famp_envelope::EnvelopeDecodeError;
 use famp_keyring::Keyring;

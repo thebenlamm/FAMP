@@ -18,26 +18,32 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use famp::cli::error::CliError;
-use famp::cli::send::fsm_glue::advance_committed;
-use famp_taskdir::TaskRecord;
+use famp_core::MessageClass;
+use famp_fsm::{TaskFsm, TaskTransitionInput};
 
-/// Build a `TaskRecord` already in `COMMITTED`. Calling `advance_committed`
-/// on this record asks the FSM to apply `MessageClass::Commit` from
+/// Build an FSM already in `COMMITTED`. Applying a second `MessageClass::Commit`
+/// asks the FSM to apply `MessageClass::Commit` from
 /// `TaskState::Committed`, which is illegal — the FSM returns
 /// `TaskFsmError::IllegalTransition`.
-fn committed_record() -> TaskRecord {
-    TaskRecord::new_committed(
-        "0192f000-0000-7000-8000-000000000000".to_string(),
-        "alice".to_string(),
-        "2026-04-25T00:00:00Z".to_string(),
-    )
+fn duplicate_commit_error() -> CliError {
+    let mut fsm = TaskFsm::new();
+    fsm.step(TaskTransitionInput {
+        class: MessageClass::Commit,
+        terminal_status: None,
+    })
+    .expect("first commit transition succeeds");
+    let err = fsm
+        .step(TaskTransitionInput {
+            class: MessageClass::Commit,
+            terminal_status: None,
+        })
+        .expect_err("second commit transition must fail");
+    CliError::FsmTransition(err)
 }
 
 #[test]
 fn fsm_transition_failure_surfaces_correct_top_line_display() {
-    let mut record = committed_record();
-    let err = advance_committed(&mut record)
-        .expect_err("advance_committed on a COMMITTED record must return IllegalTransition");
+    let err = duplicate_commit_error();
 
     let top_line = format!("{err}");
     assert!(
@@ -82,9 +88,7 @@ fn clierror_invalid_task_state_debug_quotes_value() {
 
 #[test]
 fn fsm_transition_failure_surfaces_correct_mcp_error_kind() {
-    let mut record = committed_record();
-    let err = advance_committed(&mut record)
-        .expect_err("advance_committed on a COMMITTED record must return IllegalTransition");
+    let err = duplicate_commit_error();
 
     assert_eq!(
         err.mcp_error_kind(),
@@ -99,9 +103,7 @@ fn fsm_transition_failure_surfaces_correct_mcp_error_kind() {
 fn fsm_transition_failure_is_not_classified_as_envelope() {
     // Belt-and-braces: explicitly assert the mis-classification we are
     // fixing. If this ever passes again, we have regressed.
-    let mut record = committed_record();
-    let err = advance_committed(&mut record)
-        .expect_err("advance_committed on a COMMITTED record must return IllegalTransition");
+    let err = duplicate_commit_error();
 
     let kind = err.mcp_error_kind();
     assert_ne!(

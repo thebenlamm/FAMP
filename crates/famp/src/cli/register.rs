@@ -31,7 +31,7 @@ use famp_bus::{BusErrorKind, BusMessage, BusReply};
 
 use crate::bus_client::{spawn, BusClient, BusClientError};
 use crate::cli::error::CliError;
-use crate::cli::listen::signal::shutdown_signal;
+use crate::cli::util::shutdown_signal;
 
 /// Initial reconnect delay (RESEARCH §2 item 8).
 const RECONNECT_INITIAL: Duration = Duration::from_secs(1);

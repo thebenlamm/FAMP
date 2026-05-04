@@ -330,7 +330,6 @@ use famp_fsm as _;
 use famp_keyring as _;
 use famp_transport as _;
 use rand as _;
-use rcgen as _;
 use serde as _;
 use serde_json as _;
 use tempfile as _;

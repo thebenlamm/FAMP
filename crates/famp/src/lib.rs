@@ -24,16 +24,22 @@
 // These crates are used by examples and integration tests, not by the
 // library compile unit directly. Silence the workspace
 // `unused_crate_dependencies` lint here.
-#[cfg(test)]
 use axum as _;
 use base64 as _;
 use ed25519_dalek as _;
+#[cfg(test)]
+use famp_keyring as _;
 use famp_transport as _;
+#[cfg(test)]
 use famp_transport_http as _;
+use hex as _;
 use rand as _;
 #[cfg(test)]
 use reqwest as _;
+use sha2 as _;
 use tempfile as _;
+use tower as _;
+use tower_http as _;
 use url as _;
 // `uuid` is consumed transitively by `famp-bus` types we re-thread (the
 // CLI used to construct `MessageId::new_v7()` directly; Phase 02 Plan
@@ -64,4 +70,3 @@ pub use famp_envelope::{
 
 pub mod bus_client;
 pub mod cli;
-pub mod runtime;

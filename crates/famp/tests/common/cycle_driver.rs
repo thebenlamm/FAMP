@@ -15,17 +15,36 @@
     dead_code
 )]
 
-use famp::runtime::{adapter, process_one_message, RuntimeError};
-use famp_core::{AuthorityScope, MessageId, Principal};
+use famp_canonical::{canonicalize, from_slice_strict};
+use famp_core::{AuthorityScope, MessageClass, MessageId, Principal, TerminalStatus};
 use famp_crypto::FampSigningKey;
 use famp_envelope::body::{
-    AckBody, AckDisposition, Bounds, Budget, CommitBody, DeliverBody, RequestBody, TerminalStatus,
+    AckBody, AckDisposition, Bounds, Budget, CommitBody, DeliverBody, RequestBody,
 };
-use famp_envelope::{AnySignedEnvelope, SignedEnvelope, Timestamp, UnsignedEnvelope};
-use famp_fsm::TaskFsm;
+use famp_envelope::{
+    AnySignedEnvelope, EnvelopeDecodeError, SignedEnvelope, Timestamp, UnsignedEnvelope,
+};
+use famp_fsm::{TaskFsm, TaskFsmError, TaskTransitionInput};
 use famp_keyring::Keyring;
 use famp_transport::{Transport, TransportMessage};
 use std::sync::{Arc, Mutex};
+
+#[derive(Debug, thiserror::Error)]
+pub enum RuntimeError {
+    #[error("unknown sender: {0}")]
+    UnknownSender(Principal),
+    #[error("envelope decode error")]
+    Decode(#[source] EnvelopeDecodeError),
+    #[error("canonicalization divergence detected")]
+    CanonicalDivergence,
+    #[error("transport recipient {transport} does not match envelope recipient {envelope}")]
+    RecipientMismatch {
+        transport: Principal,
+        envelope: Principal,
+    },
+    #[error("fsm error")]
+    Fsm(#[source] TaskFsmError),
+}
 
 pub type Trace = Arc<Mutex<Vec<String>>>;
 
@@ -59,6 +78,89 @@ pub fn canonical_bytes<B: famp_envelope::BodySchema>(signed: &SignedEnvelope<B>)
 pub fn log_line(trace: &Trace, line: String) {
     println!("{line}");
     trace.lock().unwrap().push(line);
+}
+
+pub fn fsm_input_from_envelope(env: &AnySignedEnvelope) -> Option<TaskTransitionInput> {
+    let (class, terminal_status): (MessageClass, Option<TerminalStatus>) = match env {
+        AnySignedEnvelope::Commit(e) => (e.class(), e.terminal_status().copied()),
+        AnySignedEnvelope::Deliver(e) => (e.class(), e.terminal_status().copied()),
+        AnySignedEnvelope::Control(e) => (e.class(), e.terminal_status().copied()),
+        AnySignedEnvelope::Request(_)
+        | AnySignedEnvelope::Ack(_)
+        | AnySignedEnvelope::AuditLog(_) => return None,
+    };
+    Some(TaskTransitionInput {
+        class,
+        terminal_status,
+    })
+}
+
+pub fn envelope_recipient(env: &AnySignedEnvelope) -> &Principal {
+    match env {
+        AnySignedEnvelope::Request(e) => e.to_principal(),
+        AnySignedEnvelope::Commit(e) => e.to_principal(),
+        AnySignedEnvelope::Deliver(e) => e.to_principal(),
+        AnySignedEnvelope::Ack(e) => e.to_principal(),
+        AnySignedEnvelope::Control(e) => e.to_principal(),
+        AnySignedEnvelope::AuditLog(e) => e.to_principal(),
+    }
+}
+
+pub fn envelope_sender(env: &AnySignedEnvelope) -> &Principal {
+    match env {
+        AnySignedEnvelope::Request(e) => e.from_principal(),
+        AnySignedEnvelope::Commit(e) => e.from_principal(),
+        AnySignedEnvelope::Deliver(e) => e.from_principal(),
+        AnySignedEnvelope::Ack(e) => e.from_principal(),
+        AnySignedEnvelope::Control(e) => e.from_principal(),
+        AnySignedEnvelope::AuditLog(e) => e.from_principal(),
+    }
+}
+
+pub fn peek_sender(bytes: &[u8]) -> Result<Principal, RuntimeError> {
+    let value: serde_json::Value = from_slice_strict(bytes)
+        .map_err(|e| RuntimeError::Decode(EnvelopeDecodeError::MalformedJson(e)))?;
+    let from = value
+        .get("from")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(RuntimeError::Decode(EnvelopeDecodeError::MissingField {
+            field: "from",
+        }))?;
+    from.parse::<Principal>().map_err(|e| {
+        RuntimeError::Decode(EnvelopeDecodeError::MalformedJson(
+            famp_canonical::CanonicalError::InternalCanonicalization(e.to_string()),
+        ))
+    })
+}
+
+pub fn process_one_message(
+    msg: &TransportMessage,
+    keyring: &Keyring,
+    task_fsm: &mut TaskFsm,
+) -> Result<AnySignedEnvelope, RuntimeError> {
+    let sender = peek_sender(&msg.bytes)?;
+    let pinned = keyring
+        .get(&sender)
+        .ok_or_else(|| RuntimeError::UnknownSender(sender.clone()))?;
+    let parsed: serde_json::Value = from_slice_strict(&msg.bytes)
+        .map_err(|e| RuntimeError::Decode(EnvelopeDecodeError::MalformedJson(e)))?;
+    let re_canonical = canonicalize(&parsed)
+        .map_err(|e| RuntimeError::Decode(EnvelopeDecodeError::MalformedJson(e)))?;
+    if re_canonical != msg.bytes {
+        return Err(RuntimeError::CanonicalDivergence);
+    }
+    let env = AnySignedEnvelope::decode(&msg.bytes, pinned).map_err(RuntimeError::Decode)?;
+    let env_to = envelope_recipient(&env);
+    if env_to != &msg.recipient {
+        return Err(RuntimeError::RecipientMismatch {
+            transport: msg.recipient.clone(),
+            envelope: env_to.clone(),
+        });
+    }
+    if let Some(input) = fsm_input_from_envelope(&env) {
+        task_fsm.step(input).map_err(RuntimeError::Fsm)?;
+    }
+    Ok(env)
 }
 
 async fn send_signed<T, B>(
@@ -108,11 +210,7 @@ where
     assert!(matches!(req_env, AnySignedEnvelope::Request(_)));
     log_line(
         trace,
-        format!(
-            "[1] {} -> {}: Request",
-            adapter::envelope_sender(&req_env),
-            bob
-        ),
+        format!("[1] {} -> {}: Request", envelope_sender(&req_env), bob),
     );
 
     // 2. Send commit.
@@ -214,11 +312,7 @@ where
     assert!(matches!(commit_env, AnySignedEnvelope::Commit(_)));
     log_line(
         trace,
-        format!(
-            "[2] {} -> {}: Commit",
-            adapter::envelope_sender(&commit_env),
-            alice
-        ),
+        format!("[2] {} -> {}: Commit", envelope_sender(&commit_env), alice),
     );
 
     // 3. Receive deliver.
@@ -232,7 +326,7 @@ where
         trace,
         format!(
             "[3] {} -> {}: Deliver",
-            adapter::envelope_sender(&deliver_env),
+            envelope_sender(&deliver_env),
             alice
         ),
     );

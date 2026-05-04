@@ -7,11 +7,25 @@ use std::path::Path;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use serde::{Deserialize, Serialize};
 
 use crate::cli::config::Config;
 use crate::cli::error::CliError;
-use crate::cli::setup::PeerCard;
-use crate::cli::{home, init};
+use crate::cli::home;
+use crate::cli::paths::IdentityLayout;
+
+/// Peer card: shareable identity for peer registration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerCard {
+    /// Suggested alias (the agent's name).
+    pub alias: String,
+    /// HTTPS endpoint for the agent's inbox.
+    pub endpoint: String,
+    /// base64url-unpadded ed25519 public key.
+    pub pubkey: String,
+    /// FAMP principal (e.g., `agent:localhost/alice`).
+    pub principal: String,
+}
 
 /// CLI args for `famp info`.
 #[derive(clap::Args, Debug)]
@@ -35,7 +49,7 @@ pub fn run_at(
     out: &mut dyn std::io::Write,
 ) -> Result<PeerCard, CliError> {
     // Verify identity is complete
-    let layout = init::load_identity(home)?;
+    let layout = load_identity(home)?;
 
     // Read pubkey
     let pub_bytes = std::fs::read(&layout.pub_ed25519).map_err(|e| CliError::Io {
@@ -93,4 +107,22 @@ pub fn run_at(
     }
 
     Ok(card)
+}
+
+/// Phase 1 slice of IDENT-05: verify all six identity files exist.
+fn load_identity(home: &Path) -> Result<IdentityLayout, CliError> {
+    if !home.is_absolute() {
+        return Err(CliError::HomeNotAbsolute {
+            path: home.to_path_buf(),
+        });
+    }
+    let layout = IdentityLayout::at(home.to_path_buf());
+    for (_label, path) in layout.entries() {
+        if !path.exists() {
+            return Err(CliError::IdentityIncomplete {
+                missing: path.to_path_buf(),
+            });
+        }
+    }
+    Ok(layout)
 }

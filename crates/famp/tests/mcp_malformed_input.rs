@@ -13,20 +13,10 @@ use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// Spawn `famp mcp` with a fresh `local_root` containing one initialized
-/// identity 'alice'. After 01-03 the server starts unbound; callers that
-/// need to use messaging tools must perform initialize + `famp_register` first.
+/// Spawn `famp mcp` with an isolated broker socket. The server starts
+/// unbound; callers that need messaging tools must perform initialize +
+/// `famp_register` first.
 fn spawn_mcp(home: &Path) -> (Child, ChildStdin, ChildStdout) {
-    // Set up local_root/agents/alice/ with famp init.
-    let agent_home = home.join("agents").join("alice");
-    std::fs::create_dir_all(&agent_home).expect("create agent dir");
-    let status = Command::new(env!("CARGO_BIN_EXE_famp"))
-        .args(["init"])
-        .env("FAMP_HOME", &agent_home)
-        .status()
-        .expect("famp init");
-    assert!(status.success(), "famp init failed: {status}");
-
     // Each malformed-input test owns its broker socket so parallel runs
     // do not collide on the canonical holder slot for "alice".
     let sock = home.join("bus.sock");

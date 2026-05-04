@@ -7,8 +7,11 @@
 
 #![allow(dead_code, clippy::match_same_arms)]
 
-use famp::runtime::RuntimeError;
 use famp_envelope::EnvelopeDecodeError;
+
+#[path = "../common/cycle_driver.rs"]
+pub mod cycle_driver;
+pub use cycle_driver::RuntimeError;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Case {

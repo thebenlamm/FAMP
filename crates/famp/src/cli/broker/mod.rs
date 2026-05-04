@@ -105,7 +105,7 @@ pub async fn run(args: BrokerArgs) -> Result<(), CliError> {
         &sock_path,
         &bus_dir,
         listener,
-        crate::cli::listen::signal::shutdown_signal(),
+        crate::cli::util::shutdown_signal(),
     )
     .await
 }

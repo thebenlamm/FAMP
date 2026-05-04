@@ -37,13 +37,8 @@
 //! its full shape on stdout would couple the CLI surface to a wire-layer
 //! crate; debug-stringify keeps the surface ergonomic for shell pipes.
 //!
-//! ## v0.8 federation (HTTPS) path
-//!
-//! The v0.8 HTTPS code in `client.rs` (`post_envelope`) is kept compilable
-//! but no longer invoked from `run_at_structured`. Phase 4 deletes it.
-//! The federation HTTPS path is exercised through `cli/listen` directly
-//! (the `e2e_two_daemons.rs` integration tests are marked `#[ignore]` for
-//! Phase 02; Phase 4 will migrate or delete them).
+// v0.8 federation HTTPS path was deleted in Phase 4; see
+// `docs/MIGRATION-v0.8-to-v0.9.md`.
 
 use std::path::Path;
 
@@ -53,9 +48,6 @@ use crate::bus_client::{BusClient, BusClientError};
 use crate::cli::error::CliError;
 use crate::cli::identity::resolve_identity;
 use crate::cli::util::normalize_channel;
-
-pub mod client;
-pub mod fsm_glue;
 
 /// CLI arg set for `famp send`.
 ///

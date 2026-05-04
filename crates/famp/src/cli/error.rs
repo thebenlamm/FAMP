@@ -38,9 +38,6 @@ pub enum CliError {
     #[error("keygen failed")]
     KeygenFailed(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("TLS cert generation failed")]
-    CertgenFailed(#[source] rcgen::Error),
-
     #[error("io error at {}", path.display())]
     Io {
         path: PathBuf,
@@ -66,9 +63,6 @@ pub enum CliError {
 
     #[error("inbox error")]
     Inbox(#[from] famp_inbox::InboxError),
-
-    #[error("TLS config error")]
-    Tls(#[from] famp_transport_http::TlsError),
 
     #[error("peer not found: {alias}")]
     PeerNotFound { alias: String },

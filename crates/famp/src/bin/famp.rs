@@ -17,9 +17,11 @@ use famp_crypto as _;
 use famp_envelope as _;
 use famp_fsm as _;
 use famp_inbox as _;
+#[cfg(test)]
 use famp_keyring as _;
 use famp_taskdir as _;
 use famp_transport as _;
+#[cfg(test)]
 use famp_transport_http as _;
 use hex as _;
 use humantime as _;
@@ -27,10 +29,9 @@ use humantime as _;
 use insta as _;
 use nix as _;
 use rand as _;
-use rcgen as _;
 use regex as _;
+#[cfg(test)]
 use reqwest as _;
-use rustls as _;
 use serde as _;
 use serde_json as _;
 use sha2 as _;

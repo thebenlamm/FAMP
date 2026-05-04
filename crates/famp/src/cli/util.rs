@@ -4,7 +4,7 @@
 //! and validation helper relocated here from `cli/send/mod.rs` (plan 02-04
 //! authored it inline; plan 02-07 promotes it to a shared module so
 //! `famp send`, `famp join`, and `famp leave` all parse channel arguments
-//! identically).
+//! identically) — plus the shared daemon shutdown signal future.
 //!
 //! Behaviour (RESEARCH §2 Item 11):
 //!
@@ -60,6 +60,29 @@ pub fn normalize_channel(input: &str) -> Result<String, CliError> {
     Ok(normalized)
 }
 
+/// Graceful-shutdown signal future for long-lived local daemons.
+///
+/// Resolves on the first of SIGINT (Ctrl-C) or SIGTERM. The non-unix cfg
+/// branch degrades to `ctrl_c` only so the crate still compiles elsewhere.
+pub async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let Ok(mut sigterm) = signal(SignalKind::terminate()) else {
+            let _ = tokio::signal::ctrl_c().await;
+            return;
+        };
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = sigterm.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -99,5 +122,10 @@ mod tests {
         let long = format!("#a{}", "b".repeat(32));
         let err = normalize_channel(&long).unwrap_err();
         assert!(matches!(err, CliError::SendArgsInvalid { .. }));
+    }
+
+    #[tokio::test]
+    async fn shutdown_signal_is_a_future() {
+        let _f = shutdown_signal();
     }
 }

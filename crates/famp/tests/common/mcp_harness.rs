@@ -5,8 +5,8 @@
 //! so that both that file and `mcp_session_bound_e2e.rs` can share a
 //! single authoritative implementation.
 //!
-//! The `with_agents` constructor creates a fresh `FAMP_LOCAL_ROOT` with the
-//! named agents pre-initialized and spawns an unbound `famp mcp` against it.
+//! The `with_agents` constructor creates a fresh `FAMP_LOCAL_ROOT` with
+//! per-agent directories and spawns an unbound `famp mcp` against it.
 //!
 //! The `with_local_root` constructor accepts an existing `local_root` path
 //! (e.g. one shared with a `TwoDaemonsLocal` harness) so two MCP servers can
@@ -54,17 +54,13 @@ pub fn recv_msg<R: std::io::Read>(
     }
 }
 
-/// Initialize an agent home at `local_root/agents/<name>` by running
-/// `famp init` with `FAMP_HOME` set to that subdir. Returns the home path.
+/// Create an agent home placeholder at `local_root/agents/<name>`.
+///
+/// v0.9 registration is broker-backed and does not need `famp init`; this
+/// helper exists only to preserve the harness directory shape.
 pub fn init_agent(local_root: &Path, name: &str) -> PathBuf {
     let home = local_root.join("agents").join(name);
     std::fs::create_dir_all(&home).unwrap();
-    let status = Command::new(env!("CARGO_BIN_EXE_famp"))
-        .args(["init"])
-        .env("FAMP_HOME", &home)
-        .status()
-        .expect("famp init");
-    assert!(status.success(), "famp init for '{name}' failed");
     home
 }
 

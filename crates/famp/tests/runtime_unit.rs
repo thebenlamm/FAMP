@@ -12,9 +12,10 @@ use rand as _;
 use thiserror as _;
 use tokio as _;
 
-use famp::runtime::{
-    adapter::fsm_input_from_envelope, error::RuntimeError, peek::peek_sender, process_one_message,
-};
+#[path = "common/cycle_driver.rs"]
+mod cycle_driver;
+
+use cycle_driver::{fsm_input_from_envelope, peek_sender, process_one_message, RuntimeError};
 use famp_canonical::canonicalize;
 use famp_core::{AuthorityScope, MessageId, Principal};
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};

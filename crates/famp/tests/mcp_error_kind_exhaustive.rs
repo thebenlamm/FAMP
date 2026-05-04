@@ -164,10 +164,6 @@ fn variants_a() -> Vec<(&'static str, CliError)> {
         ),
         ("KeygenFailed", CliError::KeygenFailed(Box::new(io_err()))),
         (
-            "CertgenFailed",
-            CliError::CertgenFailed(rcgen::Error::CouldNotParseCertificate),
-        ),
-        (
             "Io",
             CliError::Io {
                 path: path("/tmp"),
@@ -197,10 +193,6 @@ fn variants_a() -> Vec<(&'static str, CliError)> {
                 path: path("/tmp/inbox.jsonl"),
                 source: io_err(),
             }),
-        ),
-        (
-            "Tls",
-            CliError::Tls(famp_transport_http::TlsError::NoPrivateKey),
         ),
     ]
 }

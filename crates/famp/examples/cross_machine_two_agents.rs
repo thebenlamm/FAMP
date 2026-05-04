@@ -8,18 +8,20 @@
 //! # Terminal 1 (bob):
 //! cargo run --example cross_machine_two_agents -p famp -- \
 //!     --role bob --listen 127.0.0.1:8443 \
-//!     --out-pubkey /tmp/bob.pub --out-cert /tmp/bob.crt --out-key /tmp/bob.key \
+//!     --out-pubkey /tmp/bob.pub --cert crates/famp/tests/fixtures/cross_machine/bob.crt \
+//!     --key crates/famp/tests/fixtures/cross_machine/bob.key \
 //!     --peer 'agent:local/alice=<alice-pub-b64>' \
 //!     --addr 'agent:local/alice=https://127.0.0.1:8444' \
-//!     --trust-cert /tmp/alice.crt
+//!     --trust-cert crates/famp/tests/fixtures/cross_machine/alice.crt
 //!
 //! # Terminal 2 (alice):
 //! cargo run --example cross_machine_two_agents -p famp -- \
 //!     --role alice --listen 127.0.0.1:8444 \
-//!     --out-pubkey /tmp/alice.pub --out-cert /tmp/alice.crt --out-key /tmp/alice.key \
+//!     --out-pubkey /tmp/alice.pub --cert crates/famp/tests/fixtures/cross_machine/alice.crt \
+//!     --key crates/famp/tests/fixtures/cross_machine/alice.key \
 //!     --peer 'agent:local/bob=<bob-pub-b64>' \
 //!     --addr 'agent:local/bob=https://127.0.0.1:8443' \
-//!     --trust-cert /tmp/bob.crt
+//!     --trust-cert crates/famp/tests/fixtures/cross_machine/bob.crt
 //! ```
 
 #![allow(
@@ -37,6 +39,7 @@ use assert_cmd as _;
 use axum as _;
 use clap as _;
 use dirs as _;
+use famp as _;
 use famp_bus as _;
 use famp_canonical as _;
 use famp_envelope as _;
@@ -50,7 +53,6 @@ use insta as _;
 use nix as _;
 use regex as _;
 use reqwest as _;
-use rustls as _;
 use serde as _;
 use sha2 as _;
 use temp_env as _;
@@ -68,7 +70,6 @@ use famp_core::Principal;
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
 use famp_keyring::Keyring;
 use famp_transport_http::{build_router, tls, tls_server, HttpTransport};
-use rcgen::generate_simple_self_signed;
 use std::{
     net::SocketAddr,
     path::PathBuf,
@@ -101,6 +102,13 @@ impl Role {
     }
 }
 
+fn fixture_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("cross_machine")
+}
+
 #[derive(Debug, Default)]
 struct Args {
     role: Option<Role>,
@@ -111,8 +119,6 @@ struct Args {
     key: Option<PathBuf>,
     trust_cert: Option<PathBuf>,
     out_pubkey: Option<PathBuf>,
-    out_cert: Option<PathBuf>,
-    out_key: Option<PathBuf>,
 }
 
 fn usage_and_exit() -> ! {
@@ -123,7 +129,7 @@ fn usage_and_exit() -> ! {
     [--addr <principal>=<https-url>] \\
     [--cert <path> --key <path>] \\
     [--trust-cert <path>] \\
-    [--out-pubkey <path>] [--out-cert <path>] [--out-key <path>]"
+    [--out-pubkey <path>]"
     );
     std::process::exit(2);
 }
@@ -172,8 +178,6 @@ fn parse_args() -> Args {
             "--key" => args.key = Some(PathBuf::from(val!())),
             "--trust-cert" => args.trust_cert = Some(PathBuf::from(val!())),
             "--out-pubkey" => args.out_pubkey = Some(PathBuf::from(val!())),
-            "--out-cert" => args.out_cert = Some(PathBuf::from(val!())),
-            "--out-key" => args.out_key = Some(PathBuf::from(val!())),
             _ => usage_and_exit(),
         }
     }
@@ -200,25 +204,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(path, URL_SAFE_NO_PAD.encode(my_vk.as_bytes()))?;
     }
 
-    // TLS cert (load-or-generate).
+    // TLS cert (load explicit paths, or fall back to committed fixtures).
     let (cert_path, key_path) = match (args.cert.as_deref(), args.key.as_deref()) {
         (Some(c), Some(k)) => (c.to_path_buf(), k.to_path_buf()),
+        (None, None) => {
+            let dir = fixture_dir();
+            match role {
+                Role::Alice => (dir.join("alice.crt"), dir.join("alice.key")),
+                Role::Bob => (dir.join("bob.crt"), dir.join("bob.key")),
+            }
+        }
         _ => {
-            let ck = generate_simple_self_signed(vec!["localhost".into(), "127.0.0.1".into()])?;
-            let slug = role.principal_str().replace([':', '/'], "_");
-            let cp = args
-                .out_cert
-                .clone()
-                .unwrap_or_else(|| std::env::temp_dir().join(format!("{slug}.crt")));
-            let kp = args
-                .out_key
-                .clone()
-                .unwrap_or_else(|| std::env::temp_dir().join(format!("{slug}.key")));
-            std::fs::write(&cp, ck.cert.pem())?;
-            std::fs::write(&kp, ck.signing_key.serialize_pem())?;
-            eprintln!("generated cert: {}", cp.display());
-            eprintln!("generated key:  {}", kp.display());
-            (cp, kp)
+            usage_and_exit();
         }
     };
 
@@ -231,7 +228,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let keyring = Arc::new(keyring);
 
     // HttpTransport with D-B5 rustls client (trusts OS roots + peer cert).
-    let transport = HttpTransport::new_client_only(args.trust_cert.as_deref())?;
+    let default_trust = match role {
+        Role::Alice => fixture_dir().join("bob.crt"),
+        Role::Bob => fixture_dir().join("alice.crt"),
+    };
+    let trust_cert = args
+        .trust_cert
+        .as_deref()
+        .unwrap_or(default_trust.as_path());
+    let transport = HttpTransport::new_client_only(Some(trust_cert))?;
     transport.register(me.clone()).await;
     for (p, url) in &args.addrs {
         transport.add_peer(p.clone(), url.clone()).await;

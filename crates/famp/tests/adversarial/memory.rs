@@ -6,8 +6,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
 
 use super::fixtures::{alice, bob, case_bytes, ALICE_SECRET};
+use super::harness::cycle_driver::process_one_message;
 use super::harness::{assert_expected_error, Case};
-use famp::runtime::process_one_message;
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
 use famp_fsm::TaskFsm;
 use famp_keyring::Keyring;
