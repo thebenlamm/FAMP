@@ -146,7 +146,7 @@ Archive: [milestones/v0.8-ROADMAP.md](milestones/v0.8-ROADMAP.md) · Requirement
 - [ ] 04-04-PLAN.md — Create docs/MIGRATION-v0.8-to-v0.9.md with CLI mapping table (MIGRATE-01/02/04)
 - [ ] 04-05-PLAN.md — Staged-framing edits across README/CLAUDE/ROADMAP/MILESTONES/ARCHITECTURE (MIGRATE-03)
 - [ ] 04-06-PLAN.md — Workspace Cargo.toml v1.0-federation-internals relabel + cut v0.8.1-federation-preserved tag (FED-02, FED-05)
-- [ ] 04-07-PLAN.md — REQUIREMENTS/ROADMAP CARRY-01 bookkeeping flip to closing SHA ebd0854 (CARRY-01)
+- [x] 04-07-PLAN.md — REQUIREMENTS/ROADMAP CARRY-01 bookkeeping flip to closing SHA ebd0854 (CARRY-01 Complete)
 - [ ] 04-08-PLAN.md — Hard-delete 6 federation CLI verbs + Risk #1 Info refactor + final REQUIREMENTS/ROADMAP closeout (FED-01, FED-05, FED-06, MIGRATE-01..04)
 
 </details>
