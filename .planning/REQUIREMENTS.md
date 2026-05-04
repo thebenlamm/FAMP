@@ -234,7 +234,7 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | HOOK-02 | Phase 2 | Pending |
 | HOOK-03 | Phase 2 | Pending |
 | HOOK-04a | Phase 2 | Pending |
-| HOOK-04b | Phase 3 | Complete |
+| HOOK-04b | Phase 5 | Pending (PARTIAL — gap closure per v0.9-MILESTONE-AUDIT.md) |
 | TEST-01 | Phase 2 | Pending |
 | TEST-02 | Phase 2 | Pending |
 | TEST-03 | Phase 2 | Pending |
@@ -247,7 +247,7 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | CC-04 | Phase 3 | Complete |
 | CC-05 | Phase 3 | Complete |
 | CC-06 | Phase 3 | Complete |
-| CC-07 | Phase 3 | Complete |
+| CC-07 | Phase 5 | Pending (BROKEN — gap closure per v0.9-MILESTONE-AUDIT.md) |
 | CC-08 | Phase 3 | Complete |
 | CC-09 | Phase 3 | Complete |
 | CC-10 | Phase 3 | Complete |
