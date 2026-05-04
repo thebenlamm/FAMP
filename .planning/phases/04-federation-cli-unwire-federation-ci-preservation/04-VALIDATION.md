@@ -2,8 +2,8 @@
 phase: 4
 slug: federation-cli-unwire-federation-ci-preservation
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true  # Covered by Wave 1 plans 04-01 (e2e_two_daemons + adversarial), 04-02 (_deferred_v1/README.md), 04-03 (famp-local/README.md), 04-04 (MIGRATION-v0.8-to-v0.9.md), 04-08 (cli_help_invariant.rs)
 created: 2026-05-03
 ---
 
@@ -58,12 +58,12 @@ created: 2026-05-03
 
 ## Wave 0 Requirements
 
-- [ ] `crates/famp/tests/e2e_two_daemons.rs` — refactor from current 9-line skeleton (FED-03/04). Library-API-driven happy-path test against `famp-transport-http`'s `build_router` + `HttpTransport`.
-- [ ] `crates/famp/tests/e2e_two_daemons_adversarial.rs` (or sibling `#[test]` inside the happy-path file) — adversarial sentinel reusing handler-closure-not-entered pattern from `tests/adversarial/http.rs` (D-09).
-- [ ] `crates/famp/tests/_deferred_v1/README.md` — freeze explainer (D-02). Reactivation criteria, link to MIGRATION + tag.
-- [ ] `docs/MIGRATION-v0.8-to-v0.9.md` — table-first migration doc, ≤200 lines (MIGRATE-01..04).
-- [ ] `docs/history/v0.9-prep-sprint/famp-local/README.md` — frozen marker (D-14).
-- [ ] `crates/famp/tests/cli_help_invariant.rs` — assert 6 deleted verbs absent from `--help` output. Optional but recommended for FED-01 automation.
+- [x] `crates/famp/tests/e2e_two_daemons.rs` — refactor from current 9-line skeleton (FED-03/04). Library-API-driven happy-path test against `famp-transport-http`'s `build_router` + `HttpTransport`. **Closed by Plan 04-01 Task 1.**
+- [x] `crates/famp/tests/e2e_two_daemons_adversarial.rs` (or sibling `#[test]` inside the happy-path file) — adversarial sentinel reusing handler-closure-not-entered pattern from `tests/adversarial/http.rs` (D-09). **Closed by Plan 04-01 Task 2.**
+- [x] `crates/famp/tests/_deferred_v1/README.md` — freeze explainer (D-02). Reactivation criteria, link to MIGRATION + tag. **Closed by Plan 04-02 Task 1.**
+- [x] `docs/MIGRATION-v0.8-to-v0.9.md` — table-first migration doc, ≤200 lines (MIGRATE-01..04). **Closed by Plan 04-04.**
+- [x] `docs/history/v0.9-prep-sprint/famp-local/README.md` — frozen marker (D-14). **Closed by Plan 04-03 Task 1.**
+- [x] `crates/famp/tests/cli_help_invariant.rs` — assert 6 deleted verbs absent from `--help` output. Optional but recommended for FED-01 automation. **Closed by Plan 04-08 Task 2 (TDD: RED-first before deletion sweep, GREEN after).**
 
 ---
 
@@ -85,6 +85,6 @@ created: 2026-05-03
 - [ ] Wave 0 covers all MISSING references (6 file gaps above)
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 30s (quick) / 180s (full)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** pending (Wave 0 closed by Wave 1 plans; full sign-off after execution)
