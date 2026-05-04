@@ -52,54 +52,54 @@
 
 ### BROKER — UDS daemon + lifecycle
 
-- [ ] **BROKER-01**: `famp broker` subcommand wraps `famp-bus::Broker` with tokio UDS listener at `~/.famp/bus.sock`
-- [ ] **BROKER-02**: Spawn via `posix_spawn` + `setsid` (detaches from terminal, survives Cmd-Q on Terminal.app); broker logs to `~/.famp/broker.log`. No double-fork.
-- [ ] **BROKER-03**: Single-broker exclusion via `bind()` — `EADDRINUSE` → probe via `connect()`; live → exit 0; stale (`ECONNREFUSED`) → unlink + retry once. Socket IS the lock; no `flock`, no PID file.
-- [ ] **BROKER-04**: Idle exit — connected-client count `1 → 0` starts a 5-minute timer; reconnection cancels; timeout triggers clean shutdown (close mailbox handles with fsync, unlink `bus.sock`, exit)
-- [ ] **BROKER-05**: NFS-mounted `~/.famp/` warning at startup — `bind()` semantics on UDS depend on kernel; document local-FS requirement, surface a startup warning otherwise
+- [x] **BROKER-01**: `famp broker` subcommand wraps `famp-bus::Broker` with tokio UDS listener at `~/.famp/bus.sock`
+- [x] **BROKER-02**: Spawn via `posix_spawn` + `setsid` (detaches from terminal, survives Cmd-Q on Terminal.app); broker logs to `~/.famp/broker.log`. No double-fork.
+- [x] **BROKER-03**: Single-broker exclusion via `bind()` — `EADDRINUSE` → probe via `connect()`; live → exit 0; stale (`ECONNREFUSED`) → unlink + retry once. Socket IS the lock; no `flock`, no PID file.
+- [x] **BROKER-04**: Idle exit — connected-client count `1 → 0` starts a 5-minute timer; reconnection cancels; timeout triggers clean shutdown (close mailbox handles with fsync, unlink `bus.sock`, exit)
+- [x] **BROKER-05**: NFS-mounted `~/.famp/` warning at startup — `bind()` semantics on UDS depend on kernel; document local-FS requirement, surface a startup warning otherwise
 
 ### CLI — top-level `famp` user-facing CLI surface
 
-- [ ] **CLI-01**: `famp register <name>` — registers identity + blocks (process = identity); spawns broker if not running
-- [ ] **CLI-02**: `famp send --to <name>|--channel <#name> [--new-task <text>|--task <uuid>|--terminal] [--body <text>]`
-- [ ] **CLI-03**: `famp inbox list [--since <offset>] [--include-terminal]` — terminal tasks hidden by default per v0.8 design
-- [ ] **CLI-04**: `famp inbox ack [--offset <offset>]`
-- [ ] **CLI-05**: `famp await [--timeout <dur>] [--task <uuid>]`
-- [ ] **CLI-06**: `famp join <#channel>` / `famp leave <#channel>`
-- [ ] **CLI-07**: `famp sessions [--me]` — reads broker in-memory state, not file
-- [ ] **CLI-08**: `famp whoami` — returns `{active, joined}`
-- [ ] **CLI-09**: Mailbox impl on disk reusing `famp-inbox` JSONL format with tail-tolerant reader (existing crate); `~/.famp/mailboxes/<name>.jsonl` and `~/.famp/mailboxes/<#channel>.jsonl`
-- [ ] **CLI-10**: Drain cursor — `~/.famp/mailboxes/.<name>.cursor` written atomically (temp-file + rename) after successful drain ACK; at-least-once semantics on broker side
-- [ ] **CLI-11**: `Sessions` file `~/.famp/sessions.jsonl` is append-only, diagnostic only — broker in-memory state wins; dead-PID rows filtered on read
+- [x] **CLI-01**: `famp register <name>` — registers identity + blocks (process = identity); spawns broker if not running
+- [x] **CLI-02**: `famp send --to <name>|--channel <#name> [--new-task <text>|--task <uuid>|--terminal] [--body <text>]`
+- [x] **CLI-03**: `famp inbox list [--since <offset>] [--include-terminal]` — terminal tasks hidden by default per v0.8 design
+- [x] **CLI-04**: `famp inbox ack [--offset <offset>]`
+- [x] **CLI-05**: `famp await [--timeout <dur>] [--task <uuid>]`
+- [x] **CLI-06**: `famp join <#channel>` / `famp leave <#channel>`
+- [x] **CLI-07**: `famp sessions [--me]` — reads broker in-memory state, not file
+- [x] **CLI-08**: `famp whoami` — returns `{active, joined}`
+- [x] **CLI-09**: Mailbox impl on disk reusing `famp-inbox` JSONL format with tail-tolerant reader (existing crate); `~/.famp/mailboxes/<name>.jsonl` and `~/.famp/mailboxes/<#channel>.jsonl`
+- [x] **CLI-10**: Drain cursor — `~/.famp/mailboxes/.<name>.cursor` written atomically (temp-file + rename) after successful drain ACK; at-least-once semantics on broker side
+- [x] **CLI-11**: `Sessions` file `~/.famp/sessions.jsonl` is append-only, diagnostic only — broker in-memory state wins; dead-PID rows filtered on read
 
 ### MCP — minimum-viable `famp mcp` rewire
 
-- [ ] **MCP-01**: `famp mcp` connects to UDS bus instead of TLS — drops `reqwest`, `rustls`, `FAMP_HOME` reads from MCP startup path
-- [ ] **MCP-02**: Tool `famp_register(name)` → `{active, drained, peers}`
-- [ ] **MCP-03**: Tool `famp_send(to, envelope_fields)` → `{task_id, delivered}`
-- [ ] **MCP-04**: Tool `famp_inbox(since?, include_terminal?)` → `{envelopes, next_offset}`; `include_terminal` defaults to `false` per v0.8 filter-terminal-tasks design
-- [ ] **MCP-05**: Tool `famp_await(timeout_ms, task?)` → `{envelope}` or `{timeout: true}`
-- [ ] **MCP-06**: Tool `famp_peers()` → `{online}`
-- [ ] **MCP-07**: Tool `famp_join(channel)` → `{channel, members, drained}`
-- [ ] **MCP-08**: Tool `famp_leave(channel)` → `{channel}`
-- [ ] **MCP-09**: Tool `famp_whoami()` → `{active, joined}`
-- [ ] **MCP-10**: MCP-side error-mapping layer is exhaustive `match` over `BusErrorKind` (no wildcard) — adding a `BusErrorKind` variant fails compile until MCP error mapping handles it (v0.8 pattern repeated)
+- [x] **MCP-01**: `famp mcp` connects to UDS bus instead of TLS — drops `reqwest`, `rustls`, `FAMP_HOME` reads from MCP startup path
+- [x] **MCP-02**: Tool `famp_register(name)` → `{active, drained, peers}`
+- [x] **MCP-03**: Tool `famp_send(to, envelope_fields)` → `{task_id, delivered}`
+- [x] **MCP-04**: Tool `famp_inbox(since?, include_terminal?)` → `{envelopes, next_offset}`; `include_terminal` defaults to `false` per v0.8 filter-terminal-tasks design
+- [x] **MCP-05**: Tool `famp_await(timeout_ms, task?)` → `{envelope}` or `{timeout: true}`
+- [x] **MCP-06**: Tool `famp_peers()` → `{online}`
+- [x] **MCP-07**: Tool `famp_join(channel)` → `{channel, members, drained}`
+- [x] **MCP-08**: Tool `famp_leave(channel)` → `{channel}`
+- [x] **MCP-09**: Tool `famp_whoami()` → `{active, joined}`
+- [x] **MCP-10**: MCP-side error-mapping layer is exhaustive `match` over `BusErrorKind` (no wildcard) — adding a `BusErrorKind` variant fails compile until MCP error mapping handles it (v0.8 pattern repeated)
 
 ### HOOK — `famp-local hook add` declarative subcommand (Sofer-driven scope addition)
 
-- [ ] **HOOK-01**: `famp-local hook add --on <Event>:<glob> --to <peer-or-#channel>` declarative wiring; replaces hand-written bash hook scripts
-- [ ] **HOOK-02**: Hook config persisted to `~/.famp-local/hooks.tsv` (or equivalent registry, consistent with `wires.tsv` precedent from prep sprint T3)
-- [ ] **HOOK-03**: `famp-local hook list` and `famp-local hook remove <id>` round-trip
-- [ ] **HOOK-04a** (Phase 2): A registered hook persists round-trip via `famp-local hook add/list/remove`. TSV row format `<id>\t<event>:<glob>\t<to>\t<added_at>` in `~/.famp-local/hooks.tsv`. (D-12 split — registration surface.)
+- [x] **HOOK-01**: `famp-local hook add --on <Event>:<glob> --to <peer-or-#channel>` declarative wiring; replaces hand-written bash hook scripts
+- [x] **HOOK-02**: Hook config persisted to `~/.famp-local/hooks.tsv` (or equivalent registry, consistent with `wires.tsv` precedent from prep sprint T3)
+- [x] **HOOK-03**: `famp-local hook list` and `famp-local hook remove <id>` round-trip
+- [x] **HOOK-04a** (Phase 2): A registered hook persists round-trip via `famp-local hook add/list/remove`. TSV row format `<id>\t<event>:<glob>\t<to>\t<added_at>` in `~/.famp-local/hooks.tsv`. (D-12 split — registration surface.)
 - [ ] **HOOK-04b** (Phase 3): A registered hook fires `famp send` to the configured `<peer-or-#channel>` when a matching file-system event occurs. Implementation likely a Claude-Code Stop/Edit hook shim wired by `famp install-claude-code`, NOT the Rust binary. (D-12 split — execution runner.)
 
 ### TEST — integration + property test coverage at the wire
 
-- [ ] **TEST-01**: 2-client DM round-trip integration test via shelled CLI (`assert_cmd`)
-- [ ] **TEST-02**: 3-client channel fan-out integration test via shelled CLI
-- [ ] **TEST-03**: Broker-crash recovery — `kill -9` broker mid-`Send`, client reconnects, mailbox drain recovers without loss
-- [ ] **TEST-04**: Broker spawn race — two near-simultaneous CLI invocations; exactly one broker survives
-- [ ] **TEST-05**: MCP E2E harness — two `famp mcp` stdio processes via test harness, JSON-RPC scripted from both sides, round-trip `new_task → commit → deliver → ack` over UDS (bus-side equivalent of v0.8's `e2e_two_daemons` over HTTPS)
+- [x] **TEST-01**: 2-client DM round-trip integration test via shelled CLI (`assert_cmd`)
+- [x] **TEST-02**: 3-client channel fan-out integration test via shelled CLI
+- [x] **TEST-03**: Broker-crash recovery — `kill -9` broker mid-`Send`, client reconnects, mailbox drain recovers without loss
+- [x] **TEST-04**: Broker spawn race — two near-simultaneous CLI invocations; exactly one broker survives
+- [x] **TEST-05**: MCP E2E harness — two `famp mcp` stdio processes via test harness, JSON-RPC scripted from both sides, round-trip `new_task → commit → deliver → ack` over UDS (bus-side equivalent of v0.8's `e2e_two_daemons` over HTTPS)
 - [x] **TEST-06**: Conformance gates unchanged (`famp-canonical` RFC 8785, `famp-crypto` §7.1c) continue running on every CI run; envelope-type sharing means any regression surfaces in broker tests immediately
 
 ### CC — Claude Code integration polish
@@ -204,43 +204,43 @@ Phase mapping populated by `gsd-roadmapper` 2026-04-27. v0.9 phase numbering is 
 | AUDIT-06 | Phase 1 | Complete |
 | CARRY-03 | Phase 1 | Complete |
 | CARRY-04 | Phase 1 | Complete |
-| BROKER-01 | Phase 2 | Pending |
-| BROKER-02 | Phase 2 | Pending |
-| BROKER-03 | Phase 2 | Pending |
-| BROKER-04 | Phase 2 | Pending |
-| BROKER-05 | Phase 2 | Pending |
-| CLI-01 | Phase 2 | Pending |
-| CLI-02 | Phase 2 | Pending |
-| CLI-03 | Phase 2 | Pending |
-| CLI-04 | Phase 2 | Pending |
-| CLI-05 | Phase 2 | Pending |
-| CLI-06 | Phase 2 | Pending |
-| CLI-07 | Phase 2 | Pending |
-| CLI-08 | Phase 2 | Pending |
-| CLI-09 | Phase 2 | Pending |
-| CLI-10 | Phase 2 | Pending |
-| CLI-11 | Phase 2 | Pending |
-| MCP-01 | Phase 2 | Pending |
-| MCP-02 | Phase 2 | Pending |
-| MCP-03 | Phase 2 | Pending |
-| MCP-04 | Phase 2 | Pending |
-| MCP-05 | Phase 2 | Pending |
-| MCP-06 | Phase 2 | Pending |
-| MCP-07 | Phase 2 | Pending |
-| MCP-08 | Phase 2 | Pending |
-| MCP-09 | Phase 2 | Pending |
-| MCP-10 | Phase 2 | Pending |
-| HOOK-01 | Phase 2 | Pending |
-| HOOK-02 | Phase 2 | Pending |
-| HOOK-03 | Phase 2 | Pending |
-| HOOK-04a | Phase 2 | Pending |
+| BROKER-01 | Phase 2 | Complete |
+| BROKER-02 | Phase 2 | Complete |
+| BROKER-03 | Phase 2 | Complete |
+| BROKER-04 | Phase 2 | Complete |
+| BROKER-05 | Phase 2 | Complete |
+| CLI-01 | Phase 2 | Complete |
+| CLI-02 | Phase 2 | Complete |
+| CLI-03 | Phase 2 | Complete |
+| CLI-04 | Phase 2 | Complete |
+| CLI-05 | Phase 2 | Complete |
+| CLI-06 | Phase 2 | Complete |
+| CLI-07 | Phase 2 | Complete |
+| CLI-08 | Phase 2 | Complete |
+| CLI-09 | Phase 2 | Complete |
+| CLI-10 | Phase 2 | Complete |
+| CLI-11 | Phase 2 | Complete |
+| MCP-01 | Phase 2 | Complete |
+| MCP-02 | Phase 2 | Complete |
+| MCP-03 | Phase 2 | Complete |
+| MCP-04 | Phase 2 | Complete |
+| MCP-05 | Phase 2 | Complete |
+| MCP-06 | Phase 2 | Complete |
+| MCP-07 | Phase 2 | Complete |
+| MCP-08 | Phase 2 | Complete |
+| MCP-09 | Phase 2 | Complete |
+| MCP-10 | Phase 2 | Complete |
+| HOOK-01 | Phase 2 | Complete |
+| HOOK-02 | Phase 2 | Complete |
+| HOOK-03 | Phase 2 | Complete |
+| HOOK-04a | Phase 2 | Complete |
 | HOOK-04b | Phase 5 | Pending (PARTIAL — gap closure per v0.9-MILESTONE-AUDIT.md) |
-| TEST-01 | Phase 2 | Pending |
-| TEST-02 | Phase 2 | Pending |
-| TEST-03 | Phase 2 | Pending |
-| TEST-04 | Phase 2 | Pending |
-| TEST-05 | Phase 2 | Pending |
-| CARRY-02 | Phase 2 | Pending |
+| TEST-01 | Phase 2 | Complete |
+| TEST-02 | Phase 2 | Complete |
+| TEST-03 | Phase 2 | Complete |
+| TEST-04 | Phase 2 | Complete |
+| TEST-05 | Phase 2 | Complete |
+| CARRY-02 | Phase 2 | Complete |
 | CC-01 | Phase 3 | Complete |
 | CC-02 | Phase 3 | Complete |
 | CC-03 | Phase 3 | Complete |
