@@ -25,6 +25,25 @@
 //! register (Phase-1 D-09 wire shape carries the full envelopes; the MCP
 //! tool surfaces only the count, matching `cli::join`'s ergonomics).
 //! `peers` is the broker's `connected_names` snapshot at register time.
+//!
+//! ## Snapshot vs. live membership
+//!
+//! `RegisterOk.peers` is a point-in-time snapshot of `connected_names`
+//! taken at registration. It does **not** update as later agents join
+//! or leave. Callers that need the current membership set must call
+//! `famp_peers` (which round-trips `BusMessage::Sessions` to the
+//! broker on every invocation, see `tools/peers.rs`).
+//!
+//! Late-joining agents will not appear in any earlier registrant's
+//! `RegisterOk.peers`; this is by design, not a bug.
+//!
+//! ## `peers.toml` on disk (v0.8 artifact)
+//!
+//! Any `peers.toml` file under `~/.famp-local/agents/<name>/` is a
+//! v0.8 federation trust artifact (Ed25519 pubkey + TLS fingerprint
+//! pinning). v0.9's local UDS broker does **not** read it for
+//! membership. Treat it as inert; live membership is owned by the
+//! broker and surfaced via `famp_peers`.
 
 use famp_bus::{BusErrorKind, BusMessage, BusReply};
 use serde_json::Value;
