@@ -176,6 +176,20 @@ e2e-smoke:
     echo "To stop: kill $A_PID $B_PID"
     wait $A_PID $B_PID
 
+# Verify the Quick Start install path: `cargo install --path crates/famp` produces
+# a working binary. Isolated to /tmp/famp-smoke so the user's ~/.cargo/bin is untouched;
+# the cargo registry cache (~/.cargo/registry) is still reused for speed.
+smoke-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SMOKE_ROOT=/tmp/famp-smoke
+    trap 'echo "--- cleaning up $SMOKE_ROOT ---"; rm -rf "$SMOKE_ROOT"' EXIT
+    echo "--- installing famp to $SMOKE_ROOT ---"
+    cargo install --path crates/famp --root "$SMOKE_ROOT"
+    echo "--- verifying installed binary ---"
+    "$SMOKE_ROOT/bin/famp" --version
+    echo "--- smoke-test PASSED ---"
+
 # Clean build artifacts
 clean:
     cargo clean
