@@ -60,7 +60,12 @@ fn install_claude_code_writes_all_artifacts() {
     let settings = home.join(".claude").join("settings.json");
     let s: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
     let stop = s["hooks"]["Stop"].as_array().unwrap();
-    assert_eq!(stop.len(), 2, "expected exactly 2 Stop entries, got {}", stop.len());
+    assert_eq!(
+        stop.len(),
+        2,
+        "expected exactly 2 Stop entries, got {}",
+        stop.len()
+    );
 
     // Entry 0: hook-runner.sh, timeout 30
     assert_eq!(stop[0]["matcher"], "");

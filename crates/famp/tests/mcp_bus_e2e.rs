@@ -348,7 +348,10 @@ fn test_listen_mode_await_unblocks_on_send() {
     let reg_a = alice.tool_call("famp_register", &json!({ "name": "alice-listen" }));
     McpHarness::ok_result(&reg_a, "alice-listen register");
 
-    let reg_b = bob.tool_call("famp_register", &json!({ "name": "bob-listen", "listen": true }));
+    let reg_b = bob.tool_call(
+        "famp_register",
+        &json!({ "name": "bob-listen", "listen": true }),
+    );
     let bob_body = McpHarness::ok_result(&reg_b, "bob-listen register");
     assert_eq!(bob_body["active"], "bob-listen");
 

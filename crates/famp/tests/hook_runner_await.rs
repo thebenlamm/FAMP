@@ -24,7 +24,10 @@ fn hook_path() -> PathBuf {
 macro_rules! require_hook {
     () => {
         if !hook_path().exists() {
-            eprintln!("SKIP: {} not installed; run `famp install-claude-code` first", hook_path().display());
+            eprintln!(
+                "SKIP: {} not installed; run `famp install-claude-code` first",
+                hook_path().display()
+            );
             return;
         }
     };
@@ -47,15 +50,10 @@ fn stage_mock_famp(bin_dir: &Path, log_file: &Path) {
 }
 
 /// Build a Claude Code transcript JSONL with a `famp_register` tool call
-/// and a matching tool_result. `listen` controls the input flag; `ok`
+/// and a matching `tool_result`. `listen` controls the input flag; `ok`
 /// controls whether the result is a success.
-fn make_transcript(
-    path: &Path,
-    identity: &str,
-    listen: bool,
-    ok: bool,
-    with_leave_after: bool,
-) {
+fn make_transcript(path: &Path, identity: &str, listen: bool, ok: bool, with_leave_after: bool) {
+    use std::fmt::Write as _;
     let tool_use_id = "toolu_test1";
     let result_content = if ok {
         // Use a simple text payload — the extractor only checks is_error, not content.
@@ -76,10 +74,11 @@ fn make_transcript(
 
     if with_leave_after {
         let leave_id = "toolu_leave1";
-        body.push_str(&format!(
-            r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"{leave_id}","name":"mcp__famp__famp_leave","input":{{}}}}]}}}}
-"#
-        ));
+        writeln!(
+            body,
+            r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"{leave_id}","name":"mcp__famp__famp_leave","input":{{}}}}]}}}}"#
+        )
+        .unwrap();
     }
 
     std::fs::write(path, body).unwrap();
@@ -89,7 +88,7 @@ fn run_hook(
     hook: &Path,
     transcript: &Path,
     bin_dir: &Path,
-    log: &Path,
+    _log: &Path,
     xdg_state: &Path,
 ) -> std::process::Output {
     let stop_json = format!(
@@ -139,7 +138,11 @@ fn listen_true_and_successful_register_enters_listen_mode() {
         &log,
         &xdg,
     );
-    assert!(out.status.success(), "hook failed: {:?}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "hook failed: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let argv = std::fs::read_to_string(&log).unwrap_or_default();
     assert!(
@@ -180,7 +183,7 @@ fn failed_register_result_is_noop() {
     let xdg = dir.path().join("xdg");
     stage_mock_famp(&dir.path().join("bin"), &log);
     let transcript = dir.path().join("t.jsonl");
-    make_transcript(&transcript, "dk", true, false, false);  // ok=false
+    make_transcript(&transcript, "dk", true, false, false); // ok=false
 
     let out = run_hook(
         &hook_path(),
@@ -206,7 +209,7 @@ fn register_then_channel_leave_still_listens() {
     let xdg = dir.path().join("xdg");
     stage_mock_famp(&dir.path().join("bin"), &log);
     let transcript = dir.path().join("t.jsonl");
-    make_transcript(&transcript, "dk", true, true, true);  // with_leave_after=true
+    make_transcript(&transcript, "dk", true, true, true); // with_leave_after=true
 
     let out = run_hook(
         &hook_path(),
@@ -235,7 +238,11 @@ fn no_register_in_transcript_is_noop() {
     let xdg = dir.path().join("xdg");
     stage_mock_famp(&dir.path().join("bin"), &log);
     let transcript = dir.path().join("t.jsonl");
-    std::fs::write(&transcript, r#"{"type":"user","message":{"role":"user","content":"hello"}}"#).unwrap();
+    std::fs::write(
+        &transcript,
+        r#"{"type":"user","message":{"role":"user","content":"hello"}}"#,
+    )
+    .unwrap();
 
     let out = run_hook(
         &hook_path(),
@@ -267,7 +274,10 @@ fn missing_transcript_is_noop() {
         &log,
         &xdg,
     );
-    assert!(out.status.success(), "hook must exit 0 on missing transcript");
+    assert!(
+        out.status.success(),
+        "hook must exit 0 on missing transcript"
+    );
     assert!(
         !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
         "expected no famp invocation for missing transcript"
@@ -291,7 +301,10 @@ fn malformed_transcript_is_noop() {
         &log,
         &xdg,
     );
-    assert!(out.status.success(), "hook must exit 0 on malformed transcript");
+    assert!(
+        out.status.success(),
+        "hook must exit 0 on malformed transcript"
+    );
     assert!(
         !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
         "expected no famp invocation for malformed transcript"
@@ -403,7 +416,11 @@ PY
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let _ = child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes());
+    let _ = child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stop_json.as_bytes());
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
 
@@ -461,13 +478,20 @@ fn timeout_exits_zero_with_no_stdout() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let _ = child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes());
+    let _ = child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stop_json.as_bytes());
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
 
     assert!(out.status.success(), "must exit 0 on timeout");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.trim().is_empty(), "no stdout expected on timeout: {stdout:?}");
+    assert!(
+        stdout.trim().is_empty(),
+        "no stdout expected on timeout: {stdout:?}"
+    );
 }
 
 #[test]
@@ -505,11 +529,18 @@ fn broker_error_fails_open_exit_zero() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let _ = child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes());
+    let _ = child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stop_json.as_bytes());
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
 
-    assert!(out.status.success(), "must fail-open (exit 0) on broker error");
+    assert!(
+        out.status.success(),
+        "must fail-open (exit 0) on broker error"
+    );
     assert!(
         String::from_utf8_lossy(&out.stdout).trim().is_empty(),
         "no stdout expected on broker error"
@@ -542,7 +573,10 @@ fn identity_with_shell_metacharacters_is_noop() {
         &log,
         &xdg,
     );
-    assert!(out.status.success(), "hook must exit 0 on metacharacter identity");
+    assert!(
+        out.status.success(),
+        "hook must exit 0 on metacharacter identity"
+    );
     assert!(
         !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
         "hook must not invoke famp for invalid identity"

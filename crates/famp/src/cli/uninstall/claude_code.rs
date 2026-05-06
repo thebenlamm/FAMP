@@ -50,10 +50,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     let commands_dir = home.join(".claude").join("commands");
     let settings_path = home.join(".claude").join("settings.json");
     let shim_path = home.join(".famp").join("hook-runner.sh");
-    let await_shim_path = home
-        .join(".claude")
-        .join("hooks")
-        .join("famp-await.sh");
+    let await_shim_path = home.join(".claude").join("hooks").join("famp-await.sh");
 
     writeln!(
         err,
@@ -80,7 +77,12 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     .ok();
 
     hook_runner::remove_shim(&shim_path)?;
-    writeln!(err, "  [3/5] {} :: hook-runner shim removed", shim_path.display()).ok();
+    writeln!(
+        err,
+        "  [3/5] {} :: hook-runner shim removed",
+        shim_path.display()
+    )
+    .ok();
 
     await_hook::remove_shim(&await_shim_path)?;
     writeln!(

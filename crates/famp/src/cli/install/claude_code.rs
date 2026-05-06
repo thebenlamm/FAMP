@@ -53,10 +53,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     let commands_dir = home.join(".claude").join("commands");
     let settings_path = home.join(".claude").join("settings.json");
     let shim_path = home.join(".famp").join("hook-runner.sh");
-    let await_shim_path = home
-        .join(".claude")
-        .join("hooks")
-        .join("famp-await.sh");
+    let await_shim_path = home.join(".claude").join("hooks").join("famp-await.sh");
 
     let famp_bin = which::which("famp")
         .ok()
@@ -228,7 +225,12 @@ mod tests {
         )
         .unwrap();
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2, "expected exactly 2 Stop entries, got {}", stop.len());
+        assert_eq!(
+            stop.len(),
+            2,
+            "expected exactly 2 Stop entries, got {}",
+            stop.len()
+        );
 
         // Entry 0: hook-runner.sh, timeout 30
         let hooks0 = stop[0]["hooks"].as_array().unwrap();
@@ -241,7 +243,10 @@ mod tests {
         let hooks1 = stop[1]["hooks"].as_array().unwrap();
         assert_eq!(hooks1.len(), 1);
         let cmd1 = hooks1[0]["command"].as_str().unwrap();
-        assert!(cmd1.ends_with("/.claude/hooks/famp-await.sh"), "cmd1 = {cmd1}");
+        assert!(
+            cmd1.ends_with("/.claude/hooks/famp-await.sh"),
+            "cmd1 = {cmd1}"
+        );
         assert_eq!(hooks1[0]["timeout"], 86400);
     }
 
@@ -378,9 +383,9 @@ mod tests {
         let await_group = stop
             .iter()
             .find(|e| {
-                e["hooks"].as_array().is_some_and(|hooks| {
-                    hooks.iter().any(|hook| hook["command"] == await_shim)
-                })
+                e["hooks"]
+                    .as_array()
+                    .is_some_and(|hooks| hooks.iter().any(|hook| hook["command"] == await_shim))
             })
             .unwrap();
         assert_eq!(await_group["hooks"][0]["timeout"], json!(86400));

@@ -17,7 +17,11 @@ pub fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Opti
     if entry
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
+        .is_some_and(|command| {
+            shims
+                .iter()
+                .any(|s| command == s.as_str() || command.starts_with(&format!("{s} ")))
+        })
     {
         return None;
     }
@@ -31,7 +35,11 @@ pub fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Opti
             !hook
                 .get("command")
                 .and_then(Value::as_str)
-                .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
+                .is_some_and(|command| {
+                    shims
+                        .iter()
+                        .any(|s| command == s.as_str() || command.starts_with(&format!("{s} ")))
+                })
         })
         .cloned()
         .collect();

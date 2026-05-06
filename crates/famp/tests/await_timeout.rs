@@ -3,7 +3,7 @@
 
 //! CLI-05 (v0.9): `famp await --as <name>` returns {"timeout":true} when
 //! no message arrives before the deadline. Uses a real broker subprocess
-//! spawned via BusClient's spawn-on-demand path.
+//! spawned via `BusClient`'s spawn-on-demand path.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
@@ -35,7 +35,12 @@ impl McpProc {
             .unwrap();
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
-        let mut p = Self { child, stdin, stdout, next_id: 0 };
+        let mut p = Self {
+            child,
+            stdin,
+            stdout,
+            next_id: 0,
+        };
         let _ = p.rpc("initialize", &json!({}));
         p
     }
@@ -61,7 +66,9 @@ impl McpProc {
 }
 
 impl Drop for McpProc {
-    fn drop(&mut self) { let _ = self.child.kill(); }
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
 }
 
 #[test]
@@ -88,10 +95,7 @@ fn await_returns_timeout_when_no_message_arrives() {
         .unwrap_or("{}");
     let body: Value = serde_json::from_str(body_str).unwrap_or(Value::Null);
 
-    assert_eq!(
-        body["timeout"], true,
-        "expected timeout:true, got: {body}"
-    );
+    assert_eq!(body["timeout"], true, "expected timeout:true, got: {body}");
     assert!(
         elapsed >= Duration::from_secs(1),
         "await returned too quickly ({elapsed:?}); should have blocked"

@@ -89,15 +89,19 @@ fn send_to_live_awaiting_client_produces_awaitok_and_mailbox_append() {
     );
 
     // AwaitOk: the waiting client gets the envelope immediately.
-    assert!(out
-        .iter()
-        .any(|o| matches!(o, Out::Reply(ClientId(1), BusReply::AwaitOk { .. }))),
-        "live await must receive AwaitOk");
+    assert!(
+        out.iter()
+            .any(|o| matches!(o, Out::Reply(ClientId(1), BusReply::AwaitOk { .. }))),
+        "live await must receive AwaitOk"
+    );
     // AppendMailbox: also stored so famp_inbox can read it after the hook wakes Claude.
-    assert!(out.iter().any(|o| matches!(
-        o,
-        Out::AppendMailbox { target: MailboxName::Agent(name), .. } if name == "alice"
-    )), "live await delivery must also append to mailbox for famp_inbox");
+    assert!(
+        out.iter().any(|o| matches!(
+            o,
+            Out::AppendMailbox { target: MailboxName::Agent(name), .. } if name == "alice"
+        )),
+        "live await delivery must also append to mailbox for famp_inbox"
+    );
 }
 
 #[test]
