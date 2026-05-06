@@ -1,9 +1,9 @@
 //! CC-01 + HOOK-04b install-side integration test.
 //!
 //! Runs `install::claude_code::run_at` against `$HOME=$TMPDIR` and asserts
-//! the four mutated artifacts (claude.json, settings.json, 7 commands files,
-//! hook-runner.sh) exist with correct content + modes. No real `~/.claude.json`
-//! is touched - sandbox is `tempfile::TempDir`.
+//! the five mutated artifacts (claude.json, settings.json, 7 commands files,
+//! hook-runner.sh, famp-await.sh) exist with correct content + modes. No real
+//! `~/.claude.json` is touched - sandbox is `tempfile::TempDir`.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -52,19 +52,37 @@ fn install_claude_code_writes_all_artifacts() {
     let shim_mode = std::fs::metadata(&shim).unwrap().permissions().mode() & 0o777;
     assert_eq!(shim_mode, 0o755);
 
+    let await_shim = home.join(".claude").join("hooks").join("famp-await.sh");
+    assert!(await_shim.exists(), "famp-await.sh missing");
+    let await_mode = std::fs::metadata(&await_shim).unwrap().permissions().mode() & 0o777;
+    assert_eq!(await_mode, 0o755);
+
     let settings = home.join(".claude").join("settings.json");
     let s: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
     let stop = s["hooks"]["Stop"].as_array().unwrap();
-    assert_eq!(stop.len(), 1);
+    assert_eq!(stop.len(), 2, "expected exactly 2 Stop entries, got {}", stop.len());
+
+    // Entry 0: hook-runner.sh, timeout 30
     assert_eq!(stop[0]["matcher"], "");
-    let hooks = stop[0]["hooks"].as_array().unwrap();
-    assert_eq!(hooks.len(), 1);
-    assert_eq!(hooks[0]["type"], "command");
-    assert!(hooks[0]["command"]
+    let hooks0 = stop[0]["hooks"].as_array().unwrap();
+    assert_eq!(hooks0.len(), 1);
+    assert_eq!(hooks0[0]["type"], "command");
+    assert!(hooks0[0]["command"]
         .as_str()
         .unwrap()
         .ends_with("/.famp/hook-runner.sh"));
-    assert_eq!(hooks[0]["timeout"], 30);
+    assert_eq!(hooks0[0]["timeout"], 30);
+
+    // Entry 1: famp-await.sh, timeout 86400
+    assert_eq!(stop[1]["matcher"], "");
+    let hooks1 = stop[1]["hooks"].as_array().unwrap();
+    assert_eq!(hooks1.len(), 1);
+    assert_eq!(hooks1[0]["type"], "command");
+    assert!(hooks1[0]["command"]
+        .as_str()
+        .unwrap()
+        .ends_with("/.claude/hooks/famp-await.sh"));
+    assert_eq!(hooks1[0]["timeout"], 86400);
 }
 
 #[test]
