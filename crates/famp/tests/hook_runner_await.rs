@@ -320,7 +320,7 @@ fn block_decision_is_notification_only_no_envelope_bytes() {
     std::fs::write(
         &famp,
         r#"#!/usr/bin/env bash
-if [[ "$*" == *"await"* ]]; then
+if [ "$1" = "await" ]; then
     printf '{"from":"alice","body":{"details":{"summary":"SECRET_PAYLOAD"}}}\n'
 fi
 exit 0
@@ -329,9 +329,37 @@ exit 0
     .unwrap();
     std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
 
+    // Stage a jq shim so the test works on CI hosts where jq may not be installed.
+    // The hook requires jq to emit the block-decision JSON; without it, it exits 0 silently.
+    // The shim delegates to real jq if found, else falls back to python3 for the specific
+    // `jq -n --arg KEY VALUE '{decision:...,reason:...}'` invocation the hook uses.
+    let jq = bin_dir.join("jq");
+    std::fs::write(
+        &jq,
+        r#"#!/usr/bin/env bash
+for candidate in /opt/homebrew/bin/jq /usr/local/bin/jq /usr/bin/jq; do
+    [ -x "$candidate" ] && exec "$candidate" "$@"
+done
+# Minimal python3 fallback: handles `jq -n --arg KEY VALUE FILTER`
+python3 - "$@" << 'PY'
+import json, sys
+args = sys.argv[1:]
+obj = {}
+i = 0
+while i < len(args):
+    if args[i] == '--arg':
+        obj[args[i+1]] = args[i+2]; i += 3
+    else:
+        i += 1
+print(json.dumps({'decision': 'block', 'reason': obj.get('r', '')}))
+PY
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&jq, std::fs::Permissions::from_mode(0o755)).unwrap();
+
     let transcript = dir.path().join("t.jsonl");
     make_transcript(&transcript, "bob", true, true, false);
-    let _log = dir.path().join("famp.log");
 
     let stop_json = format!(
         r#"{{"transcript_path":"{}","hook_event_name":"Stop"}}"#,
@@ -348,7 +376,7 @@ exit 0
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes()).unwrap();
+    let _ = child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes());
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
 
@@ -405,7 +433,7 @@ fn timeout_exits_zero_with_no_stdout() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes()).unwrap();
+    let _ = child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes());
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
 
@@ -448,9 +476,13 @@ fn broker_error_fails_open_exit_zero() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes()).unwrap();
+    let _ = child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes());
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
 
     assert!(out.status.success(), "must fail-open (exit 0) on broker error");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).trim().is_empty(),
+        "no stdout expected on broker error"
+    );
 }
