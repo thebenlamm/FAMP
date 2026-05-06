@@ -88,7 +88,6 @@ fn run_hook(
     let mut child = Command::new("bash")
         .arg(hook)
         .env("PATH", &new_path)
-        .env("FAKE_FAMP_LOG", log)
         .env("XDG_STATE_HOME", xdg_state)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -130,7 +129,7 @@ fn listen_true_and_successful_register_enters_listen_mode() {
 
     let argv = std::fs::read_to_string(&log).unwrap_or_default();
     assert!(
-        argv.contains("await") && argv.contains("--as") && argv.contains("dk"),
+        argv.contains("await --as dk"),
         "expected famp await --as dk invocation, got: {argv:?}"
     );
 }
@@ -266,6 +265,10 @@ fn malformed_transcript_is_noop() {
         &xdg,
     );
     assert!(out.status.success(), "hook must exit 0 on malformed transcript");
+    assert!(
+        !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
+        "expected no famp invocation for malformed transcript"
+    );
 }
 
 #[test]
