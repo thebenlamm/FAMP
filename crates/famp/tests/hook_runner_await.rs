@@ -18,6 +18,18 @@ fn hook_path() -> PathBuf {
         .join(".claude/hooks/famp-await.sh")
 }
 
+/// Skip the test if the hook is not installed (e.g., fresh CI checkout that
+/// hasn't run `famp install-claude-code`). Use at the top of every test that
+/// calls `run_hook()` or passes `hook_path()` to bash.
+macro_rules! require_hook {
+    () => {
+        if !hook_path().exists() {
+            eprintln!("SKIP: {} not installed; run `famp install-claude-code` first", hook_path().display());
+            return;
+        }
+    };
+}
+
 /// Write a mock `famp` binary into `bin_dir` that records its full argv
 /// to `log_file` and then exits 0.
 fn stage_mock_famp(bin_dir: &Path, log_file: &Path) {
@@ -96,10 +108,9 @@ fn run_hook(
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    // The hook does `exec 0</dev/null` at the top (it doesn't parse stdin in the
-    // current sentinel-file implementation), so write_all may get EPIPE.
-    // Swallow the broken-pipe error — the hook already has what it needs via
-    // the transcript_path env / PATH; stdin content is irrelevant here.
+    // The hook reads stdin via `cat` first (to extract transcript_path), then calls
+    // `exec 0</dev/null`. EPIPE is possible if cat finishes before write_all completes.
+    // Swallow the error — the hook has already consumed what it needs.
     let _ = child
         .stdin
         .as_mut()
@@ -113,6 +124,7 @@ fn run_hook(
 
 #[test]
 fn listen_true_and_successful_register_enters_listen_mode() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -138,6 +150,7 @@ fn listen_true_and_successful_register_enters_listen_mode() {
 
 #[test]
 fn listen_false_is_noop() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -161,6 +174,7 @@ fn listen_false_is_noop() {
 
 #[test]
 fn failed_register_result_is_noop() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -184,6 +198,7 @@ fn failed_register_result_is_noop() {
 
 #[test]
 fn register_then_leave_is_noop() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -207,6 +222,7 @@ fn register_then_leave_is_noop() {
 
 #[test]
 fn no_register_in_transcript_is_noop() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -230,6 +246,7 @@ fn no_register_in_transcript_is_noop() {
 
 #[test]
 fn missing_transcript_is_noop() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -252,6 +269,7 @@ fn missing_transcript_is_noop() {
 
 #[test]
 fn malformed_transcript_is_noop() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -275,6 +293,7 @@ fn malformed_transcript_is_noop() {
 
 #[test]
 fn last_registration_wins_when_multiple_in_transcript() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -310,6 +329,7 @@ fn last_registration_wins_when_multiple_in_transcript() {
 
 #[test]
 fn block_decision_is_notification_only_no_envelope_bytes() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().join("xdg");
     let bin_dir = dir.path().join("bin");
@@ -404,6 +424,7 @@ PY
 
 #[test]
 fn timeout_exits_zero_with_no_stdout() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().join("xdg");
     let bin_dir = dir.path().join("bin");
@@ -444,6 +465,7 @@ fn timeout_exits_zero_with_no_stdout() {
 
 #[test]
 fn broker_error_fails_open_exit_zero() {
+    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().join("xdg");
     let bin_dir = dir.path().join("bin");
@@ -489,6 +511,7 @@ fn broker_error_fails_open_exit_zero() {
 
 #[test]
 fn identity_with_shell_metacharacters_is_noop() {
+    require_hook!();
     // A crafted transcript with an identity containing shell metacharacters must
     // be rejected before any subprocess is invoked. The hook's identity validation
     // guard (`case $'\n'` + grep) must catch this; if it doesn't, the mock famp

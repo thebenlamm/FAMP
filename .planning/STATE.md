@@ -5,7 +5,7 @@ milestone_name: Local-First Bus
 status: shipped
 stopped_at: v0.9 milestone closed 2026-05-04
 last_updated: "2026-05-04T04:23:20.820Z"
-last_activity: 2026-05-04 -- v0.9 archived; planning next milestone
+last_activity: 2026-05-06 - Shipped listen mode (v0.9 patch): transcript-detection Stop hook, listen:bool schema field, 12 hook tests, await_timeout fill, E2E listen loop test, CLAUDE.md docs
 progress:
   total_phases: 5
   completed_phases: 5
@@ -16,7 +16,7 @@ progress:
 
 # STATE: FAMP — between milestones (v0.9 shipped 2026-05-04)
 
-**Last Updated:** 2026-05-04 — v0.9 Local-First Bus shipped (85/85 reqs, audit `passed`); next milestone is v1.0 Federation Profile, trigger-gated (Sofer-from-different-machine; 4-week clock 2026-05-04 → 2026-06-01).
+**Last Updated:** 2026-05-06 — v0.9 Local-First Bus shipped (85/85 reqs, audit `passed`); listen mode v0.9 patch landed 2026-05-06 (transcript-detection Stop hook, listen:bool on famp_register, 12 hook tests, await_timeout, E2E listen loop). Next milestone is v1.0 Federation Profile, trigger-gated (Sofer-from-different-machine; 4-week clock 2026-05-04 → 2026-06-01).
 
 ## Project Reference
 
@@ -121,6 +121,12 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | uat_gap | 02 (02-HUMAN-UAT.md, 0 pending scenarios) | unknown |
 
 **Notes:** All 30 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint work; no completion artifacts but no active obligations). Both seeds explicitly v1.0-gated by design (SEED-001 = vector pack interop, SEED-002 = push-notification harness). UAT gap header status drift only — 0 pending scenarios.
+
+## Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260504-ubf | Cleanup late-join debug findings: delete stale v0.8 cursor artifacts, add RegisterOk.peers snapshot doc note | 2026-05-05 | a55be0d | [260504-ubf-clean-up-late-join-debug-findings-delete](./quick/260504-ubf-clean-up-late-join-debug-findings-delete/) |
 
 ## Performance Metrics
 
