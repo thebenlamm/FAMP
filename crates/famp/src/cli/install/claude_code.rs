@@ -1,11 +1,12 @@
 //! `famp install-claude-code` subcommand handler (CC-01 + HOOK-04b install).
 //!
-//! Mutates four user-scope artifacts (D-04 atomic - install/uninstall symmetric):
+//! Mutates five user-scope artifacts (D-04 atomic - install/uninstall symmetric):
 //!  1. `~/.claude.json :: mcpServers.famp` - JSON merge (`json_merge::upsert_user_json`)
 //!  2. `~/.claude/commands/famp-*.md` - 7 markdown files (`slash_commands::write_all`)
 //!  3. `~/.famp/hook-runner.sh` - bash shim at mode 0755 (`hook_runner::install_shim`)
-//!  4. `~/.claude/settings.json :: hooks.Stop` - Claude Code hook entry
-//!     merge with sentinel command `<home>/.famp/hook-runner.sh`
+//!  4. `~/.claude/settings.json :: hooks.Stop` - Claude Code hook entries
+//!     for hook-runner.sh (timeout 30) and famp-await.sh (timeout 86400)
+//!  5. `~/.claude/hooks/famp-await.sh` - listen-mode await shim at mode 0755
 //!
 //! Idempotent: re-running is a no-op when state already matches (D-02).
 //! Atomic: each JSON write goes through `tempfile::NamedTempFile::persist`
@@ -18,7 +19,7 @@ use clap::Args;
 use serde_json::{json, Value};
 
 use crate::cli::error::CliError;
-use crate::cli::install::{hook_runner, json_merge, slash_commands};
+use crate::cli::install::{await_hook, hook_runner, json_merge, slash_commands};
 
 #[derive(Debug, Args)]
 pub struct InstallClaudeCodeArgs {
@@ -52,6 +53,10 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     let commands_dir = home.join(".claude").join("commands");
     let settings_path = home.join(".claude").join("settings.json");
     let shim_path = home.join(".famp").join("hook-runner.sh");
+    let await_shim_path = home
+        .join(".claude")
+        .join("hooks")
+        .join("famp-await.sh");
 
     let famp_bin = which::which("famp")
         .ok()
@@ -73,7 +78,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     let outcome = json_merge::upsert_user_json(&claude_json_path, "mcpServers", "famp", mcp_value)?;
     writeln!(
         err,
-        "  [1/4] {} :: mcpServers.famp -> {:?}",
+        "  [1/5] {} :: mcpServers.famp -> {:?}",
         claude_json_path.display(),
         outcome
     )
@@ -82,7 +87,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     slash_commands::write_all(&commands_dir)?;
     writeln!(
         err,
-        "  [2/4] {} :: 7 slash-command markdown files written",
+        "  [2/5] {} :: 7 slash-command markdown files written",
         commands_dir.display()
     )
     .ok();
@@ -90,12 +95,12 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     hook_runner::install_shim(&shim_path)?;
     writeln!(
         err,
-        "  [3/4] {} :: bash shim installed (mode 0755)",
+        "  [3/5] {} :: bash shim installed (mode 0755)",
         shim_path.display()
     )
     .ok();
 
-    let new_stop_array = build_stop_array(&settings_path, &shim_path)?;
+    let new_stop_array = build_stop_array(&settings_path, &shim_path, &await_shim_path)?;
     let outcome = json_merge::upsert_user_json(
         &settings_path,
         "hooks",
@@ -104,9 +109,17 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     )?;
     writeln!(
         err,
-        "  [4/4] {} :: hooks.Stop -> {:?}",
+        "  [4/5] {} :: hooks.Stop -> {:?}",
         settings_path.display(),
         outcome
+    )
+    .ok();
+
+    await_hook::install_shim(&await_shim_path)?;
+    writeln!(
+        err,
+        "  [5/5] {} :: listen-mode await shim installed (mode 0755)",
+        await_shim_path.display()
     )
     .ok();
 
@@ -126,7 +139,11 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     Ok(())
 }
 
-fn build_stop_array(settings_path: &Path, shim_path: &Path) -> Result<Vec<Value>, CliError> {
+fn build_stop_array(
+    settings_path: &Path,
+    shim_path: &Path,
+    await_shim_path: &Path,
+) -> Result<Vec<Value>, CliError> {
     let existing: Value = match std::fs::read_to_string(settings_path) {
         Ok(s) if s.trim().is_empty() => Value::Object(serde_json::Map::new()),
         Ok(s) => serde_json::from_str(&s).map_err(|source| CliError::JsonMergeParse {
@@ -148,29 +165,42 @@ fn build_stop_array(settings_path: &Path, shim_path: &Path) -> Result<Vec<Value>
         .and_then(Value::as_array)
         .map_or(&[], Vec::as_slice);
 
-    let shim_str = shim_path.display().to_string();
+    // Remove ALL stale famp-owned entries (both shim paths).
+    let famp_paths = [
+        shim_path.display().to_string(),
+        await_shim_path.display().to_string(),
+    ];
     let mut new_stop: Vec<Value> = prior_stop
         .iter()
-        .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &shim_str))
+        .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &famp_paths))
         .collect();
 
+    // Append both famp entries.
     new_stop.push(json!({
         "matcher": "",
         "hooks": [{
             "type": "command",
-            "command": shim_str,
+            "command": shim_path.display().to_string(),
             "timeout": 30,
+        }],
+    }));
+    new_stop.push(json!({
+        "matcher": "",
+        "hooks": [{
+            "type": "command",
+            "command": await_shim_path.display().to_string(),
+            "timeout": 86400,
         }],
     }));
 
     Ok(new_stop)
 }
 
-fn remove_famp_hook_from_stop_entry(entry: &Value, shim: &str) -> Option<Value> {
+fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<Value> {
     if entry
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(|command| command.starts_with(shim))
+        .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
     {
         return None;
     }
@@ -184,7 +214,7 @@ fn remove_famp_hook_from_stop_entry(entry: &Value, shim: &str) -> Option<Value> 
             !hook
                 .get("command")
                 .and_then(Value::as_str)
-                .is_some_and(|command| command.starts_with(shim))
+                .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
         })
         .cloned()
         .collect();
@@ -208,7 +238,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn install_writes_all_four_artifacts_under_tempdir_home() {
+    fn install_writes_all_five_artifacts_under_tempdir_home() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let mut out = Vec::<u8>::new();
@@ -220,6 +250,7 @@ mod tests {
         assert!(home.join(".claude/commands/famp-send.md").exists());
         assert!(home.join(".claude/settings.json").exists());
         assert!(home.join(".famp/hook-runner.sh").exists());
+        assert!(home.join(".claude/hooks/famp-await.sh").exists());
 
         let claude: Value =
             serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
@@ -231,14 +262,21 @@ mod tests {
         )
         .unwrap();
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 1);
-        assert_eq!(stop[0]["matcher"], "");
-        let hooks = stop[0]["hooks"].as_array().unwrap();
-        assert_eq!(hooks.len(), 1);
-        let cmd = hooks[0]["command"].as_str().unwrap();
-        assert!(cmd.ends_with("/.famp/hook-runner.sh"), "command = {cmd}");
-        assert_eq!(hooks[0]["type"], "command");
-        assert_eq!(hooks[0]["timeout"], 30);
+        assert_eq!(stop.len(), 2, "expected exactly 2 Stop entries, got {}", stop.len());
+
+        // Entry 0: hook-runner.sh, timeout 30
+        let hooks0 = stop[0]["hooks"].as_array().unwrap();
+        assert_eq!(hooks0.len(), 1);
+        let cmd0 = hooks0[0]["command"].as_str().unwrap();
+        assert!(cmd0.ends_with("/.famp/hook-runner.sh"), "cmd0 = {cmd0}");
+        assert_eq!(hooks0[0]["timeout"], 30);
+
+        // Entry 1: famp-await.sh, timeout 86400
+        let hooks1 = stop[1]["hooks"].as_array().unwrap();
+        assert_eq!(hooks1.len(), 1);
+        let cmd1 = hooks1[0]["command"].as_str().unwrap();
+        assert!(cmd1.ends_with("/.claude/hooks/famp-await.sh"), "cmd1 = {cmd1}");
+        assert_eq!(hooks1[0]["timeout"], 86400);
     }
 
     #[test]
@@ -295,6 +333,32 @@ mod tests {
     }
 
     #[test]
+    fn double_install_produces_exactly_two_stop_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+
+        let mut out = Vec::<u8>::new();
+        let mut err = Vec::<u8>::new();
+        run_at(home, &mut out, &mut err).unwrap();
+
+        let mut out2 = Vec::<u8>::new();
+        let mut err2 = Vec::<u8>::new();
+        run_at(home, &mut out2, &mut err2).unwrap();
+
+        let settings: Value = serde_json::from_str(
+            &std::fs::read_to_string(home.join(".claude/settings.json")).unwrap(),
+        )
+        .unwrap();
+        let stop = settings["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(
+            stop.len(),
+            2,
+            "double install must not accumulate entries; got {} Stop entries",
+            stop.len()
+        );
+    }
+
+    #[test]
     fn install_replaces_stale_stop_entry_in_place() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
@@ -323,9 +387,11 @@ mod tests {
         let stop = post["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(
             stop.len(),
-            3,
-            "should preserve other hooks and replace ours"
+            4,
+            "should preserve other hooks and replace ours with 2 fresh famp entries; got {}",
+            stop.len()
         );
+        // Fresh hook-runner entry must exist with timeout 30
         let ours_group = stop
             .iter()
             .find(|e| {
@@ -336,6 +402,22 @@ mod tests {
             })
             .unwrap();
         assert_eq!(ours_group["hooks"][0]["timeout"], json!(30));
+        // Fresh await entry must exist with timeout 86400
+        let await_shim = home
+            .join(".claude")
+            .join("hooks")
+            .join("famp-await.sh")
+            .display()
+            .to_string();
+        let await_group = stop
+            .iter()
+            .find(|e| {
+                e["hooks"].as_array().is_some_and(|hooks| {
+                    hooks.iter().any(|hook| hook["command"] == await_shim)
+                })
+            })
+            .unwrap();
+        assert_eq!(await_group["hooks"][0]["timeout"], json!(86400));
         let other_group = stop
             .iter()
             .find(|e| {
