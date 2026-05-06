@@ -84,11 +84,12 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_register",
-            "description": "Bind this MCP session to a FAMP identity by name. CALL THIS FIRST in every new window — without it, famp_send/famp_await/famp_inbox/famp_peers all return a typed 'not_registered' error. The identity name must match an existing agent under $FAMP_LOCAL_ROOT/agents/<name>/ (default ~/.famp-local/agents/<name>/) and that directory must contain a readable config.toml. Idempotent: registering as the same identity twice is a no-op success. Always wins: registering as a different identity replaces the binding deterministically.",
+            "description": "Bind this MCP session to a FAMP identity. CALL THIS FIRST in every new window — without it, famp_send/famp_await/famp_inbox/famp_peers all return a typed 'not_registered' error. Pass listen:true to enter listen mode: after each turn the Stop hook will block waiting for inbound messages and wake Claude automatically (sub-minute latency). Omit listen or pass false for general-purpose windows that check inbox on demand.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "identity": { "type": "string", "description": "Identity name (matches [A-Za-z0-9_-]+). Resolves to $FAMP_LOCAL_ROOT/agents/<identity>/." }
+                    "identity": { "type": "string", "description": "Identity name (matches [A-Za-z0-9_-]+)." },
+                    "listen": { "type": "boolean", "description": "If true, this window enters listen mode: the Stop hook will block on famp_await after each turn and wake Claude when a message arrives. Default false. Use true for dedicated agent windows; omit for general-purpose windows." }
                 },
                 "required": ["identity"]
             }
