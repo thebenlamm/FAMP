@@ -63,8 +63,10 @@ mod tests {
     }
 
     #[test]
-    fn shim_uses_set_uo_pipefail() {
+    fn shim_uses_set_uo_pipefail_not_e() {
+        // Fail-open invariant: must NOT use set -e; every error path must exit 0.
         assert!(FAMP_AWAIT_SH.contains("set -uo pipefail"));
+        assert!(!FAMP_AWAIT_SH.contains("set -euo pipefail"));
     }
 
     #[test]

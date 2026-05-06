@@ -199,7 +199,7 @@ fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<V
     if entry
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
+        .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
     {
         return None;
     }
@@ -213,7 +213,7 @@ fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<V
             !hook
                 .get("command")
                 .and_then(Value::as_str)
-                .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
+                .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
         })
         .cloned()
         .collect();

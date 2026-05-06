@@ -175,7 +175,9 @@ fn build_stop_array(
         .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &famp_paths))
         .collect();
 
-    // Append both famp entries.
+    // Append both famp entries. Order matters: Claude Code executes Stop hooks
+    // sequentially in array order. hook-runner.sh (fast, ~1s) must run first
+    // so Edit-glob notifications fire before famp-await.sh blocks for up to 23h.
     new_stop.push(json!({
         "matcher": "",
         "hooks": [{
@@ -200,7 +202,7 @@ fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<V
     if entry
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
+        .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
     {
         return None;
     }
@@ -214,7 +216,7 @@ fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<V
             !hook
                 .get("command")
                 .and_then(Value::as_str)
-                .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
+                .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
         })
         .cloned()
         .collect();
