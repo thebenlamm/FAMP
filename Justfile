@@ -183,11 +183,19 @@ smoke-test:
     #!/usr/bin/env bash
     set -euo pipefail
     SMOKE_ROOT=/tmp/famp-smoke
-    trap 'echo "--- cleaning up $SMOKE_ROOT ---"; rm -rf "$SMOKE_ROOT"' EXIT
+    SMOKE_HOME=$(mktemp -d)
+    rm -rf "$SMOKE_ROOT"
+    trap 'echo "--- cleaning up ---"; rm -rf "$SMOKE_ROOT" "$SMOKE_HOME"' EXIT
     echo "--- installing famp to $SMOKE_ROOT ---"
     cargo install --path crates/famp --root "$SMOKE_ROOT"
-    echo "--- verifying installed binary ---"
-    "$SMOKE_ROOT/bin/famp" --version
+    echo "--- verifying install-claude-code writes all artifacts ---"
+    FAMP_INSTALL_TARGET_HOME="$SMOKE_HOME" "$SMOKE_ROOT/bin/famp" install-claude-code
+    test -f "$SMOKE_HOME/.claude.json"
+    test -d "$SMOKE_HOME/.claude/commands"
+    test -f "$SMOKE_HOME/.famp/hook-runner.sh"
+    test -f "$SMOKE_HOME/.claude/settings.json"
+    test -f "$SMOKE_HOME/.claude/hooks/famp-await.sh"
+    echo "--- all 5 install-claude-code artifacts verified ---"
     echo "--- smoke-test PASSED ---"
 
 # Clean build artifacts

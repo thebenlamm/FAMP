@@ -65,8 +65,9 @@ pub enum Commands {
     Await(await_cmd::AwaitArgs),
     /// Inspect the inbox (list + cursor ack).
     Inbox(inbox::InboxArgs),
-    /// Start the MCP stdio JSON-RPC server (four tools: `famp_send`, `famp_await`,
-    /// `famp_inbox`, `famp_peers`). Reads Content-Length-framed JSON-RPC from
+    /// Start the MCP stdio JSON-RPC server (eight tools: `famp_register`,
+    /// `famp_whoami`, `famp_send`, `famp_await`, `famp_inbox`, `famp_peers`,
+    /// `famp_join`, `famp_leave`). Reads Content-Length-framed JSON-RPC from
     /// stdin; writes framed responses to stdout.
     Mcp(mcp::McpArgs),
     /// Run the local-first UDS broker daemon (Phase 02). Auto-spawned by
