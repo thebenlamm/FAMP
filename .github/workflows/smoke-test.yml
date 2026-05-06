@@ -1,0 +1,39 @@
+name: smoke-test
+
+# Runs whenever the install path or its documentation changes.
+# Intentionally has NO paths-ignore — README.md edits are exactly when this must fire.
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "README.md"
+      - "crates/famp/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "README.md"
+      - "crates/famp/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+concurrency:
+  group: smoke-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-test:
+    name: smoke-test (Quick Start install path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install famp binary from source
+        run: cargo install --path crates/famp --root /tmp/famp-smoke
+      - name: Verify installed binary
+        run: /tmp/famp-smoke/bin/famp --help

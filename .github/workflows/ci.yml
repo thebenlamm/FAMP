@@ -127,17 +127,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --doc
 
-  smoke-test:
-    name: smoke-test (Quick Start install path)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install famp binary from source
-        run: cargo install --path crates/famp --root /tmp/famp-smoke
-      - name: Verify installed binary
-        run: /tmp/famp-smoke/bin/famp --version
 
   audit:
     name: audit

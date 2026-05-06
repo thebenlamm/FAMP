@@ -4,8 +4,8 @@ milestone: v0.9
 milestone_name: Local-First Bus
 status: shipped
 stopped_at: v0.9 milestone closed 2026-05-04
-last_updated: "2026-05-06T18:45:00.000Z"
-last_activity: 2026-05-06 - Listen mode smoke test complete; broker fix (AppendMailbox on AwaitOk path); hook reason prefix [FAMP listen mode]; stop_entry dedup refactor
+last_updated: "2026-05-06T21:54:20.000Z"
+last_activity: 2026-05-06 - Add smoke-test gate for Quick Start install path (just smoke-test + CI job 260506-s1t)
 progress:
   total_phases: 5
   completed_phases: 5
@@ -128,6 +128,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 |---|-------------|------|--------|-----------|
 | 260504-ubf | Cleanup late-join debug findings: delete stale v0.8 cursor artifacts, add RegisterOk.peers snapshot doc note | 2026-05-05 | a55be0d | [260504-ubf-clean-up-late-join-debug-findings-delete](./quick/260504-ubf-clean-up-late-join-debug-findings-delete/) |
 | 260506-c65 | Wire famp-await.sh into famp install-claude-code / uninstall-claude-code distribution | 2026-05-06 | 54fcb47 | [260506-c65-wire-famp-await-into-install-claude-code](./quick/260506-c65-wire-famp-await-into-install-claude-code/) |
+| 260506-s1t | Add smoke-test for Quick Start install path (just smoke-test + CI job) | 2026-05-06 | 53eec99 | [260506-s1t-add-smoke-test-quick-start-install](./quick/260506-s1t-add-smoke-test-quick-start-install/) |
 
 ## Performance Metrics
 
