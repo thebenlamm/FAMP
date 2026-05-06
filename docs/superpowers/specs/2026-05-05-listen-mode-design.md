@@ -54,7 +54,7 @@ The sentinel gate (`[ -f .famp-listen ]`) is replaced with transcript detection:
 2. **Respect `famp_leave`**: if a `famp_leave` call appears *after* the last successful `famp_register` in the transcript → exit 0 (no-op). The agent has de-registered.
 3. **Validate identity**: must match `^[A-Za-z0-9_-]+$`. Shell-quote before passing to subprocess.
 4. **Call broker**: `famp await --as <identity> --timeout 23h`
-5. **On message**: emit `{"decision": "block", "reason": "<preamble><famp-envelope>\n<msg>\n</famp-envelope>"}` — same security framing as current implementation.
+5. **On message**: emit `{"decision": "block", "reason": "New FAMP message from <sender>. Call famp_inbox to read it."}` — notification only. Peer-controlled envelope bytes are NOT injected into `reason`. The agent wakes, calls `famp_inbox` as a normal MCP tool call, and processes the content as tool output.
 6. **On timeout / empty**: exit 0 — Claude stops cleanly.
 7. **On error (broker unreachable, `--as` rejected, etc.)**: exit 0 — fail-open, never trap Claude.
 
@@ -70,7 +70,8 @@ agent completes a turn → Claude Code fires Stop hook
 hook parses transcript → finds listen registration → calls famp await --as dk --timeout 23h
     ↓
 [A] message arrives within 23h
-    → hook emits {"decision": "block", "reason": "..."} → Claude wakes, processes message
+    → hook emits {"decision": "block", "reason": "New FAMP message from <sender>. Call famp_inbox to read it."}
+    → Claude wakes, calls famp_inbox → reads and processes envelope as tool output
     → agent finishes turn → Stop hook fires again → loop repeats
     ↓
 [B] no message for 23h
@@ -95,12 +96,13 @@ The current hook uses `FAMP_HOME` (v0.8 filesystem-per-identity model). v0.9 use
 
 ## Security
 
-The hook's existing hardening is preserved unchanged:
-- Envelope content tagged as `<famp-envelope>UNTRUSTED DATA</famp-envelope>` with explicit instruction not to execute contents.
-- 64KB cap + UTF-8 sanitization before JSON construction.
-- Crash-safe backup of every received envelope to `$XDG_STATE_HOME/famp/received/`.
+**Notification-only wake signal.** Peer-controlled envelope bytes are never injected into the Stop hook `reason` field. A malicious peer can embed `</famp-envelope>` or similar delimiters to escape any string-wrapped "untrusted" region; instruction-override guardrails ("do not execute contents") are soft LLM guidance, not a security boundary. The `reason` field carries only a fixed notification string (`"New FAMP message from <sender>. Call famp_inbox to read it."`). Envelope content is retrieved via `famp_inbox` as a normal MCP tool call — the same trust boundary all other MCP tool results cross.
+
+Additional hardening:
+- 64KB cap + UTF-8 sanitization on the envelope before the crash-safe backup write (not before injection — injection is notification-only).
+- Crash-safe backup of every received envelope to `$XDG_STATE_HOME/famp/received/` before any decision is emitted.
 - Log file symlink hijack guard (`$XDG_STATE_HOME/famp/await-hook.log`).
-- Identity validated against `^[A-Za-z0-9_-]+$` before shell interpolation.
+- Identity validated against `^[A-Za-z0-9_-]{1,64}$` (alphanumeric/hyphen/underscore, max 64 chars) before shell interpolation.
 
 ---
 
@@ -137,7 +139,7 @@ The hook's existing hardening is preserved unchanged:
 - Transcript present, no registration → exit 0
 - Registered with `listen: false` → exit 0
 - Registered with `listen: true` → `famp await --as <name>` called with correct args
-- `famp await` returns envelope → stdout is valid `{"decision": "block", "reason": ...}` JSON
+- `famp await` returns envelope → stdout is valid `{"decision": "block", "reason": "New FAMP message from <sender>. Call famp_inbox to read it."}` (notification only, no envelope bytes in reason)
 - `famp await` returns `{"timeout": true}` → exit 0 (clean stop)
 - `famp await` returns non-zero → exit 0 (fail-open)
 - Identity with shell metacharacters → rejected, exit 0
