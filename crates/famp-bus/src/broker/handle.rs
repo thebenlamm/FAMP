@@ -261,7 +261,14 @@ fn send_agent<E: BrokerEnv>(
     let task_id = task_id_from(&envelope);
     if let Some(waiting) = waiting_client_for_name(broker, &name, &envelope) {
         broker.state.pending_awaits.remove(&waiting);
+        // Also append to mailbox so famp_inbox can read the message after
+        // the listen-mode hook wakes Claude. Without this, the AwaitOk path
+        // consumes the message and the inbox is empty when Claude checks it.
         return vec![
+            Out::AppendMailbox {
+                target: MailboxName::Agent(name.clone()),
+                line,
+            },
             Out::Reply(waiting, BusReply::AwaitOk { envelope }),
             Out::UnparkAwait { client: waiting },
             send_ok(sender, task_id, Target::Agent { name }, true),

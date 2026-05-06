@@ -58,6 +58,49 @@ fn disconnect_clears_pending_await() {
 }
 
 #[test]
+fn send_to_live_awaiting_client_produces_awaitok_and_mailbox_append() {
+    let env = TestEnv::new();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_register(&mut broker, 1, "alice", now);
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1),
+            msg: BusMessage::Await {
+                timeout_ms: 30_000,
+                task: None,
+            },
+        },
+        now,
+    );
+    hello_register(&mut broker, 2, "bob", now);
+
+    let out = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2),
+            msg: BusMessage::Send {
+                to: Target::Agent {
+                    name: "alice".into(),
+                },
+                envelope: json!({"body": "ping"}),
+            },
+        },
+        now,
+    );
+
+    // AwaitOk: the waiting client gets the envelope immediately.
+    assert!(out
+        .iter()
+        .any(|o| matches!(o, Out::Reply(ClientId(1), BusReply::AwaitOk { .. }))),
+        "live await must receive AwaitOk");
+    // AppendMailbox: also stored so famp_inbox can read it after the hook wakes Claude.
+    assert!(out.iter().any(|o| matches!(
+        o,
+        Out::AppendMailbox { target: MailboxName::Agent(name), .. } if name == "alice"
+    )), "live await delivery must also append to mailbox for famp_inbox");
+}
+
+#[test]
 fn send_after_disconnect_routes_to_mailbox_not_dead_await() {
     let env = TestEnv::new();
     let mut broker = Broker::new(env);
