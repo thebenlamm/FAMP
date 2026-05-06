@@ -197,7 +197,9 @@ fn failed_register_result_is_noop() {
 }
 
 #[test]
-fn register_then_leave_is_noop() {
+fn register_then_channel_leave_still_listens() {
+    // famp_leave is a channel operation (requires a `channel` param), NOT an
+    // unregister. Leaving a channel must NOT cancel listen mode.
     require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
@@ -214,9 +216,14 @@ fn register_then_leave_is_noop() {
         &xdg,
     );
     assert!(out.status.success());
+    let log_contents = std::fs::read_to_string(&log).unwrap_or_default();
     assert!(
-        !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
-        "expected no famp invocation after famp_leave"
+        !log_contents.is_empty(),
+        "expected famp await to be invoked even after a channel famp_leave"
+    );
+    assert!(
+        log_contents.contains("await") && log_contents.contains("dk"),
+        "expected 'await --as dk' in mock famp log, got: {log_contents}"
     );
 }
 
