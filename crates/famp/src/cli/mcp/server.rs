@@ -88,7 +88,7 @@ fn tool_descriptors() -> serde_json::Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "identity": { "type": "string", "description": "Identity name (matches [A-Za-z0-9_-]+)." },
+                    "identity": { "type": "string", "description": "Identity name (matches [A-Za-z0-9._-]+, max 64 chars)." },
                     "listen": { "type": "boolean", "description": "If true, this window enters listen mode: the Stop hook will block on famp_await after each turn and wake Claude when a message arrives. Default false. Use true for dedicated agent windows; omit for general-purpose windows." }
                 },
                 "required": ["identity"]

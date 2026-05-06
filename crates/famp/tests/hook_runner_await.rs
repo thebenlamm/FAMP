@@ -486,3 +486,35 @@ fn broker_error_fails_open_exit_zero() {
         "no stdout expected on broker error"
     );
 }
+
+#[test]
+fn identity_with_shell_metacharacters_is_noop() {
+    // A crafted transcript with an identity containing shell metacharacters must
+    // be rejected before any subprocess is invoked. The hook's identity validation
+    // guard (`case $'\n'` + grep) must catch this; if it doesn't, the mock famp
+    // would be called and leave an argv log entry.
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    stage_mock_famp(&dir.path().join("bin"), &log);
+    let transcript = dir.path().join("t.jsonl");
+
+    // Identity with a shell-injection attempt and a space (both invalid per [A-Za-z0-9._-]+)
+    let body = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"mcp__famp__famp_register","input":{"identity":"$(evil cmd)","listen":true}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","is_error":false,"content":[{"type":"text","text":"registered as evil"}]}]}}
+"#;
+    std::fs::write(&transcript, body).unwrap();
+
+    let out = run_hook(
+        &hook_path(),
+        &transcript,
+        &dir.path().join("bin"),
+        &log,
+        &xdg,
+    );
+    assert!(out.status.success(), "hook must exit 0 on metacharacter identity");
+    assert!(
+        !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
+        "hook must not invoke famp for invalid identity"
+    );
+}
