@@ -202,7 +202,7 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
 
-REASON="New FAMP message from ${SENDER}. Call famp_inbox to read it."
+REASON="[FAMP listen mode] New message from ${SENDER}. Call famp_inbox to read it."
 OUT=$(jq -n --arg r "$REASON" '{decision: "block", reason: $r}')
 log "emitting block decision (${#OUT} bytes); sender=$SENDER"
 printf '%s\n' "$OUT"
