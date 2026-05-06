@@ -4,8 +4,8 @@ milestone: v0.9
 milestone_name: Local-First Bus
 status: shipped
 stopped_at: v0.9 milestone closed 2026-05-04
-last_updated: "2026-05-04T04:23:20.820Z"
-last_activity: 2026-05-06 - Quick task 260506-c65: wired famp-await.sh into install-claude-code/uninstall-claude-code (5 artifacts, 2 Stop entries, 214/214 tests)
+last_updated: "2026-05-06T18:45:00.000Z"
+last_activity: 2026-05-06 - Listen mode smoke test complete; broker fix (AppendMailbox on AwaitOk path); hook reason prefix [FAMP listen mode]; stop_entry dedup refactor
 progress:
   total_phases: 5
   completed_phases: 5

@@ -18,7 +18,7 @@ use clap::Args;
 use serde_json::Value;
 
 use crate::cli::error::CliError;
-use crate::cli::install::{await_hook, hook_runner, json_merge, slash_commands};
+use crate::cli::install::{await_hook, hook_runner, json_merge, slash_commands, stop_entry};
 
 #[derive(Debug, Args)]
 pub struct UninstallClaudeCodeArgs {
@@ -167,7 +167,7 @@ fn surgical_remove_stop_entry(
     ];
     let filtered: Vec<Value> = prior_stop
         .iter()
-        .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &famp_paths))
+        .filter_map(|elem| stop_entry::remove_famp_hook_from_stop_entry(elem, &famp_paths))
         .collect();
 
     if filtered.len() == prior_stop.len() {
@@ -193,42 +193,6 @@ fn surgical_remove_stop_entry(
     )
     .ok();
     Ok(())
-}
-
-fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<Value> {
-    if entry
-        .get("command")
-        .and_then(Value::as_str)
-        .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
-    {
-        return None;
-    }
-
-    let Some(hooks) = entry.get("hooks").and_then(Value::as_array) else {
-        return Some(entry.clone());
-    };
-    let filtered_hooks: Vec<Value> = hooks
-        .iter()
-        .filter(|hook| {
-            !hook
-                .get("command")
-                .and_then(Value::as_str)
-                .is_some_and(|command| shims.iter().any(|s| command == s.as_str() || command.starts_with(&format!("{s} "))))
-        })
-        .cloned()
-        .collect();
-
-    if filtered_hooks.len() == hooks.len() {
-        return Some(entry.clone());
-    }
-    if filtered_hooks.is_empty() {
-        return None;
-    }
-
-    let mut updated = entry.clone();
-    let obj = updated.as_object_mut()?;
-    obj.insert("hooks".to_string(), Value::Array(filtered_hooks));
-    Some(updated)
 }
 
 #[cfg(test)]

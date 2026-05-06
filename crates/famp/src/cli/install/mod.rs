@@ -14,4 +14,5 @@ pub mod codex;
 pub mod hook_runner;
 pub mod json_merge;
 pub mod slash_commands;
+pub mod stop_entry;
 pub mod toml_merge;
