@@ -328,3 +328,78 @@ fn test_mcp_bus_e2e() {
     alice.shutdown();
     bob.shutdown();
 }
+
+/// TEST-06 — listen mode notification path.
+///
+/// Verifies that when alice sends to bob and bob is parked on
+/// `famp_await --as bob`, the await unblocks and returns an envelope
+/// with a non-empty `from` field. The hook then emits a notification;
+/// the agent would call `famp_inbox` to retrieve content. Here we just
+/// assert the envelope arrived with correct routing metadata.
+#[test]
+fn test_listen_mode_await_unblocks_on_send() {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let sock = tmp.path().join("listen-test-bus.sock");
+
+    let mut alice = McpHarness::spawn(&sock, "alice-listen");
+    let mut bob = McpHarness::spawn(&sock, "bob-listen");
+
+    // Register both (listen:true is a hook hint, ignored by the MCP tool itself)
+    let reg_a = alice.tool_call("famp_register", &json!({ "name": "alice-listen" }));
+    McpHarness::ok_result(&reg_a, "alice-listen register");
+
+    let reg_b = bob.tool_call("famp_register", &json!({ "name": "bob-listen", "listen": true }));
+    let bob_body = McpHarness::ok_result(&reg_b, "bob-listen register");
+    assert_eq!(bob_body["active"], "bob-listen");
+
+    // Bob parks await before alice sends
+    let bob_await_id = bob.next_id();
+    bob.send_msg(&json!({
+        "jsonrpc": "2.0",
+        "id": bob_await_id,
+        "method": "tools/call",
+        "params": {
+            "name": "famp_await",
+            "arguments": { "timeout_seconds": 10 },
+        },
+    }));
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Alice sends
+    let send = alice.tool_call(
+        "famp_send",
+        &json!({
+            "peer": "bob-listen",
+            "mode": "new_task",
+            "title": "Listen mode test message",
+        }),
+    );
+    McpHarness::ok_result(&send, "alice send");
+
+    // Read bob's await response (parked frame unblocks once alice's message arrives)
+    let bob_await_resp = bob.recv_msg(Duration::from_secs(15));
+    let await_body = McpHarness::ok_result(&bob_await_resp, "bob-listen await");
+
+    // The envelope must have arrived (not timeout)
+    assert!(
+        await_body.get("timeout").is_none() || await_body["timeout"] != true,
+        "expected envelope, got timeout: {await_body}"
+    );
+
+    // Must have an `envelope` field with a `from` field (hook uses this for the notification string)
+    let envelope = &await_body["envelope"];
+    assert!(
+        !envelope.is_null(),
+        "bob-listen await missing envelope: {await_body}"
+    );
+    let from = envelope["from"]
+        .as_str()
+        .unwrap_or_else(|| panic!("envelope.from not a string: {envelope}"));
+    assert!(
+        from.contains("alice-listen"),
+        "envelope.from should contain 'alice-listen', got: {from}"
+    );
+
+    alice.shutdown();
+    bob.shutdown();
+}
