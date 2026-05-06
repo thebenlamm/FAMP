@@ -8,6 +8,7 @@
 //! modules. Uninstall handlers live in `crate::cli::uninstall` (see plan
 //! 03-04 / 03-05).
 
+pub mod await_hook;
 pub mod claude_code;
 pub mod codex;
 pub mod hook_runner;
