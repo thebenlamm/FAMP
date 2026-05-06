@@ -307,3 +307,150 @@ fn last_registration_wins_when_multiple_in_transcript() {
         "must not use first identity 'alice': {argv:?}"
     );
 }
+
+#[test]
+fn block_decision_is_notification_only_no_envelope_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+
+    // Mock famp that prints a fake envelope when called with `await`
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let famp = bin_dir.join("famp");
+    std::fs::write(
+        &famp,
+        r#"#!/usr/bin/env bash
+if [[ "$*" == *"await"* ]]; then
+    printf '{"from":"alice","body":{"details":{"summary":"SECRET_PAYLOAD"}}}\n'
+fi
+exit 0
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let transcript = dir.path().join("t.jsonl");
+    make_transcript(&transcript, "bob", true, true, false);
+    let _log = dir.path().join("famp.log");
+
+    let stop_json = format!(
+        r#"{{"transcript_path":"{}","hook_event_name":"Stop"}}"#,
+        transcript.display()
+    );
+    let host_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{host_path}", bin_dir.display());
+    let mut child = Command::new("bash")
+        .arg(hook_path())
+        .env("PATH", &new_path)
+        .env("XDG_STATE_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes()).unwrap();
+    drop(child.stdin.take());
+    let out = child.wait_with_output().unwrap();
+
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    // Must be valid JSON with decision=block
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("stdout is not valid JSON: {e}\nstdout={stdout:?}"));
+    assert_eq!(v["decision"], "block", "stdout: {stdout}");
+
+    // Peer-controlled content must NOT appear in reason
+    let reason = v["reason"].as_str().unwrap_or("");
+    assert!(
+        !reason.contains("SECRET_PAYLOAD"),
+        "peer bytes leaked into reason field: {reason:?}"
+    );
+
+    // Reason must mention famp_inbox
+    assert!(
+        reason.contains("famp_inbox"),
+        "reason must direct agent to call famp_inbox: {reason:?}"
+    );
+}
+
+#[test]
+fn timeout_exits_zero_with_no_stdout() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+
+    // Mock famp that exits 0 with no output (simulates timeout)
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let famp = bin_dir.join("famp");
+    std::fs::write(&famp, "#!/usr/bin/env bash\nexit 0\n").unwrap();
+    std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let transcript = dir.path().join("t.jsonl");
+    make_transcript(&transcript, "dk", true, true, false);
+    let _log = dir.path().join("famp.log");
+
+    let stop_json = format!(
+        r#"{{"transcript_path":"{}","hook_event_name":"Stop"}}"#,
+        transcript.display()
+    );
+    let host_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{host_path}", bin_dir.display());
+    let mut child = Command::new("bash")
+        .arg(hook_path())
+        .env("PATH", &new_path)
+        .env("XDG_STATE_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes()).unwrap();
+    drop(child.stdin.take());
+    let out = child.wait_with_output().unwrap();
+
+    assert!(out.status.success(), "must exit 0 on timeout");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.trim().is_empty(), "no stdout expected on timeout: {stdout:?}");
+}
+
+#[test]
+fn broker_error_fails_open_exit_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+
+    // Mock famp that exits non-zero with no stdout (broker unreachable)
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let famp = bin_dir.join("famp");
+    std::fs::write(
+        &famp,
+        "#!/usr/bin/env bash\nprintf 'broker unreachable' >&2\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let transcript = dir.path().join("t.jsonl");
+    make_transcript(&transcript, "dk", true, true, false);
+
+    let stop_json = format!(
+        r#"{{"transcript_path":"{}","hook_event_name":"Stop"}}"#,
+        transcript.display()
+    );
+    let host_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{host_path}", bin_dir.display());
+    let mut child = Command::new("bash")
+        .arg(hook_path())
+        .env("PATH", &new_path)
+        .env("XDG_STATE_HOME", &xdg)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(stop_json.as_bytes()).unwrap();
+    drop(child.stdin.take());
+    let out = child.wait_with_output().unwrap();
+
+    assert!(out.status.success(), "must fail-open (exit 0) on broker error");
+}
