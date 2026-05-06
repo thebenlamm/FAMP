@@ -7,16 +7,18 @@ on:
     branches: ["**"]
     paths:
       - "README.md"
-      - "crates/famp/**"
+      - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
   pull_request:
     branches: ["**"]
     paths:
       - "README.md"
-      - "crates/famp/**"
+      - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "rust-toolchain.toml"
 
 concurrency:
   group: smoke-test-${{ github.ref }}
@@ -28,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      # Match a clean-shell user environment, not CI's deny-warnings.
       RUSTFLAGS: ""
     steps:
       - uses: actions/checkout@v4
@@ -35,5 +38,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install famp binary from source
         run: cargo install --path crates/famp --root /tmp/famp-smoke
-      - name: Verify installed binary
-        run: /tmp/famp-smoke/bin/famp --help
+      - name: Verify install-claude-code writes all expected artifacts
+        run: |
+          SMOKE_HOME=$(mktemp -d)
+          FAMP_INSTALL_TARGET_HOME="$SMOKE_HOME" /tmp/famp-smoke/bin/famp install-claude-code
+          test -f "$SMOKE_HOME/.claude.json"
+          test -d "$SMOKE_HOME/.claude/commands"
+          test -f "$SMOKE_HOME/.famp/hook-runner.sh"
+          test -f "$SMOKE_HOME/.claude/settings.json"
+          test -f "$SMOKE_HOME/.claude/hooks/famp-await.sh"
+          echo "all 5 install-claude-code artifacts verified"

@@ -127,7 +127,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --doc
 
-
   audit:
     name: audit
     runs-on: ubuntu-latest

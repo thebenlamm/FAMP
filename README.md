@@ -85,8 +85,11 @@ runtime path; federation transport internals remain preserved for v1.0.
 - macOS or Linux
 - `git`
 - `curl`
+- Rust 1.89+ — the Quick Start installs `rustup` if you don't have it
 
-## Bootstrap
+## Build from Source (contributors)
+
+If you are contributing to FAMP or want to build the binary from a local clone:
 
 ```bash
 # 1. Install rustup (skip if already installed)
@@ -97,20 +100,33 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --defaul
 #    in new shells — this line activates it here too)
 source "$HOME/.cargo/env"
 
-# 3. Enter the repo (rust-toolchain.toml auto-installs 1.89.0)
+# 3. Clone the repo and enter it (rust-toolchain.toml auto-installs 1.89.0)
+git clone https://github.com/thebenlamm/FAMP.git
 cd FAMP
 rustc --version
 
-# 4. Install dev tools (one-time)
+# 4. Install the binary from the local clone
+cargo install --path crates/famp
+
+# 5. (Contributors only) Install dev tools and verify the workspace
 cargo install cargo-nextest --locked
 cargo install just --locked
-
-# 5. Install repo-local git hooks (pre-commit fmt-check, mirrors CI)
 just install-hooks
-
-# 6. Verify the workspace
 just ci
 ```
+
+## Upgrading
+
+If you installed FAMP previously and want the latest:
+
+```bash
+# In your local FAMP clone
+git pull
+cargo install --path crates/famp
+famp --version
+```
+
+Then restart any open Claude Code windows — they pick up the new binary on next launch.
 
 ## When NOT to Use FAMP
 
@@ -141,21 +157,28 @@ This is the v0.9 local-first path; if you need cross-host federation, see
 [docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md).
 
 ```bash
-# Install once (one-time compile, ~60-120s)
-cargo install famp
-famp install-claude-code
+# 1. Get Rust (skip if already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+source "$HOME/.cargo/env"
 
-# In one Claude Code window:
+# 2. Clone and install (one-time compile, ~60-120s)
+git clone https://github.com/thebenlamm/FAMP.git
+cd FAMP
+cargo install --path crates/famp
+famp install-claude-code
+# ↑ writes MCP config, slash commands (/famp-register, etc.), and the listen-mode Stop hook
+
+# 3. In one Claude Code window:
 /famp-register alice
 
-# In another Claude Code window:
+# 4. In another Claude Code window:
 /famp-register bob
 
 # Then ask alice's Claude: "send bob a message saying ship it"
 # Then ask bob's Claude:   "what's in my inbox?"
 ```
 
-> First install includes a one-time compile (~60-120 s); subsequent windows: <30 s. The 12-line block above is the entire onboarding.
+> First install includes a one-time compile (~60-120 s); subsequent windows: <30 s.
 
 Use the live CLI directly when you are not inside Claude Code:
 
@@ -201,10 +224,10 @@ bug fixes ship via the v1.0 federation gateway when it lands).
 
 ## MCP Integration (Claude Code and Codex)
 
-FAMP ships an MCP stdio server (`famp mcp`) that exposes six tools:
+FAMP ships an MCP stdio server (`famp mcp`) that exposes eight tools:
 `famp_register`, `famp_whoami`, `famp_send`, `famp_await`, `famp_inbox`,
-`famp_peers`. The model: **one MCP server config per client; the
-window picks an identity at runtime via `famp_register`.**
+`famp_peers`, `famp_join`, `famp_leave`. The model: **one MCP server config
+per client; the window picks an identity at runtime via `famp_register`.**
 
 ### Onboarding (recommended path)
 
@@ -212,15 +235,17 @@ window picks an identity at runtime via `famp_register`.**
    ```sh
    famp install-claude-code
    ```
-   This writes the user-scope Claude Code config and slash commands for
-   `famp mcp`. Project `.mcp.json` files are optional; if you keep one, it
-   should point at `famp mcp` without `FAMP_HOME` or `FAMP_LOCAL_ROOT`.
+   This writes the user-scope Claude Code MCP config, slash commands
+   (`/famp-register`, `/famp-inbox`, etc.), the Stop hook, and the
+   listen-mode await shim. Project `.mcp.json` files are optional; if you
+   keep one, it should point at `famp mcp` without `FAMP_HOME` or
+   `FAMP_LOCAL_ROOT`.
 
 2. **In every new Claude Code (or Codex) window opened in that repo:**
    ```text
    register as alice
    ```
-   (Or any identity initialized under `~/.famp-local/agents/<name>/`.)
+   (Any alphanumeric name — the broker creates the binding on first register. No directory to pre-provision.)
 
 3. **Confirm the binding:**
    ```text
@@ -228,10 +253,14 @@ window picks an identity at runtime via `famp_register`.**
    ```
    Returns `{ "identity": "alice", "source": "explicit" }`.
 
-4. **Multi-window dogfooding:** open a second window in the same repo,
+4. **Send a message:** say `send bob: ship it` and Claude calls
+   `famp_send` with `mode: new_task`. To reply on an existing task say
+   `reply to task <id>: looks good`. Messaging tools refuse with a typed
+   `not_registered` error until you call `famp_register`.
+
+5. **Multi-window dogfooding:** open a second window in the same repo,
    register as a different identity, and the two windows act as two
-   FAMP peers. Messaging tools (`famp_send`, `famp_await`, etc.) refuse
-   with a typed `not_registered` error until you call `famp_register`.
+   FAMP peers.
 
 ### Codex (one server, runtime identity)
 
@@ -241,6 +270,58 @@ famp install-codex
 Registers the user-scope Codex MCP server. After this lands, call
 `register as <name>` per Codex window; the binding happens inside the
 session.
+
+### Peer discovery (`famp_peers`)
+
+`famp_peers` returns the identities currently registered on the local broker —
+i.e. who is reachable right now via `famp_send`:
+
+```json
+{ "online": ["alice", "bob"] }
+```
+
+Identities appear here only while their `famp_register` session is alive.
+Closing a window removes them. Use it to confirm a target is up before sending.
+
+### Channels (`famp_join` / `famp_leave`)
+
+Channels are IRC-style broadcast groups. Every member receives every message
+sent to the channel. The `#` prefix is optional — both `planning` and
+`#planning` work as the target.
+
+```bash
+# Terminal A
+famp register alice
+famp join #planning
+
+# Terminal B
+famp register bob
+famp join #planning
+
+# Send to all #planning members
+famp send --to '#planning' --new-task "standup in 5"
+
+# Both alice and bob now have it in their inboxes
+famp inbox
+famp leave #planning
+```
+
+From Claude Code: say `join #planning`, then `send #planning "standup in 5"`.
+The MCP tools `famp_join` and `famp_leave` handle membership directly.
+
+### On-demand blocking wait (`famp_await`)
+
+`famp_await` blocks until a new message arrives (or up to 23 h). It is the
+primitive that listen mode is built on. Two ways to use it:
+
+- **Listen mode (recommended for dedicated agent windows):** pass `listen: true`
+  to `famp_register` and the Stop hook calls `famp_await` for you after every
+  turn — you never invoke it directly.
+- **Manual:** ask the agent to "wait for a famp message" and Claude calls
+  `famp_await` once. Useful for a one-shot blocking handoff without committing
+  the whole window to listen mode.
+
+General-purpose dev windows should use neither — call `famp_inbox` on demand.
 
 ### Listen Mode (inbound wake-up)
 
@@ -265,8 +346,49 @@ Claude then calls `famp_inbox` to read the content. The `[FAMP listen mode]`
 prefix in the Claude Code UI distinguishes expected wakes from actual hook
 errors.
 
-Use listen mode for dedicated agent windows (e.g. Sofer's 5-agent mesh).
-Omit it for general-purpose dev windows that check inbox on demand.
+Use listen mode for dedicated agent windows (e.g. a 5-agent mesh where each
+window must respond to peers immediately). Omit it for general-purpose dev
+windows that check inbox on demand.
+
+#### Wiring an existing multi-repo setup to listen mode
+
+If you have multiple repos already wired (e.g. `dk`, `tovani`, `dbs`, `infra`,
+`openheart`), this is the full upgrade sequence:
+
+**Step 1 — Pull and rebuild** (see [Upgrading](#upgrading) above)
+
+**Step 2 — Update each repo's CLAUDE.md**
+
+Find the `famp_register` instruction in each CLAUDE.md and add `listen: true`:
+
+```
+# Before
+register as dk
+
+# After
+register as dk with listen mode on
+```
+
+Claude translates "with listen mode on" to
+`famp_register({identity: "dk", listen: true})` automatically.
+
+**Step 3 — Restart open windows**
+
+Any Claude Code window already open must be restarted to pick up both the new
+binary and the updated CLAUDE.md. First message in each new window:
+
+```
+register as <name> with listen mode on
+```
+
+**Step 4 — Verify**
+
+Send a test message from one window to another. The receiving window should
+wake automatically with:
+
+```
+[FAMP listen mode] New message from <sender>. Call famp_inbox to read it.
+```
 
 <details>
 <summary>Why this changed (v0.8.x to v0.9 trajectory)</summary>
@@ -307,10 +429,9 @@ If you don't use the wrapper, the minimal `.mcp.json` is:
 ```
 
 Optional: set `FAMP_LOCAL_ROOT` in the environment to override the
-default `~/.famp-local` backing-store directory. Identity directories
-live at `$FAMP_LOCAL_ROOT/agents/<name>/`; each must contain a readable
-`config.toml`. Use `famp register <name>` to create or refresh identities
-through the live local-bus CLI.
+default `~/.famp-local` backing-store directory. MCP windows pick identity
+at runtime via `famp_register` and don't use this path. It matters for
+non-MCP CLI use where `wires.tsv` cwd→identity binding is in effect.
 
 ## Programmatic Examples
 
@@ -479,7 +600,9 @@ absorbing terminals.
 | `just fmt` | `cargo fmt --all` |
 | `just ci` | local CI-parity loop |
 
-A green `just ci` locally implies a green GitHub Actions run.
+A green `just ci` locally implies a green main CI workflow run. The `smoke-test`
+workflow (Quick Start install path) runs separately in CI and is not included in
+`just ci` — run `just smoke-test` explicitly to verify it locally (~60-120s).
 
 ## Repo Layout
 
@@ -519,6 +642,22 @@ A green `just ci` locally implies a green GitHub Actions run.
 See [`docs/history/ROADMAP.md`](docs/history/ROADMAP.md) for the curated
 roadmap snapshot and [`docs/history/MILESTONES.md`](docs/history/MILESTONES.md)
 for milestone history.
+
+## Troubleshooting
+
+- **Broker won't start / commands hang.** Check `~/.famp/broker.log` for the
+  last startup error. The socket is `~/.famp/bus.sock`; if a stale socket file
+  is blocking startup, remove it and retry.
+- **`not_registered` error from an MCP tool.** The window hasn't bound an
+  identity yet. Say `register as <name>` (or `register as <name> with listen
+  mode on` for listen-mode windows).
+- **A peer doesn't appear in `famp_peers`.** Their session has exited.
+  Re-register in that window.
+- **Listen-mode window doesn't wake on a message.** Verify the Stop hook is
+  installed (`famp install-claude-code` writes it). Check `~/.famp/broker.log`
+  for `await` activity around the send time.
+- **Stuck after a binary upgrade.** Restart all Claude Code windows — they
+  cache the binary path at launch.
 
 ## License
 
