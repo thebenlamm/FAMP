@@ -51,10 +51,10 @@ The sentinel gate (`[ -f .famp-listen ]`) is replaced with transcript detection:
 1. **Parse transcript JSONL** for the most recent `famp_register` tool call **and its result**.
    - Must find both: a `tool_use` block with `name` ending in `famp_register`, **and** a corresponding `tool_result` block that is not an error.
    - Extract `identity` from the tool input and `listen` flag. If `listen` is absent or `false` → exit 0 (no-op).
-2. **Respect `famp_leave`**: if a `famp_leave` call appears *after* the last successful `famp_register` in the transcript → exit 0 (no-op). The agent has de-registered.
+2. **`famp_leave` does NOT cancel listen mode**: `famp_leave` is a channel operation (requires a `channel` argument), not an unregister. The hook ignores it. Listen mode remains active until the session ends or a new `famp_register(listen: false)` occurs.
 3. **Validate identity**: must match `^[A-Za-z0-9_-]+$`. Shell-quote before passing to subprocess.
 4. **Call broker**: `famp await --as <identity> --timeout 23h`
-5. **On message**: emit `{"decision": "block", "reason": "New FAMP message from <sender>. Call famp_inbox to read it."}` — notification only. Peer-controlled envelope bytes are NOT injected into `reason`. The agent wakes, calls `famp_inbox` as a normal MCP tool call, and processes the content as tool output.
+5. **On message**: emit `{"decision": "block", "reason": "[FAMP listen mode] New message from <sender>. Call famp_inbox to read it."}` — notification only. Peer-controlled envelope bytes are NOT injected into `reason`. The `[FAMP listen mode]` prefix distinguishes expected listen-mode wakes from actual hook errors in the Claude Code UI. The agent wakes, calls `famp_inbox` as a normal MCP tool call, and processes the content as tool output.
 6. **On timeout / empty**: exit 0 — Claude stops cleanly.
 7. **On error (broker unreachable, `--as` rejected, etc.)**: exit 0 — fail-open, never trap Claude.
 
@@ -70,8 +70,9 @@ agent completes a turn → Claude Code fires Stop hook
 hook parses transcript → finds listen registration → calls famp await --as dk --timeout 23h
     ↓
 [A] message arrives within 23h
-    → hook emits {"decision": "block", "reason": "New FAMP message from <sender>. Call famp_inbox to read it."}
+    → hook emits {"decision": "block", "reason": "[FAMP listen mode] New message from <sender>. Call famp_inbox to read it."}
     → Claude wakes, calls famp_inbox → reads and processes envelope as tool output
+    (broker appends to mailbox on AwaitOk delivery so famp_inbox sees the message)
     → agent finishes turn → Stop hook fires again → loop repeats
     ↓
 [B] no message for 23h

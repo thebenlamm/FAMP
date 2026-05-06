@@ -242,6 +242,32 @@ Registers the user-scope Codex MCP server. After this lands, call
 `register as <name>` per Codex window; the binding happens inside the
 session.
 
+### Listen Mode (inbound wake-up)
+
+By default, a registered window checks its inbox on demand. Passing
+`listen: true` to `famp_register` turns the window into an always-on
+receiver: after every turn, the Stop hook blocks waiting for an inbound
+message and wakes Claude automatically when one arrives (sub-minute
+latency).
+
+```text
+register as dk with listen mode on
+```
+
+Claude calls `famp_register({identity: "dk", listen: true})`. When a
+peer sends `famp send --to dk --new-task "..."`, the window wakes with:
+
+```
+[FAMP listen mode] New message from <sender>. Call famp_inbox to read it.
+```
+
+Claude then calls `famp_inbox` to read the content. The `[FAMP listen mode]`
+prefix in the Claude Code UI distinguishes expected wakes from actual hook
+errors.
+
+Use listen mode for dedicated agent windows (e.g. Sofer's 5-agent mesh).
+Omit it for general-purpose dev windows that check inbox on demand.
+
 <details>
 <summary>Why this changed (v0.8.x to v0.9 trajectory)</summary>
 
