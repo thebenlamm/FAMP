@@ -5,7 +5,8 @@
 //!  1. `json_merge::remove_user_json("mcpServers", "famp")` against `~/.claude.json`
 //!  2. `slash_commands::remove_all` against `~/.claude/commands/`
 //!  3. `hook_runner::remove_shim` against `~/.famp/hook-runner.sh`
-//!  4. Surgical drop of the famp-tagged Stop hook in `~/.claude/settings.json`
+//!  4. `await_hook::remove_shim` against `~/.claude/hooks/famp-await.sh`
+//!  5. Surgical drop of both famp-tagged Stop hooks in `~/.claude/settings.json`
 //!     while preserving every other hook and every other settings key.
 //!
 //! Idempotent: re-running on already-uninstalled state is a no-op.
@@ -17,7 +18,7 @@ use clap::Args;
 use serde_json::Value;
 
 use crate::cli::error::CliError;
-use crate::cli::install::{hook_runner, json_merge, slash_commands};
+use crate::cli::install::{await_hook, hook_runner, json_merge, slash_commands};
 
 #[derive(Debug, Args)]
 pub struct UninstallClaudeCodeArgs {
@@ -49,6 +50,10 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     let commands_dir = home.join(".claude").join("commands");
     let settings_path = home.join(".claude").join("settings.json");
     let shim_path = home.join(".famp").join("hook-runner.sh");
+    let await_shim_path = home
+        .join(".claude")
+        .join("hooks")
+        .join("famp-await.sh");
 
     writeln!(
         err,
@@ -60,7 +65,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     let outcome = json_merge::remove_user_json(&claude_json_path, "mcpServers", "famp")?;
     writeln!(
         err,
-        "  [1/4] {} :: mcpServers.famp -> {:?}",
+        "  [1/5] {} :: mcpServers.famp -> {:?}",
         claude_json_path.display(),
         outcome
     )
@@ -69,15 +74,23 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     slash_commands::remove_all(&commands_dir)?;
     writeln!(
         err,
-        "  [2/4] {} :: 7 slash-command markdown files removed",
+        "  [2/5] {} :: 7 slash-command markdown files removed",
         commands_dir.display()
     )
     .ok();
 
     hook_runner::remove_shim(&shim_path)?;
-    writeln!(err, "  [3/4] {} :: bash shim removed", shim_path.display()).ok();
+    writeln!(err, "  [3/5] {} :: hook-runner shim removed", shim_path.display()).ok();
 
-    surgical_remove_stop_entry(&settings_path, &shim_path, err)?;
+    await_hook::remove_shim(&await_shim_path)?;
+    writeln!(
+        err,
+        "  [4/5] {} :: await shim removed",
+        await_shim_path.display()
+    )
+    .ok();
+
+    surgical_remove_stop_entry(&settings_path, &shim_path, &await_shim_path, err)?;
 
     writeln!(err).ok();
     writeln!(err, "uninstall-claude-code complete.").ok();
@@ -97,13 +110,14 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
 fn surgical_remove_stop_entry(
     settings_path: &Path,
     shim_path: &Path,
+    await_shim_path: &Path,
     err: &mut dyn Write,
 ) -> Result<(), CliError> {
     let existing: Value = match std::fs::read_to_string(settings_path) {
         Ok(s) if s.trim().is_empty() => {
             writeln!(
                 err,
-                "  [4/4] {} :: empty file, no Stop entry to remove",
+                "  [5/5] {} :: empty file, no Stop entry to remove",
                 settings_path.display()
             )
             .ok();
@@ -116,7 +130,7 @@ fn surgical_remove_stop_entry(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             writeln!(
                 err,
-                "  [4/4] {} :: file absent, no Stop entry to remove",
+                "  [5/5] {} :: file absent, no Stop entry to remove",
                 settings_path.display()
             )
             .ok();
@@ -140,23 +154,26 @@ fn surgical_remove_stop_entry(
     if prior_stop.is_empty() {
         writeln!(
             err,
-            "  [4/4] {} :: no Stop array, nothing to remove",
+            "  [5/5] {} :: no Stop array, nothing to remove",
             settings_path.display()
         )
         .ok();
         return Ok(());
     }
 
-    let shim_str = shim_path.display().to_string();
+    let famp_paths = [
+        shim_path.display().to_string(),
+        await_shim_path.display().to_string(),
+    ];
     let filtered: Vec<Value> = prior_stop
         .iter()
-        .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &shim_str))
+        .filter_map(|elem| remove_famp_hook_from_stop_entry(elem, &famp_paths))
         .collect();
 
     if filtered.len() == prior_stop.len() {
         writeln!(
             err,
-            "  [4/4] {} :: hooks.Stop -> NotPresent (no famp entry found)",
+            "  [5/5] {} :: hooks.Stop -> NotPresent (no famp entry found)",
             settings_path.display()
         )
         .ok();
@@ -170,7 +187,7 @@ fn surgical_remove_stop_entry(
     };
     writeln!(
         err,
-        "  [4/4] {} :: hooks.Stop -> {:?}",
+        "  [5/5] {} :: hooks.Stop -> {:?}",
         settings_path.display(),
         outcome
     )
@@ -178,11 +195,11 @@ fn surgical_remove_stop_entry(
     Ok(())
 }
 
-fn remove_famp_hook_from_stop_entry(entry: &Value, shim: &str) -> Option<Value> {
+fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<Value> {
     if entry
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(|command| command.starts_with(shim))
+        .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
     {
         return None;
     }
@@ -196,7 +213,7 @@ fn remove_famp_hook_from_stop_entry(entry: &Value, shim: &str) -> Option<Value> 
             !hook
                 .get("command")
                 .and_then(Value::as_str)
-                .is_some_and(|command| command.starts_with(shim))
+                .is_some_and(|command| shims.iter().any(|s| command.starts_with(s.as_str())))
         })
         .cloned()
         .collect();
@@ -238,6 +255,7 @@ mod tests {
             assert_eq!(entries.len(), 0);
         }
         assert!(!home.join(".famp/hook-runner.sh").exists());
+        assert!(!home.join(".claude/hooks/famp-await.sh").exists());
 
         let claude: Value =
             serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
