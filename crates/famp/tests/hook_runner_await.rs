@@ -46,7 +46,9 @@ fn make_transcript(
 ) {
     let tool_use_id = "toolu_test1";
     let result_content = if ok {
-        format!(r#"[{{"type":"text","text":"{{\\"active\\":\\"{identity}\\",\\"drained\\":0,\\"peers\\":[]}}"}}"#)
+        // Use a simple text payload — the extractor only checks is_error, not content.
+        // (The original nested-JSON format produced invalid JSONL via \\\" escaping.)
+        format!(r#"[{{"type":"text","text":"registered as {identity}"}}]"#)
     } else {
         r#"[{"type":"text","text":"name already taken"}]"#.to_string()
     };
