@@ -256,32 +256,34 @@ fn send_agent<E: BrokerEnv>(
     // WR-09: extract task_id from the envelope so the SendOk reply
     // carries the real task identity (matches send_channel). The
     // pre-fix path always returned Uuid::nil() for agent DMs, leaving
-    // \`famp send\` and the \`famp_send\` MCP tool unable to surface the
+    // `famp send` and the `famp_send` MCP tool unable to surface the
     // task id to downstream callers.
     let task_id = task_id_from(&envelope);
-    if let Some(waiting) = waiting_client_for_name(broker, &name, &envelope) {
-        broker.state.pending_awaits.remove(&waiting);
-        // Also append to mailbox so famp_inbox can read the message after
-        // the listen-mode hook wakes Claude. Without this, the AwaitOk path
-        // consumes the message and the inbox is empty when Claude checks it.
-        return vec![
-            Out::AppendMailbox {
-                target: MailboxName::Agent(name.clone()),
-                line,
-            },
-            Out::Reply(waiting, BusReply::AwaitOk { envelope }),
-            Out::UnparkAwait { client: waiting },
-            send_ok(sender, task_id, Target::Agent { name }, true),
-        ];
+    let waiters = waiting_clients_for_name(broker, &name, &envelope);
+
+    // D-04: AppendMailbox FIRST, before any AwaitOk reply.
+    let mut out = Vec::with_capacity(2 + 2 * waiters.len());
+    out.push(Out::AppendMailbox {
+        target: MailboxName::Agent(name.clone()),
+        line,
+    });
+
+    if !waiters.is_empty() {
+        tracing::debug!(waiters = waiters.len(), name = %name, "wake_broadcast");
+        for waiting in &waiters {
+            broker.state.pending_awaits.remove(waiting);
+            out.push(Out::Reply(
+                *waiting,
+                BusReply::AwaitOk {
+                    envelope: envelope.clone(),
+                },
+            ));
+            out.push(Out::UnparkAwait { client: *waiting });
+        }
     }
 
-    vec![
-        Out::AppendMailbox {
-            target: MailboxName::Agent(name.clone()),
-            line,
-        },
-        send_ok(sender, task_id, Target::Agent { name }, true),
-    ]
+    out.push(send_ok(sender, task_id, Target::Agent { name }, true));
+    out
 }
 
 fn send_channel<E: BrokerEnv>(
@@ -297,24 +299,35 @@ fn send_channel<E: BrokerEnv>(
         .get(&name)
         .cloned()
         .unwrap_or_default();
+    let task_id = task_id_from(envelope);
     let mut out = Vec::new();
+
+    // D-04: AppendMailbox FIRST, before any AwaitOk reply. Previously
+    // this lived AFTER the waiter loop, opening a race window where
+    // a woken awaiter could read SendOk before the message was on disk.
+    out.push(Out::AppendMailbox {
+        target: MailboxName::Channel(name.clone()),
+        line,
+    });
+
     for member in &members {
-        if let Some(waiting) = waiting_client_for_name(broker, member, envelope) {
-            broker.state.pending_awaits.remove(&waiting);
+        let waiters = waiting_clients_for_name(broker, member, envelope);
+        if waiters.is_empty() {
+            continue;
+        }
+        tracing::debug!(waiters = waiters.len(), name = %member, "wake_broadcast");
+        for waiting in &waiters {
+            broker.state.pending_awaits.remove(waiting);
             out.push(Out::Reply(
-                waiting,
+                *waiting,
                 BusReply::AwaitOk {
                     envelope: envelope.clone(),
                 },
             ));
-            out.push(Out::UnparkAwait { client: waiting });
+            out.push(Out::UnparkAwait { client: *waiting });
         }
     }
-    let task_id = task_id_from(envelope);
-    out.push(Out::AppendMailbox {
-        target: MailboxName::Channel(name),
-        line,
-    });
+
     out.push(Out::Reply(
         sender,
         BusReply::SendOk {
@@ -710,19 +723,35 @@ fn connected_names(clients: &std::collections::BTreeMap<ClientId, ClientState>) 
         .collect()
 }
 
-fn waiting_client_for_name<E: BrokerEnv>(
+fn waiting_clients_for_name<E: BrokerEnv>(
     broker: &Broker<E>,
     name: &str,
     envelope: &serde_json::Value,
-) -> Option<ClientId> {
-    broker.state.pending_awaits.values().find_map(|parked| {
-        let state = broker.state.clients.get(&parked.client)?;
-        // D-10: a proxy connection's effective identity matches via
-        // `state.bind_as` when its `state.name` is None.
-        let waiting_name = state.name.as_deref().or(state.bind_as.as_deref())?;
-        (state.connected && waiting_name == name && filter_matches(&parked.filter, envelope))
-            .then_some(parked.client)
-    })
+) -> Vec<ClientId> {
+    broker
+        .state
+        .pending_awaits
+        .values()
+        .filter_map(|parked| {
+            let state = broker.state.clients.get(&parked.client)?;
+            if !state.connected {
+                return None;
+            }
+            // Canonical holder: state.name == Some(name).
+            // Proxy: state.name is None AND state.bind_as == Some(name)
+            //        AND canonical holder for `name` is still alive.
+            let matches_name = match (&state.name, &state.bind_as) {
+                (Some(n), _) => n == name,
+                (None, Some(b)) => b == name && proxy_holder_alive(broker, name),
+                _ => false,
+            };
+            if matches_name && filter_matches(&parked.filter, envelope) {
+                Some(parked.client)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn filter_matches(filter: &AwaitFilter, envelope: &serde_json::Value) -> bool {
