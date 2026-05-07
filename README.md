@@ -157,25 +157,18 @@ This is the v0.9 local-first path; if you need cross-host federation, see
 [docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md).
 
 ```bash
-# 1. Get Rust (skip if already installed)
+# 1. Install Rust (skip if already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 source "$HOME/.cargo/env"
 
-# 2. Clone and install (one-time compile, ~60-120s)
-git clone https://github.com/thebenlamm/FAMP.git
-cd FAMP
-cargo install --path crates/famp
+# 2. Install famp and wire Claude Code (~60-120s first-run compile)
+cargo install famp
 famp install-claude-code
-# ↑ writes MCP config, slash commands (/famp-register, etc.), and the listen-mode Stop hook
-
 # 3. In one Claude Code window:
 /famp-register alice
-
-# 4. In another Claude Code window:
+# 4. In another:
 /famp-register bob
-
 # Then ask alice's Claude: "send bob a message saying ship it"
-# Then ask bob's Claude:   "what's in my inbox?"
 ```
 
 > First install includes a one-time compile (~60-120 s); subsequent windows: <30 s.
