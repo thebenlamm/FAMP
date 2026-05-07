@@ -151,6 +151,16 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
     // 1. Resolve identity (D-01) for the Hello.bind_as proxy.
     let identity = resolve_identity(args.act_as.as_deref())?;
 
+    // Guard: reject #-prefixed identity strings (--as '#bad' edge case).
+    // Identities must not start with '#' — that prefix is reserved for channels.
+    if identity.starts_with('#') {
+        return Err(CliError::SendArgsInvalid {
+            reason: format!(
+                "'{identity}' looks like a channel name; identities must not start with '#'"
+            ),
+        });
+    }
+
     // 2. Belt-and-suspenders: clap's `conflicts_with` + `requires` already
     //    cover the flag matrix, but a defense-in-depth check protects
     //    callers that construct `SendArgs` programmatically (tests, MCP).
@@ -179,6 +189,19 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
             });
         }
     };
+
+    // Guard: reject #-prefixed names passed as agent targets (--to '#foo').
+    // '#foo' is a channel name; callers must use --channel / channel= instead.
+    // This fires for both CLI and MCP paths since both flow through run_at_structured.
+    if let Target::Agent { name } = &target {
+        if name.starts_with('#') {
+            return Err(CliError::SendArgsInvalid {
+                reason: format!(
+                    "'{name}' looks like a channel name; pass channel= instead of peer="
+                ),
+            });
+        }
+    }
 
     // 4. Build the envelope value. Phase 02 wires a minimal mode-tagged
     //    payload wrapped in a typed `audit_log` BusEnvelope so the broker's
@@ -524,6 +547,36 @@ mod tests {
         match res.unwrap_err() {
             CliError::SendArgsInvalid { reason } => {
                 assert!(reason.contains("--more-coming"), "{reason}");
+            }
+            other => panic!("expected SendArgsInvalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn send_agent_with_hash_prefix_is_rejected() {
+        // Guard fires before broker connection — no live broker needed.
+        // Uses act_as to short-circuit identity resolution (same pattern as
+        // `more_coming_without_new_task_errors_in_run_at_structured`).
+        let args = SendArgs {
+            to: Some("#bad-channel".to_string()),
+            channel: None,
+            new_task: Some("hi".to_string()),
+            task: None,
+            terminal: false,
+            body: None,
+            more_coming: false,
+            act_as: Some("alice".to_string()),
+        };
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let res = rt.block_on(run_at_structured(
+            std::path::Path::new("/nonexistent-famp-sock"),
+            args,
+        ));
+        match res.unwrap_err() {
+            CliError::SendArgsInvalid { reason } => {
+                assert!(reason.contains("channel"), "{reason}");
             }
             other => panic!("expected SendArgsInvalid, got {other:?}"),
         }

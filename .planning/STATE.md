@@ -5,7 +5,7 @@ milestone_name: Local-First Bus
 status: shipped
 stopped_at: v0.9 milestone closed 2026-05-04
 last_updated: "2026-05-06T21:54:20.000Z"
-last_activity: 2026-05-06 - Add smoke-test gate for Quick Start install path (just smoke-test + CI job 260506-s1t)
+last_activity: 2026-05-06 - Trim README Quick Start fence to 12 lines, fix CC-09 CI failure (260506-cc9)
 progress:
   total_phases: 5
   completed_phases: 5
@@ -129,6 +129,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | 260504-ubf | Cleanup late-join debug findings: delete stale v0.8 cursor artifacts, add RegisterOk.peers snapshot doc note | 2026-05-05 | a55be0d | [260504-ubf-clean-up-late-join-debug-findings-delete](./quick/260504-ubf-clean-up-late-join-debug-findings-delete/) |
 | 260506-c65 | Wire famp-await.sh into famp install-claude-code / uninstall-claude-code distribution | 2026-05-06 | 54fcb47 | [260506-c65-wire-famp-await-into-install-claude-code](./quick/260506-c65-wire-famp-await-into-install-claude-code/) |
 | 260506-s1t | Add smoke-test for Quick Start install path (just smoke-test + CI job) | 2026-05-06 | 53eec99 | [260506-s1t-add-smoke-test-quick-start-install](./quick/260506-s1t-add-smoke-test-quick-start-install/) |
+| 260506-cc9 | Trim README Quick Start fence from 19→12 lines (CC-09) + D-11 cargo install path | 2026-05-06 | 120f040 | [260506-cc9-trim-readme-quick-start-fence-cc09](./quick/260506-cc9-trim-readme-quick-start-fence-cc09/) |
 
 ## Performance Metrics
 
