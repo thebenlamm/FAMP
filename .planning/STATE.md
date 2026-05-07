@@ -5,7 +5,7 @@ milestone_name: Local-First Bus
 status: shipped
 stopped_at: v0.9 milestone closed 2026-05-04
 last_updated: "2026-05-06T21:54:20.000Z"
-last_activity: 2026-05-06 - Trim README Quick Start fence to 12 lines, fix CC-09 CI failure (260506-cc9)
+last_activity: 2026-05-07 - Fix broker await broadcast race condition: Vec broadcast, D-04 ordering, proxy liveness gate, 4 tests (260507-k9x)
 progress:
   total_phases: 5
   completed_phases: 5
@@ -131,6 +131,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | 260506-s1t | Add smoke-test for Quick Start install path (just smoke-test + CI job) | 2026-05-06 | 53eec99 | [260506-s1t-add-smoke-test-quick-start-install](./quick/260506-s1t-add-smoke-test-quick-start-install/) |
 | 260506-cc9 | Trim README Quick Start fence from 19→12 lines (CC-09) + D-11 cargo install path | 2026-05-06 | 120f040 | [260506-cc9-trim-readme-quick-start-fence-cc09](./quick/260506-cc9-trim-readme-quick-start-fence-cc09/) |
 | 260507-fcs | fix-channel-send-hash-principal-bug | complete | Fix #-prefixed peer name corrupting channel mailbox |
+| 260507-k9x | Fix broker await broadcast race: replace find_map with Vec broadcast, D-04 AppendMailbox ordering, proxy liveness gate, 4 regression tests | 2026-05-07 | 77d045b | [260507-k9x-fix-broker-await-broadcast-race-conditio](./quick/260507-k9x-fix-broker-await-broadcast-race-conditio/) |
 
 ## Performance Metrics
 
@@ -143,6 +144,6 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 ## Session
 
-**Last session:** 2026-05-04T01:23:57.240Z
-**Stopped At:** Completed 04-05-PLAN.md
+**Last session:** 2026-05-07T18:40:32Z
+**Stopped At:** Completed 260507-k9x-PLAN.md
 **Resume File:** None
