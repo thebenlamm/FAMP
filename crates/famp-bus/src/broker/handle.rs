@@ -54,7 +54,7 @@ fn handle_wire<E: BrokerEnv>(
             bind_as,
         } => hello(broker, client, bus_proto, bind_as),
         BusMessage::Register { name, pid } => register(broker, client, name, pid),
-        BusMessage::Send { to, envelope } => send(broker, client, to, envelope),
+        BusMessage::Send { to, envelope } => send(broker, client, to, &envelope),
         BusMessage::Inbox {
             since,
             include_terminal: _,
@@ -217,7 +217,7 @@ fn send<E: BrokerEnv>(
     broker: &mut Broker<E>,
     client: ClientId,
     to: Target,
-    envelope: serde_json::Value,
+    envelope: &serde_json::Value,
 ) -> Vec<Out> {
     // D-10: resolve via effective_identity so a proxy connection can
     // send under the bound canonical holder's name. The from-stamp on
@@ -235,14 +235,14 @@ fn send<E: BrokerEnv>(
             "client is not registered",
         )];
     }
-    let line = match encode_envelope(&envelope, client) {
+    let line = match encode_envelope(envelope, client) {
         Ok(line) => line,
         Err(reply) => return vec![reply],
     };
 
     match to {
         Target::Agent { name } => send_agent(broker, client, name, envelope, line),
-        Target::Channel { name } => send_channel(broker, client, name, &envelope, line),
+        Target::Channel { name } => send_channel(broker, client, &name, envelope, line),
     }
 }
 
@@ -250,71 +250,79 @@ fn send_agent<E: BrokerEnv>(
     broker: &mut Broker<E>,
     sender: ClientId,
     name: String,
-    envelope: serde_json::Value,
+    envelope: &serde_json::Value,
     line: Vec<u8>,
 ) -> Vec<Out> {
     // WR-09: extract task_id from the envelope so the SendOk reply
     // carries the real task identity (matches send_channel). The
     // pre-fix path always returned Uuid::nil() for agent DMs, leaving
-    // \`famp send\` and the \`famp_send\` MCP tool unable to surface the
+    // `famp send` and the `famp_send` MCP tool unable to surface the
     // task id to downstream callers.
-    let task_id = task_id_from(&envelope);
-    if let Some(waiting) = waiting_client_for_name(broker, &name, &envelope) {
-        broker.state.pending_awaits.remove(&waiting);
-        // Also append to mailbox so famp_inbox can read the message after
-        // the listen-mode hook wakes Claude. Without this, the AwaitOk path
-        // consumes the message and the inbox is empty when Claude checks it.
-        return vec![
-            Out::AppendMailbox {
-                target: MailboxName::Agent(name.clone()),
-                line,
-            },
-            Out::Reply(waiting, BusReply::AwaitOk { envelope }),
-            Out::UnparkAwait { client: waiting },
-            send_ok(sender, task_id, Target::Agent { name }, true),
-        ];
+    let task_id = task_id_from(envelope);
+    let waiters = waiting_clients_for_name(broker, &name, envelope);
+
+    // D-04: AppendMailbox FIRST, before any AwaitOk reply.
+    let mut out = Vec::with_capacity(2 + 2 * waiters.len());
+    out.push(Out::AppendMailbox {
+        target: MailboxName::Agent(name.clone()),
+        line,
+    });
+
+    if !waiters.is_empty() {
+        tracing::debug!(waiters = waiters.len(), name = %name, "wake_broadcast");
+        for waiting in &waiters {
+            broker.state.pending_awaits.remove(waiting);
+            out.push(Out::Reply(
+                *waiting,
+                BusReply::AwaitOk {
+                    envelope: envelope.clone(),
+                },
+            ));
+            out.push(Out::UnparkAwait { client: *waiting });
+        }
     }
 
-    vec![
-        Out::AppendMailbox {
-            target: MailboxName::Agent(name.clone()),
-            line,
-        },
-        send_ok(sender, task_id, Target::Agent { name }, true),
-    ]
+    out.push(send_ok(sender, task_id, Target::Agent { name }, true));
+    out
 }
 
 fn send_channel<E: BrokerEnv>(
     broker: &mut Broker<E>,
     sender: ClientId,
-    name: String,
+    name: &str,
     envelope: &serde_json::Value,
     line: Vec<u8>,
 ) -> Vec<Out> {
-    let members = broker
-        .state
-        .channels
-        .get(&name)
-        .cloned()
-        .unwrap_or_default();
+    let members = broker.state.channels.get(name).cloned().unwrap_or_default();
+    let task_id = task_id_from(envelope);
     let mut out = Vec::new();
+
+    // D-04: AppendMailbox FIRST, before any AwaitOk reply. Previously
+    // this lived AFTER the waiter loop, opening a race window where
+    // a woken awaiter could read SendOk before the message was on disk.
+    out.push(Out::AppendMailbox {
+        target: MailboxName::Channel(name.to_owned()),
+        line,
+    });
+
     for member in &members {
-        if let Some(waiting) = waiting_client_for_name(broker, member, envelope) {
-            broker.state.pending_awaits.remove(&waiting);
+        let waiters = waiting_clients_for_name(broker, member, envelope);
+        if waiters.is_empty() {
+            continue;
+        }
+        tracing::debug!(waiters = waiters.len(), name = %member, "wake_broadcast");
+        for waiting in &waiters {
+            broker.state.pending_awaits.remove(waiting);
             out.push(Out::Reply(
-                waiting,
+                *waiting,
                 BusReply::AwaitOk {
                     envelope: envelope.clone(),
                 },
             ));
-            out.push(Out::UnparkAwait { client: waiting });
+            out.push(Out::UnparkAwait { client: *waiting });
         }
     }
-    let task_id = task_id_from(envelope);
-    out.push(Out::AppendMailbox {
-        target: MailboxName::Channel(name),
-        line,
-    });
+
     out.push(Out::Reply(
         sender,
         BusReply::SendOk {
@@ -710,19 +718,35 @@ fn connected_names(clients: &std::collections::BTreeMap<ClientId, ClientState>) 
         .collect()
 }
 
-fn waiting_client_for_name<E: BrokerEnv>(
+fn waiting_clients_for_name<E: BrokerEnv>(
     broker: &Broker<E>,
     name: &str,
     envelope: &serde_json::Value,
-) -> Option<ClientId> {
-    broker.state.pending_awaits.values().find_map(|parked| {
-        let state = broker.state.clients.get(&parked.client)?;
-        // D-10: a proxy connection's effective identity matches via
-        // `state.bind_as` when its `state.name` is None.
-        let waiting_name = state.name.as_deref().or(state.bind_as.as_deref())?;
-        (state.connected && waiting_name == name && filter_matches(&parked.filter, envelope))
-            .then_some(parked.client)
-    })
+) -> Vec<ClientId> {
+    broker
+        .state
+        .pending_awaits
+        .values()
+        .filter_map(|parked| {
+            let state = broker.state.clients.get(&parked.client)?;
+            if !state.connected {
+                return None;
+            }
+            // Canonical holder: state.name == Some(name).
+            // Proxy: state.name is None AND state.bind_as == Some(name)
+            //        AND canonical holder for `name` is still alive.
+            let matches_name = match (&state.name, &state.bind_as) {
+                (Some(n), _) => n == name,
+                (None, Some(b)) => b == name && proxy_holder_alive(broker, name),
+                _ => false,
+            };
+            if matches_name && filter_matches(&parked.filter, envelope) {
+                Some(parked.client)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn filter_matches(filter: &AwaitFilter, envelope: &serde_json::Value) -> bool {
@@ -1039,5 +1063,395 @@ mod d10_tests {
             })
             .expect("SessionsOk");
         assert!(rows.iter().any(|r| r.name == "alice"));
+    }
+
+    // Helper: collect all ClientIds that received AwaitOk in a Vec<Out>.
+    fn count_await_oks(outs: &[Out]) -> Vec<ClientId> {
+        outs.iter()
+            .filter_map(|o| match o {
+                Out::Reply(c, BusReply::AwaitOk { .. }) => Some(*c),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_send_agent_wakes_all_proxy_waiters() {
+        // Two proxy waiters for alice; both must wake on a single DM.
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+
+        // Canonical holder for alice: client 1, pid 999 (alive by default).
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+
+        // Proxy 1 and proxy 2 both bind_as alice.
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+        let _ = hello_proxy(&mut broker, 3, "alice", now);
+
+        // Park both proxies on Await.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(3_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+
+        // Sender: canonical "bob" on client 4 sends DM to alice.
+        hello_canonical(&mut broker, 4, "bob", now);
+        register(&mut broker, 4, "bob", 111, now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(4_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent {
+                        name: "alice".into(),
+                    },
+                    envelope: serde_json::json!({"body": "hi"}),
+                },
+            },
+            now,
+        );
+
+        // AppendMailbox MUST be first.
+        assert!(
+            matches!(outs[0], Out::AppendMailbox { .. }),
+            "AppendMailbox must precede any Reply; got {:?}",
+            outs[0]
+        );
+
+        // Both proxies receive AwaitOk.
+        let woken: std::collections::HashSet<ClientId> =
+            count_await_oks(&outs).into_iter().collect();
+        assert_eq!(
+            woken,
+            [ClientId::from(2_u64), ClientId::from(3_u64)]
+                .into_iter()
+                .collect(),
+            "both proxy waiters must be woken"
+        );
+
+        // Exactly two UnparkAwait entries with the same ClientId set.
+        let unparked: std::collections::HashSet<ClientId> = outs
+            .iter()
+            .filter_map(|o| match o {
+                Out::UnparkAwait { client } => Some(*client),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            woken, unparked,
+            "UnparkAwait ClientId set must match AwaitOk set"
+        );
+
+        // Exactly one AppendMailbox for the agent mailbox.
+        let mailbox_count = outs
+            .iter()
+            .filter(|o| {
+                matches!(
+                    o,
+                    Out::AppendMailbox {
+                        target: MailboxName::Agent(_),
+                        ..
+                    }
+                )
+            })
+            .count();
+        assert_eq!(
+            mailbox_count, 1,
+            "exactly one AppendMailbox to agent mailbox"
+        );
+    }
+
+    #[test]
+    fn test_canonical_plus_proxy_both_wake() {
+        // Canonical alice (client 1) + one proxy (client 2); both parked on Await.
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+
+        // Park canonical alice on Await.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+        // Park proxy on Await.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+
+        // Sender on client 3 sends DM to alice.
+        hello_canonical(&mut broker, 3, "bob", now);
+        register(&mut broker, 3, "bob", 222, now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(3_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent {
+                        name: "alice".into(),
+                    },
+                    envelope: serde_json::json!({"body": "hi"}),
+                },
+            },
+            now,
+        );
+
+        // AppendMailbox MUST be first.
+        assert!(
+            matches!(outs[0], Out::AppendMailbox { .. }),
+            "AppendMailbox must precede any Reply"
+        );
+
+        let woken: std::collections::HashSet<ClientId> =
+            count_await_oks(&outs).into_iter().collect();
+        assert_eq!(
+            woken,
+            [ClientId::from(1_u64), ClientId::from(2_u64)]
+                .into_iter()
+                .collect(),
+            "canonical holder and proxy must both be woken"
+        );
+    }
+
+    #[test]
+    fn test_dead_proxy_does_not_wake() {
+        // Two proxies for alice; canonical holder pid 999 is marked dead before send.
+        // Neither proxy should receive AwaitOk; message still lands in mailbox.
+        let env = TestEnv::default();
+        let liveness_handle = Rc::clone(&env.liveness);
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+        let _ = hello_proxy(&mut broker, 4, "alice", now);
+
+        // Park proxy 2 on Await.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+        // Park proxy 4 on Await.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(4_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+
+        // Kill the canonical holder.
+        liveness_handle.borrow_mut().mark_dead(999);
+
+        // Sender on client 3 sends DM to "alice".
+        hello_canonical(&mut broker, 3, "bob", now);
+        register(&mut broker, 3, "bob", 333, now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(3_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent {
+                        name: "alice".into(),
+                    },
+                    envelope: serde_json::json!({"body": "hi"}),
+                },
+            },
+            now,
+        );
+
+        // No AwaitOk — dead canonical holder gates all proxies out.
+        let woken = count_await_oks(&outs);
+        assert!(
+            woken.is_empty(),
+            "dead canonical holder must prevent proxy wake; woken: {woken:?}"
+        );
+
+        // AppendMailbox still happens (message lands in mailbox).
+        let has_mailbox = outs.iter().any(|o| {
+            matches!(
+                o,
+                Out::AppendMailbox {
+                    target: MailboxName::Agent(_),
+                    ..
+                }
+            )
+        });
+        assert!(
+            has_mailbox,
+            "AppendMailbox must still be emitted even when no waiter is woken"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn test_send_channel_wakes_all_member_waiters() {
+        // alice (client 1) and bob (client 2) join #x; both parked on Await.
+        // carol (client 3) sends to #x; both must wake, mailbox first.
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+
+        // Register alice.
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 100, now);
+
+        // Register bob.
+        hello_canonical(&mut broker, 2, "bob", now);
+        register(&mut broker, 2, "bob", 200, now);
+
+        // Both join #x.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Join {
+                    channel: "#x".into(),
+                },
+            },
+            now,
+        );
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Join {
+                    channel: "#x".into(),
+                },
+            },
+            now,
+        );
+
+        // Park alice on Await.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+        // Park bob on Await.
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+
+        // carol (client 3) registers and sends to #x.
+        hello_canonical(&mut broker, 3, "carol", now);
+        register(&mut broker, 3, "carol", 300, now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(3_u64),
+                msg: BusMessage::Send {
+                    to: Target::Channel { name: "#x".into() },
+                    envelope: serde_json::json!({"body": "hello channel"}),
+                },
+            },
+            now,
+        );
+
+        // AppendMailbox(Channel) must precede all AwaitOk replies.
+        let first_awaitok_pos = outs
+            .iter()
+            .position(|o| matches!(o, Out::Reply(_, BusReply::AwaitOk { .. })));
+        let channel_mailbox_pos = outs.iter().position(|o| {
+            matches!(
+                o,
+                Out::AppendMailbox {
+                    target: MailboxName::Channel(_),
+                    ..
+                }
+            )
+        });
+        assert!(
+            channel_mailbox_pos.is_some(),
+            "channel AppendMailbox must be emitted"
+        );
+        if let Some(await_pos) = first_awaitok_pos {
+            assert!(
+                channel_mailbox_pos.unwrap() < await_pos,
+                "channel AppendMailbox must precede first AwaitOk (D-04)"
+            );
+        }
+
+        // Both alice and bob receive AwaitOk.
+        let woken: std::collections::HashSet<ClientId> =
+            count_await_oks(&outs).into_iter().collect();
+        assert_eq!(
+            woken,
+            [ClientId::from(1_u64), ClientId::from(2_u64)]
+                .into_iter()
+                .collect(),
+            "alice and bob must both be woken"
+        );
+
+        // SendOk with both alice and bob in delivered.
+        let send_ok = outs.iter().find_map(|o| match o {
+            Out::Reply(_, BusReply::SendOk { delivered, .. }) => Some(delivered),
+            _ => None,
+        });
+        assert!(send_ok.is_some(), "SendOk must be present");
+        let delivered_names: std::collections::HashSet<String> = send_ok
+            .unwrap()
+            .iter()
+            .filter_map(|d| match &d.to {
+                Target::Agent { name } => Some(name.clone()),
+                Target::Channel { .. } => None,
+            })
+            .collect();
+        assert!(
+            delivered_names.contains("alice"),
+            "alice must be in delivered"
+        );
+        assert!(delivered_names.contains("bob"), "bob must be in delivered");
     }
 }
