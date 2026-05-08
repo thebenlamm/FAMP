@@ -5,7 +5,7 @@ milestone_name: Local-First Bus
 status: shipped
 stopped_at: v0.9 milestone closed 2026-05-04
 last_updated: "2026-05-06T21:54:20.000Z"
-last_activity: 2026-05-08 - Fix task_id zeros (key mismatch) + wire causality on reply sends + fix filter_matches to read causality.ref (260507-sv8)
+last_activity: 2026-05-08 - Add woken bool to SendOk; fix stale proto.rs comments (260508-ib4)
 progress:
   total_phases: 5
   completed_phases: 5
@@ -133,6 +133,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | 260507-fcs | fix-channel-send-hash-principal-bug | complete | Fix #-prefixed peer name corrupting channel mailbox |
 | 260507-k9x | Fix broker await broadcast race: replace find_map with Vec broadcast, D-04 AppendMailbox ordering, proxy liveness gate, 4 regression tests | 2026-05-07 | 77d045b | [260507-k9x-fix-broker-await-broadcast-race-conditio](./quick/260507-k9x-fix-broker-await-broadcast-race-conditio/) |
 | 260507-sv8 | Fix task_id zeros bug and wire causality into build_envelope_value | 2026-05-08 | a9c1451 | [260507-sv8-fix-task-id-zeros-bug-and-wire-causality](./quick/260507-sv8-fix-task-id-zeros-bug-and-wire-causality/) |
+| 260508-ib4 | Add woken bool to SendOk so famp_send callers can tell if recipient was live at delivery time | 2026-05-08 | c699859 | [260508-ib4-add-woken-bool-to-sendok-so-famp-send-ca](./quick/260508-ib4-add-woken-bool-to-sendok-so-famp-send-ca/) |
 
 ## Performance Metrics
 

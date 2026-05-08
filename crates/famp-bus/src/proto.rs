@@ -268,7 +268,7 @@ mod tests {
     fn roundtrip_busreply() {
         let v = BusReply::SendOk {
             task_id: uuid::Uuid::nil(),
-            delivered: vec![Delivered { // woken set below.
+            delivered: vec![Delivered {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn delivered_with_woken_round_trips() {
-        let delivered = Delivered { // woken set below.
+        let delivered = Delivered {
             to: Target::Agent {
                 name: "alice".into(),
             },
