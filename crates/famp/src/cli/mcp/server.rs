@@ -47,10 +47,7 @@ fn tool_descriptors() -> serde_json::Value {
                     "body":    { "type": "string", "description": "Task body content (the actual instructions). REQUIRED for new_task to carry content; the title field is only a short summary. For deliver/terminal modes, this is the reply text." },
                     "more_coming": { "type": "boolean", "description": "OPTIONAL, new_task mode only. Set true when this is the FIRST of multiple envelopes briefing the same task — the receiver will hold the task as 'pending follow-up' instead of treating it as ready to commit on the first envelope. Send subsequent context via famp_send mode=deliver; the briefing is complete when you send a deliver envelope without more_coming (or mode=terminal for a final reply). Default false (the task is fully briefed in this single envelope). Mirrors the body.interim flag on deliver envelopes. Ignored outside new_task mode." }
                 },
-                "oneOf": [
-                    {"required": ["peer", "mode"]},
-                    {"required": ["channel", "mode"]}
-                ]
+                "required": ["mode"]
             }
         },
         {
