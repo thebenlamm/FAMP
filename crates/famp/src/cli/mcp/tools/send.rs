@@ -21,6 +21,9 @@
 //! `famp_await` at the moment the message landed and got woken with
 //! `AwaitOk`. `false` means no recipient was actively listening; the
 //! message is in the mailbox awaiting the next `Inbox` / `Await`.
+//!
+//! Caller policy: surface `woken` to the user for visibility only — do
+//! not alter timeout, retry, or back-off behavior based on this field.
 
 use famp_bus::BusErrorKind;
 use serde_json::Value;
