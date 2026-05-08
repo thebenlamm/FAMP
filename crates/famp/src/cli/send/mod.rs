@@ -92,7 +92,8 @@ pub struct SendArgs {
 /// Outcome returned by [`run_at_structured`].
 ///
 /// Carries the broker's `task_id` (`UUIDv7` string) and a debug-format of
-/// the per-target delivery slice. JSON-Line shape on stdout:
+/// the per-target delivery slice. `delivered_rows` is the structured
+/// equivalent used by the MCP tool. JSON-Line shape on stdout:
 /// `{"task_id":"<uuid>","delivered":"<debug>"}` — preserved from v0.8 for
 /// MCP-tool output compatibility.
 #[derive(Debug, Clone)]
@@ -104,6 +105,19 @@ pub struct SendOutcome {
     /// the CLI's structured-result surface; debug-stringify keeps the
     /// CLI/MCP boundary independent of wire-layer types.
     pub delivered: String,
+    pub delivered_rows: Vec<DeliveredRow>,
+}
+
+/// Structured per-target delivery row. Used by the
+/// `famp_send` MCP tool to surface `ok` and `woken`
+/// programmatically without parsing the
+/// `SendOutcome::delivered` debug string.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DeliveredRow {
+    pub to_kind: String,
+    pub to_name: String,
+    pub ok: bool,
+    pub woken: bool,
 }
 
 /// Production entry — resolves the broker socket via
@@ -254,10 +268,28 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
     bus.shutdown().await;
 
     match reply {
-        BusReply::SendOk { task_id, delivered } => Ok(SendOutcome {
-            task_id: task_id.to_string(),
-            delivered: format!("{delivered:?}"),
-        }),
+        BusReply::SendOk { task_id, delivered } => {
+            let delivered_rows = delivered
+                .iter()
+                .map(|d| {
+                    let (to_kind, to_name) = match &d.to {
+                        Target::Agent { name } => ("agent".to_string(), name.clone()),
+                        Target::Channel { name } => ("channel".to_string(), name.clone()),
+                    };
+                    DeliveredRow {
+                        to_kind,
+                        to_name,
+                        ok: d.ok,
+                        woken: d.woken,
+                    }
+                })
+                .collect();
+            Ok(SendOutcome {
+                task_id: task_id.to_string(),
+                delivered: format!("{delivered:?}"),
+                delivered_rows,
+            })
+        }
         // Per-op liveness re-check failed (the holder died between Hello
         // and Send). Same operator hint as the Hello-time refusal.
         BusReply::Err {

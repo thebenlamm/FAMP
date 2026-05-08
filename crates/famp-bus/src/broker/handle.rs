@@ -260,6 +260,7 @@ fn send_agent<E: BrokerEnv>(
     // task id to downstream callers.
     let task_id = task_id_from(envelope);
     let waiters = waiting_clients_for_name(broker, &name, envelope);
+    let woken = !waiters.is_empty();
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply.
     let mut out = Vec::with_capacity(2 + 2 * waiters.len());
@@ -282,7 +283,13 @@ fn send_agent<E: BrokerEnv>(
         }
     }
 
-    out.push(send_ok(sender, task_id, Target::Agent { name }, true));
+    out.push(send_ok(
+        sender,
+        task_id,
+        Target::Agent { name },
+        true,
+        woken,
+    ));
     out
 }
 
@@ -329,9 +336,14 @@ fn send_channel<E: BrokerEnv>(
             task_id,
             delivered: members
                 .into_iter()
-                .map(|member| Delivered {
+                // 260508-ib4: channel-aware woken is out of scope for this
+                // plan; per-member woken in fan-out is deferred. SendOk
+                // reports woken=false for channel rows even when a member
+                // was parked on Await and got woken via the wake loop above.
+                .map(|member| Delivered { // woken is intentionally false for channel rows.
                     to: Target::Agent { name: member },
                     ok: true,
+                    woken: false,
                 })
                 .collect(),
         },
@@ -806,12 +818,12 @@ fn decode_lines(lines: Vec<Vec<u8>>) -> Result<Vec<serde_json::Value>, String> {
         .collect()
 }
 
-fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool) -> Out {
+fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool, woken: bool) -> Out {
     Out::Reply(
         client,
         BusReply::SendOk {
             task_id,
-            delivered: vec![Delivered { to, ok }],
+            delivered: vec![Delivered { to, ok, woken }],
         },
     )
 }
@@ -1085,6 +1097,111 @@ mod d10_tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn test_send_agent_woken_true_when_waiter_parked() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 999, now);
+        let _ = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+
+        hello_canonical(&mut broker, 2, "bob", now);
+        register(&mut broker, 2, "bob", 111, now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent {
+                        name: "alice".into(),
+                    },
+                    envelope: serde_json::json!({"body": "hi"}),
+                },
+            },
+            now,
+        );
+
+        let (reply_client, delivered) = outs
+            .iter()
+            .find_map(|o| match o {
+                Out::Reply(client, BusReply::SendOk { delivered, .. }) => {
+                    Some((*client, delivered))
+                }
+                _ => None,
+            })
+            .expect("SendOk must be present");
+        assert_eq!(reply_client, ClientId::from(2_u64));
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(
+            delivered[0].to,
+            Target::Agent {
+                name: "alice".into()
+            }
+        );
+        assert!(delivered[0].ok);
+        assert!(delivered[0].woken);
+    }
+
+    #[test]
+    fn test_send_agent_woken_false_when_no_waiter() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 999, now);
+
+        hello_canonical(&mut broker, 2, "bob", now);
+        register(&mut broker, 2, "bob", 111, now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent {
+                        name: "alice".into(),
+                    },
+                    envelope: serde_json::json!({"body": "hi"}),
+                },
+            },
+            now,
+        );
+
+        let append_count = outs
+            .iter()
+            .filter(|o| {
+                matches!(
+                    o,
+                    Out::AppendMailbox {
+                        target: MailboxName::Agent(name),
+                        ..
+                    } if name == "alice"
+                )
+            })
+            .count();
+        assert_eq!(append_count, 1);
+
+        let delivered = outs
+            .iter()
+            .find_map(|o| match o {
+                Out::Reply(_, BusReply::SendOk { delivered, .. }) => Some(delivered),
+                _ => None,
+            })
+            .expect("SendOk must be present");
+        assert_eq!(delivered.len(), 1);
+        assert!(delivered[0].ok);
+        assert!(!delivered[0].woken);
     }
 
     #[test]

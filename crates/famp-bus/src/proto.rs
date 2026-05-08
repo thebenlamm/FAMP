@@ -209,11 +209,26 @@ pub enum BusReply {
     },
 }
 
+/// Per-target delivery row in [`BusReply::SendOk`].
+///
+/// - `ok` — the broker accepted the bytes for this target's mailbox
+///   (i.e. `AppendMailbox` succeeded). It does NOT mean the
+///   recipient observed the message.
+/// - `woken` — at the moment the message landed, a `famp_await`
+///   was parked for this target and was woken with `AwaitOk`.
+///   `false` means the message is sitting in the mailbox awaiting
+///   a future `Inbox`/`Await` from the recipient (offline /
+///   crashed / not currently listening).
+///
+/// Wire compat: `woken` is `#[serde(default)]` so frames produced
+/// by pre-`woken` peers deserialize with `woken = false`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Delivered {
+pub struct Delivered { // woken field is serde-defaulted for wire compatibility.
     pub to: Target,
     pub ok: bool,
+    #[serde(default)]
+    pub woken: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -253,16 +268,51 @@ mod tests {
     fn roundtrip_busreply() {
         let v = BusReply::SendOk {
             task_id: uuid::Uuid::nil(),
-            delivered: vec![Delivered {
+            delivered: vec![Delivered { // woken set below.
                 to: Target::Agent {
                     name: "alice".into(),
                 },
                 ok: true,
+                woken: false,
             }],
         };
         let bytes = famp_canonical::canonicalize(&v).unwrap();
         let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
         assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn delivered_back_compat_no_woken_field_deserializes() {
+        let bytes = br#"{"ok":true,"to":{"kind":"agent","name":"alice"}}"#;
+        let decoded: Delivered = famp_canonical::from_slice_strict(bytes).unwrap();
+        assert_eq!(
+            decoded,
+            Delivered { // woken defaults false when omitted on the wire.
+                to: Target::Agent {
+                    name: "alice".into()
+                },
+                ok: true,
+                woken: false,
+            }
+        );
+    }
+
+    #[test]
+    fn delivered_with_woken_round_trips() {
+        let delivered = Delivered { // woken set below.
+            to: Target::Agent {
+                name: "alice".into(),
+            },
+            ok: true,
+            woken: true,
+        };
+        let bytes = famp_canonical::canonicalize(&delivered).unwrap();
+        assert_eq!(
+            std::str::from_utf8(&bytes).unwrap(),
+            r#"{"ok":true,"to":{"kind":"agent","name":"alice"},"woken":true}"#
+        );
+        let decoded: Delivered = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(delivered, decoded);
     }
 
     #[test]

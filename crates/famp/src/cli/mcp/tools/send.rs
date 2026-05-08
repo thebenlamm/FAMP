@@ -8,8 +8,19 @@
 //! ## Output shape
 //!
 //! ```json
-//! { "task_id": "<uuidv7>", "delivered": "<debug>" }
+//! {
+//!   "task_id": "<uuidv7>",
+//!   "delivered": "<debug>",
+//!   "delivered_rows": [{"to_kind": "agent", "to_name": "alice", "ok": true, "woken": true}],
+//!   "woken": true
+//! }
 //! ```
+//!
+//! `woken` is true iff at least one recipient row in `delivered_rows`
+//! reports `woken: true` — i.e. at least one recipient was parked on
+//! `famp_await` at the moment the message landed and got woken with
+//! `AwaitOk`. `false` means no recipient was actively listening; the
+//! message is in the mailbox awaiting the next `Inbox` / `Await`.
 
 use famp_bus::BusErrorKind;
 use serde_json::Value;
@@ -30,10 +41,15 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     // reach this code path.
     args.act_as = session::active_identity().await;
     match run_at_structured(&resolve_sock_path(), args).await {
-        Ok(out) => Ok(serde_json::json!({
-            "task_id": out.task_id,
-            "delivered": out.delivered,
-        })),
+        Ok(out) => {
+            let woken_any = out.delivered_rows.iter().any(|row| row.woken);
+            Ok(serde_json::json!({
+                "task_id": out.task_id,
+                "delivered": out.delivered,
+                "delivered_rows": out.delivered_rows,
+                "woken": woken_any,
+            }))
+        }
         Err(CliError::BusError { kind, message }) => Err(ToolError::new(kind, message)),
         Err(CliError::NotRegisteredHint { .. }) => Err(ToolError::not_registered()),
         Err(CliError::BrokerUnreachable) => Err(ToolError::new(
