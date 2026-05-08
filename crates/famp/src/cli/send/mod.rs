@@ -403,7 +403,7 @@ fn build_envelope_value(
         _ => "famp.send", // unreachable: build_inner_payload would have errored.
     };
 
-    Ok(serde_json::json!({
+    let mut envelope = serde_json::json!({
         "famp": "0.5.2",
         "class": "audit_log",
         "scope": "standalone",
@@ -416,7 +416,24 @@ fn build_envelope_value(
             "event": event,
             "details": inner,
         }
-    }))
+    });
+
+    if let (Some(task_uuid), Some(obj)) = (args.task.as_deref(), envelope.as_object_mut()) {
+        // Reply envelopes (deliver / deliver_terminal) carry causality back
+        // to the originating task so inbox readers can thread by task_id.
+        // poll.rs already reads causality["ref"] for non-request classes;
+        // the send path must populate it. JSON-literal form matches the
+        // surrounding build style — no typed Causality dependency added.
+        obj.insert(
+            "causality".to_string(),
+            serde_json::json!({
+                "rel": "delivers",
+                "ref": task_uuid,
+            }),
+        );
+    }
+
+    Ok(envelope)
 }
 
 #[cfg(test)]
@@ -580,5 +597,58 @@ mod tests {
             }
             other => panic!("expected SendArgsInvalid, got {other:?}"),
         }
+    }
+
+    // --- causality regression tests ---
+
+    #[test]
+    fn build_envelope_value_emits_causality_on_reply() {
+        // Regression: reply sends (--task <uuid>) must carry
+        // causality{rel:"delivers",ref:<uuid>} so poll.rs can thread by task_id.
+        let args = SendArgs {
+            to: Some("alice".to_string()),
+            channel: None,
+            new_task: None,
+            task: Some("0193abcd-ef01-7000-8000-000000000002".to_string()),
+            terminal: false,
+            body: Some("ok".to_string()),
+            more_coming: false,
+            act_as: None,
+        };
+        let target = Target::Agent {
+            name: "alice".to_string(),
+        };
+        let env = build_envelope_value(&args, "bob", &target).unwrap();
+        assert_eq!(
+            env["causality"]["rel"],
+            serde_json::Value::String("delivers".into())
+        );
+        assert_eq!(
+            env["causality"]["ref"],
+            serde_json::Value::String("0193abcd-ef01-7000-8000-000000000002".into()),
+        );
+    }
+
+    #[test]
+    fn build_envelope_value_omits_causality_on_new_task() {
+        // New-task sends have no originating task to thread back to.
+        let args = SendArgs {
+            to: Some("alice".to_string()),
+            channel: None,
+            new_task: Some("hi".to_string()),
+            task: None,
+            terminal: false,
+            body: None,
+            more_coming: false,
+            act_as: None,
+        };
+        let target = Target::Agent {
+            name: "alice".to_string(),
+        };
+        let env = build_envelope_value(&args, "bob", &target).unwrap();
+        assert!(
+            env.get("causality").is_none(),
+            "new_task envelopes must not carry causality"
+        );
     }
 }

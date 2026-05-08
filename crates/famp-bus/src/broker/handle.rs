@@ -752,11 +752,23 @@ fn waiting_clients_for_name<E: BrokerEnv>(
 fn filter_matches(filter: &AwaitFilter, envelope: &serde_json::Value) -> bool {
     match filter {
         AwaitFilter::Any => true,
-        AwaitFilter::Task(task_id) => envelope
-            .get("task_id")
-            .and_then(serde_json::Value::as_str)
-            .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
-            .is_some_and(|candidate| &candidate == task_id),
+        AwaitFilter::Task(task_id) => {
+            // Extract the task-scoped UUID the same way poll.rs does:
+            //   class == "request" → the envelope id IS the task id.
+            //   all other classes  → causality["ref"] links back to the
+            //                        originating request id (the task id).
+            // There is no top-level `task_id` field in FAMP envelopes.
+            let raw_id = match envelope.get("class").and_then(serde_json::Value::as_str) {
+                Some("request") => envelope.get("id").and_then(serde_json::Value::as_str),
+                _ => envelope
+                    .get("causality")
+                    .and_then(|c| c.get("ref"))
+                    .and_then(serde_json::Value::as_str),
+            };
+            raw_id
+                .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
+                .is_some_and(|candidate| &candidate == task_id)
+        }
     }
 }
 
@@ -806,7 +818,7 @@ fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool) -> Out {
 
 fn task_id_from(envelope: &serde_json::Value) -> uuid::Uuid {
     envelope
-        .get("task_id")
+        .get("id")
         .and_then(serde_json::Value::as_str)
         .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
         .unwrap_or_else(uuid::Uuid::nil)
@@ -1453,5 +1465,30 @@ mod d10_tests {
             "alice must be in delivered"
         );
         assert!(delivered_names.contains("bob"), "bob must be in delivered");
+    }
+
+    // --- task_id_from regression tests ---
+
+    #[test]
+    fn task_id_from_reads_envelope_id_field() {
+        // Regression: previously read `task_id`, which was always absent,
+        // so SendOk always returned Uuid::nil(). Field is named `id`.
+        let envelope = serde_json::json!({
+            "id": "0193abcd-ef01-7000-8000-000000000001",
+            "from": "agent:local.bus/x",
+            "to": "agent:local.bus/y",
+        });
+        let parsed = super::task_id_from(&envelope);
+        assert_eq!(
+            parsed,
+            uuid::Uuid::parse_str("0193abcd-ef01-7000-8000-000000000001").unwrap(),
+        );
+        assert_ne!(parsed, uuid::Uuid::nil());
+    }
+
+    #[test]
+    fn task_id_from_returns_nil_when_id_absent() {
+        let envelope = serde_json::json!({});
+        assert_eq!(super::task_id_from(&envelope), uuid::Uuid::nil());
     }
 }
