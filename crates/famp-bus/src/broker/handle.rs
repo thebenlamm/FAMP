@@ -806,7 +806,7 @@ fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool) -> Out {
 
 fn task_id_from(envelope: &serde_json::Value) -> uuid::Uuid {
     envelope
-        .get("task_id")
+        .get("id")
         .and_then(serde_json::Value::as_str)
         .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
         .unwrap_or_else(uuid::Uuid::nil)

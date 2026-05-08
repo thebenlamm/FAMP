@@ -403,7 +403,7 @@ fn build_envelope_value(
         _ => "famp.send", // unreachable: build_inner_payload would have errored.
     };
 
-    Ok(serde_json::json!({
+    let mut envelope = serde_json::json!({
         "famp": "0.5.2",
         "class": "audit_log",
         "scope": "standalone",
@@ -416,7 +416,27 @@ fn build_envelope_value(
             "event": event,
             "details": inner,
         }
-    }))
+    });
+
+    if let Some(task_uuid) = args.task.as_deref() {
+        // Reply envelopes (deliver / deliver_terminal) carry causality back
+        // to the originating task so inbox readers can thread by task_id.
+        // poll.rs already reads causality["ref"] for non-request classes;
+        // the send path must populate it. JSON-literal form matches the
+        // surrounding build style — no typed Causality dependency added.
+        envelope
+            .as_object_mut()
+            .expect("json! macro produced object")
+            .insert(
+                "causality".to_string(),
+                serde_json::json!({
+                    "rel": "delivers",
+                    "ref": task_uuid,
+                }),
+            );
+    }
+
+    Ok(envelope)
 }
 
 #[cfg(test)]
