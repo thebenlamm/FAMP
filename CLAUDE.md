@@ -29,7 +29,7 @@ Full crate selection rationale, alternatives, version compatibility, and beginne
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+**MCP tool surface changes:** When modifying `crates/famp/src/cli/mcp/server.rs` (tool schemas, tool descriptors, new tools), run `just install` before closing the PR. The installed binary at `~/.cargo/bin/famp` is what every agent session reads — `target/release/famp` is not the deployment target.
 <!-- GSD:conventions-end -->
 
 ## Listen Mode
@@ -45,6 +45,8 @@ When registered with `listen: true`, the Stop hook (`~/.claude/hooks/famp-await.
 **Default (`listen: false`):** The window registers but stays idle between turns. Check inbox on demand by prompting the agent: "check your famp messages" → agent calls `famp_inbox`.
 
 **When to use listen mode:** Dedicated agent windows that need sub-minute response to peer messages (e.g., Sofer's 5-agent mesh). General-purpose dev windows should omit `listen` or pass `false`.
+
+**Context cost and tool sequencing:** See [`docs/CLAUDE-CODE-CONTEXT-GUIDE.md`](docs/CLAUDE-CODE-CONTEXT-GUIDE.md) for the two retrieval flows, task_id resolution, and how to avoid the double-print pattern that doubles context cost per received message.
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
