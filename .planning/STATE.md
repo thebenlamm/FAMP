@@ -32,7 +32,7 @@ Phase: 05 — COMPLETE
 Plan: 1 of 4
 Plans: 8 of 8 complete
 Status: Phase 05 complete
-Last activity: 2026-05-04
+Last activity: 2026-05-09 - Completed quick task 260509-kcf: Propagate v1.0 trigger unweld decision into project docs
 
 ## Last Shipped
 
@@ -134,6 +134,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | 260507-k9x | Fix broker await broadcast race: replace find_map with Vec broadcast, D-04 AppendMailbox ordering, proxy liveness gate, 4 regression tests | 2026-05-07 | 77d045b | [260507-k9x-fix-broker-await-broadcast-race-conditio](./quick/260507-k9x-fix-broker-await-broadcast-race-conditio/) |
 | 260507-sv8 | Fix task_id zeros bug and wire causality into build_envelope_value | 2026-05-08 | a9c1451 | [260507-sv8-fix-task-id-zeros-bug-and-wire-causality](./quick/260507-sv8-fix-task-id-zeros-bug-and-wire-causality/) |
 | 260508-ib4 | Add woken bool to SendOk so famp_send callers can tell if recipient was live at delivery time | 2026-05-08 | c699859 | [260508-ib4-add-woken-bool-to-sendok-so-famp-send-ca](./quick/260508-ib4-add-woken-bool-to-sendok-so-famp-send-ca/) |
+| 260509-kcf | Propagate v1.0 trigger unweld decision into project docs | 2026-05-09 | ba66ee4 | [260509-kcf-propagate-v1-0-trigger-unweld-decision-i](./quick/260509-kcf-propagate-v1-0-trigger-unweld-decision-i/) |
 
 ## Performance Metrics
 
