@@ -198,6 +198,11 @@ smoke-test:
     echo "--- all 5 install-claude-code artifacts verified ---"
     echo "--- smoke-test PASSED ---"
 
+# Install famp to ~/.cargo/bin — the path every .mcp.json references.
+# Run this after any change to the MCP tool surface (server.rs, tool schemas).
+install:
+    cargo install --path crates/famp --locked --force
+
 # Clean build artifacts
 clean:
     cargo clean
