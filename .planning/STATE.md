@@ -16,11 +16,11 @@ progress:
 
 # STATE: FAMP — between milestones (v0.9 shipped 2026-05-04)
 
-**Last Updated:** 2026-05-06 — v0.9 Local-First Bus shipped (85/85 reqs, audit `passed`); listen mode v0.9 patch landed 2026-05-06 (transcript-detection Stop hook, listen:bool on famp_register, 12 hook tests, await_timeout, E2E listen loop). Next milestone is v1.0 Federation Profile, trigger-gated (Sofer-from-different-machine; 4-week clock 2026-05-04 → 2026-06-01).
+**Last Updated:** 2026-05-06 — v0.9 Local-First Bus shipped (85/85 reqs, audit `passed`); listen mode v0.9 patch landed 2026-05-06 (transcript-detection Stop hook, listen:bool on famp_register, 12 hook tests, await_timeout, E2E listen loop). Next milestone is v1.0 Federation Profile, gated on two independent ship gates (Gate A: Ben's symmetric cross-machine use sustained ~2 weeks → gateway + `v1.0.0`; Gate B: 2nd implementer commits to interop → conformance vector pack) per [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md); 4-week clock retired.
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v0.9 Local-First Bus archived to `.planning/milestones/v0.9-*`. v1.0 Federation Profile is the next planned milestone but is trigger-gated; do not run `/gsd-new-milestone v1.0` until Sofer (or named equivalent) runs FAMP from a different machine and exchanges a signed envelope.
+See: .planning/PROJECT.md — v0.9 Local-First Bus archived to `.planning/milestones/v0.9-*`. v1.0 Federation Profile is the next planned milestone but is gated on two independent ship gates per [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md): **Gate A** (Ben's sustained symmetric cross-machine use of FAMP between his own machines) unlocks the `famp-gateway` plan and `v1.0.0` tag; **Gate B** (a 2nd implementer commits to interop) unlocks the conformance vector pack at whatever release tag is current. Both gates are event-driven (no clock).
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
 
@@ -116,11 +116,11 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | quick_task | 260427-kna-add-famp-local-doctor-subcommand-and-fam | missing |
 | quick_task | 260427-l2t-fix-doctor-walk-up-to-read-input-dir-mcp | missing |
 | quick_task | 260427-lb8-fix-adversarial-review-findings-doctor-i | missing |
-| seed | SEED-001-serde-jcs-conformance-gate | dormant |
-| seed | SEED-002-harness-adapter-push-notifications | dormant |
+| seed | SEED-001-serde-jcs-conformance-gate | dormant (Gate B) |
+| seed | SEED-002-harness-adapter-push-notifications | dormant (gate assignment deferred — re-read seed when surfaced) |
 | uat_gap | 02 (02-HUMAN-UAT.md, 0 pending scenarios) | unknown |
 
-**Notes:** All 30 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint work; no completion artifacts but no active obligations). Both seeds explicitly v1.0-gated by design (SEED-001 = vector pack interop, SEED-002 = push-notification harness). UAT gap header status drift only — 0 pending scenarios.
+**Notes:** All 30 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint work; no completion artifacts but no active obligations). Both seeds were v1.0-gated by design under the welded-trigger framing; per the 2026-05-09 unweld (see [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md)) they are now re-tagged: **SEED-001** (vector-pack interop) is unambiguously **Gate B** (2nd implementer commits to interop). **SEED-002** (push-notification harness) is a harness-UX seed not directly tied to either gate's deliverables; gate assignment is deferred until the seed surfaces and the milestone scope clarifies whether the adapter rides Gate A's gateway plan or a separate harness track. UAT gap header status drift only — 0 pending scenarios.
 
 ## Quick Tasks Completed
 
