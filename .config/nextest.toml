@@ -18,9 +18,18 @@ failure-output = "immediate-final"
 filter = "package(famp) and (test(/listen_/) or test(=conversation_restart_safety) or test(=mcp_stdio_tool_calls))"
 test-group = "listen-subprocess"
 
+[[profile.default.overrides]]
+filter = "package(famp) and (test(/inspect_broker/) or test(/inspect_identities/))"
+test-group = "inspect-subprocess"
+
 [[profile.ci.overrides]]
 filter = "package(famp) and (test(/listen_/) or test(=conversation_restart_safety) or test(=mcp_stdio_tool_calls))"
 test-group = "listen-subprocess"
 
+[[profile.ci.overrides]]
+filter = "package(famp) and (test(/inspect_broker/) or test(/inspect_identities/))"
+test-group = "inspect-subprocess"
+
 [test-groups]
 listen-subprocess = { max-threads = 4 }
+inspect-subprocess = { max-threads = 1 }
