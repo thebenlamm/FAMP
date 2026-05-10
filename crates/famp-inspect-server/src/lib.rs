@@ -53,16 +53,14 @@ pub struct BrokerCtx {
 /// Top-level inspector RPC dispatch. Returns the typed reply
 /// serialized as a `serde_json::Value` so it can ride back as
 /// `BusReply::InspectOk { payload }`.
-pub fn dispatch(
-    state: &BrokerStateView,
-    ctx: &BrokerCtx,
-    kind: &InspectKind,
-) -> serde_json::Value {
+pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) -> serde_json::Value {
     match kind {
-        InspectKind::Broker(_) => serde_json::to_value(inspect_broker(state, ctx))
-            .unwrap_or(serde_json::Value::Null),
-        InspectKind::Identities(_) => serde_json::to_value(inspect_identities(state, ctx))
-            .unwrap_or(serde_json::Value::Null),
+        InspectKind::Broker(_) => {
+            serde_json::to_value(inspect_broker(state, ctx)).unwrap_or(serde_json::Value::Null)
+        }
+        InspectKind::Identities(_) => {
+            serde_json::to_value(inspect_identities(state, ctx)).unwrap_or(serde_json::Value::Null)
+        }
         InspectKind::Tasks(_) => serde_json::to_value(InspectTasksReply {
             not_yet_implemented: true,
         })
@@ -90,7 +88,11 @@ fn inspect_identities(state: &BrokerStateView, ctx: &BrokerCtx) -> InspectIdenti
         .clients
         .iter()
         .map(|c| {
-            let meta = ctx.mailbox_metadata.get(&c.name).cloned().unwrap_or_default();
+            let meta = ctx
+                .mailbox_metadata
+                .get(&c.name)
+                .cloned()
+                .unwrap_or_default();
             IdentityRow {
                 name: c.name.clone(),
                 listen_mode: c.listen_mode,

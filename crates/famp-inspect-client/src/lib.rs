@@ -208,11 +208,9 @@ async fn peer_pid_via_socket_option(sock_path: &Path) -> Option<u32> {
     use std::os::fd::AsFd;
 
     let stream = UnixStream::connect(sock_path).await.ok()?;
-    let pid = nix::sys::socket::getsockopt(
-        &stream.as_fd(),
-        nix::sys::socket::sockopt::LocalPeerPid,
-    )
-    .ok()?;
+    let pid =
+        nix::sys::socket::getsockopt(&stream.as_fd(), nix::sys::socket::sockopt::LocalPeerPid)
+            .ok()?;
     if pid > 0 {
         u32::try_from(pid).ok()
     } else {
@@ -324,10 +322,7 @@ mod tests {
             serde_json::to_string(&PidSource::Peercred).unwrap(),
             "\"peercred\""
         );
-        assert_eq!(
-            serde_json::to_string(&PidSource::Lsof).unwrap(),
-            "\"lsof\""
-        );
+        assert_eq!(serde_json::to_string(&PidSource::Lsof).unwrap(), "\"lsof\"");
         assert_eq!(
             serde_json::to_string(&PidSource::Unknown).unwrap(),
             "\"unknown\""

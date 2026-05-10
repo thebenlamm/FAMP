@@ -257,7 +257,8 @@ pub enum BusReply {
 /// by pre-`woken` peers deserialize with `woken = false`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Delivered { // woken field is serde-defaulted for wire compatibility.
+pub struct Delivered {
+    // woken field is serde-defaulted for wire compatibility.
     pub to: Target,
     pub ok: bool,
     #[serde(default)]
@@ -414,7 +415,8 @@ mod tests {
         let decoded: Delivered = famp_canonical::from_slice_strict(bytes).unwrap();
         assert_eq!(
             decoded,
-            Delivered { // woken defaults false when omitted on the wire.
+            Delivered {
+                // woken defaults false when omitted on the wire.
                 to: Target::Agent {
                     name: "alice".into()
                 },
