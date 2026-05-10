@@ -10,6 +10,8 @@ use crate::cli::error::CliError;
 
 pub mod broker;
 pub mod identities;
+pub mod messages;
+pub mod tasks;
 
 #[derive(Args, Debug)]
 pub struct InspectArgs {
@@ -23,11 +25,17 @@ pub enum InspectSubcommand {
     Broker(broker::InspectBrokerArgs),
     /// List registered identities with mailbox metadata.
     Identities(identities::InspectIdentitiesArgs),
+    /// List task FSM state, envelope count, and transition ages.
+    Tasks(tasks::InspectTasksArgs),
+    /// List envelope metadata for a mailbox.
+    Messages(messages::InspectMessagesArgs),
 }
 
 pub async fn run(args: InspectArgs) -> Result<(), CliError> {
     match args.command {
         InspectSubcommand::Broker(args) => broker::run(args).await,
         InspectSubcommand::Identities(args) => identities::run(args).await,
+        InspectSubcommand::Tasks(args) => tasks::run(args).await,
+        InspectSubcommand::Messages(args) => messages::run(args).await,
     }
 }
