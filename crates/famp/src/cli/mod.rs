@@ -11,6 +11,7 @@ pub mod home;
 pub mod identity;
 pub mod inbox;
 pub mod info;
+pub mod inspect;
 pub mod install;
 pub mod join;
 pub mod leave;
@@ -99,6 +100,12 @@ pub enum Commands {
     /// Print the active identity (per D-10 proxy `bind_as`) and the
     /// canonical holder's joined channels.
     Whoami(whoami::WhoamiArgs),
+    /// v0.10 inspector: broker liveness + identity introspection.
+    /// `famp inspect broker` distinguishes HEALTHY / DOWN_CLEAN /
+    /// STALE_SOCKET / ORPHAN_HOLDER / PERMISSION_DENIED. `famp
+    /// inspect identities` lists registered sessions with mailbox
+    /// metadata. D-06: `tasks` and `messages` ship in Phase 2.
+    Inspect(inspect::InspectArgs),
 }
 
 /// Build a multi-thread tokio runtime and block on `fut`. Shared by every
@@ -141,5 +148,6 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Leave(args) => block_on_async(leave::run(args)),
         Commands::Sessions(args) => block_on_async(sessions::run(args)),
         Commands::Whoami(args) => block_on_async(whoami::run(args)),
+        Commands::Inspect(args) => block_on_async(inspect::run(args)),
     }
 }
