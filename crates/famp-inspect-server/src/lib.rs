@@ -262,6 +262,53 @@ fn inspect_tasks(
         })
         .collect();
 
+    if rows.is_empty() {
+        let mut by_task: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
+        for env in &all_envs {
+            if let Some(task_id) = envelope_task_id(env) {
+                by_task.entry(task_id).or_default().push(env);
+            }
+        }
+        rows = by_task
+            .into_iter()
+            .map(|(task_id, envelopes)| {
+                let last_transition = envelopes
+                    .iter()
+                    .filter_map(|env| {
+                        env.get("ts")
+                            .and_then(serde_json::Value::as_str)
+                            .and_then(parse_rfc3339_to_epoch)
+                    })
+                    .max()
+                    .unwrap_or(0);
+                let first = envelopes
+                    .first()
+                    .copied()
+                    .unwrap_or(&serde_json::Value::Null);
+                TaskRow {
+                    task_id: task_id.clone(),
+                    state: envelopes
+                        .last()
+                        .copied()
+                        .map_or_else(|| "REQUESTED".to_string(), derive_fsm_state),
+                    peer: first
+                        .get("to")
+                        .or_else(|| first.get("from"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    opened_at_unix_seconds: last_transition,
+                    last_send_at_unix_seconds: None,
+                    last_recv_at_unix_seconds: Some(last_transition),
+                    terminal: false,
+                    envelope_count: envelopes.len() as u64,
+                    last_transition_age_seconds: now.saturating_sub(last_transition),
+                    orphan: is_orphan_task_id(&task_id),
+                }
+            })
+            .collect();
+    }
+
     rows.sort_by(|a, b| {
         b.orphan.cmp(&a.orphan).then_with(|| {
             a.last_transition_age_seconds
@@ -334,7 +381,7 @@ fn inspect_messages(
 }
 
 /// Extract task_id from a parsed envelope JSON object.
-/// Order: `causality.ref` -> `body.details.task` -> `None`.
+/// Order: `causality.ref` -> `body.details.task` -> envelope `id` -> `None`.
 fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
     if let Some(task_id) = env
         .get("causality")
@@ -347,6 +394,7 @@ fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
         .and_then(|b| b.get("details"))
         .and_then(|d| d.get("task"))
         .and_then(serde_json::Value::as_str)
+        .or_else(|| env.get("id").and_then(serde_json::Value::as_str))
         .map(str::to_string)
 }
 

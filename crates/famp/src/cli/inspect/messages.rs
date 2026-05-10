@@ -166,5 +166,4 @@ mod tests {
             .expect_err("budget must fail");
         assert!(matches!(err, CliError::Exit(1)));
     }
-
 }

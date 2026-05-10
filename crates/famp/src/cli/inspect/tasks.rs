@@ -239,9 +239,11 @@ mod tests {
 
     #[test]
     fn budget_exceeded_maps_to_exit_one() {
-        let err = render_reply(&InspectTasksReply::BudgetExceeded { elapsed_ms: 500 }, false)
-            .expect_err("budget must fail");
+        let err = render_reply(
+            &InspectTasksReply::BudgetExceeded { elapsed_ms: 500 },
+            false,
+        )
+        .expect_err("budget must fail");
         assert!(matches!(err, CliError::Exit(1)));
     }
-
 }
