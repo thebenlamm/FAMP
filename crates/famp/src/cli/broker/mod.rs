@@ -423,7 +423,9 @@ fn read_mailbox_meta_for(bus_dir: &Path, name: &str, cursor_offset: u64) -> Mail
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use famp_bus::{BrokerStateView, ClientStateView};
     use std::os::unix::net::UnixListener as StdUnixListener;
+    use std::time::SystemTime;
 
     #[tokio::test]
     async fn test_bind_exclusive_returns_listener_on_clean_path() {
@@ -477,5 +479,112 @@ mod tests {
             BindOutcome::Bound(_) => panic!("expected Existing, got Bound"),
         }
         drop(live);
+    }
+
+    fn view_with_clients(names: &[&str]) -> BrokerStateView {
+        BrokerStateView {
+            started_at: SystemTime::now(),
+            clients: names
+                .iter()
+                .map(|name| ClientStateView {
+                    name: (*name).to_string(),
+                    pid: None,
+                    bind_as: None,
+                    cwd: None,
+                    listen_mode: false,
+                    registered_at: SystemTime::now(),
+                    last_activity: SystemTime::now(),
+                    joined: vec![],
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn walk_taskdir_missing_returns_empty_snapshot() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let snap = walk_taskdir(tmp.path()).expect("fresh taskdir snapshot");
+        assert!(snap.records.is_empty());
+    }
+
+    #[test]
+    fn walk_taskdir_with_one_record_returns_one_row() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let task_id = "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7";
+        let dir = famp_taskdir::TaskDir::open(tmp.path().join("tasks")).unwrap();
+        dir.create(&famp_taskdir::TaskRecord {
+            task_id: task_id.to_string(),
+            state: "COMMITTED".to_string(),
+            peer: "agent:local.bus/x".to_string(),
+            opened_at: "2026-05-10T18:00:00Z".to_string(),
+            last_send_at: Some("2026-05-10T18:01:00Z".to_string()),
+            last_recv_at: None,
+            terminal: false,
+        })
+        .unwrap();
+
+        let snap = walk_taskdir(tmp.path()).expect("taskdir snapshot");
+        assert_eq!(snap.records.len(), 1, "expected one row, got {snap:?}");
+        assert_eq!(snap.records[0].task_id, task_id);
+        assert_eq!(snap.records[0].state, "COMMITTED");
+        assert_eq!(snap.records[0].peer, "agent:local.bus/x");
+        assert_eq!(
+            snap.records[0].last_send_at.as_deref(),
+            Some("2026-05-10T18:01:00Z")
+        );
+        assert!(!snap.records[0].terminal);
+    }
+
+    #[test]
+    fn read_message_snapshot_missing_mailbox_is_empty_for_registered_client() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let view = view_with_clients(&["alice"]);
+        let snap = read_message_snapshot(tmp.path(), &view);
+        assert_eq!(
+            snap.by_recipient.get("alice").map(Vec::len),
+            Some(0),
+            "missing mailbox should produce an empty vector"
+        );
+    }
+
+    #[test]
+    fn read_message_snapshot_populated_mailbox_returns_line_count() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mailboxes = tmp.path().join("mailboxes");
+        std::fs::create_dir_all(&mailboxes).unwrap();
+        std::fs::write(
+            mailboxes.join("alice.jsonl"),
+            b"{\"from\":\"bob\",\"to\":\"alice\",\"body\":{\"n\":1}}\n{\"from\":\"carol\",\"to\":\"alice\",\"body\":{\"n\":2}}\n",
+        )
+        .unwrap();
+
+        let view = view_with_clients(&["alice"]);
+        let snap = read_message_snapshot(tmp.path(), &view);
+        assert_eq!(snap.by_recipient["alice"].len(), 2);
+    }
+
+    #[test]
+    fn build_inspect_ctx_for_broker_kind_does_not_walk_taskdir_or_mailboxes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let view = view_with_clients(&["alice"]);
+        let cursor_offsets = BTreeMap::from([("alice".to_string(), 0)]);
+        let ctx = build_inspect_ctx_blocking(
+            &view,
+            &tmp.path().join("bus.sock"),
+            tmp.path(),
+            &cursor_offsets,
+            &famp_inspect_proto::InspectKind::Broker(
+                famp_inspect_proto::InspectBrokerRequest::default(),
+            ),
+        );
+        assert!(ctx.task_data.is_none());
+        assert!(ctx.message_data.is_none());
+    }
+
+    #[test]
+    fn budget_exceeded_payload_is_kind_tagged_json() {
+        let payload = inspect_budget_exceeded_payload(501);
+        assert_eq!(payload["kind"], "budget_exceeded");
+        assert_eq!(payload["elapsed_ms"], 501);
     }
 }
