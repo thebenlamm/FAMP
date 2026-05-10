@@ -95,7 +95,7 @@ fn inspect_broker_help_lists_json_flag() {
 }
 
 #[test]
-fn inspect_help_lists_broker_and_identities_only() {
+fn inspect_help_lists_all_inspect_subcommands() {
     let out = Command::cargo_bin("famp")
         .unwrap()
         .args(["inspect", "--help"])
@@ -116,12 +116,12 @@ fn inspect_help_lists_broker_and_identities_only() {
         "missing identities subcommand: {stdout}"
     );
     assert!(
-        !stdout.contains("\n  tasks"),
-        "D-06 violation: tasks subcommand surfaced: {stdout}"
+        stdout.contains("tasks"),
+        "missing tasks subcommand: {stdout}"
     );
     assert!(
-        !stdout.contains("\n  messages"),
-        "D-06 violation: messages subcommand surfaced: {stdout}"
+        stdout.contains("messages"),
+        "missing messages subcommand: {stdout}"
     );
 }
 
