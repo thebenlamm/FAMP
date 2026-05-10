@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: Inspector & Observability
-status: ready_to_plan
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-10T15:57:16.663Z"
-last_activity: 2026-05-10 -- Phase 01 execution started
+status: executing
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-05-10T22:11:54.939Z"
+last_activity: 2026-05-10
 progress:
   total_phases: 9
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 11
+  total_plans: 7
+  completed_plans: 5
+  percent: 71
 ---
 
 # STATE: FAMP — v0.10 Inspector & Observability (active)
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active mile
 
 ## Current Position
 
-Phase: 02 (task-fsm-message-visibility)
-Plan: Not started
-Status: Phase 01 verified and complete; Phase 02 ready to plan
-Last activity: 2026-05-10 -- Phase 01 complete; verifier passed 5/5 must-haves; invariant gates and `just test` passed
+Phase: 02 (task-fsm-message-visibility) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-10
 
 ## v0.10 Phase Map
 
@@ -65,6 +65,9 @@ Last activity: 2026-05-10 -- Phase 01 complete; verifier passed 5/5 must-haves; 
 - [Roadmap]: Three-phase structure recut after matt-essentialist + zed-velocity-engineer review (2026-05-10): Phase 1 closes orphan-listener incident class end-to-end (broker + identities, RPC + CLI both); Phase 2 ships the I/O-bound enrichment (tasks + messages) and is where budget+cancel finally have something to enforce against; Phase 3 unchanged. **Rejected the original cut** (Phase 1 = RPC foundation with stub handlers; Phase 2 = all CLI) as yak-shaving — Phase 1's success criteria around budget+cancel were testing synthetic test-only handlers, not real work. The v0.10 user-visible win is closing the orphan-listener incident class; the recut ships that in one merge.
 - [Roadmap]: Phase numbering reset to Phase 1 per FAMP convention (v0.7/v0.8/v0.9 each reset; v0.10 follows). Confirmed with user at roadmap open.
 - [Roadmap]: Read-only discipline (INSP-RPC-02) and crate version alignment (INSP-CRATE-03) treated as architectural invariants, not feature requirements — locked at roadmap time so plan-phase cannot soften them.
+- [Phase ?]: Kind-tagged inspector reply enums — Locks D-02 wire shape for task/message replies before broker I/O and CLI rendering depend on it.
+- [Phase ?]: Pre-read snapshots in BrokerCtx — Keeps famp-inspect-server sync/tokio-free while allowing Plan 02 to populate TaskSnapshot and MessageSnapshot inside the broker executor.
+- [Phase ?]: Canonical fixture for A1 proof — Uses Phase 1 vector_0 canonical.hex rather than pretty envelope.json so canonicalize_roundtrip proves byte-for-byte JCS reproducibility.
 
 ## Issues / Blockers
 
@@ -137,6 +140,6 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 ## Session
 
-**Last session:** 2026-05-10T14:55:32.785Z
-**Stopped At:** Phase 1 context gathered
-**Resume File:** .planning/phases/01-broker-diagnosis-identity-inspection/01-CONTEXT.md
+**Last session:** 2026-05-10T22:11:34.761Z
+**Stopped At:** Completed 02-01-PLAN.md
+**Resume File:** None

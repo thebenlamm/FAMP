@@ -46,7 +46,11 @@ Plans:
   2. `famp inspect messages --to <name>` returns envelope metadata only — sender, recipient, task_id, MessageClass, FSM state, timestamp, body byte length, body sha256 prefix (first 12 hex chars) — never message bodies; `--tail N` limits to the most-recent N envelopes (default 50).
   3. An I/O-bound inspect handler exceeding the 500 ms default latency budget is dropped at the tokio wrapper layer with a `BudgetExceeded` reply; concurrent bus message delivery on the same socket is unaffected (no queue stall). The budget enforces in `crates/famp/src/cli/broker/` (the tokio wrapper), not inside `famp-bus` (which stays tokio-free per the existing CI gate).
   4. A test issues 1000 concurrent `famp inspect tasks` and `famp inspect messages` calls and cancels them mid-flight; all 1000 close cleanly with no leaked file descriptors, mailbox locks, or in-flight allocations. Verified via `lsof` snapshot before/after the test plus an explicit allocation tracker.
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [x] 02-01-PLAN.md — Wave 1: Proto enum reply types + famp-inspect-server TaskSnapshot/MessageSnapshot + sync handlers (D-01/D-02 wire commitment)
+- [ ] 02-02-PLAN.md — Wave 2: Broker executor spawn_blocking + timeout(500ms) wrapper + lazy taskdir/mailbox pre-read + max_blocking_threads(1024)
+- [ ] 02-03-PLAN.md — Wave 3: famp inspect tasks/messages CLI + integration tests + 1000-cancel test + nextest.toml serialization
 
 ### Phase 3: Load Verification & Integration Hardening
 **Goal:** Prove under integration-grade conditions that (a) inspect-call pressure does not starve bus message throughput and (b) the dead-broker diagnosis path actually disambiguates the orphan-socket-holder failure class that produced the v0.9 incident, then ship the docs.
@@ -208,7 +212,7 @@ Rough ordering inside v1.0+ (not committed):
 | 4. Federation CLI unwire + federation-CI preservation | v0.9 | 8/8 | Complete | 2026-05-04 |
 | 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 4/4 | Complete | 2026-05-04 |
 | 1. Broker Diagnosis & Identity Inspection | v0.10 | 4/4 | Complete | 2026-05-10 |
-| 2. Task FSM & Message Visibility | v0.10 | 0/0 | Not started | — |
+| 2. Task FSM & Message Visibility | v0.10 | 0/3 | Ready to execute | — |
 | 3. Load Verification & Integration Hardening | v0.10 | 0/0 | Not started | — |
 
 ## Backlog
