@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: Inspector & Observability
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-10T14:55:32.790Z"
-last_activity: 2026-05-10 — v0.10 roadmap recut after matt-essentialist + zed-velocity-engineer review; ROADMAP.md + REQUIREMENTS.md re-mapped (26/26)
+stopped_at: Phase 1 planned — 4 plans ready for execution
+last_updated: "2026-05-10"
+last_activity: 2026-05-10 — Phase 1 planning complete; 4 plans (01-01..01-04) verified clean by plan-checker; VALIDATION.md approved; ready for /gsd-execute-phase 1
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active mile
 ## Current Position
 
 Phase: 1 — Broker Diagnosis & Identity Inspection
-Plan: — (not yet drafted; complete spec-phase 1, then `/gsd-plan-phase 1`)
-Status: Roadmap recut landed; Phase 1 spec-phase in progress (Round 1 + Round 2 locks captured)
-Last activity: 2026-05-10 — v0.10 roadmap recut after matt-essentialist + zed-velocity-engineer review; ROADMAP.md + REQUIREMENTS.md re-mapped (26/26)
+Plan: 4 plans drafted and verified (01-01 Wave 0, 01-02 Wave 1, 01-03 Wave 2, 01-04 Wave 3)
+Status: Planning complete — all plans pass plan-checker with 0 blockers; VALIDATION.md nyquist_compliant=true, approved
+Last activity: 2026-05-10 — Phase 1 planning complete; REQUIREMENTS.md corrected (STALE_PID→STALE_SOCKET, INSP-CLI-01 phased); 4 plan-checker blockers resolved; ready for `/gsd-execute-phase 1`
 
 ## v0.10 Phase Map
 

@@ -30,7 +30,12 @@
   3. The broker accepts `BusMessage::Inspect { kind, ... }` frames on the existing UDS socket (no separate inspector socket); the dispatch path is read-only by construction — handler signatures take `&BrokerState` (not `&mut`), and `just check-inspect-readonly` fails CI if `famp-inspect-server` transitively imports any mailbox-write, taskdir-write, or broker `&mut self` mutation surface.
   4. Every `famp inspect <subcommand>` accepts `--json` emitting a stable documented JSON shape; default output is fixed-width column-aligned with explicit headers (no Rust `Debug` format); when the broker is not running, `famp inspect identities` exits 1 with stderr `"error: broker not running at <socket-path>"` while `famp inspect broker` continues to work against the dead broker per success criterion 1.
   5. `just check-no-io-in-inspect-proto` (parallel to `check-no-tokio-in-bus`) fails compilation if `famp-inspect-proto` acquires a tokio / axum / reqwest / clap dependency; `cargo tree -p famp-inspect-client` contains no `clap` dependency (linkable by future SPA / `famp doctor` consumers); `cargo tree` shows `famp-inspect-server` linked to the same `famp-canonical`, `famp-envelope`, `famp-fsm` versions as the broker (no Cargo-resolved version skew).
-**Plans:** TBD
+**Plans:** 4 plans
+Plans:
+- [ ] 01-01-PLAN.md — Wave 0: Proto types + state extensions + Wave-0 test scaffolds (famp-inspect-proto crate, BusMessage::Inspect variant, BrokerState::new with started_at, Register cwd/listen extension)
+- [ ] 01-02-PLAN.md — Wave 1: famp-inspect-server (tokio-free, &BrokerStateView handlers) + famp-inspect-client (UDS, no clap, peer_pid)
+- [ ] 01-03-PLAN.md — Wave 2: Broker dispatch arm (BusMessage::Inspect → famp-inspect-server) + CLI subcommand scaffolding
+- [ ] 01-04-PLAN.md — Wave 3: CLI rendering (HEALTHY + 4 down-states + table) + integration tests + 3 just check-* recipes wired into ci:
 
 ### Phase 2: Task FSM & Message Visibility
 **Goal:** Operator runs `famp inspect tasks` and `famp inspect messages` and gets the FSM and envelope-metadata visibility that v0.9's task-FSM-invisibility and stale-mailbox-relay incidents asked for. This is the phase where the I/O-bound handlers land — taskdir file walks for tasks, mailbox file reads for messages — so it's also the phase where the 500 ms latency budget (INSP-RPC-03) and cancellable-handler discipline (INSP-RPC-04) gain real handlers to enforce against (Phase 1's pure in-memory handlers had nothing to budget or cancel; the budget would have been theater).
@@ -202,7 +207,7 @@ Rough ordering inside v1.0+ (not committed):
 | 3. Claude Code integration polish | v0.9 | 6/6 | Complete | 2026-05-03 |
 | 4. Federation CLI unwire + federation-CI preservation | v0.9 | 8/8 | Complete | 2026-05-04 |
 | 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 4/4 | Complete | 2026-05-04 |
-| 1. Broker Diagnosis & Identity Inspection | v0.10 | 0/0 | Not started | — |
+| 1. Broker Diagnosis & Identity Inspection | v0.10 | 0/4 | Not started | — |
 | 2. Task FSM & Message Visibility | v0.10 | 0/0 | Not started | — |
 | 3. Load Verification & Integration Hardening | v0.10 | 0/0 | Not started | — |
 
