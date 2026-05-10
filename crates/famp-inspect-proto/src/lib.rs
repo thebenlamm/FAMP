@@ -204,4 +204,107 @@ mod codec_roundtrip {
         let decoded: InspectKind = famp_canonical::from_slice_strict(&bytes).unwrap();
         assert_eq!(v, decoded);
     }
+
+    #[test]
+    fn inspecttasksreply_list_roundtrips() {
+        let v = InspectTasksReply::List(TaskListReply { rows: vec![] });
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectTasksReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["kind"], "list");
+    }
+
+    #[test]
+    fn inspecttasksreply_detail_roundtrips() {
+        let v = InspectTasksReply::Detail(TaskDetailReply {
+            task_id: "abc".into(),
+            envelopes: vec![],
+        });
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectTasksReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn inspecttasksreply_detail_full_roundtrips() {
+        let v = InspectTasksReply::DetailFull(TaskDetailFullReply {
+            task_id: "abc".into(),
+            envelopes: vec![TaskEnvelopeFull {
+                envelope_id: "e1".into(),
+                bytes: None,
+                reason: Some("not_observed_locally".into()),
+            }],
+        });
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectTasksReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn inspecttasksreply_budget_exceeded_roundtrips() {
+        let v = InspectTasksReply::BudgetExceeded { elapsed_ms: 500 };
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectTasksReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["kind"], "budget_exceeded");
+        assert_eq!(json["elapsed_ms"], 500);
+    }
+
+    #[test]
+    fn inspectmessagesreply_list_roundtrips() {
+        let v = InspectMessagesReply::List(MessageListReply { rows: vec![] });
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectMessagesReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["kind"], "list");
+    }
+
+    #[test]
+    fn inspectmessagesreply_budget_exceeded_roundtrips() {
+        let v = InspectMessagesReply::BudgetExceeded { elapsed_ms: 500 };
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectMessagesReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn is_orphan_task_id_classifies_correctly() {
+        assert!(is_orphan_task_id(""));
+        assert!(is_orphan_task_id("00000000-0000-0000-0000-000000000000"));
+        assert!(is_orphan_task_id("not-a-uuid"));
+        assert!(!is_orphan_task_id("019d9ba2-2d30-7ae2-ba77-9e55863ac7f7"));
+    }
+
+    // REVISION (blocker 3 fix): Prove INSP-TASK-04 Assumption A1.
+    // The `--full` rendering path canonicalizes a parsed envelope Value
+    // back into bytes. If `canonicalize(from_slice(canonical_bytes))`
+    // is NOT byte-for-byte equal to `canonical_bytes`, then `--full`
+    // output cannot be used to verify a federation peer's signature.
+    #[test]
+    fn canonicalize_roundtrip() {
+        const VECTOR_0_BYTES: &[u8] = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../famp-envelope/tests/vectors/vector_0/envelope.json"
+        ));
+
+        let parsed: serde_json::Value =
+            serde_json::from_slice(VECTOR_0_BYTES).expect("vector 0 must be valid JSON");
+        let recanonicalized =
+            famp_canonical::canonicalize(&parsed).expect("canonicalization must succeed");
+
+        assert_eq!(
+            recanonicalized.as_slice(),
+            VECTOR_0_BYTES,
+            "INSP-TASK-04 Assumption A1 FAILED: canonicalize(from_slice(vector_0)) != vector_0\n\
+             left  (re-canonicalized, {} bytes): {}\n\
+             right (original vector 0, {} bytes): {}",
+            recanonicalized.len(),
+            String::from_utf8_lossy(&recanonicalized),
+            VECTOR_0_BYTES.len(),
+            String::from_utf8_lossy(VECTOR_0_BYTES),
+        );
+    }
 }
