@@ -52,7 +52,7 @@ base64 = { workspace = true }
 clap = { version = "4.6", features = ["derive", "env"] }
 toml = "1.1"
 tempfile = "3"
-time = { version = "0.3", features = ["serde-well-known", "formatting", "macros"] }
+time = { version = "0.3", features = ["serde-well-known", "formatting", "macros", "parsing"] }
 uuid = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }

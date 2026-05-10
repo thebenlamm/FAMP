@@ -225,6 +225,33 @@ fn inspect_identities_json_emits_documented_schema() {
             "forbidden received-like key {key}"
         );
     }
+    let registered = row["registered_at_unix_seconds"].as_u64().unwrap();
+    let initial_activity = row["last_activity_unix_seconds"].as_u64().unwrap();
+    assert!(
+        initial_activity >= registered,
+        "initial activity should be at or after registration: {value}"
+    );
+
+    std::thread::sleep(Duration::from_millis(1100));
+    let whoami = bus.famp_cmd(&["whoami", "--as", "alice"]);
+    assert!(
+        whoami.status.success(),
+        "whoami failed: stderr={}",
+        String::from_utf8_lossy(&whoami.stderr)
+    );
+    let out = bus.famp_cmd(&["inspect", "identities", "--json"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let row = value["rows"].as_array().unwrap()[0].as_object().unwrap();
+    let later_activity = row["last_activity_unix_seconds"].as_u64().unwrap();
+    assert!(
+        later_activity > registered,
+        "activity should advance after authenticated operation: {value}"
+    );
 
     kill_and_wait(&mut alice);
 }
@@ -305,6 +332,29 @@ fn inspect_identities_mailbox_metadata_unread_total() {
     assert!(
         receiver_row.contains("sender"),
         "receiver row should contain LAST_SENDER=sender: {receiver_row}"
+    );
+    assert!(
+        !receiver_row.ends_with(" -"),
+        "receiver row should contain LAST_RECEIVED timestamp: {receiver_row}"
+    );
+
+    let out = bus.famp_cmd(&["inspect", "identities", "--json"]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rows = value["rows"].as_array().unwrap();
+    let receiver_json = rows
+        .iter()
+        .find(|row| row["name"] == "receiver")
+        .unwrap_or_else(|| panic!("missing receiver row: {value}"));
+    assert!(
+        receiver_json["last_received_at_unix_seconds"]
+            .as_u64()
+            .is_some(),
+        "last_received_at_unix_seconds should be populated after messages: {value}"
     );
 
     kill_and_wait(&mut receiver);

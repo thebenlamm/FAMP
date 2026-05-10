@@ -47,6 +47,10 @@ fn handle_wire<E: BrokerEnv>(
         )];
     }
 
+    if !matches!(msg, BusMessage::Hello { .. } | BusMessage::Register { .. }) {
+        touch_activity(broker, client);
+    }
+
     match msg {
         BusMessage::Hello {
             bus_proto,
@@ -78,6 +82,27 @@ fn handle_wire<E: BrokerEnv>(
             // on disk. Sentinel the request out; the executor builds
             // BrokerCtx and dispatches.
             vec![Out::InspectRequest { client, kind }]
+        }
+    }
+}
+
+fn touch_activity<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) {
+    let target = broker.state.clients.get(&client).and_then(|state| {
+        if !state.connected {
+            None
+        } else if state.name.is_some() {
+            Some(client)
+        } else {
+            state
+                .bind_as
+                .as_deref()
+                .and_then(|bound| canonical_holder_id(broker, bound))
+        }
+    });
+
+    if let Some(target) = target {
+        if let Some(state) = broker.state.clients.get_mut(&target) {
+            state.last_activity = std::time::SystemTime::now();
         }
     }
 }

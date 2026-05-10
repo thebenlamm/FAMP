@@ -403,7 +403,11 @@ fn read_mailbox_meta_for(bus_dir: &Path, name: &str, cursor_offset: u64) -> Mail
     });
     let last_received_at_unix_seconds = entries
         .last()
-        .and_then(|value| value.get("ts").and_then(serde_json::Value::as_u64));
+        .and_then(|value| value.get("ts").and_then(serde_json::Value::as_str))
+        .and_then(|ts| {
+            time::OffsetDateTime::parse(ts, &time::format_description::well_known::Rfc3339).ok()
+        })
+        .and_then(|dt| u64::try_from(dt.unix_timestamp()).ok());
 
     MailboxMeta {
         unread,
