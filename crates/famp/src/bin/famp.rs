@@ -17,6 +17,9 @@ use famp_crypto as _;
 use famp_envelope as _;
 use famp_fsm as _;
 use famp_inbox as _;
+use famp_inspect_client as _;
+use famp_inspect_proto as _;
+use famp_inspect_server as _;
 #[cfg(test)]
 use famp_keyring as _;
 use famp_taskdir as _;

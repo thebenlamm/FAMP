@@ -58,6 +58,9 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 humantime = "2"
 famp-bus = { path = "../famp-bus", version = "0.1.0" }
+famp-inspect-server = { path = "../famp-inspect-server", version = "0.1.0" }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "0.1.0" }
+famp-inspect-client = { path = "../famp-inspect-client", version = "0.1.0" }
 nix = { version = "0.31", features = ["process", "fs", "signal"] }
 dirs = "5"
 regex = { workspace = true }

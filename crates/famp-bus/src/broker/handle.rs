@@ -71,11 +71,14 @@ fn handle_wire<E: BrokerEnv>(
         BusMessage::Leave { channel } => leave(broker, client, channel),
         BusMessage::Sessions {} => sessions(broker, client),
         BusMessage::Whoami {} => whoami(broker, client),
-        BusMessage::Inspect { kind: _ } => vec![err(
-            client,
-            BusErrorKind::Internal,
-            "inspect RPC dispatch is not mounted in this wave",
-        )],
+        BusMessage::Inspect { kind } => {
+            // INSP-RPC-02: read-only. The actor does NOT call
+            // famp_inspect_server::dispatch here because the
+            // Identities handler needs mailbox metadata that lives
+            // on disk. Sentinel the request out; the executor builds
+            // BrokerCtx and dispatches.
+            vec![Out::InspectRequest { client, kind }]
+        }
     }
 }
 

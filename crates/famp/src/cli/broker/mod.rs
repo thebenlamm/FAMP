@@ -22,13 +22,14 @@
 //!   - `nfs_check`: best-effort NFS-mount detector (BROKER-05)
 //!   - `sessions_log`: append-only `~/.famp/sessions.jsonl` writer (CLI-11)
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use famp_bus::{Broker, BrokerInput, BusReply, ClientId, MailboxName, Out, SessionRow};
+use famp_inspect_server::{BrokerCtx, MailboxMeta};
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 
@@ -249,12 +250,28 @@ pub async fn run_on_listener(
                         outs
                     }
                 };
-                execute_outs(outs, &mut reply_senders, &env_handle, bus_dir).await;
+                execute_outs(
+                    outs,
+                    &mut reply_senders,
+                    &env_handle,
+                    &broker,
+                    sock_path,
+                    bus_dir,
+                )
+                .await;
             }
             // Arm 3: 1-second tick for await-timeout sweep.
             _ = tick_interval.tick() => {
                 let outs = broker.handle(BrokerInput::Tick, Instant::now());
-                execute_outs(outs, &mut reply_senders, &env_handle, bus_dir).await;
+                execute_outs(
+                    outs,
+                    &mut reply_senders,
+                    &env_handle,
+                    &broker,
+                    sock_path,
+                    bus_dir,
+                )
+                .await;
             }
             // Arm 4: 5-minute idle exit.
             () = idle::wait_or_never(&mut idle) => {
@@ -283,6 +300,8 @@ async fn execute_outs(
     outs: Vec<Out>,
     reply_senders: &mut HashMap<ClientId, mpsc::Sender<BusReply>>,
     env: &BrokerEnvHandle,
+    broker: &Broker<BrokerEnvHandle>,
+    sock_path: &Path,
     bus_dir: &Path,
 ) {
     for out in outs {
@@ -321,6 +340,13 @@ async fn execute_outs(
                 // write loop notices the channel close and exits.
                 reply_senders.remove(&id);
             }
+            Out::InspectRequest { client, kind } => {
+                let ctx = build_inspect_ctx(broker, sock_path, bus_dir);
+                let payload = famp_inspect_server::dispatch(&broker.view(), &ctx, &kind);
+                if let Some(tx) = reply_senders.get(&client) {
+                    let _ = tx.send(BusReply::InspectOk { payload }).await;
+                }
+            }
             Out::SessionEnded { name, pid, joined } => {
                 // WR-07: append the diagnostic SessionRow with the
                 // broker's pre-disconnect snapshot of `joined`. Best-
@@ -332,6 +358,59 @@ async fn execute_outs(
                 }
             }
         }
+    }
+}
+
+fn build_inspect_ctx(
+    broker: &Broker<BrokerEnvHandle>,
+    sock_path: &Path,
+    bus_dir: &Path,
+) -> BrokerCtx {
+    let view = broker.view();
+    let mailbox_metadata = view
+        .clients
+        .iter()
+        .map(|client| {
+            let mailbox = MailboxName::Agent(client.name.clone());
+            let cursor_offset = broker.cursor_offset(&mailbox);
+            (
+                client.name.clone(),
+                read_mailbox_meta_for(bus_dir, &client.name, cursor_offset),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    BrokerCtx {
+        pid: std::process::id(),
+        socket_path: sock_path.display().to_string(),
+        build_version: env!("CARGO_PKG_VERSION").to_string(),
+        mailbox_metadata,
+    }
+}
+
+fn read_mailbox_meta_for(bus_dir: &Path, name: &str, cursor_offset: u64) -> MailboxMeta {
+    let path = bus_dir.join("mailboxes").join(format!("{name}.jsonl"));
+    let entries = match famp_inbox::read::read_all(&path) {
+        Ok(entries) => entries,
+        Err(_) => return MailboxMeta::default(),
+    };
+    let total = entries.len() as u64;
+    let unread = famp_inbox::read::read_from(&path, cursor_offset)
+        .map_or(0, |entries| entries.len().try_into().unwrap_or(u64::MAX));
+    let last_sender = entries.last().and_then(|value| {
+        value
+            .get("from")
+            .and_then(|from| from.as_str().map(String::from))
+    });
+    let last_received_at_unix_seconds = entries
+        .last()
+        .and_then(|value| value.get("ts").and_then(serde_json::Value::as_u64));
+
+    MailboxMeta {
+        unread,
+        total,
+        last_sender,
+        last_received_at_unix_seconds,
     }
 }
 

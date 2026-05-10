@@ -27,6 +27,9 @@
 use axum as _;
 use base64 as _;
 use ed25519_dalek as _;
+use famp_inspect_client as _;
+use famp_inspect_proto as _;
+use famp_inspect_server as _;
 #[cfg(test)]
 use famp_keyring as _;
 use famp_transport as _;

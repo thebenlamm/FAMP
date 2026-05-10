@@ -37,6 +37,21 @@ pub enum Out {
         client: ClientId,
     },
     ReleaseClient(ClientId),
+    /// v0.10 inspector dispatch sentinel. Emitted when the broker
+    /// receives a `BusMessage::Inspect { kind }` frame. The executor
+    /// pre-reads mailbox metadata, builds `BrokerCtx`, calls
+    /// `famp_inspect_server::dispatch`, and synthesizes a
+    /// `BusReply::InspectOk` reply back to `client`.
+    ///
+    /// Why a sentinel instead of dispatching inline in the actor:
+    /// the Identities handler needs mailbox metadata, which lives
+    /// on disk and would require synchronous file I/O inside the
+    /// pure tokio-free actor. The actor stays tokio-free; the
+    /// executor handles the I/O.
+    InspectRequest {
+        client: ClientId,
+        kind: famp_inspect_proto::InspectKind,
+    },
     /// WR-07: emitted by `disconnect` for a canonical-holder client at
     /// the moment its session ends, BEFORE its `joined` set is cleared.
     /// The executor surfaces this as a `SessionRow` write to
@@ -74,5 +89,12 @@ impl<E: BrokerEnv> Broker<E> {
     /// passes it alongside the view via `BrokerCtx`.
     pub fn view(&self) -> BrokerStateView {
         self.state.view()
+    }
+
+    /// Read-only cursor lookup for executor-side inspector metadata.
+    /// The pure actor keeps cursor ownership; the executor only needs
+    /// the current line-boundary byte offset to compute unread counts.
+    pub fn cursor_offset(&self, name: &MailboxName) -> u64 {
+        self.state.cursors.get(name).copied().unwrap_or(0)
     }
 }
