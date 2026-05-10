@@ -8,6 +8,8 @@ use std::time::Instant;
 
 use crate::{AwaitFilter, BrokerEnv, BusMessage, BusReply, ClientId, MailboxName};
 
+pub use state::{BrokerStateView, ClientStateView};
+
 #[derive(Debug, Clone)]
 pub enum BrokerInput {
     Wire { client: ClientId, msg: BusMessage },
@@ -64,5 +66,13 @@ impl<E: BrokerEnv> Broker<E> {
 
     pub fn handle(&mut self, input: BrokerInput, now: Instant) -> Vec<Out> {
         handle::handle(self, input, now)
+    }
+
+    /// v0.10 read-only state snapshot for `famp-inspect-server`
+    /// dispatch. Cheap clone of in-memory state. Does NOT include
+    /// mailbox metadata; the broker executor reads that separately and
+    /// passes it alongside the view via `BrokerCtx`.
+    pub fn view(&self) -> BrokerStateView {
+        self.state.view()
     }
 }

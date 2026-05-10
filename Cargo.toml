@@ -8,6 +8,7 @@ members = [
   "crates/famp-fsm",
   "crates/famp-bus",
   "crates/famp-inspect-proto",
+  "crates/famp-inspect-server",
   # v1.0 federation internals
   "crates/famp-keyring",
   "crates/famp-transport",

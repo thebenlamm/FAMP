@@ -81,4 +81,58 @@ impl BrokerState {
             started_at: SystemTime::now(),
         }
     }
+
+    /// Build a read-only view for inspector RPCs. Includes only
+    /// `connected = true` clients with a registered `name` (skips
+    /// pure-Hello connections and proxy connections that have not
+    /// resolved a holder yet).
+    pub(crate) fn view(&self) -> BrokerStateView {
+        let clients = self
+            .clients
+            .values()
+            .filter(|c| c.connected && c.name.is_some())
+            .map(|c| ClientStateView {
+                name: c.name.clone().unwrap_or_default(),
+                pid: c.pid,
+                bind_as: c.bind_as.clone(),
+                cwd: c.cwd.clone(),
+                listen_mode: c.listen_mode,
+                registered_at: c.registered_at,
+                last_activity: c.last_activity,
+                joined: c.joined.iter().cloned().collect(),
+            })
+            .collect();
+        BrokerStateView {
+            started_at: self.started_at,
+            clients,
+        }
+    }
+}
+
+/// v0.10 read-only snapshot of `BrokerState` for `famp-inspect-server`
+/// consumption. The inspector cannot reach `pub(super)` fields
+/// directly across crate boundaries, so we expose a structurally-
+/// equivalent `pub` view-type populated by `BrokerState::view()`.
+///
+/// INSP-RPC-02: this view is produced by an `&BrokerState -> Self`
+/// transform. The server crate receives `&BrokerStateView` and
+/// cannot upgrade it to `&mut BrokerState`.
+#[derive(Debug, Clone)]
+pub struct BrokerStateView {
+    pub started_at: SystemTime,
+    pub clients: Vec<ClientStateView>,
+}
+
+/// One row per registered client, derived from `ClientState`.
+/// Skips connections that have not yet `Register`'d (no name).
+#[derive(Debug, Clone)]
+pub struct ClientStateView {
+    pub name: String,
+    pub pid: Option<u32>,
+    pub bind_as: Option<String>,
+    pub cwd: Option<String>,
+    pub listen_mode: bool,
+    pub registered_at: SystemTime,
+    pub last_activity: SystemTime,
+    pub joined: Vec<String>,
 }

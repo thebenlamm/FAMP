@@ -1,0 +1,21 @@
+[package]
+name = "famp-inspect-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FAMP v0.10 Inspector RPC server handlers (tokio-free; &BrokerState; mounted by broker)"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "0.1.0" }
+famp-bus = { path = "../famp-bus", version = "0.1.0" }
+famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
+famp-envelope = { path = "../famp-envelope", version = "0.1.0" }
+famp-fsm = { path = "../famp-fsm", version = "0.1.0" }

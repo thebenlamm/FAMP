@@ -53,7 +53,7 @@ pub mod liveness;
 pub mod mailbox;
 pub mod proto;
 
-pub use broker::{Broker, BrokerInput, Out};
+pub use broker::{Broker, BrokerInput, BrokerStateView, ClientStateView, Out};
 pub use codec::{encode_frame, try_decode_frame, FrameError, LEN_PREFIX_BYTES, MAX_FRAME_BYTES};
 pub use env::BrokerEnv;
 pub use error::BusErrorKind;

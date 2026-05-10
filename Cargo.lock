@@ -764,6 +764,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "famp-inspect-server"
+version = "0.1.0"
+dependencies = [
+ "famp-bus",
+ "famp-canonical",
+ "famp-envelope",
+ "famp-fsm",
+ "famp-inspect-proto",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "famp-keyring"
 version = "0.1.0"
 dependencies = [
