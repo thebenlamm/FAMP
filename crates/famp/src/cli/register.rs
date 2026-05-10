@@ -3,7 +3,7 @@
 //! Long-lived foreground subcommand that holds an identity slot on the
 //! local UDS broker for the lifetime of the process. Per D-10 this is the
 //! canonical registered holder of `name`: the connection sends
-//! `Hello { bind_as: None }` and then `Register { name, pid }`. All other
+//! `Hello { bind_as: None }` and then `Register { name, pid, cwd, listen }`. All other
 //! one-shot CLI commands (`send`, `inbox`, `await`, `join`, `leave`,
 //! `whoami`, `sessions --me`) ride on this process by sending
 //! `Hello { bind_as = name }` instead (the proxy shape).
@@ -68,7 +68,7 @@ pub struct RegisterArgs {
 ///
 /// Loops forever (until Ctrl-C / SIGTERM / `--no-reconnect`-driven
 /// disconnect). Each iteration: spawn-if-absent → connect with
-/// `bind_as: None` → `Register { name, pid }` → either
+/// `bind_as: None` → `Register { name, pid, cwd, listen }` → either
 /// `block_until_disconnect` (default) or `tail_loop` (with `--tail`).
 /// Reconnect backoff resets to 1 s after every successful run.
 pub async fn run(args: RegisterArgs) -> Result<(), CliError> {
@@ -157,10 +157,15 @@ async fn run_one_session(
     sock: &Path,
 ) -> Result<SessionOutcome, CliError> {
     let pid = std::process::id();
+    let cwd = std::env::current_dir()
+        .ok()
+        .map(|path| path.display().to_string());
     let reply = client
         .send_recv(BusMessage::Register {
             name: args.name.clone(),
             pid,
+            cwd,
+            listen: args.tail,
         })
         .await
         .map_err(map_bus_client_err)?;

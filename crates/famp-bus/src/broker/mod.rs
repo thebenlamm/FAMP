@@ -58,7 +58,7 @@ impl<E: BrokerEnv> Broker<E> {
     pub fn new(env: E) -> Self {
         Self {
             env,
-            state: state::BrokerState::default(),
+            state: state::BrokerState::new(),
         }
     }
 

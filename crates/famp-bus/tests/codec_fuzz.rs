@@ -22,6 +22,8 @@ fn arb_busmessage() -> impl Strategy<Value = BusMessage> {
         Just(BusMessage::Register {
             name: "alice".into(),
             pid: 1234,
+            cwd: None,
+            listen: false,
         }),
         Just(BusMessage::Send {
             to: famp_bus::Target::Agent { name: "bob".into() },

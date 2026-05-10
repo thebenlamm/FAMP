@@ -32,6 +32,8 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
             msg: BusMessage::Register {
                 name: name.into(),
                 pid: 20_000 + u32::try_from(client).unwrap(),
+                cwd: None,
+                listen: false,
             },
         },
         now,

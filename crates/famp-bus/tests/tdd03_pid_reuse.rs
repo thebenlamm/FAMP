@@ -36,6 +36,8 @@ fn pid_reuse_does_not_block_new_registration_after_disconnect() {
             msg: BusMessage::Register {
                 name: "alice".into(),
                 pid: 1234,
+                cwd: None,
+                listen: false,
             },
         },
         now,
@@ -49,6 +51,8 @@ fn pid_reuse_does_not_block_new_registration_after_disconnect() {
             msg: BusMessage::Register {
                 name: "alice".into(),
                 pid: 1234,
+                cwd: None,
+                listen: false,
             },
         },
         now,
@@ -71,7 +75,7 @@ proptest! {
         let _ = broker.handle(
             BrokerInput::Wire {
                 client: ClientId::from(1),
-                msg: BusMessage::Register { name: name.clone(), pid },
+                msg: BusMessage::Register { name: name.clone(), pid, cwd: None, listen: false },
             },
             now,
         );
@@ -81,7 +85,7 @@ proptest! {
         let out = broker.handle(
             BrokerInput::Wire {
                 client: ClientId::from(2),
-                msg: BusMessage::Register { name: name.clone(), pid },
+                msg: BusMessage::Register { name: name.clone(), pid, cwd: None, listen: false },
             },
             now,
         );

@@ -176,6 +176,8 @@ async fn test_sessions_jsonl_diagnostic_only() {
     let reg = BusMessage::Register {
         name: "real".into(),
         pid: std::process::id(),
+        cwd: None,
+        listen: false,
     };
     codec::write_frame(&mut s, &reg).await.unwrap();
     let _: BusReply = codec::read_frame(&mut s).await.unwrap();

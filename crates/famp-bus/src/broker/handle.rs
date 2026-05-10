@@ -56,9 +56,9 @@ fn handle_wire<E: BrokerEnv>(
         BusMessage::Register {
             name,
             pid,
-            cwd: _,
-            listen: _,
-        } => register(broker, client, name, pid),
+            cwd,
+            listen,
+        } => register(broker, client, name, pid, cwd, listen),
         BusMessage::Send { to, envelope } => send(broker, client, to, &envelope),
         BusMessage::Inbox {
             since,
@@ -121,6 +121,10 @@ fn hello<E: BrokerEnv>(
                 joined: BTreeSet::new(),
                 connected: true,
                 bind_as: Some(name),
+                cwd: None,
+                listen_mode: false,
+                registered_at: std::time::SystemTime::now(),
+                last_activity: std::time::SystemTime::now(),
             },
         );
         return vec![Out::Reply(client, BusReply::HelloOk { bus_proto: 1 })];
@@ -135,6 +139,10 @@ fn hello<E: BrokerEnv>(
             joined: BTreeSet::new(),
             connected: true,
             bind_as: None,
+            cwd: None,
+            listen_mode: false,
+            registered_at: std::time::SystemTime::now(),
+            last_activity: std::time::SystemTime::now(),
         },
     );
     vec![Out::Reply(client, BusReply::HelloOk { bus_proto: 1 })]
@@ -145,6 +153,8 @@ fn register<E: BrokerEnv>(
     client: ClientId,
     name: String,
     pid: u32,
+    cwd: Option<String>,
+    listen: bool,
 ) -> Vec<Out> {
     // BL-05: PID 0 has POSIX-special semantics for `kill(2)` (targets
     // the calling pgrp). A client claiming PID 0 would always pass
@@ -206,6 +216,11 @@ fn register<E: BrokerEnv>(
     state.name = Some(name.clone());
     state.pid = Some(pid);
     state.connected = true;
+    state.cwd = cwd;
+    state.listen_mode = listen;
+    let now_wall = std::time::SystemTime::now();
+    state.registered_at = now_wall;
+    state.last_activity = now_wall;
 
     vec![
         Out::Reply(
@@ -350,7 +365,8 @@ fn send_channel<E: BrokerEnv>(
                 // plan; per-member woken in fan-out is deferred. SendOk
                 // reports woken=false for channel rows even when a member
                 // was parked on Await and got woken via the wake loop above.
-                .map(|member| Delivered { // woken is intentionally false for channel rows.
+                .map(|member| Delivered {
+                    // woken is intentionally false for channel rows.
                     to: Target::Agent { name: member },
                     ok: true,
                     woken: false,

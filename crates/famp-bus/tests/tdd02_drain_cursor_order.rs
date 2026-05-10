@@ -56,6 +56,8 @@ fn register_drain_replies_before_cursor_advance() {
             msg: BusMessage::Register {
                 name: "alice".into(),
                 pid: 1234,
+                cwd: None,
+                listen: false,
             },
         },
         now,
@@ -89,6 +91,8 @@ fn send_emits_append_before_reply() {
             msg: BusMessage::Register {
                 name: "alice".into(),
                 pid: 1234,
+                cwd: None,
+                listen: false,
             },
         },
         now,
@@ -99,6 +103,8 @@ fn send_emits_append_before_reply() {
             msg: BusMessage::Register {
                 name: "bob".into(),
                 pid: 5678,
+                cwd: None,
+                listen: false,
             },
         },
         now,

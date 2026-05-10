@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use crate::{AwaitFilter, ClientId, MailboxName};
 
@@ -22,6 +22,28 @@ pub(super) struct ClientState {
     /// re-verifies `holder` is still live on every identity-required
     /// op via `proxy_holder_alive`.
     pub(super) bind_as: Option<String>,
+    /// D-01/D-03: client's working directory at registration time.
+    /// Captured ONCE; never refreshed (D-02). If the client chdir's
+    /// after registering, this field reflects where the agent was
+    /// born. `None` for pre-v0.10 senders that didn't include the
+    /// field on the Register frame.
+    pub(super) cwd: Option<String>,
+    /// listen-mode flag from BusMessage::Register. `false` for
+    /// pre-v0.10 senders that didn't include the field. Surfaced
+    /// in `famp inspect identities` rows (INSP-IDENT-01).
+    pub(super) listen_mode: bool,
+    /// Wall-clock registration time. Set in the Register handler
+    /// arm so `famp inspect identities` can compute registered-at
+    /// per row. `Instant` is NOT used because Instant has no
+    /// epoch encoding; SystemTime serializes to u64 epoch seconds.
+    pub(super) registered_at: SystemTime,
+    /// Wall-clock last-activity time. Updated by the Register
+    /// handler initially, refreshed on every authenticated wire
+    /// frame from the client (Send/Inbox/Await/Join/Leave/Whoami).
+    /// Wave-0 sets it at register time only; Wave-2 broker dispatch
+    /// arm updates it on inspect calls. Pre-existing identity rows
+    /// are populated retroactively from registered_at.
+    pub(super) last_activity: SystemTime,
 }
 
 #[derive(Debug, Clone)]
@@ -31,10 +53,32 @@ pub(super) struct ParkedAwait {
     pub(super) deadline: Instant,
 }
 
-#[derive(Debug, Default)]
+/// Broker-actor state. v0.10 added `started_at` (D-07) populated
+/// at construction; `derive(Default)` was REMOVED because Default
+/// for SystemTime is `UNIX_EPOCH`, which would falsely report
+/// 1970-01-01 as broker startup time (D-08).
+#[derive(Debug)]
 pub(super) struct BrokerState {
     pub(super) clients: BTreeMap<ClientId, ClientState>,
     pub(super) channels: BTreeMap<String, BTreeSet<String>>,
     pub(super) pending_awaits: BTreeMap<ClientId, ParkedAwait>,
     pub(super) cursors: BTreeMap<MailboxName, u64>,
+    /// D-07: wall-clock startup time, set by the answering process.
+    /// Surfaced in `famp inspect broker` reply (INSP-BROKER-01).
+    /// NEVER socket file mtime (D-08): mtime lies after restart-
+    /// with-reused-socket, `touch` from external tools, and FS quirks.
+    #[allow(dead_code)]
+    pub(super) started_at: SystemTime,
+}
+
+impl BrokerState {
+    pub(super) fn new() -> Self {
+        Self {
+            clients: BTreeMap::new(),
+            channels: BTreeMap::new(),
+            pending_awaits: BTreeMap::new(),
+            cursors: BTreeMap::new(),
+            started_at: SystemTime::now(),
+        }
+    }
 }

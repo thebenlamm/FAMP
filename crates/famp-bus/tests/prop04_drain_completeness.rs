@@ -48,6 +48,8 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
             msg: BusMessage::Register {
                 name: name.into(),
                 pid: 40_000 + u32::try_from(client).unwrap(),
+                cwd: None,
+                listen: false,
             },
         },
         now,
@@ -112,6 +114,8 @@ proptest! {
                 msg: BusMessage::Register {
                     name: "alice".into(),
                     pid: 40_000 + u32::try_from(client).unwrap(),
+                cwd: None,
+                listen: false,
                 },
             },
             now,
@@ -158,6 +162,8 @@ fn malformed_drain_line_returns_error_and_does_not_advance_cursor() {
             msg: BusMessage::Register {
                 name: "alice".into(),
                 pid: 40_001,
+                cwd: None,
+                listen: false,
             },
         },
         now,

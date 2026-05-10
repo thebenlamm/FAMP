@@ -1,6 +1,6 @@
 //! `famp_register` MCP tool — Phase 02 plan 02-09 implementation.
 //!
-//! Sends `BusMessage::Register { name, pid }` to the local broker via the
+//! Sends `BusMessage::Register { name, pid, cwd, listen }` to the local broker via the
 //! lazily-opened `BusClient` from `cli::mcp::session`, and on `RegisterOk`
 //! installs the canonical identity on the per-process session state via
 //! [`session::set_active_identity`] (D-04 + D-10).
@@ -68,6 +68,10 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         })?
         .to_string();
     validate_identity_name(&name)?;
+    let listen = input
+        .get("listen")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     session::ensure_bus()
         .await
@@ -84,10 +88,15 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         ));
     };
     let pid = std::process::id();
+    let cwd = std::env::current_dir()
+        .ok()
+        .map(|path| path.display().to_string());
     let reply = bus
         .send_recv(BusMessage::Register {
             name: name.clone(),
             pid,
+            cwd,
+            listen,
         })
         .await
         .map_err(|e| {

@@ -30,6 +30,8 @@ fn hello_register(broker: &mut Broker<TestEnv>, now: Instant) {
             msg: BusMessage::Register {
                 name: "alice".into(),
                 pid: 3001,
+                cwd: None,
+                listen: false,
             },
         },
         now,

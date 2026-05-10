@@ -84,6 +84,8 @@ proptest! {
                             msg: BusMessage::Register {
                                 name: format!("agent-{name}"),
                                 pid,
+                                cwd: None,
+                                listen: false,
                             },
                         },
                         now,
