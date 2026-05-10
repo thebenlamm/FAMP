@@ -10,6 +10,9 @@ use serde::{
 
 use crate::BusErrorKind;
 
+/// Current local bus protocol version.
+pub const BUS_PROTO_VERSION: u32 = 1;
+
 const CHANNEL_PATTERN: &str = "^#[a-z0-9][a-z0-9_-]{0,31}$";
 static CHANNEL_RE: LazyLock<Regex> = LazyLock::new(|| match Regex::new(CHANNEL_PATTERN) {
     Ok(regex) => regex,

@@ -23,7 +23,7 @@
 
 use std::path::{Path, PathBuf};
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply};
+use famp_bus::{BusErrorKind, BusMessage, BusReply, BUS_PROTO_VERSION};
 use tokio::io::AsyncWriteExt as _;
 use tokio::net::UnixStream;
 
@@ -101,8 +101,8 @@ impl BusClient {
         // maps to a live registered holder and rejects with
         // `HelloErr { NotRegistered }` if not.
         let hello = BusMessage::Hello {
-            bus_proto: 1,
-            client: "famp-cli/0.9.0".to_string(),
+            bus_proto: BUS_PROTO_VERSION,
+            client: format!("famp-cli/{}", env!("CARGO_PKG_VERSION")),
             bind_as: client.bind_as.clone(),
         };
         match client.send_recv(hello).await? {

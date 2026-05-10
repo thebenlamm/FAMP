@@ -47,6 +47,7 @@ use std::io::Write;
 use std::path::Path;
 
 use famp_bus::{BusErrorKind, BusMessage, BusReply};
+use serde_json::Value;
 
 use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
 use crate::cli::error::CliError;
@@ -95,6 +96,8 @@ pub struct AwaitOutcome {
     pub envelope: Option<serde_json::Value>,
     /// `true` when the broker returned `BusReply::AwaitTimeout {}`.
     pub timed_out: bool,
+    /// Optional human-readable diagnostic printed with timeout JSON.
+    pub diagnostic: Option<String>,
 }
 
 /// Top-level entry point for `Commands::Await`.
@@ -113,9 +116,13 @@ pub async fn run(args: AwaitArgs) -> Result<(), CliError> {
 ///
 /// Split out from [`run_at`] so callers (`run`, integration tests) can
 /// drive the write side independently of the bus round-trip.
-fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Result<(), CliError> {
+pub(crate) fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Result<(), CliError> {
     if outcome.timed_out {
-        writeln!(out, "{}", serde_json::json!({"timeout": true})).map_err(|e| CliError::Io {
+        let mut value = serde_json::json!({"timeout": true});
+        if let Some(diagnostic) = outcome.diagnostic.as_deref() {
+            value["diagnostic"] = serde_json::json!(diagnostic);
+        }
+        writeln!(out, "{value}").map_err(|e| CliError::Io {
             path: std::path::PathBuf::new(),
             source: e,
         })?;
@@ -163,17 +170,7 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
     //    broker validates at Hello time that `identity` is held by a
     //    live `famp register` process; refusal surfaces as
     //    HelloFailed { NotRegistered }.
-    let mut bus = BusClient::connect(sock, Some(identity.clone()))
-        .await
-        .map_err(|e| match e {
-            BusClientError::HelloFailed {
-                kind: BusErrorKind::NotRegistered,
-                ..
-            } => CliError::NotRegisteredHint {
-                name: identity.clone(),
-            },
-            _ => CliError::BrokerUnreachable,
-        })?;
+    let mut bus = connect_bound(sock, &identity).await?;
 
     // 4. Single round-trip: Await { timeout_ms, task }.
     let reply = bus
@@ -195,11 +192,16 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
         BusReply::AwaitOk { envelope } => Ok(AwaitOutcome {
             envelope: Some(envelope),
             timed_out: false,
+            diagnostic: None,
         }),
-        BusReply::AwaitTimeout {} => Ok(AwaitOutcome {
-            envelope: None,
-            timed_out: true,
-        }),
+        BusReply::AwaitTimeout {} => {
+            let diagnostic = timeout_diagnostic(&mut bus, &identity, args.task).await;
+            Ok(AwaitOutcome {
+                envelope: None,
+                timed_out: true,
+                diagnostic: Some(diagnostic),
+            })
+        }
         BusReply::Err {
             kind: BusErrorKind::NotRegistered,
             ..
@@ -209,4 +211,99 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
             detail: format!("unexpected reply to Await: {other:?}"),
         }),
     }
+}
+
+pub(crate) async fn connect_bound(sock: &Path, identity: &str) -> Result<BusClient, CliError> {
+    BusClient::connect(sock, Some(identity.to_string()))
+        .await
+        .map_err(|e| match e {
+            BusClientError::HelloFailed {
+                kind: BusErrorKind::NotRegistered,
+                ..
+            } => CliError::NotRegisteredHint {
+                name: identity.to_string(),
+            },
+            BusClientError::HelloFailed {
+                kind: BusErrorKind::BrokerProtoMismatch,
+                message,
+            } => CliError::BusError {
+                kind: BusErrorKind::BrokerProtoMismatch,
+                message: mixed_binary_hint(message),
+            },
+            BusClientError::Frame(_) | BusClientError::Decode(_) => CliError::BusClient {
+                detail: mixed_binary_hint(format!("{e:?}")),
+            },
+            _ => CliError::BrokerUnreachable,
+        })
+}
+
+fn mixed_binary_hint(detail: impl AsRef<str>) -> String {
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "(unknown current executable)".to_string());
+    format!(
+        "{}. This can happen when a client from one FAMP build talks to a broker from another build. Current client: {exe}. Run `famp inspect broker` to see the broker pid/build/socket, then restart the broker if needed.",
+        detail.as_ref()
+    )
+}
+
+async fn timeout_diagnostic(
+    bus: &mut BusClient,
+    identity: &str,
+    task: Option<uuid::Uuid>,
+) -> String {
+    let base = match task {
+        Some(task) => format!("await timed out waiting for new messages on task {task}"),
+        None => "await timed out waiting for a new message".to_string(),
+    };
+    let hint = format!(
+        "Run `famp inbox list --as {identity} --include-terminal` to inspect already-delivered messages, or use `famp wait-reply --as {identity} --task <task_id>` for reply waits that check the inbox before blocking."
+    );
+
+    if let Some(task) = task {
+        if let Ok(true) = inbox_has_reply_for_task(bus, task).await {
+            return format!(
+                "{base}; a matching reply is already present in the inbox but was not new past the await cursor. {hint}"
+            );
+        }
+    }
+
+    format!("{base}. {hint}")
+}
+
+pub(crate) async fn inbox_has_reply_for_task(
+    bus: &mut BusClient,
+    task: uuid::Uuid,
+) -> Result<bool, CliError> {
+    let reply = bus
+        .send_recv(BusMessage::Inbox {
+            since: Some(0),
+            include_terminal: Some(true),
+        })
+        .await
+        .map_err(|e| CliError::BusClient {
+            detail: format!("{e:?}"),
+        })?;
+
+    match reply {
+        BusReply::InboxOk { envelopes, .. } => Ok(envelopes
+            .iter()
+            .any(|envelope| is_reply_for_task(envelope, task))),
+        BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
+        other => Err(CliError::BusClient {
+            detail: format!("unexpected reply to Inbox diagnostic: {other:?}"),
+        }),
+    }
+}
+
+pub(crate) fn is_reply_for_task(envelope: &Value, task: uuid::Uuid) -> bool {
+    if envelope.get("class").and_then(Value::as_str) == Some("request") {
+        return false;
+    }
+    envelope
+        .get("causality")
+        .and_then(|c| c.get("ref"))
+        .and_then(Value::as_str)
+        .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
+        .is_some_and(|candidate| candidate == task)
 }

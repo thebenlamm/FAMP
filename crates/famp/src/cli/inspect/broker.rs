@@ -161,8 +161,16 @@ fn render_human(r: &BrokerStateRender) -> String {
                 PidSource::Lsof => "lsof",
                 PidSource::Unknown => "unknown",
             };
+            let hint = if evidence.contains("schema_mismatch")
+                || evidence.contains("inspect_call_failed")
+                || evidence.contains("hello_rejected")
+            {
+                " hint=possible mixed FAMP binary/protocol; compare this client with `famp inspect broker --json` or restart the broker"
+            } else {
+                ""
+            };
             format!(
-                "state: ORPHAN_HOLDER socket={socket_path} holder_pid={pid_str} pid_source={source_str} evidence={evidence}"
+                "state: ORPHAN_HOLDER socket={socket_path} holder_pid={pid_str} pid_source={source_str} evidence={evidence}{hint}"
             )
         }
         BrokerStateRender::PermissionDenied {

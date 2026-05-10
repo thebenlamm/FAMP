@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::broker::state::{ClientState, ParkedAwait};
 use crate::{
     AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId,
-    Delivered, MailboxName, Out, SessionRow, Target, MAX_FRAME_BYTES,
+    Delivered, MailboxName, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
 };
 
 pub(crate) fn handle<E: BrokerEnv>(
@@ -117,6 +117,18 @@ fn hello<E: BrokerEnv>(
     bus_proto: u32,
     bind_as: Option<String>,
 ) -> Vec<Out> {
+    if bus_proto != BUS_PROTO_VERSION {
+        return vec![Out::Reply(
+            client,
+            BusReply::HelloErr {
+                kind: BusErrorKind::BrokerProtoMismatch,
+                message: format!(
+                    "client bus_proto={bus_proto} is not supported by this broker; expected bus_proto={BUS_PROTO_VERSION}"
+                ),
+            },
+        )];
+    }
+
     if let Some(name) = bind_as {
         // D-10: locate the canonical live registered holder for `name`.
         // Cache the holder PID for the per-op liveness re-check; if the
@@ -155,7 +167,12 @@ fn hello<E: BrokerEnv>(
                 last_activity: std::time::SystemTime::now(),
             },
         );
-        return vec![Out::Reply(client, BusReply::HelloOk { bus_proto: 1 })];
+        return vec![Out::Reply(
+            client,
+            BusReply::HelloOk {
+                bus_proto: BUS_PROTO_VERSION,
+            },
+        )];
     }
     broker.state.clients.insert(
         client,
@@ -173,7 +190,12 @@ fn hello<E: BrokerEnv>(
             last_activity: std::time::SystemTime::now(),
         },
     );
-    vec![Out::Reply(client, BusReply::HelloOk { bus_proto: 1 })]
+    vec![Out::Reply(
+        client,
+        BusReply::HelloOk {
+            bus_proto: BUS_PROTO_VERSION,
+        },
+    )]
 }
 
 fn register<E: BrokerEnv>(
@@ -425,19 +447,13 @@ fn inbox<E: BrokerEnv>(broker: &Broker<E>, client: ClientId, since: Option<u64>)
         Err(message) => return vec![err(client, BusErrorKind::EnvelopeInvalid, message)],
     };
 
-    vec![
-        Out::Reply(
-            client,
-            BusReply::InboxOk {
-                envelopes,
-                next_offset: drained.next_offset,
-            },
-        ),
-        Out::AdvanceCursor {
-            name: mailbox,
-            offset: drained.next_offset,
+    vec![Out::Reply(
+        client,
+        BusReply::InboxOk {
+            envelopes,
+            next_offset: drained.next_offset,
         },
-    ]
+    )]
 }
 
 fn await_envelope<E: BrokerEnv>(
@@ -998,6 +1014,31 @@ mod d10_tests {
     }
 
     #[test]
+    fn hello_rejects_unsupported_bus_proto() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Hello {
+                    bus_proto: BUS_PROTO_VERSION + 1,
+                    client: "newer-client".into(),
+                    bind_as: None,
+                },
+            },
+            now,
+        );
+        match &outs[0] {
+            Out::Reply(_, BusReply::HelloErr { kind, message }) => {
+                assert_eq!(*kind, BusErrorKind::BrokerProtoMismatch);
+                assert!(message.contains("expected bus_proto=1"));
+            }
+            other => panic!("expected HelloErr BrokerProtoMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_hello_bind_as_dead_holder_returns_not_registered() {
         let env = TestEnv::default();
         env.liveness.borrow_mut().mark_dead(12345);
@@ -1043,6 +1084,38 @@ mod d10_tests {
             .iter()
             .any(|o| matches!(o, Out::AppendMailbox { .. }));
         assert!(has_append, "proxy Send must produce an AppendMailbox");
+    }
+
+    #[test]
+    fn inbox_list_does_not_advance_broker_cursor() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Inbox {
+                    since: Some(0),
+                    include_terminal: Some(true),
+                },
+            },
+            now,
+        );
+
+        assert!(
+            outs.iter()
+                .any(|out| matches!(out, Out::Reply(_, BusReply::InboxOk { .. }))),
+            "inbox should reply with InboxOk: {outs:?}"
+        );
+        assert!(
+            !outs
+                .iter()
+                .any(|out| matches!(out, Out::AdvanceCursor { .. })),
+            "inbox list must not advance the broker cursor: {outs:?}"
+        );
     }
 
     #[test]

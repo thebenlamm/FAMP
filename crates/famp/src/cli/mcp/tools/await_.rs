@@ -71,7 +71,13 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     };
 
     match run_at_structured(&resolve_sock_path(), args).await {
-        Ok(out) if out.timed_out => Ok(serde_json::json!({ "timeout": true })),
+        Ok(out) if out.timed_out => {
+            let mut value = serde_json::json!({ "timeout": true });
+            if let Some(diagnostic) = out.diagnostic {
+                value["diagnostic"] = serde_json::json!(diagnostic);
+            }
+            Ok(value)
+        }
         Ok(out) => Ok(out.envelope.map_or_else(
             || serde_json::json!({ "timeout": true }),
             |env| serde_json::json!({ "envelope": env }),

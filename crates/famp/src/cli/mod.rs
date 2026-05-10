@@ -23,6 +23,7 @@ pub mod send;
 pub mod sessions;
 pub mod uninstall;
 pub mod util;
+pub mod wait_reply;
 pub mod whoami;
 
 pub use broker::BrokerArgs;
@@ -64,6 +65,9 @@ pub enum Commands {
     /// Block until a new inbox entry arrives past the cursor.
     #[command(name = "await")]
     Await(await_cmd::AwaitArgs),
+    /// Wait for a task reply: check existing inbox entries first, then block.
+    #[command(name = "wait-reply")]
+    WaitReply(wait_reply::WaitReplyArgs),
     /// Inspect the inbox (list + cursor ack).
     Inbox(inbox::InboxArgs),
     /// Start the MCP stdio JSON-RPC server (eight tools: `famp_register`,
@@ -140,6 +144,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         // `async fn run`. Only async-required arms pay the runtime cost.
         Commands::Send(args) => block_on_async(send::run(args)),
         Commands::Await(args) => block_on_async(await_cmd::run(args)),
+        Commands::WaitReply(args) => block_on_async(wait_reply::run(args)),
         Commands::Inbox(args) => block_on_async(inbox::run(args)),
         Commands::Mcp(args) => block_on_async(mcp::run(args)),
         Commands::Broker(args) => block_on_async(broker::run(args)),
