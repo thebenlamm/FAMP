@@ -34,7 +34,7 @@
 Plans:
 - [x] 01-01-PLAN.md — Wave 0: Proto types + state extensions + Wave-0 test scaffolds (famp-inspect-proto crate, BusMessage::Inspect variant, BrokerState::new with started_at, Register cwd/listen extension)
 - [x] 01-02-PLAN.md — Wave 1: famp-inspect-server (tokio-free, &BrokerStateView handlers) + famp-inspect-client (UDS, no clap, peer_pid)
-- [ ] 01-03-PLAN.md — Wave 2: Broker dispatch arm (BusMessage::Inspect → famp-inspect-server) + CLI subcommand scaffolding
+- [x] 01-03-PLAN.md — Wave 2: Broker dispatch arm (BusMessage::Inspect → famp-inspect-server) + CLI subcommand scaffolding
 - [ ] 01-04-PLAN.md — Wave 3: CLI rendering (HEALTHY + 4 down-states + table) + integration tests + 3 just check-* recipes wired into ci:
 
 ### Phase 2: Task FSM & Message Visibility

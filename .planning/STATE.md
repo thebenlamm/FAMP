@@ -10,8 +10,8 @@ progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
-  percent: 50
+  completed_plans: 3
+  percent: 75
 ---
 
 # STATE: FAMP — v0.10 Inspector & Observability (active)
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active mile
 ## Current Position
 
 Phase: 01 (broker-diagnosis-identity-inspection) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 01 — Wave 1 complete; Wave 2 next
-Last activity: 2026-05-10 -- Phase 01 Wave 1 complete; 01-01 and 01-02 summaries committed; post-wave `just test` passed outside sandbox
+Plan: 3 of 4
+Status: Executing Phase 01 — Wave 2 complete; Wave 3 next
+Last activity: 2026-05-10 -- Phase 01 Wave 2 complete; 01-03 summary committed; post-wave build, no-tokio gate, and elevated `just test` passed
 
 ## v0.10 Phase Map
 
