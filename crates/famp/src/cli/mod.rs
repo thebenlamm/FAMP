@@ -122,6 +122,12 @@ where
 {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        // D-04 (Phase 2): sized for INSP-RPC-04 1000-concurrent-cancel
+        // test against `famp inspect tasks`/`messages`. Default is
+        // 512; 1024 lets all 1000 concurrent calls enter
+        // spawn_blocking without queuing. FDs are stack-local and
+        // drop on thread exit -- pool size does not affect leak risk.
+        .max_blocking_threads(1024)
         .build()
         .map_err(|e| CliError::Io {
             path: std::path::PathBuf::new(),
