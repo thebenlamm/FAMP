@@ -3,14 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: Inspector & Observability
 status: executing
-stopped_at: Phase 1 planned — 4 plans ready for execution
-last_updated: "2026-05-10"
-last_activity: 2026-05-10 — Phase 1 planning complete; 4 plans (01-01..01-04) verified clean by plan-checker; VALIDATION.md approved; ready for /gsd-execute-phase 1
+stopped_at: Phase 1 context gathered
+last_updated: "2026-05-10T15:57:16.663Z"
+last_activity: 2026-05-10 -- Phase 01 execution started
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 4
-  completed_plans: 0
+  completed_plans: 2
+  percent: 50
 ---
 
 # STATE: FAMP — v0.10 Inspector & Observability (active)
@@ -23,14 +24,14 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active mile
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.10 makes that substrate's runtime state legible to the operator running it.
 
-**Current focus:** v0.10 Phase 1 — Broker Diagnosis & Identity Inspection. Plans not yet drafted; `/gsd-spec-phase 1` is in progress (Round 2 locks landed; SPEC.md not yet written).
+**Current focus:** Phase 01 — broker-diagnosis-identity-inspection
 
 ## Current Position
 
-Phase: 1 — Broker Diagnosis & Identity Inspection
-Plan: 4 plans drafted and verified (01-01 Wave 0, 01-02 Wave 1, 01-03 Wave 2, 01-04 Wave 3)
-Status: Planning complete — all plans pass plan-checker with 0 blockers; VALIDATION.md nyquist_compliant=true, approved
-Last activity: 2026-05-10 — Phase 1 planning complete; REQUIREMENTS.md corrected (STALE_PID→STALE_SOCKET, INSP-CLI-01 phased); 4 plan-checker blockers resolved; ready for `/gsd-execute-phase 1`
+Phase: 01 (broker-diagnosis-identity-inspection) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 01 — Wave 1 complete; Wave 2 next
+Last activity: 2026-05-10 -- Phase 01 Wave 1 complete; 01-01 and 01-02 summaries committed; post-wave `just test` passed outside sandbox
 
 ## v0.10 Phase Map
 
