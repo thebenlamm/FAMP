@@ -16,9 +16,9 @@ use serde_json as _;
 pub enum InspectKind {
     Broker(InspectBrokerRequest),
     Identities(InspectIdentitiesRequest),
-    /// Phase 2. Server returns `NotYetImplemented` in Phase 1.
+    /// Phase 2 task inspection request.
     Tasks(InspectTasksRequest),
-    /// Phase 2. Server returns `NotYetImplemented` in Phase 1.
+    /// Phase 2 message inspection request.
     Messages(InspectMessagesRequest),
 }
 
@@ -84,7 +84,7 @@ pub struct InspectIdentitiesReply {
     pub rows: Vec<IdentityRow>,
 }
 
-// ===== Tasks (Phase 2 surface - Phase 1 server returns NotYetImplemented) =====
+// ===== Tasks reply (Phase 2 - D-01/D-02 wire commitment) =====
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -95,15 +95,109 @@ pub struct InspectTasksRequest {
     pub full: bool,
 }
 
+/// Reply to `InspectKind::Tasks`.
+///
+/// **Wire commitment (D-02):** the serde tag form `tag = "kind",
+/// rename_all = "snake_case"` is locked as v0.10-era protocol. Do not
+/// change tag, content discriminator, or rename style without a
+/// deliberate FAMP_SPEC_VERSION bump - vector-pack reproducibility
+/// when Gate B fires depends on this.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InspectTasksReply {
-    /// Phase 1: always `Err("not_yet_implemented")`. Phase 2 fills
-    /// this in.
-    pub not_yet_implemented: bool,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InspectTasksReply {
+    /// INSP-TASK-01/02: list of tasks grouped by task_id, with orphan
+    /// rows surfaced via `TaskRow::orphan`.
+    List(TaskListReply),
+    /// INSP-TASK-03: envelope chain summary for a specific task_id.
+    Detail(TaskDetailReply),
+    /// INSP-TASK-04: detail plus per-envelope canonical JCS bytes.
+    DetailFull(TaskDetailFullReply),
+    /// INSP-RPC-03: 500ms budget exceeded before walk+dispatch completed.
+    BudgetExceeded { elapsed_ms: u64 },
 }
 
-// ===== Messages (Phase 2 surface - Phase 1 server returns NotYetImplemented) =====
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskListReply {
+    pub rows: Vec<TaskRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskRow {
+    /// `task_id` as stored in the TaskRecord. It is a String rather than
+    /// a UUID because orphan rows can use the nil UUID or an invalid/empty id.
+    pub task_id: String,
+    /// One of `REQUESTED | COMMITTED | COMPLETED | FAILED | CANCELLED`.
+    pub state: String,
+    pub peer: String,
+    pub opened_at_unix_seconds: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_send_at_unix_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_recv_at_unix_seconds: Option<u64>,
+    pub terminal: bool,
+    pub envelope_count: u64,
+    /// Seconds since the most recent of opened/last_send/last_recv.
+    pub last_transition_age_seconds: u64,
+    /// True when `task_id` is nil, empty, or not parseable as a UUID.
+    pub orphan: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskDetailReply {
+    pub task_id: String,
+    pub envelopes: Vec<TaskEnvelopeSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskEnvelopeSummary {
+    pub envelope_id: String,
+    pub sender: String,
+    pub recipient: String,
+    /// One of `REQUESTED | COMMITTED | COMPLETED | FAILED | CANCELLED`.
+    pub fsm_transition: String,
+    pub timestamp: String,
+    pub sig_verified: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskDetailFullReply {
+    pub task_id: String,
+    pub envelopes: Vec<TaskEnvelopeFull>,
+}
+
+/// One envelope in the `--full` chain. Per D-09, missing legs carry
+/// `bytes: None` and a non-empty `reason`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskEnvelopeFull {
+    pub envelope_id: String,
+    /// Canonical JCS (RFC 8785) bytes observed by this node.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<String>,
+    /// Populated iff `bytes.is_none()`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// INSP-TASK-02 orphan criterion: a `task_id` is an orphan when it is
+/// the nil UUID, empty, or unparseable as a UUID. Locked by planner per
+/// CONTEXT.md "Claude's Discretion" and RESEARCH.md Finding 6.
+pub fn is_orphan_task_id(task_id: &str) -> bool {
+    if task_id.is_empty() {
+        return true;
+    }
+    match uuid::Uuid::parse_str(task_id) {
+        Ok(u) => u.is_nil(),
+        Err(_) => true,
+    }
+}
+
+// ===== Messages reply (Phase 2 - D-01/D-02 wire commitment) =====
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -114,10 +208,39 @@ pub struct InspectMessagesRequest {
     pub tail: Option<u64>,
 }
 
+/// Reply to `InspectKind::Messages`.
+///
+/// **Wire commitment (D-02):** see `InspectTasksReply`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InspectMessagesReply {
+    /// INSP-MSG-01/02/03: envelope metadata rows, never message bodies.
+    List(MessageListReply),
+    /// INSP-RPC-03: 500ms budget exceeded.
+    BudgetExceeded { elapsed_ms: u64 },
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MessageListReply {
+    pub rows: Vec<MessageRow>,
+}
+
+/// Envelope metadata only - never the body itself (INSP-MSG-01).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct InspectMessagesReply {
-    pub not_yet_implemented: bool,
+pub struct MessageRow {
+    pub sender: String,
+    pub recipient: String,
+    /// `causality.ref` if present, else `body.details.task`, else empty.
+    pub task_id: String,
+    pub class: String,
+    /// FSM-relevant state derived from envelope fields.
+    pub state: String,
+    pub timestamp: String,
+    pub body_bytes: u64,
+    /// First 12 hex chars of `sha256(body_bytes_canonical)`.
+    pub body_sha256_prefix: String,
 }
 
 // ===== INSP-IDENT-03: schema-level rejection of forbidden field names =====
@@ -277,34 +400,47 @@ mod codec_roundtrip {
         assert!(is_orphan_task_id("not-a-uuid"));
         assert!(!is_orphan_task_id("019d9ba2-2d30-7ae2-ba77-9e55863ac7f7"));
     }
+}
 
-    // REVISION (blocker 3 fix): Prove INSP-TASK-04 Assumption A1.
-    // The `--full` rendering path canonicalizes a parsed envelope Value
-    // back into bytes. If `canonicalize(from_slice(canonical_bytes))`
-    // is NOT byte-for-byte equal to `canonical_bytes`, then `--full`
-    // output cannot be used to verify a federation peer's signature.
-    #[test]
-    fn canonicalize_roundtrip() {
-        const VECTOR_0_BYTES: &[u8] = include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../famp-envelope/tests/vectors/vector_0/envelope.json"
-        ));
+// REVISION (blocker 3 fix): Prove INSP-TASK-04 Assumption A1.
+// The `--full` rendering path canonicalizes a parsed envelope Value
+// back into bytes. If `canonicalize(from_slice(canonical_bytes))`
+// is NOT byte-for-byte equal to `canonical_bytes`, then `--full`
+// output cannot be used to verify a federation peer's signature.
+#[cfg(test)]
+#[test]
+#[allow(clippy::unwrap_used)]
+fn canonicalize_roundtrip() {
+    const VECTOR_0_HEX: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../famp-envelope/tests/vectors/vector_0/canonical.hex"
+    ));
 
-        let parsed: serde_json::Value =
-            serde_json::from_slice(VECTOR_0_BYTES).expect("vector 0 must be valid JSON");
-        let recanonicalized =
-            famp_canonical::canonicalize(&parsed).expect("canonicalization must succeed");
+    let original_bytes = decode_hex(VECTOR_0_HEX.trim());
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&original_bytes).expect("vector 0 must be valid JSON");
+    let recanonicalized =
+        famp_canonical::canonicalize(&parsed).expect("canonicalization must succeed");
 
-        assert_eq!(
-            recanonicalized.as_slice(),
-            VECTOR_0_BYTES,
-            "INSP-TASK-04 Assumption A1 FAILED: canonicalize(from_slice(vector_0)) != vector_0\n\
-             left  (re-canonicalized, {} bytes): {}\n\
-             right (original vector 0, {} bytes): {}",
-            recanonicalized.len(),
-            String::from_utf8_lossy(&recanonicalized),
-            VECTOR_0_BYTES.len(),
-            String::from_utf8_lossy(VECTOR_0_BYTES),
-        );
-    }
+    assert_eq!(
+        recanonicalized.as_slice(),
+        original_bytes.as_slice(),
+        "INSP-TASK-04 Assumption A1 FAILED: canonicalize(from_slice(vector_0)) != vector_0\n\
+         left  (re-canonicalized, {} bytes): {}\n\
+         right (original vector 0, {} bytes): {}",
+        recanonicalized.len(),
+        String::from_utf8_lossy(&recanonicalized),
+        original_bytes.len(),
+        String::from_utf8_lossy(&original_bytes),
+    );
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+fn decode_hex(hex: &str) -> Vec<u8> {
+    assert_eq!(hex.len() % 2, 0, "hex fixture must have even length");
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect()
 }
