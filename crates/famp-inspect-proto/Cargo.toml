@@ -1,0 +1,20 @@
+[package]
+name = "famp-inspect-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FAMP v0.10 Inspector RPC types (no I/O dependencies)"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
