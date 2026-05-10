@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: Inspector & Observability
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-05-10T22:11:54.939Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-05-10T22:35:46.912Z"
 last_activity: 2026-05-10
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
-  percent: 71
+  completed_plans: 6
+  percent: 86
 ---
 
 # STATE: FAMP — v0.10 Inspector & Observability (active)
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active mile
 ## Current Position
 
 Phase: 02 (task-fsm-message-visibility) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-10
 
@@ -68,6 +68,9 @@ Last activity: 2026-05-10
 - [Phase ?]: Kind-tagged inspector reply enums — Locks D-02 wire shape for task/message replies before broker I/O and CLI rendering depend on it.
 - [Phase ?]: Pre-read snapshots in BrokerCtx — Keeps famp-inspect-server sync/tokio-free while allowing Plan 02 to populate TaskSnapshot and MessageSnapshot inside the broker executor.
 - [Phase ?]: Canonical fixture for A1 proof — Uses Phase 1 vector_0 canonical.hex rather than pretty envelope.json so canonicalize_roundtrip proves byte-for-byte JCS reproducibility.
+- [Phase 02 Plan 02]: Set block_on_async max_blocking_threads to 1024 for 1000 concurrent inspect calls.
+- [Phase 02 Plan 02]: Capture cursor offsets before spawn_blocking because Broker is not Send.
+- [Phase 02 Plan 02]: Return budget_exceeded as an InspectOk payload to preserve the BusReply codec.
 
 ## Issues / Blockers
 
@@ -137,9 +140,10 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | Phase 01 P02 (v0.9) | 15min | 2 tasks | 15 files |
 | Phase 01 P03 (v0.9) | atomic | 1 task | 28 files |
 | Phase 04 P05 (v0.9) | 8min | 1 tasks | 6 files |
+| Phase 02 P02 | 20min | 2 tasks | 3 files |
 
 ## Session
 
-**Last session:** 2026-05-10T22:11:34.761Z
-**Stopped At:** Completed 02-01-PLAN.md
+**Last session:** 2026-05-10T22:35:46.908Z
+**Stopped At:** Completed 02-02-PLAN.md
 **Resume File:** None

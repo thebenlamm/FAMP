@@ -49,7 +49,7 @@ Plans:
 **Plans:** 3 plans
 Plans:
 - [x] 02-01-PLAN.md — Wave 1: Proto enum reply types + famp-inspect-server TaskSnapshot/MessageSnapshot + sync handlers (D-01/D-02 wire commitment)
-- [ ] 02-02-PLAN.md — Wave 2: Broker executor spawn_blocking + timeout(500ms) wrapper + lazy taskdir/mailbox pre-read + max_blocking_threads(1024)
+- [x] 02-02-PLAN.md — Wave 2: Broker executor spawn_blocking + timeout(500ms) wrapper + lazy taskdir/mailbox pre-read + max_blocking_threads(1024)
 - [ ] 02-03-PLAN.md — Wave 3: famp inspect tasks/messages CLI + integration tests + 1000-cancel test + nextest.toml serialization
 
 ### Phase 3: Load Verification & Integration Hardening

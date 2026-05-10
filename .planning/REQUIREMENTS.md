@@ -40,7 +40,7 @@ Requirements for v0.10 release. Each maps to a roadmap phase below.
 - [x] **INSP-RPC-01**: The broker exposes a `famp.inspect.*` RPC namespace on the same UDS socket it already serves bus messages on (no separate inspector socket).
 - [x] **INSP-RPC-02**: Every `famp.inspect.*` handler is read-only, enforced by two complementary mechanisms: (1) handler signatures take `&BrokerState` (not `&mut BrokerState`) so the borrow checker rejects mutation at compile time; (2) a workspace dep-graph gate (`just check-inspect-readonly`) fails CI if `famp-inspect-server` transitively imports any mailbox-write, taskdir-write, or broker `&mut self` mutation surface. Together these prove read-only without a runtime property test (rejected as ceremony for a compile-time invariant per matt-essentialist + zed-velocity-engineer review 2026-05-09).
 - [x] **INSP-RPC-03**: Inspect handlers run under a bounded latency budget (default: 500 ms per call); a handler exceeding the budget is dropped and the client receives a `BudgetExceeded` reply, not a queue stall on the message path.
-- [ ] **INSP-RPC-04**: Inspect handlers are cancellable from the broker side without leaking file descriptors, mailbox locks, or in-flight allocations; verified by a test that issues 1000 concurrent inspect calls and cancels them mid-flight.
+- [x] **INSP-RPC-04**: Inspect handlers are cancellable from the broker side without leaking file descriptors, mailbox locks, or in-flight allocations; verified by a test that issues 1000 concurrent inspect calls and cancels them mid-flight.
 - [ ] **INSP-RPC-05**: A `famp.inspect.*` RPC call cannot starve a concurrent bus message; verified by a load test that sustains bus message throughput under inspect-call pressure.
 
 ### Crate Architecture
@@ -107,7 +107,7 @@ Which phases cover which requirements. Filled in during roadmap creation.
 | INSP-RPC-01 | Phase 1 | Complete |
 | INSP-RPC-02 | Phase 1 | Complete |
 | INSP-RPC-03 | Phase 2 | Complete |
-| INSP-RPC-04 | Phase 2 | Pending |
+| INSP-RPC-04 | Phase 2 | Complete |
 | INSP-RPC-05 | Phase 3 | Pending |
 | INSP-CRATE-01 | Phase 1 | Complete |
 | INSP-CRATE-02 | Phase 1 | Complete |
