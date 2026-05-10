@@ -1,88 +1,77 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.9
-milestone_name: Local-First Bus
-status: shipped
-stopped_at: v0.9 milestone closed 2026-05-04
-last_updated: "2026-05-06T21:54:20.000Z"
-last_activity: 2026-05-08 - Add woken bool to SendOk; fix stale proto.rs comments (260508-ib4)
+milestone: v0.10
+milestone_name: Inspector & Observability
+status: planning
+last_updated: "2026-05-10T01:27:21.270Z"
+last_activity: 2026-05-10
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 35
-  completed_plans: 35
-  percent: 100
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
-# STATE: FAMP — between milestones (v0.9 shipped 2026-05-04)
+# STATE: FAMP — v0.10 Inspector & Observability (active)
 
-**Last Updated:** 2026-05-06 — v0.9 Local-First Bus shipped (85/85 reqs, audit `passed`); listen mode v0.9 patch landed 2026-05-06 (transcript-detection Stop hook, listen:bool on famp_register, 12 hook tests, await_timeout, E2E listen loop). Next milestone is v1.0 Federation Profile, gated on two independent ship gates (Gate A: Ben's symmetric cross-machine use sustained ~2 weeks → gateway + `v1.0.0`; Gate B: 2nd implementer commits to interop → conformance vector pack) per [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md); 4-week clock retired.
+**Last Updated:** 2026-05-10 — v0.10 Inspector & Observability roadmap recut after matt-essentialist + zed-velocity-engineer review (3 phases, 26/26 v1 reqs mapped). Phase 1: Broker Diagnosis & Identity Inspection (16 reqs — `famp inspect broker` + `famp inspect identities` end-to-end RPC + CLI; all three crates ship; closes orphan-listener incident class in one merge). Phase 2: Task FSM & Message Visibility (9 reqs — `famp inspect tasks` + `famp inspect messages` end-to-end; I/O-bound handlers gain the budget + cancel discipline that pure in-memory Phase 1 handlers don't need). Phase 3: Load Verification & Integration Hardening (1 req owned: INSP-RPC-05 no-starvation load test + orphan-listener E2E re-exercises Phase 1's `inspect broker` + docs).
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v0.9 Local-First Bus archived to `.planning/milestones/v0.9-*`. v1.0 Federation Profile is the next planned milestone but is gated on two independent ship gates per [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md): **Gate A** (Ben's sustained symmetric cross-machine use of FAMP between his own machines) unlocks the `famp-gateway` plan and `v1.0.0` tag; **Gate B** (a 2nd implementer commits to interop) unlocks the conformance vector pack at whatever release tag is current. Both gates are event-driven (no clock).
+See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active milestone, between v0.9 (shipped 2026-05-04) and the trigger-gated v1.0 Federation Profile. v0.10 is **independent** of the v1.0 federation gates per [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md): **Gate A** (Ben's sustained symmetric cross-machine FAMP use) unlocks the `famp-gateway` plan and `v1.0.0` tag; **Gate B** (a 2nd implementer commits to interop) unlocks the conformance vector pack at whatever release tag is current. Both gates are event-driven; the 4-week clock has been retired. v0.10 ships on its own track and does not depend on either gate firing.
 
-**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later.
+**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.10 makes that substrate's runtime state legible to the operator running it.
 
-**Current focus:** Planning next milestone (v1.0, trigger-gated).
+**Current focus:** v0.10 Phase 1 — Broker Diagnosis & Identity Inspection. Plans not yet drafted; `/gsd-spec-phase 1` is in progress (Round 2 locks landed; SPEC.md not yet written).
 
 ## Current Position
 
-Phase: 05 — COMPLETE
-Plan: 1 of 4
-Plans: 8 of 8 complete
-Status: Phase 05 complete
-Last activity: 2026-05-09 - Completed quick task 260509-kcf: Propagate v1.0 trigger unweld decision into project docs
+Phase: 1 — Broker Diagnosis & Identity Inspection
+Plan: — (not yet drafted; complete spec-phase 1, then `/gsd-plan-phase 1`)
+Status: Roadmap recut landed; Phase 1 spec-phase in progress (Round 1 + Round 2 locks captured)
+Last activity: 2026-05-10 — v0.10 roadmap recut after matt-essentialist + zed-velocity-engineer review; ROADMAP.md + REQUIREMENTS.md re-mapped (26/26)
 
-## Last Shipped
+## v0.10 Phase Map
 
-- **Plan 01-01: famp-bus scaffold and primitives** (2026-04-27) — `famp-bus` workspace crate, tokio-free dependency gate, bus protocol types, canonical length-prefixed codec, in-memory mailbox, liveness fakes, BusErrorKind exhaustive consumer stub, TDD-01 green codec fuzz tests, and deliberate TDD-02/03/04 compile-red broker scaffolds. Commits: `0a116f5`, `c604f03`, `235c752`.
-- **Plan 01-02: pure broker actor and property suite** (2026-04-27) — tokio-free `Broker::handle(BrokerInput, Instant) -> Vec<Out>` actor, exhaustive dispatch for all nine `BusMessage` variants plus `Disconnect`/`Tick`, ordered `Out` intents, TDD-02/03/04 GREEN, and PROP-01..05 GREEN against temporary `Vec<serde_json::Value>` drained payloads. Commits: `86599aa`, `093c8f9`, `ae905ed`.
-- **Plan 01-03: atomic v0.5.1→v0.5.2 bump + audit_log MessageClass + BusEnvelope (BUS-11) + broker drain typed-decoder (D-09)** (2026-04-28) — Single atomic commit landing `MessageClass::AuditLog`, `AuditLogBody`, `Relation::Audits`, `AnySignedEnvelope::AuditLog` dispatch, `BusEnvelope<B>` sibling type with private inner + 2 `compile_fail` doctests, `AnyBusEnvelope` 6-arm dispatch, `EnvelopeDecodeError::UnexpectedSignature`, `FAMP_SPEC_VERSION = "0.5.2"` flip + T5 lag block deletion, vector_1 worked example, broker drain typed-decoder gate (D-09 type-validation-only implementation), PROP-04 re-asserted with malformed-line negative case, `just check-spec-version-coherence` recipe wired into `ci:`. Commit: `9ca6e13`.
-- **Phase 01 verification** (2026-04-28) — Goal-backward audit PASS; 28/28 in-scope requirements satisfied or formally deferred per policy. See `.planning/phases/01-famp-bus-library-and-audit-log/01-VERIFICATION.md`.
-- **Phase 02: UDS wire + CLI + MCP rewire + hook subcommand** (2026-04-28..30) — 14 plans across 7 waves; `famp broker` UDS daemon, `famp register/send/inbox/await/join/leave/sessions/whoami` CLI surface, MCP rewired to bus (8-tool surface), `famp-local hook add/list/remove`. 492 tests green, 22 skipped. Code review: 22 findings, 15 fixed across 14 atomic `fix(02)` commits (WR-06 deferred — env-var test races, currently safe under nextest). Verification PASS 36/36 (2 manual UATs resolved 2026-04-30: BROKER-02 broker-survives-SIGINT-to-holder confirmed; BROKER-05 negative path passed, positive path waived absent NFS environment).
+- **Phase 1: Broker Diagnosis & Identity Inspection** (16 reqs) — INSP-BROKER-01..04, INSP-IDENT-01..03, INSP-RPC-01, INSP-RPC-02, INSP-CRATE-01..03, INSP-CLI-01..04. `famp.inspect.*` namespace on the existing UDS via new `BusMessage::Inspect` enum variant; all three inspector crates ship (`-proto` no-I/O, `-client` no-clap, `-server` version-aligned with broker); `famp inspect broker` end-to-end (connect-handshake-based dead-broker diagnosis: HEALTHY / DOWN_CLEAN / STALE_SOCKET / ORPHAN_HOLDER / PERMISSION_DENIED, no PID file because v0.9 uses bind()-exclusion); `famp inspect identities` end-to-end (in-memory BrokerState read only); `--json` + fixed-width tables on both subcommands; `just check-inspect-readonly` workspace dep-graph gate; `just check-no-io-in-inspect-proto`. Closes the orphan-listener incident class in one merge. **No budget or cancel handlers needed in Phase 1 — both Phase 1 commands are pure in-memory reads or client-side network probes; budget/cancel land in Phase 2 with the I/O-bound handlers that actually exercise them.**
+- **Phase 2: Task FSM & Message Visibility** (9 reqs) — INSP-TASK-01..04, INSP-MSG-01..03, INSP-RPC-03 (500ms budget enforces at the tokio wrapper for I/O handlers), INSP-RPC-04 (cancellable handlers, 1000-concurrent-cancel test against the real `inspect tasks` and `inspect messages` paths). The taskdir + mailbox file walks are the I/O surface; budget and cancel finally have something real to enforce against.
+- **Phase 3: Load Verification & Integration Hardening** (1 req owned + cross-phase E2E) — INSP-RPC-05 no-starvation load test owns this phase; Phase 1's INSP-BROKER-02..04 + INSP-CLI-04 are re-exercised under integration-grade orphan-listener scenario; `docs/MIGRATION-v0.9-to-v0.10.md` ships.
 
-## Accumulated Context
+## Architectural Invariants Locked at Roadmap Time
 
-- `famp-bus` is Layer 1 only: no UDS listener, no tokio runtime, no on-disk I/O, no CLI surface.
-- All four TDD gates and all five PROP-01..05 properties GREEN.
-- `FAMP_SPEC_VERSION = "0.5.2"`; `MessageClass::AuditLog` is the 6th wire variant; `Relation::Audits` is the 6th causality variant.
-- `BusEnvelope<B>` (private-inner sibling type) and `AnyBusEnvelope` 6-arm dispatch enforce BUS-11 at compile time and at runtime.
-- Broker `decode_lines` calls `AnyBusEnvelope::decode` against each drain line; failure short-circuits to `BusReply::Err{EnvelopeInvalid}` and aborts cursor advance. `RegisterOk.drained` stays `Vec<serde_json::Value>` on the wire to preserve BUS-02/03 round-trip — the swap to `Vec<AnyBusEnvelope>` was abandoned by design (D-09 type-validation-only); documented in 01-03-SUMMARY.md.
-- `just check-spec-version-coherence` and `just check-no-tokio-in-bus` are now permanent CI gates.
-- The 8 listener/E2E TLS-loopback timeout note from Phase 01 is moot at HEAD: those tests are now `#[ignore]`'d as v0.8-federation tests parked for Phase 04. The test surface is 492 passed / 22 skipped / 0 failed at HEAD on macOS.
-- HTTP transport URL path `/famp/v0.5.1/inbox/{principal}` intentionally NOT bumped — transport URL versioning is out of Phase 1 scope.
-- `[[profile.default.test-groups]]` `listen-subprocess = max-threads = 4` is now pinned in `.config/nextest.toml` (TD-1 carry-forward closed in 2026-04-30 sweep). Listen-subprocess parallelism flake on macOS is no longer latent.
-- v0.8 federation `#[ignore]` reasons across 14 test files are now uniformly anchored at "Phase 04 (v0.9 federation deletion)"; Phase 04 will delete or migrate them with the v0.8 CLI surface. Two `#[ignore]`'d tests are NOT in this anchor (`cross_machine_happy_path` is v0.7 chicken-and-egg; `provisional_scope_instructions_vector` is a fixture regenerator).
-- Env-var tests in `cli/identity.rs`, `bus_client/mod.rs`, `tests/mcp_register_whoami.rs` migrated to `temp-env` scoped helpers (WR-06 closed 2026-04-30 sweep). Edition 2024 toolchain bump no longer requires test-file changes.
+1. **Read-only discipline (INSP-RPC-02)** — every `famp.inspect.*` handler is read-only, enforced at compile time by `&BrokerState` (not `&mut`) handler signatures, AND at build time by a workspace dep-graph gate (`just check-inspect-readonly`) that fails CI if `famp-inspect-server` transitively imports any mailbox-write, taskdir-write, or broker `&mut self` mutation surface. **Replaces the originally-drafted runtime property test on broker state hashes**, which Matt + Zed flagged as ceremony for a compile-time invariant. No mutation surface in v0.10. `famp doctor` (mutation) is gated to v0.10.x only after the read-only view tells us *which* mutations we actually keep reaching for.
+2. **Crate dependency-version alignment (INSP-CRATE-03)** — `famp-inspect-server` shares `famp-canonical`, `famp-envelope`, `famp-fsm` versions exactly with the broker. Version skew would re-introduce the failure mode the inspector exists to expose (inspector decoding envelopes with a different canonicalizer than the broker that wrote them — unacceptable for a byte-exactness protocol). Separate `famp-inspect` binary was rejected for this reason; it is a subcommand of `famp`.
+3. **Dead-broker workability (INSP-BROKER-02 + INSP-CLI-04)** — `famp inspect broker` is the one command that must produce a useful diagnosis when the broker is dead. v0.9 uses bind()-exclusion (no PID file), so detection is **connect-handshake-based**: DOWN_CLEAN (no socket file) / STALE_SOCKET (file exists, ECONNREFUSED) / ORPHAN_HOLDER (connect succeeds, Hello rejected) / PERMISSION_DENIED (EACCES). Replaces the originally-drafted STALE_PID / pid-file states. Every other `famp inspect` subcommand exits 1 with `"error: broker not running at <socket-path>"` on stderr when the broker is dead. The orphan-listener incident class from v0.9 is the named target.
+4. **No double-print counter (INSP-IDENT-03 + Out of Scope)** — broker-side counter for the wake-up-notification + inbox-fetch double-billing failure mode was rejected as wrong instrument. Right surface is per-message token attribution at the model boundary, or a static audit of the `famp_await` notification payload — both are separate investigations from the inspector.
+5. **Wire shape (INSP-RPC-01)** — `famp.inspect.*` rides the existing UDS via a new `BusMessage::Inspect { kind, ... }` enum variant in `famp-bus`. Single dispatch path in `Broker::handle()` gains one new arm. No second socket. `InspectKind` sub-enum carries the four operations (broker, identities — Phase 1; tasks, messages — Phase 2). `famp-bus` stays tokio-free; budget enforcement lives at the tokio wrapper layer (`crates/famp/src/cli/broker/`), only for I/O-bound handlers (none in Phase 1).
 
-## Open question — pending architect counsel before Phase 03 plan
+## Carry-Forward from v0.9
 
-- **`famp send` audit_log wrapper.** `crates/famp/src/cli/send/mod.rs::build_envelope_value` wraps every local DM, deliver, and channel post payload as an unsigned `audit_log` `BusEnvelope` with the mode-tagged payload (mode/summary/task/body/terminal/more_coming) under `body.details`. Class is hardcoded `"audit_log"`; `event` is `famp.send.{new_task,deliver,deliver_terminal,channel_post}`; from/to are synthetic `agent:local.bus/<name>` Principals. The wrapper exists because Phase 1 D-09 added a typed-decoder gate on the broker's drain path (`AnyBusEnvelope::decode` per drained line) and Phase 2 02-04's mode-tagged envelope had no `class` field. Three options on the table: (1) accept as v0.9 convention and let v1.0 federation gateway translate; (2) add a bus-internal `MessageClass::BusDm`/`LocalRequest` (v0.5.3 spec amendment, AUDIT-05 atomic-bump); (3) loosen D-09 to accept untyped local payloads. Lean is option 1 but the user wants architect counsel before Phase 03 scope locks. Full briefing drafted at .planning/STATE.md Q1 (this entry); architect MCP session was not running at sweep close (2026-04-30), so the question is parked for the next architect session.
+- v0.9 broker (`famp-bus`, `~/.famp/bus.sock`, posix_spawn+setsid lifecycle, bind()-IS-the-lock single-broker exclusion) is the substrate v0.10 mounts on. No broker-side rewrites planned.
+- 8-tool stable MCP surface (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) carried forward unchanged. v0.10 does **not** add MCP tools; the inspector consumer is a CLI subcommand, not an MCP tool. (Future MCP exposure of inspector data is gated on usage signals reaching for it.)
+- `just check-no-tokio-in-bus` permanent CI gate is the precedent for v0.10's `just check-no-io-in-inspect-proto` recipe (parallel discipline at the proto crate boundary).
+- `FAMP_SPEC_VERSION = "0.5.2"` unchanged; v0.10 does not require a spec amendment.
+
+## Open Items Inherited (not v0.10-blocking, just persistent)
+
+- **Architect counsel parked from v0.9 Phase 03** (`famp send` audit_log wrapper at `crates/famp/src/cli/send/mod.rs::build_envelope_value`). Three options on the table; lean is option 1. Question parked for next architect session — does not block v0.10 Phase 1.
+- **8 pre-existing TLS-loopback timeouts** documented in v0.9 audit `tech_debt`. Triage as separate hygiene task. Not v0.10's surface.
+- **WR-06 env-var test races** waived under nextest. Not v0.10's surface.
 
 ## Decisions
 
-- [Phase 01]: Plan 01-01 keeps TDD-02/03/04 as compile-red gates until Plan 01-02 adds Broker.
-- [Phase 01]: `RegisterOk.drained` stays `Vec<serde_json::Value>` on the wire — D-09 implemented as type-validation gate (decode + accept), not type swap. Preserves BUS-02/03 round-trip; consumers wanting typed access call `AnyBusEnvelope::decode` per line.
-- [Phase 01]: `famp-bus` no-tokio gate fails closed when `cargo tree` cannot run.
-- [Phase 01]: Plan 01-02 tests apply `Out::AppendMailbox` intents to `TestEnv` explicitly, matching the future wire-layer side-effect executor.
-- [Phase 01]: Exact all-target clippy remains blocked by pre-existing `famp-envelope` doc markdown; `famp-bus` all-target clippy passes with `--no-deps`.
-- [Phase 01]: AUDIT-05 atomic-bump invariant honored — constant flip + impl + dispatch + body + doc-comment removal + Justfile recipe in ONE commit (`9ca6e13`). Necessary exhaustive-match fallout in `crates/famp/src/runtime/adapter.rs` and `crates/famp-transport-http/src/server.rs` rode the same commit.
-- [Phase 01]: `audit_log` is non-FSM-firing per Δ31 / D-15. `git diff HEAD~1 HEAD -- crates/famp-fsm/` is empty; `fsm_input_from_envelope` returns `None` for `AuditLog` (joining `Ack` precedent).
-- [Phase 04]: Plan 04-01 copied http_happy_path.rs library-API body into e2e_two_daemons.rs, changing only the Phase 4 doc comment and test function name.
-- [Phase 04]: Plan 04-01 kept e2e_two_daemons_adversarial.rs independent of famp::runtime because runtime is removed later in Phase 4.
-- [Phase 04]: Plan 04-02 moved info_happy_path.rs into _deferred_v1 because the live tree still imported famp::cli::setup; the planned keep condition had not landed.
-- [Phase 04]: Plan 04-02 resolved D-03 row 7 as MOVE via active send unit coverage and row 13 as MOVE via active TaskNotFound error-surface mapping; full stale-task broker validation remains out of scope.
-- [Phase 04]: Plan 04-05 uses staged framing rather than identity rewrite: FAMP today is local-first; FAMP at v1.0 is federated.
+- [Roadmap]: Three-phase structure recut after matt-essentialist + zed-velocity-engineer review (2026-05-10): Phase 1 closes orphan-listener incident class end-to-end (broker + identities, RPC + CLI both); Phase 2 ships the I/O-bound enrichment (tasks + messages) and is where budget+cancel finally have something to enforce against; Phase 3 unchanged. **Rejected the original cut** (Phase 1 = RPC foundation with stub handlers; Phase 2 = all CLI) as yak-shaving — Phase 1's success criteria around budget+cancel were testing synthetic test-only handlers, not real work. The v0.10 user-visible win is closing the orphan-listener incident class; the recut ships that in one merge.
+- [Roadmap]: Phase numbering reset to Phase 1 per FAMP convention (v0.7/v0.8/v0.9 each reset; v0.10 follows). Confirmed with user at roadmap open.
+- [Roadmap]: Read-only discipline (INSP-RPC-02) and crate version alignment (INSP-CRATE-03) treated as architectural invariants, not feature requirements — locked at roadmap time so plan-phase cannot soften them.
 
 ## Issues / Blockers
 
-- **8 pre-existing listener/E2E TLS-loopback timeouts** (`reqwest::Error { kind: Request, source: TimedOut }` against `https://127.0.0.1:.../famp/v0.5.1/inbox/...`). Reproduces on Wave 2 commit `ae905ed`. Not a Phase 1 regression. Documented in `01-03-SUMMARY.md` and `01-VERIFICATION.md`. Triage as a separate hygiene task before Phase 4.
-- **Plan 04-06 D-20 gate resolved:** pre-tag `just ci` blockers were fixed in `debed78`; lightweight tag `v0.8.1-federation-preserved` now points at `debed78f1b55df44fb2ca18687c5794147226a40`.
+- None v0.10-blocking. v1.0-track items (Gate A: Ben symmetric cross-machine; Gate B: 2nd implementer) are independent of v0.10 — v0.10 ships on its own track regardless.
 
 ## Deferred Items
 
-Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-sdk query audit-open`):
+Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-sdk query audit-open`); carried forward into v0.10 unchanged unless v0.10 work pulls one in:
 
 | Category | Item | Status |
 |----------|------|--------|
@@ -120,7 +109,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | seed | SEED-002-harness-adapter-push-notifications | dormant (gate assignment deferred — re-read seed when surfaced) |
 | uat_gap | 02 (02-HUMAN-UAT.md, 0 pending scenarios) | unknown |
 
-**Notes:** All 30 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint work; no completion artifacts but no active obligations). Both seeds were v1.0-gated by design under the welded-trigger framing; per the 2026-05-09 unweld (see [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md)) they are now re-tagged: **SEED-001** (vector-pack interop) is unambiguously **Gate B** (2nd implementer commits to interop). **SEED-002** (push-notification harness) is a harness-UX seed not directly tied to either gate's deliverables; gate assignment is deferred until the seed surfaces and the milestone scope clarifies whether the adapter rides Gate A's gateway plan or a separate harness track. UAT gap header status drift only — 0 pending scenarios.
+**Notes:** All 30 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint work; no completion artifacts but no active obligations). SEED-001 (vector-pack interop) is unambiguously **Gate B** (2nd implementer commits to interop). SEED-002 (push-notification harness) is gate-assignment-deferred. UAT gap header status drift only — 0 pending scenarios.
 
 ## Quick Tasks Completed
 
@@ -140,13 +129,13 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
-| Phase 01 P01 | 23min | 2 tasks | 17 files |
-| Phase 01 P02 | 15min | 2 tasks | 15 files |
-| Phase 01 P03 | atomic | 1 task | 28 files |
-| Phase 04 P05 | 8min | 1 tasks | 6 files |
+| Phase 01 P01 (v0.9) | 23min | 2 tasks | 17 files |
+| Phase 01 P02 (v0.9) | 15min | 2 tasks | 15 files |
+| Phase 01 P03 (v0.9) | atomic | 1 task | 28 files |
+| Phase 04 P05 (v0.9) | 8min | 1 tasks | 6 files |
 
 ## Session
 
-**Last session:** 2026-05-07T18:40:32Z
-**Stopped At:** Completed 260507-k9x-PLAN.md
-**Resume File:** None
+**Last session:** 2026-05-10
+**Stopped At:** v0.10 ROADMAP + REQUIREMENTS traceability filled; Current Position = Phase 1 (plans not yet drafted)
+**Resume File:** None — next step is `/gsd-plan-phase 1`

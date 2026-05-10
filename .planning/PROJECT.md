@@ -40,6 +40,10 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 **v0.7 totals:** 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green, `cargo tree -i openssl` empty.
 
+### Active — v0.10 Inspector & Observability — IN PROGRESS
+
+Read-only inspector surface on the v0.9 broker, consumed by a `famp inspect` CLI subcommand. Closes the conversation-state opacity gap that produced three recurring v0.9 incidents (orphan socket-holder vs stale PID file, task FSM invisibility, stale-mailbox relays). Independent of the v1.0 federation gate. Detailed requirements: see `.planning/REQUIREMENTS.md` v0.10 section.
+
 ### Deferred — Federation Profile (v1.0+)
 
 These are tracked in `REQUIREMENTS.md` but are **not v1-blocking**. They matter at ecosystem scale, not for a personally-usable library.
@@ -138,6 +142,35 @@ This document evolves at phase transitions and milestone boundaries.
 2. Core Value check — still the right priority?
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
+
+## Current Milestone: v0.10 Inspector & Observability
+
+**Goal:** Make FAMP conversation state legible without grep-and-guess via a read-only inspector RPC on the v0.9 broker UDS, consumed by a `famp inspect` CLI subcommand.
+
+**Target features (single phase):**
+- `famp inspect broker` — health + dead-broker diagnosis. Must work against a dead socket; outputs one of `HEALTHY` / `DOWN_CLEAN` / `STALE_PID` / `ORPHAN_HOLDER` / `PERMISSION_DENIED` plus the evidence row used to decide. This is the load-bearing v0.10 command — direct fix for the orphan-listener incident class.
+- `famp inspect identities` — name, listen mode, cwd, mailbox unread/total, last-sender, last-received-at. No double-print counter (see Non-Goals).
+- `famp inspect tasks [--id <task_id>] [--orphans] [--full]` — FSM-grouped task list with envelope chain summary. `task_id == 0` rows go in a top-level `--orphans` bucket, recency-sorted. Summary fields: `envelope_id, sender, recipient, fsm_transition, timestamp, sig_verified, envelope_count, last_transition_age`. `--full` emits the canonical JCS (RFC 8785) form so output round-trips through `jq` and reproduces the signature input byte-for-byte.
+- `famp inspect messages --to <name> [--tail N]` — envelope metadata only (no body). Surfaces `byte_len` + `sha256_prefix` instead of body content; sidesteps privacy entirely.
+- `--json` on every command (machine-readable consumption path; future SPA / `famp doctor` / external tooling consume the same surface).
+
+**Crate split:**
+- `famp-inspect-proto` — RPC request/response types, no I/O. Shared canonicalization/envelope/FSM crate dependencies match the broker (single source of truth — separate-binary path was rejected because it would re-introduce version-skew failure modes against a byte-exactness protocol).
+- `famp-inspect-client` — UDS client. Future SPA / `famp doctor` / external tooling depend on this without pulling in the CLI.
+- `famp-inspect-server` — handlers mounted by the broker. Same UDS, separate `famp.inspect.*` namespace, bounded latency budget + cancellable handlers (must not back up the message path under load).
+
+**Non-goals (v0.10):**
+- No mutation. No replay, no force-FSM-transition, no inbox doctoring. CLI subcommands like `famp doctor` come later, gated on what the inspector reveals as actually needed.
+- No browser SPA. No SSE. Punted to v0.10.x or later, only if ~2 weeks of CLI use proves the read-only surface is insufficient.
+- No federation view. Inspector observes one node — the local broker. v1.0 gateway can expose its own surface later.
+- No remote access. UDS local-trust only.
+- No `--body` fetch in v0.10. Body fetch overlaps with reading mailbox files directly during incidents; ship in v0.10.x only if usage signals reach for it.
+- No double-print counter. The double-print failure mode (a docs/CLAUDE-CODE-CONTEXT-GUIDE.md-described class where wake-up notification + inbox fetch each carry the message body, doubling token cost) is not observable at the broker. Right instrument is per-message token attribution at the model boundary, or a static audit of the `famp_await` notification payload. Both are separate investigations from the inspector. A broker-side "delivery count" was considered and rejected — wrong-by-construction counters outlive the diagnostics that retire them.
+
+**Why now (between milestones):**
+v0.9 shipped a working broker but conversation state stayed opaque — three incidents in v0.9 (orphan PID file masking a delivery bug, task_id zeros invisible until grepped, stale mailboxes relayed because there was no easy way to see latest) cost real time. The v1.0 federation gate is event-driven (Sofer cross-machine) and could fire any time or none. The inspector is independent of that gate, addresses real recurring pain, and is the right place to land observability before v1.0 layers federation complexity on top.
+
+**Design context:** Brainstorm + adversarial review by `matt-essentialist` (reframe: "the inspector RPC is the product, the dashboard is a demo of it") and `hamming-research-scientist` (rejected the double-print counter as wrong-instrument; flagged the dead-broker-diagnosis command as load-bearing). Decisions locked in conversation prior to milestone open.
 
 ## Next Milestone: v1.0 Federation Profile (trigger-gated)
 
@@ -251,4 +284,4 @@ This document evolves at phase transitions and milestone boundaries.
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. 8-tool MCP surface stable across v0.8 → v0.9 → v1.0.
 
 ---
-*Last updated: 2026-05-04 — v0.9 Local-First Bus shipped (5 phases, 35 plans, 85/85 reqs, audit `passed`, 193 commits over 8 days). v1.0 trigger 4-week clock starts now (expires 2026-06-01). v0.8 shipped 2026-04-26; v0.7 shipped 2026-04-14; v0.6 + v0.5.1 shipped 2026-04-13.*
+*Last updated: 2026-05-09 — v0.10 Inspector & Observability opened. Single-phase milestone, independent of v1.0 federation gate (which has been re-framed to event-driven dual gates per `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`). v0.9 Local-First Bus shipped 2026-05-04 (5 phases, 35 plans, 85/85 reqs, audit `passed`, 193 commits over 8 days). v0.8 shipped 2026-04-26; v0.7 shipped 2026-04-14; v0.6 + v0.5.1 shipped 2026-04-13.*
