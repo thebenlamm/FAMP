@@ -24,8 +24,8 @@ use famp_fsm::TaskFsmError;
 
 use crate::cli::error::CliError::{
     AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, Disconnected,
-    Envelope, FsmTransition, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute, HomeNotSet,
-    IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
+    Envelope, Exit, FsmTransition, Generic, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute,
+    HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
     InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
     JsonMergeRead, KeygenFailed, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented,
     NotRegistered, NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
@@ -102,6 +102,8 @@ impl crate::cli::error::CliError {
             JsonMergeNotObject { .. } => "json_merge_not_object",
             JsonMergeBackup { .. } => "json_merge_backup",
             JsonMergePersist { .. } => "json_merge_persist",
+            Exit(_) => "exit",
+            Generic(_) => "generic",
             NotImplemented { .. } => "not_implemented",
         }
     }

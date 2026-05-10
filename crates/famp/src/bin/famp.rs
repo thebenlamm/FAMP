@@ -56,6 +56,9 @@ use clap::Parser;
 fn main() {
     let cli = famp::cli::Cli::parse();
     if let Err(e) = famp::cli::run(cli) {
+        if let famp::cli::error::CliError::Exit(code) = e {
+            std::process::exit(code);
+        }
         eprintln!("{e}");
         let mut src = std::error::Error::source(&e);
         while let Some(s) = src {

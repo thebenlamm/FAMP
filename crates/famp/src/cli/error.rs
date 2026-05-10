@@ -284,6 +284,15 @@ pub enum CliError {
         source: std::io::Error,
     },
 
+    /// Requested exit with a specific code; diagnosis has already been
+    /// printed to the intended stream.
+    #[error("")]
+    Exit(i32),
+
+    /// Generic one-shot error message for inspect handlers.
+    #[error("{0}")]
+    Generic(String),
+
     #[error("not implemented: {what}")]
     NotImplemented { what: String },
 }
