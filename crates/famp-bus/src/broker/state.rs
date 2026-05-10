@@ -28,21 +28,21 @@ pub(super) struct ClientState {
     /// born. `None` for pre-v0.10 senders that didn't include the
     /// field on the Register frame.
     pub(super) cwd: Option<String>,
-    /// listen-mode flag from BusMessage::Register. `false` for
+    /// listen-mode flag from `BusMessage::Register`. `false` for
     /// pre-v0.10 senders that didn't include the field. Surfaced
     /// in `famp inspect identities` rows (INSP-IDENT-01).
     pub(super) listen_mode: bool,
     /// Wall-clock registration time. Set in the Register handler
     /// arm so `famp inspect identities` can compute registered-at
     /// per row. `Instant` is NOT used because Instant has no
-    /// epoch encoding; SystemTime serializes to u64 epoch seconds.
+    /// epoch encoding; `SystemTime` serializes to u64 epoch seconds.
     pub(super) registered_at: SystemTime,
     /// Wall-clock last-activity time. Updated by the Register
     /// handler initially, refreshed on every authenticated wire
     /// frame from the client (Send/Inbox/Await/Join/Leave/Whoami).
     /// Wave-0 sets it at register time only; Wave-2 broker dispatch
     /// arm updates it on inspect calls. Pre-existing identity rows
-    /// are populated retroactively from registered_at.
+    /// are populated retroactively from `registered_at`.
     pub(super) last_activity: SystemTime,
 }
 
@@ -55,7 +55,7 @@ pub(super) struct ParkedAwait {
 
 /// Broker-actor state. v0.10 added `started_at` (D-07) populated
 /// at construction; `derive(Default)` was REMOVED because Default
-/// for SystemTime is `UNIX_EPOCH`, which would falsely report
+/// for `SystemTime` is `UNIX_EPOCH`, which would falsely report
 /// 1970-01-01 as broker startup time (D-08).
 #[derive(Debug)]
 pub(super) struct BrokerState {
@@ -109,10 +109,11 @@ impl BrokerState {
     }
 }
 
-/// v0.10 read-only snapshot of `BrokerState` for `famp-inspect-server`
-/// consumption. The inspector cannot reach `pub(super)` fields
-/// directly across crate boundaries, so we expose a structurally-
-/// equivalent `pub` view-type populated by `BrokerState::view()`.
+/// v0.10 read-only snapshot of `BrokerState`.
+///
+/// The inspector cannot reach `pub(super)` fields directly across
+/// crate boundaries, so we expose a structurally-equivalent `pub`
+/// view-type populated by `BrokerState::view()`.
 ///
 /// INSP-RPC-02: this view is produced by an `&BrokerState -> Self`
 /// transform. The server crate receives `&BrokerStateView` and

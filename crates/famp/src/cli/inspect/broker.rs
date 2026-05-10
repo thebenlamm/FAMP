@@ -1,9 +1,9 @@
 //! `famp inspect broker` -- broker liveness + dead-broker diagnosis.
 //!
 //! INSP-BROKER-01: HEALTHY single-line render; exit 0.
-//! INSP-BROKER-02: DOWN_CLEAN / STALE_SOCKET / ORPHAN_HOLDER /
-//! PERMISSION_DENIED down-states; exit 1.
-//! INSP-BROKER-03: ORPHAN_HOLDER includes holder_pid + pid_source.
+//! INSP-BROKER-02: `DOWN_CLEAN` / `STALE_SOCKET` / `ORPHAN_HOLDER` /
+//! `PERMISSION_DENIED` down-states; exit 1.
+//! INSP-BROKER-03: `ORPHAN_HOLDER` includes `holder_pid` + `pid_source`.
 //! INSP-BROKER-04: HEALTHY=0; down-states=1; diagnosis on stdout.
 //! INSP-CLI-02: --json on every state.
 
@@ -173,10 +173,14 @@ fn render_human(r: &BrokerStateRender) -> String {
 }
 
 fn format_unix(secs: u64) -> String {
-    match time::OffsetDateTime::from_unix_timestamp(secs as i64) {
-        Ok(t) => t
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| secs.to_string()),
-        Err(_) => secs.to_string(),
-    }
+    let Ok(secs_i64) = i64::try_from(secs) else {
+        return secs.to_string();
+    };
+    time::OffsetDateTime::from_unix_timestamp(secs_i64).map_or_else(
+        |_| secs.to_string(),
+        |t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| secs.to_string())
+        },
+    )
 }

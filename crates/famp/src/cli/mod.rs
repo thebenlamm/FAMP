@@ -101,8 +101,8 @@ pub enum Commands {
     /// canonical holder's joined channels.
     Whoami(whoami::WhoamiArgs),
     /// v0.10 inspector: broker liveness + identity introspection.
-    /// `famp inspect broker` distinguishes HEALTHY / DOWN_CLEAN /
-    /// STALE_SOCKET / ORPHAN_HOLDER / PERMISSION_DENIED. `famp
+    /// `famp inspect broker` distinguishes `HEALTHY` / `DOWN_CLEAN` /
+    /// `STALE_SOCKET` / `ORPHAN_HOLDER` / `PERMISSION_DENIED`. `famp
     /// inspect identities` lists registered sessions with mailbox
     /// metadata. D-06: `tasks` and `messages` ship in Phase 2.
     Inspect(inspect::InspectArgs),

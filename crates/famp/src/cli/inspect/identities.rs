@@ -2,7 +2,7 @@
 //!
 //! INSP-IDENT-01: name, listen-mode, registered-at, last-activity, cwd.
 //! INSP-IDENT-02: mailbox unread, total, last-sender, last-received-at.
-//! INSP-IDENT-03: no surfaced/double_print/received_count fields.
+//! INSP-IDENT-03: no `surfaced` / `double_print` / `received_count` fields.
 //! INSP-CLI-02: --json.
 //! INSP-CLI-03: column-aligned table with explicit headers.
 //! INSP-CLI-04: dead-broker fast-fail with empty stdout.
@@ -12,6 +12,7 @@ use famp_inspect_client::{call, raw_connect_probe, ProbeOutcome};
 use famp_inspect_proto::{
     IdentityRow, InspectIdentitiesReply, InspectIdentitiesRequest, InspectKind,
 };
+use std::fmt::Write as _;
 
 use crate::bus_client::resolve_sock_path;
 use crate::cli::error::CliError;
@@ -27,13 +28,9 @@ pub async fn run(args: InspectIdentitiesArgs) -> Result<(), CliError> {
     let sock = resolve_sock_path();
     let sock_str = sock.to_string_lossy().into_owned();
 
-    let outcome = raw_connect_probe(&sock).await;
-    let mut stream = match outcome {
-        ProbeOutcome::Healthy { stream } => stream,
-        _ => {
-            eprintln!("error: broker not running at {sock_str}");
-            return Err(CliError::Exit(1));
-        }
+    let ProbeOutcome::Healthy { mut stream } = raw_connect_probe(&sock).await else {
+        eprintln!("error: broker not running at {sock_str}");
+        return Err(CliError::Exit(1));
     };
 
     let payload = call(
@@ -81,8 +78,7 @@ fn print_table(rows: &[IdentityRow]) {
                 r.mailbox_total.to_string(),
                 r.last_sender.clone(),
                 r.last_received_at_unix_seconds
-                    .map(format_unix)
-                    .unwrap_or_else(|| "-".to_string()),
+                    .map_or_else(|| "-".to_string(), format_unix),
             ]
         })
         .collect();
@@ -105,16 +101,20 @@ fn format_row(cells: &[String; 8], widths: &[usize; 8]) -> String {
         if i > 0 {
             out.push_str("  ");
         }
-        out.push_str(&format!("{cell:width$}", width = widths[i]));
+        let _ = write!(&mut out, "{cell:width$}", width = widths[i]);
     }
     out.trim_end().to_string()
 }
 
 fn format_unix(secs: u64) -> String {
-    match time::OffsetDateTime::from_unix_timestamp(secs as i64) {
-        Ok(t) => t
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| secs.to_string()),
-        Err(_) => secs.to_string(),
-    }
+    let Ok(secs_i64) = i64::try_from(secs) else {
+        return secs.to_string();
+    };
+    time::OffsetDateTime::from_unix_timestamp(secs_i64).map_or_else(
+        |_| secs.to_string(),
+        |t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| secs.to_string())
+        },
+    )
 }

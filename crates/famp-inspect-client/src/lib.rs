@@ -18,11 +18,11 @@ use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::UnixStream;
 
-/// Source of the holder PID in an ORPHAN_HOLDER evidence row.
+/// Source of the holder PID in an `ORPHAN_HOLDER` evidence row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PidSource {
-    /// SO_PEERCRED (Linux) or LOCAL_PEERPID (macOS) socket option.
+    /// `SO_PEERCRED` (Linux) or `LOCAL_PEERPID` (macOS) socket option.
     Peercred,
     /// `lsof -U <socket_path>` (macOS) or process-list fallback.
     Lsof,
@@ -92,7 +92,6 @@ pub async fn raw_connect_probe(sock_path: &Path) -> ProbeOutcome {
     let mut stream = match UnixStream::connect(sock_path).await {
         Ok(s) => s,
         Err(e) => match e.kind() {
-            std::io::ErrorKind::ConnectionRefused => return ProbeOutcome::StaleSocket,
             std::io::ErrorKind::PermissionDenied => return ProbeOutcome::PermissionDenied,
             std::io::ErrorKind::NotFound => return ProbeOutcome::DownClean,
             _ => return ProbeOutcome::StaleSocket,
@@ -104,13 +103,10 @@ pub async fn raw_connect_probe(sock_path: &Path) -> ProbeOutcome {
         client: "famp-inspect-client/0.10.0".into(),
         bind_as: None,
     };
-    let bytes = match famp_canonical::canonicalize(&hello) {
-        Ok(b) => b,
-        Err(_) => {
-            return ProbeOutcome::OrphanHolder {
-                hello_reject_summary: "canonicalize failed".into(),
-            };
-        }
+    let Ok(bytes) = famp_canonical::canonicalize(&hello) else {
+        return ProbeOutcome::OrphanHolder {
+            hello_reject_summary: "canonicalize failed".into(),
+        };
     };
     if write_frame(&mut stream, &bytes).await.is_err() {
         return ProbeOutcome::OrphanHolder {
@@ -229,9 +225,8 @@ async fn peer_pid_via_subprocess(sock_path: &Path) -> Option<u32> {
 
     let path = sock_path.to_string_lossy().into_owned();
     let fut = Command::new("lsof").args(["-U", "-Fp", &path]).output();
-    let out = match tokio::time::timeout(std::time::Duration::from_secs(2), fut).await {
-        Ok(Ok(o)) => o,
-        _ => return None,
+    let Ok(Ok(out)) = tokio::time::timeout(std::time::Duration::from_secs(2), fut).await else {
+        return None;
     };
     if !out.status.success() {
         return None;
@@ -252,9 +247,8 @@ async fn peer_pid_via_subprocess(sock_path: &Path) -> Option<u32> {
 
     let path = sock_path.to_string_lossy().into_owned();
     let fut = Command::new("ss").args(["-lxep", &path]).output();
-    let out = match tokio::time::timeout(std::time::Duration::from_secs(2), fut).await {
-        Ok(Ok(o)) => o,
-        _ => return None,
+    let Ok(Ok(out)) = tokio::time::timeout(std::time::Duration::from_secs(2), fut).await else {
+        return None;
     };
     if !out.status.success() {
         return None;

@@ -72,7 +72,7 @@ pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) ->
     }
 }
 
-/// INSP-BROKER-01: HEALTHY reply. PID, socket path, started_at, build version.
+/// INSP-BROKER-01: HEALTHY reply. PID, socket path, `started_at`, build version.
 fn inspect_broker(state: &BrokerStateView, ctx: &BrokerCtx) -> InspectBrokerReply {
     InspectBrokerReply {
         pid: ctx.pid,
@@ -139,7 +139,11 @@ mod tests {
     fn dispatch_broker_returns_pid_and_socket_path() {
         let state = empty_state();
         let ctx = ctx_with(4242, "/tmp/test.sock");
-        let value = dispatch(&state, &ctx, &InspectKind::Broker(Default::default()));
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Broker(famp_inspect_proto::InspectBrokerRequest::default()),
+        );
         assert_eq!(value["pid"], 4242);
         assert_eq!(value["socket_path"], "/tmp/test.sock");
         assert!(value["started_at_unix_seconds"].as_u64().unwrap() > 0);
@@ -178,7 +182,11 @@ mod tests {
             build_version: "test".into(),
             mailbox_metadata: meta,
         };
-        let value = dispatch(&state, &ctx, &InspectKind::Identities(Default::default()));
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Identities(famp_inspect_proto::InspectIdentitiesRequest::default()),
+        );
         let rows = value["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["name"], "alice");
@@ -205,7 +213,11 @@ mod tests {
             }],
         };
         let ctx = ctx_with(1, "/tmp/x");
-        let value = dispatch(&state, &ctx, &InspectKind::Identities(Default::default()));
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Identities(famp_inspect_proto::InspectIdentitiesRequest::default()),
+        );
         let rows = value["rows"].as_array().unwrap();
         assert_eq!(rows[0]["mailbox_unread"], 0);
         assert_eq!(rows[0]["mailbox_total"], 0);
@@ -216,7 +228,11 @@ mod tests {
     fn dispatch_tasks_returns_not_yet_implemented() {
         let state = empty_state();
         let ctx = ctx_with(1, "/tmp/x");
-        let value = dispatch(&state, &ctx, &InspectKind::Tasks(Default::default()));
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest::default()),
+        );
         assert_eq!(value["not_yet_implemented"], true);
     }
 
@@ -224,7 +240,11 @@ mod tests {
     fn dispatch_messages_returns_not_yet_implemented() {
         let state = empty_state();
         let ctx = ctx_with(1, "/tmp/x");
-        let value = dispatch(&state, &ctx, &InspectKind::Messages(Default::default()));
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Messages(famp_inspect_proto::InspectMessagesRequest::default()),
+        );
         assert_eq!(value["not_yet_implemented"], true);
     }
 }

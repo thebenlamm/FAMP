@@ -161,6 +161,7 @@ pub async fn run_at(sock: &Path, args: SendArgs) -> Result<(), CliError> {
 /// 4. On `HelloErr { NotRegistered }` or per-op `Err { NotRegistered }`,
 ///    surface `CliError::NotRegisteredHint { name }` with the canonical
 ///    operator hint.
+#[allow(clippy::too_many_lines)]
 pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcome, CliError> {
     // 1. Resolve identity (D-01) for the Hello.bind_as proxy.
     let identity = resolve_identity(args.act_as.as_deref())?;

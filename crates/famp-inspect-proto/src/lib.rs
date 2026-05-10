@@ -16,9 +16,9 @@ use serde_json as _;
 pub enum InspectKind {
     Broker(InspectBrokerRequest),
     Identities(InspectIdentitiesRequest),
-    /// Phase 2. Server returns NotYetImplemented in Phase 1.
+    /// Phase 2. Server returns `NotYetImplemented` in Phase 1.
     Tasks(InspectTasksRequest),
-    /// Phase 2. Server returns NotYetImplemented in Phase 1.
+    /// Phase 2. Server returns `NotYetImplemented` in Phase 1.
     Messages(InspectMessagesRequest),
 }
 
@@ -28,10 +28,12 @@ pub enum InspectKind {
 #[serde(deny_unknown_fields)]
 pub struct InspectBrokerRequest {}
 
-/// Reply to `InspectKind::Broker`. The client renders this for
-/// `famp inspect broker` against a *running* broker. Dead-broker
-/// states are produced entirely client-side and never reach this
-/// type (see `famp-inspect-client::peer_pid` and BrokerDownState).
+/// Reply to `InspectKind::Broker`.
+///
+/// The client renders this for `famp inspect broker` against a
+/// *running* broker. Dead-broker states are produced entirely
+/// client-side and never reach this type (see
+/// `famp-inspect-client::peer_pid` and `BrokerDownState`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InspectBrokerReply {
@@ -63,7 +65,7 @@ pub struct InspectIdentitiesRequest {}
 pub struct IdentityRow {
     pub name: String,
     pub listen_mode: bool,
-    /// Captured from BusMessage::Register at registration time
+    /// Captured from `BusMessage::Register` at registration time
     /// (D-01 + D-02). Never refreshed: if the client chdir's after
     /// registering, this reflects where the agent was born.
     pub cwd: Option<String>,
@@ -121,11 +123,12 @@ pub struct InspectMessagesReply {
 // ===== INSP-IDENT-03: schema-level rejection of forbidden field names =====
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod ident_03_schema_tests {
     use super::IdentityRow;
 
     /// INSP-IDENT-03: enumerate the field names of `IdentityRow` via
-    /// serde_json round-trip and assert no field name contains
+    /// `serde_json` round-trip and assert no field name contains
     /// `surfaced` / `double` / `received` (other than the
     /// `last_received_at_unix_seconds` whitelist).
     #[test]
@@ -165,6 +168,7 @@ mod ident_03_schema_tests {
 // ===== Codec round-trip smoke (sibling of famp-bus proto.rs roundtrip_busmessage) =====
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod codec_roundtrip {
     use super::*;
     use famp_canonical::canonicalize;

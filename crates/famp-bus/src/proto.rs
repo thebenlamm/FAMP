@@ -132,7 +132,7 @@ pub enum BusMessage {
         cwd: Option<String>,
         /// listen-mode flag from `famp_register({listen: true})`. Default
         /// false. `#[serde(default)]` keeps the field omittable for
-        /// pre-v0.10 senders. NOT skip_serializing_if=false because
+        /// pre-v0.10 senders. NOT `skip_serializing_if=false` because
         /// `false` is the wire-default value; ALWAYS serializing
         /// would change the canonical form for pre-v0.10 round-trips.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -229,9 +229,9 @@ pub enum BusReply {
         active: Option<String>,
         joined: Vec<String>,
     },
-    /// v0.10 inspector RPC reply. Carried as a serde_json::Value to
+    /// v0.10 inspector RPC reply. Carried as a `serde_json::Value` to
     /// avoid coupling famp-bus to famp-inspect-proto's reply types
-    /// at the BusReply layer (the dispatch crate handles the typed
+    /// at the `BusReply` layer (the dispatch crate handles the typed
     /// reply on both sides; this layer just shuttles the JSON).
     InspectOk {
         payload: serde_json::Value,

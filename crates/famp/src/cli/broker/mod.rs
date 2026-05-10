@@ -390,9 +390,8 @@ fn build_inspect_ctx(
 
 fn read_mailbox_meta_for(bus_dir: &Path, name: &str, cursor_offset: u64) -> MailboxMeta {
     let path = bus_dir.join("mailboxes").join(format!("{name}.jsonl"));
-    let entries = match famp_inbox::read::read_all(&path) {
-        Ok(entries) => entries,
-        Err(_) => return MailboxMeta::default(),
+    let Ok(entries) = famp_inbox::read::read_all(&path) else {
+        return MailboxMeta::default();
     };
     let total = entries.len() as u64;
     let unread = famp_inbox::read::read_from(&path, cursor_offset)
