@@ -44,6 +44,8 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 Read-only inspector surface on the v0.9 broker, consumed by a `famp inspect` CLI subcommand. Closes the conversation-state opacity gap that produced three recurring v0.9 incidents (orphan socket-holder vs stale PID file, task FSM invisibility, stale-mailbox relays). Independent of the v1.0 federation gate. Detailed requirements: see `.planning/REQUIREMENTS.md` v0.10 section.
 
+- [x] Phase 1: Broker Diagnosis & Identity Inspection — *Validated 2026-05-10. `famp inspect broker` and `famp inspect identities` ship end-to-end over the v0.9 broker UDS; all three inspector crates are present; read-only, no-I/O proto, and dependency-version gates pass; `just test` passed 601/601 with 2 skipped.*
+
 ### Deferred — Federation Profile (v1.0+)
 
 These are tracked in `REQUIREMENTS.md` but are **not v1-blocking**. They matter at ecosystem scale, not for a personally-usable library.

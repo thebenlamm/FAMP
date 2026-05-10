@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: Inspector & Observability
-status: executing
+status: ready_to_plan
 stopped_at: Phase 1 context gathered
 last_updated: "2026-05-10T15:57:16.663Z"
 last_activity: 2026-05-10 -- Phase 01 execution started
 progress:
   total_phases: 9
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 11
 ---
 
 # STATE: FAMP — v0.10 Inspector & Observability (active)
@@ -24,14 +24,14 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active mile
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.10 makes that substrate's runtime state legible to the operator running it.
 
-**Current focus:** Phase 01 — broker-diagnosis-identity-inspection
+**Current focus:** Phase 02 — task-fsm-message-visibility
 
 ## Current Position
 
-Phase: 01 (broker-diagnosis-identity-inspection) — EXECUTING
-Plan: 3 of 4
-Status: Executing Phase 01 — Wave 2 complete; Wave 3 next
-Last activity: 2026-05-10 -- Phase 01 Wave 2 complete; 01-03 summary committed; post-wave build, no-tokio gate, and elevated `just test` passed
+Phase: 02 (task-fsm-message-visibility)
+Plan: Not started
+Status: Phase 01 verified and complete; Phase 02 ready to plan
+Last activity: 2026-05-10 -- Phase 01 complete; verifier passed 5/5 must-haves; invariant gates and `just test` passed
 
 ## v0.10 Phase Map
 

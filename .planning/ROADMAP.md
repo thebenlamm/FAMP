@@ -14,7 +14,7 @@
 
 ## Phases
 
-- [ ] **Phase 1: Broker Diagnosis & Identity Inspection** — `famp.inspect.*` namespace mounted on broker UDS, all three crates (`-proto`, `-client`, `-server`) shipped, `famp inspect broker` and `famp inspect identities` end-to-end (RPC + CLI). Closes the orphan-listener incident class in one merge.
+- [x] **Phase 1: Broker Diagnosis & Identity Inspection** — completed 2026-05-10 — `famp.inspect.*` namespace mounted on broker UDS, all three crates (`-proto`, `-client`, `-server`) shipped, `famp inspect broker` and `famp inspect identities` end-to-end (RPC + CLI). Closes the orphan-listener incident class in one merge.
 - [ ] **Phase 2: Task FSM & Message Visibility** — `famp inspect tasks` and `famp inspect messages` end-to-end (RPC + CLI). I/O-bound handlers (taskdir + mailbox file walks) gain the 500 ms latency budget and cancellable-handler discipline that the in-memory Phase 1 handlers don't need.
 - [ ] **Phase 3: Load Verification & Integration Hardening** — load test proving inspect-call traffic cannot starve bus message throughput (INSP-RPC-05); end-to-end orphan-listener scenario re-exercises Phase 1's `inspect broker` under integration conditions; doc + migration notes.
 
@@ -207,7 +207,7 @@ Rough ordering inside v1.0+ (not committed):
 | 3. Claude Code integration polish | v0.9 | 6/6 | Complete | 2026-05-03 |
 | 4. Federation CLI unwire + federation-CI preservation | v0.9 | 8/8 | Complete | 2026-05-04 |
 | 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 4/4 | Complete | 2026-05-04 |
-| 1. Broker Diagnosis & Identity Inspection | v0.10 | 0/4 | Not started | — |
+| 1. Broker Diagnosis & Identity Inspection | v0.10 | 4/4 | Complete | 2026-05-10 |
 | 2. Task FSM & Message Visibility | v0.10 | 0/0 | Not started | — |
 | 3. Load Verification & Integration Hardening | v0.10 | 0/0 | Not started | — |
 
