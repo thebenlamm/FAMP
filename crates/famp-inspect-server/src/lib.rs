@@ -132,6 +132,8 @@ mod tests {
             socket_path: sock.into(),
             build_version: env!("CARGO_PKG_VERSION").to_string(),
             mailbox_metadata: BTreeMap::new(),
+            task_data: None,
+            message_data: None,
         }
     }
 
@@ -181,6 +183,8 @@ mod tests {
             socket_path: "/tmp/x".into(),
             build_version: "test".into(),
             mailbox_metadata: meta,
+            task_data: None,
+            message_data: None,
         };
         let value = dispatch(
             &state,
@@ -225,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_tasks_returns_not_yet_implemented() {
+    fn dispatch_tasks_without_snapshot_returns_empty_list() {
         let state = empty_state();
         let ctx = ctx_with(1, "/tmp/x");
         let value = dispatch(
@@ -233,11 +237,144 @@ mod tests {
             &ctx,
             &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest::default()),
         );
-        assert_eq!(value["not_yet_implemented"], true);
+        assert_eq!(value["kind"], "list");
+        assert_eq!(value["rows"].as_array().unwrap().len(), 0);
     }
 
     #[test]
-    fn dispatch_messages_returns_not_yet_implemented() {
+    fn dispatch_tasks_returns_list_with_rows_when_snapshot_populated() {
+        let state = empty_state();
+        let snapshot = TaskSnapshot {
+            records: vec![
+                TaskSnapshotRow {
+                    task_id: "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7".into(),
+                    state: "COMMITTED".into(),
+                    peer: "agent:local.bus/x".into(),
+                    opened_at: "2026-05-10T18:00:00Z".into(),
+                    last_send_at: None,
+                    last_recv_at: None,
+                    terminal: false,
+                },
+                TaskSnapshotRow {
+                    task_id: "00000000-0000-0000-0000-000000000000".into(),
+                    state: "COMMITTED".into(),
+                    peer: "agent:local.bus/y".into(),
+                    opened_at: "2026-05-10T18:01:00Z".into(),
+                    last_send_at: None,
+                    last_recv_at: None,
+                    terminal: false,
+                },
+            ],
+        };
+        let ctx = BrokerCtx {
+            task_data: Some(snapshot),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest::default()),
+        );
+        assert_eq!(value["kind"], "list");
+        assert_eq!(value["rows"].as_array().unwrap().len(), 2);
+        assert_eq!(value["rows"][0]["orphan"], true);
+        assert_eq!(value["rows"][1]["orphan"], false);
+    }
+
+    #[test]
+    fn dispatch_tasks_orphan_classification_covers_empty_nil_and_valid() {
+        let state = empty_state();
+        let snapshot = TaskSnapshot {
+            records: vec![
+                TaskSnapshotRow {
+                    task_id: "".into(),
+                    state: "REQUESTED".into(),
+                    peer: "agent:local.bus/empty".into(),
+                    opened_at: "2026-05-10T18:00:00Z".into(),
+                    last_send_at: None,
+                    last_recv_at: None,
+                    terminal: false,
+                },
+                TaskSnapshotRow {
+                    task_id: "00000000-0000-0000-0000-000000000000".into(),
+                    state: "REQUESTED".into(),
+                    peer: "agent:local.bus/nil".into(),
+                    opened_at: "2026-05-10T18:01:00Z".into(),
+                    last_send_at: None,
+                    last_recv_at: None,
+                    terminal: false,
+                },
+                TaskSnapshotRow {
+                    task_id: "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7".into(),
+                    state: "COMMITTED".into(),
+                    peer: "agent:local.bus/valid".into(),
+                    opened_at: "2026-05-10T18:02:00Z".into(),
+                    last_send_at: None,
+                    last_recv_at: None,
+                    terminal: false,
+                },
+            ],
+        };
+        let ctx = BrokerCtx {
+            task_data: Some(snapshot),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest::default()),
+        );
+        let rows = value["rows"].as_array().unwrap();
+        assert_eq!(rows[0]["orphan"], true);
+        assert_eq!(rows[1]["orphan"], true);
+        assert_eq!(rows[2]["orphan"], false);
+    }
+
+    #[test]
+    fn dispatch_tasks_id_returns_detail_or_detail_full() {
+        let state = empty_state();
+        let task_id: uuid::Uuid = "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7".parse().unwrap();
+        let env = serde_json::json!({
+            "id": "env-1",
+            "from": "agent:local.bus/alice",
+            "to": "agent:local.bus/bob",
+            "class": "commit",
+            "ts": "2026-05-10T18:00:00Z",
+            "causality": { "ref": task_id.to_string() },
+            "body": { "details": { "task": task_id.to_string() } }
+        });
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert("bob".to_string(), vec![env]);
+        let ctx = BrokerCtx {
+            task_data: Some(TaskSnapshot::default()),
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let detail = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest {
+                id: Some(task_id),
+                full: false,
+            }),
+        );
+        assert_eq!(detail["kind"], "detail");
+        assert_eq!(detail["envelopes"].as_array().unwrap().len(), 1);
+
+        let full = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest {
+                id: Some(task_id),
+                full: true,
+            }),
+        );
+        assert_eq!(full["kind"], "detail_full");
+        assert!(full["envelopes"][0]["bytes"].as_str().unwrap().contains("\"env-1\""));
+    }
+
+    #[test]
+    fn dispatch_messages_without_snapshot_returns_empty_list() {
         let state = empty_state();
         let ctx = ctx_with(1, "/tmp/x");
         let value = dispatch(
@@ -245,6 +382,110 @@ mod tests {
             &ctx,
             &InspectKind::Messages(famp_inspect_proto::InspectMessagesRequest::default()),
         );
-        assert_eq!(value["not_yet_implemented"], true);
+        assert_eq!(value["kind"], "list");
+        assert_eq!(value["rows"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn dispatch_messages_filters_to_and_applies_tail_in_original_order() {
+        let state = empty_state();
+        let envs: Vec<_> = (0..5)
+            .map(|i| {
+                serde_json::json!({
+                    "id": format!("env-{i}"),
+                    "from": "agent:local.bus/alice",
+                    "to": "agent:local.bus/bob",
+                    "class": "deliver",
+                    "ts": format!("2026-05-10T18:0{i}:00Z"),
+                    "body": { "details": { "task": "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7", "mode": "completed", "terminal": true } }
+                })
+            })
+            .collect();
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert("bob".to_string(), envs);
+        by_recipient.insert("alice".to_string(), vec![serde_json::json!({ "body": {} })]);
+        let ctx = BrokerCtx {
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Messages(famp_inspect_proto::InspectMessagesRequest {
+                to: Some("bob".into()),
+                tail: Some(3),
+            }),
+        );
+        let rows = value["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0]["timestamp"], "2026-05-10T18:02:00Z");
+        assert_eq!(rows[2]["timestamp"], "2026-05-10T18:04:00Z");
+    }
+
+    #[test]
+    fn dispatch_messages_hash_prefix_is_12_hex_chars() {
+        let state = empty_state();
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert(
+            "alice".to_string(),
+            vec![serde_json::json!({
+                "from": "agent:local.bus/bob",
+                "to": "agent:local.bus/alice",
+                "class": "request",
+                "ts": "2026-05-10T18:00:00Z",
+                "body": { "x": 1 }
+            })],
+        );
+        let ctx = BrokerCtx {
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Messages(famp_inspect_proto::InspectMessagesRequest {
+                to: Some("alice".into()),
+                tail: None,
+            }),
+        );
+        let prefix = value["rows"][0]["body_sha256_prefix"].as_str().unwrap();
+        assert_eq!(prefix.len(), 12);
+        assert!(prefix.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn derive_fsm_state_maps_completed_correctly() {
+        let env = serde_json::json!({
+            "class": "deliver",
+            "body": { "details": { "mode": "completed", "terminal": true } }
+        });
+        assert_eq!(derive_fsm_state(&env), "COMPLETED");
+    }
+
+    #[test]
+    fn derive_fsm_state_maps_failed_correctly() {
+        let env = serde_json::json!({
+            "class": "deliver",
+            "body": { "details": { "mode": "failed", "terminal": true } }
+        });
+        assert_eq!(derive_fsm_state(&env), "FAILED");
+    }
+
+    #[test]
+    fn derive_fsm_state_maps_cancelled_correctly() {
+        let env = serde_json::json!({
+            "class": "control",
+            "body": { "details": { "mode": "cancelled" } }
+        });
+        assert_eq!(derive_fsm_state(&env), "CANCELLED");
+    }
+
+    #[test]
+    fn derive_fsm_state_maps_committed_for_non_terminal_deliver() {
+        let env = serde_json::json!({
+            "class": "deliver",
+            "body": { "details": { "mode": "in_progress", "terminal": false } }
+        });
+        assert_eq!(derive_fsm_state(&env), "COMMITTED");
     }
 }
