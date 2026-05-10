@@ -128,6 +128,67 @@ check-no-tokio-in-bus:
     fi
     @echo "OK - famp-bus is tokio-free."
 
+# INSP-CRATE-01: assert famp-inspect-proto has no I/O deps.
+check-no-io-in-inspect-proto:
+    @echo "Verifying famp-inspect-proto is I/O-free..."
+    @command -v cargo >/dev/null || { echo "ERROR: cargo not found in PATH"; exit 1; }
+    @tree="$(cargo tree -p famp-inspect-proto --edges normal)" || exit 1; \
+    for dep in tokio axum reqwest clap; do \
+      if printf '%s\n' "$tree" | grep -E "(^|[[:space:]├└─]+)${dep} v[0-9]"; then \
+        echo "ERROR: famp-inspect-proto depends on ${dep} (INSP-CRATE-01 violation)"; \
+        exit 1; \
+      fi; \
+    done
+    @echo "OK - famp-inspect-proto is I/O-free."
+
+# INSP-RPC-02: assert famp-inspect-server imports no write surfaces.
+check-inspect-readonly:
+    @echo "Verifying famp-inspect-server is read-only..."
+    @command -v cargo >/dev/null || { echo "ERROR: cargo not found in PATH"; exit 1; }
+    @tree="$(cargo tree -p famp-inspect-server --edges normal)" || exit 1; \
+    if printf '%s\n' "$tree" | grep -E '(^|[[:space:]├└─]+)famp-taskdir v[0-9]'; then \
+      echo "ERROR: famp-inspect-server depends on famp-taskdir (INSP-RPC-02 violation: taskdir = write-mostly)"; \
+      exit 1; \
+    fi
+    @echo "Checking source for forbidden write-surface imports..."
+    @if grep -rE 'famp_inbox::(append|cursor::InboxCursor::advance)|Inbox::open|::write_all|fs::write' crates/famp-inspect-server/src/ 2>/dev/null; then \
+      echo "ERROR: famp-inspect-server source imports a write surface (INSP-RPC-02 violation)"; \
+      exit 1; \
+    fi
+    @if grep -rE '&mut\s+BrokerState' crates/famp-inspect-server/src/ 2>/dev/null; then \
+      echo "ERROR: famp-inspect-server has &mut BrokerState (INSP-RPC-02 violation)"; \
+      exit 1; \
+    fi
+    @echo "OK - famp-inspect-server is read-only."
+
+# INSP-CRATE-03: assert inspector/broker decode dependency versions align.
+check-inspect-version-aligned:
+    @echo "Verifying inspector/broker version alignment..."
+    @command -v cargo >/dev/null || { echo "ERROR: cargo not found in PATH"; exit 1; }
+    @for crate in famp-canonical famp-envelope famp-fsm; do \
+      server_ver=$(cargo tree -p famp-inspect-server 2>/dev/null | grep -E "^[├└]── ${crate} v" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'); \
+      if [ -z "$server_ver" ]; then \
+        server_ver=$(cargo tree -p famp-inspect-server 2>/dev/null | grep -E "${crate} v" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'); \
+      fi; \
+      bus_ver=$(cargo tree -p famp-bus 2>/dev/null | grep -E "^[├└]── ${crate} v" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'); \
+      if [ -z "$bus_ver" ]; then \
+        bus_ver=$(cargo tree -p famp-bus 2>/dev/null | grep -E "${crate} v" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'); \
+      fi; \
+      if [ -z "$bus_ver" ]; then \
+        bus_ver=$(cargo tree -p famp 2>/dev/null | grep -E "${crate} v" | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+'); \
+      fi; \
+      if [ -z "$server_ver" ] || [ -z "$bus_ver" ]; then \
+        echo "ERROR: could not resolve $crate version (server=$server_ver bus=$bus_ver)"; \
+        exit 1; \
+      fi; \
+      if [ "$server_ver" != "$bus_ver" ]; then \
+        echo "ERROR: $crate version mismatch: famp-inspect-server=$server_ver famp-bus=$bus_ver (INSP-CRATE-03 violation)"; \
+        exit 1; \
+      fi; \
+      echo "  $crate: $server_ver (aligned)"; \
+    done
+    @echo "OK - inspector/broker version alignment confirmed."
+
 # MCP-01 (D-11 source-import grep): assert MCP/bus/broker source has no
 # `use reqwest` or `use rustls` imports. Cheap structural gate that ships
 # today; cargo-tree-strict reading is deferred to Phase 4 when the
@@ -143,7 +204,7 @@ check-spec-version-coherence:
     fi
 
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-spec-version-coherence check-mcp-deps check-shellcheck publish-workspace-dry-run
+ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-no-io-in-inspect-proto check-inspect-readonly check-inspect-version-aligned check-spec-version-coherence check-mcp-deps check-shellcheck publish-workspace-dry-run
     @echo "✓ local CI-parity checks passed"
 
 # Start two famp daemons in the background for the Phase 4 E2E-02
