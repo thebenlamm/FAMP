@@ -35,7 +35,7 @@ Plans:
 - [x] 01-01-PLAN.md — Wave 0: Proto types + state extensions + Wave-0 test scaffolds (famp-inspect-proto crate, BusMessage::Inspect variant, BrokerState::new with started_at, Register cwd/listen extension)
 - [x] 01-02-PLAN.md — Wave 1: famp-inspect-server (tokio-free, &BrokerStateView handlers) + famp-inspect-client (UDS, no clap, peer_pid)
 - [x] 01-03-PLAN.md — Wave 2: Broker dispatch arm (BusMessage::Inspect → famp-inspect-server) + CLI subcommand scaffolding
-- [ ] 01-04-PLAN.md — Wave 3: CLI rendering (HEALTHY + 4 down-states + table) + integration tests + 3 just check-* recipes wired into ci:
+- [x] 01-04-PLAN.md — Wave 3: CLI rendering (HEALTHY + 4 down-states + table) + integration tests + 3 just check-* recipes wired into ci:
 
 ### Phase 2: Task FSM & Message Visibility
 **Goal:** Operator runs `famp inspect tasks` and `famp inspect messages` and gets the FSM and envelope-metadata visibility that v0.9's task-FSM-invisibility and stale-mailbox-relay incidents asked for. This is the phase where the I/O-bound handlers land — taskdir file walks for tasks, mailbox file reads for messages — so it's also the phase where the 500 ms latency budget (INSP-RPC-03) and cancellable-handler discipline (INSP-RPC-04) gain real handlers to enforce against (Phase 1's pure in-memory handlers had nothing to budget or cancel; the budget would have been theater).
