@@ -666,6 +666,7 @@ dependencies = [
  "famp-canonical",
  "famp-core",
  "famp-envelope",
+ "famp-inspect-proto",
  "proptest",
  "regex",
  "serde",

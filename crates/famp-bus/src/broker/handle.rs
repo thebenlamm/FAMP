@@ -53,7 +53,12 @@ fn handle_wire<E: BrokerEnv>(
             client: _,
             bind_as,
         } => hello(broker, client, bus_proto, bind_as),
-        BusMessage::Register { name, pid } => register(broker, client, name, pid),
+        BusMessage::Register {
+            name,
+            pid,
+            cwd: _,
+            listen: _,
+        } => register(broker, client, name, pid),
         BusMessage::Send { to, envelope } => send(broker, client, to, &envelope),
         BusMessage::Inbox {
             since,
@@ -66,6 +71,11 @@ fn handle_wire<E: BrokerEnv>(
         BusMessage::Leave { channel } => leave(broker, client, channel),
         BusMessage::Sessions {} => sessions(broker, client),
         BusMessage::Whoami {} => whoami(broker, client),
+        BusMessage::Inspect { kind: _ } => vec![err(
+            client,
+            BusErrorKind::Internal,
+            "inspect RPC dispatch is not mounted in this wave",
+        )],
     }
 }
 
@@ -900,6 +910,8 @@ mod d10_tests {
                 msg: BusMessage::Register {
                     name: name.into(),
                     pid,
+                    cwd: None,
+                    listen: false,
                 },
             },
             now,

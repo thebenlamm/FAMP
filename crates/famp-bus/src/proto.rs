@@ -123,6 +123,20 @@ pub enum BusMessage {
     Register {
         name: String,
         pid: u32,
+        /// D-01: client's working directory at registration time.
+        /// Captured once; never refreshed (D-02). Optional with
+        /// `#[serde(default, skip_serializing_if = "Option::is_none")]`
+        /// so pre-v0.10 senders that omit the field continue to
+        /// serialize/deserialize byte-exactly under BUS-02.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
+        /// listen-mode flag from `famp_register({listen: true})`. Default
+        /// false. `#[serde(default)]` keeps the field omittable for
+        /// pre-v0.10 senders. NOT skip_serializing_if=false because
+        /// `false` is the wire-default value; ALWAYS serializing
+        /// would change the canonical form for pre-v0.10 round-trips.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        listen: bool,
     },
     Send {
         to: Target,
@@ -152,6 +166,18 @@ pub enum BusMessage {
     },
     Sessions {},
     Whoami {},
+    /// v0.10 inspector RPC dispatch entry. `kind` carries the
+    /// per-operation Request type. The broker forwards `kind` to
+    /// `famp_inspect_server::dispatch(&state, kind, ...)` (Wave 2);
+    /// the reply rides back as `BusReply::InspectOk { payload }`.
+    ///
+    /// Wire shape: `{"kind":{"op":"broker"},"op":"inspect"}` after JCS.
+    ///
+    /// `deny_unknown_fields` on the parent enum means pre-v0.10 peers
+    /// REJECT this frame on receive (the documented failure mode).
+    Inspect {
+        kind: famp_inspect_proto::InspectKind,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,6 +228,13 @@ pub enum BusReply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         active: Option<String>,
         joined: Vec<String>,
+    },
+    /// v0.10 inspector RPC reply. Carried as a serde_json::Value to
+    /// avoid coupling famp-bus to famp-inspect-proto's reply types
+    /// at the BusReply layer (the dispatch crate handles the typed
+    /// reply on both sides; this layer just shuttles the JSON).
+    InspectOk {
+        payload: serde_json::Value,
     },
     Err {
         kind: BusErrorKind,
@@ -262,6 +295,100 @@ mod tests {
         let bytes = famp_canonical::canonicalize(&v).unwrap();
         let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
         assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_busmessage_inspect_broker() {
+        use famp_inspect_proto::{InspectBrokerRequest, InspectKind};
+        let v = BusMessage::Inspect {
+            kind: InspectKind::Broker(InspectBrokerRequest::default()),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_busmessage_inspect_identities() {
+        use famp_inspect_proto::{InspectIdentitiesRequest, InspectKind};
+        let v = BusMessage::Inspect {
+            kind: InspectKind::Identities(InspectIdentitiesRequest::default()),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_busmessage_inspect_tasks() {
+        use famp_inspect_proto::{InspectKind, InspectTasksRequest};
+        let v = BusMessage::Inspect {
+            kind: InspectKind::Tasks(InspectTasksRequest::default()),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_busmessage_inspect_messages() {
+        use famp_inspect_proto::{InspectKind, InspectMessagesRequest};
+        let v = BusMessage::Inspect {
+            kind: InspectKind::Messages(InspectMessagesRequest::default()),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_busreply_inspect_ok() {
+        let v = BusReply::InspectOk {
+            payload: serde_json::json!({"state": "HEALTHY", "pid": 1234_u32}),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_register_with_cwd_and_listen() {
+        let v = BusMessage::Register {
+            name: "alice".into(),
+            pid: 12345,
+            cwd: Some("/Users/alice/proj".into()),
+            listen: true,
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_register_without_cwd_or_listen_byte_exact() {
+        // BUS-02 byte-exact: a Register frame omitting cwd and
+        // listen serializes IDENTICALLY to a pre-v0.10 frame.
+        let v = BusMessage::Register {
+            name: "alice".into(),
+            pid: 12345,
+            cwd: None,
+            listen: false,
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+        // Wire MUST NOT contain "cwd" or "listen" keys when both are
+        // at default values - otherwise pre-v0.10 peers (which used
+        // deny_unknown_fields with no cwd/listen) would reject.
+        let wire = String::from_utf8(bytes).unwrap();
+        assert!(
+            !wire.contains("\"cwd\""),
+            "cwd must be omitted at default; got {wire}"
+        );
+        assert!(
+            !wire.contains("\"listen\""),
+            "listen must be omitted at default; got {wire}"
+        );
     }
 
     #[test]
