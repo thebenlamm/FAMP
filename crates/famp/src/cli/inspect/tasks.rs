@@ -1,7 +1,14 @@
 //! `famp inspect tasks` -- task FSM visibility over the v0.10 inspector RPC.
 
 use clap::Args;
+use famp_inspect_client::{call, raw_connect_probe, ProbeOutcome};
+use famp_inspect_proto::{
+    InspectKind, InspectTasksReply, InspectTasksRequest, TaskDetailFullReply, TaskDetailReply,
+    TaskListReply, TaskRow,
+};
+use std::fmt::Write as _;
 
+use crate::bus_client::resolve_sock_path;
 use crate::cli::error::CliError;
 
 #[derive(Args, Debug)]
@@ -20,8 +27,175 @@ pub struct InspectTasksArgs {
     pub json: bool,
 }
 
-pub async fn run(_args: InspectTasksArgs) -> Result<(), CliError> {
-    todo!("implemented in GREEN phase")
+pub async fn run(args: InspectTasksArgs) -> Result<(), CliError> {
+    if args.full && args.id.is_none() {
+        eprintln!("error: --full requires --id <task_id>");
+        return Err(CliError::Exit(2));
+    }
+
+    let sock = resolve_sock_path();
+    let sock_str = sock.to_string_lossy().into_owned();
+
+    let ProbeOutcome::Healthy { mut stream } = raw_connect_probe(&sock).await else {
+        eprintln!("error: broker not running at {sock_str}");
+        return Err(CliError::Exit(1));
+    };
+
+    let payload = call(
+        &mut stream,
+        InspectKind::Tasks(InspectTasksRequest {
+            id: args.id,
+            full: args.full,
+        }),
+    )
+    .await
+    .map_err(|e| CliError::Generic(format!("inspect tasks call failed: {e}")))?;
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&payload)
+                .map_err(|e| CliError::Generic(format!("json render: {e}")))?
+        );
+        return Ok(());
+    }
+
+    let reply: InspectTasksReply = serde_json::from_value(payload)
+        .map_err(|e| CliError::Generic(format!("tasks reply schema mismatch: {e}")))?;
+    let rendered = render_reply(&reply, args.orphans)?;
+    if !rendered.is_empty() {
+        println!("{rendered}");
+    }
+    Ok(())
+}
+
+fn render_reply(reply: &InspectTasksReply, orphans_only: bool) -> Result<String, CliError> {
+    match reply {
+        InspectTasksReply::List(list) => Ok(render_list(list, orphans_only)),
+        InspectTasksReply::Detail(detail) => Ok(render_detail(detail)),
+        InspectTasksReply::DetailFull(full) => render_detail_full(full),
+        InspectTasksReply::BudgetExceeded { elapsed_ms } => {
+            eprintln!("error: inspect timed out after {elapsed_ms}ms");
+            Err(CliError::Exit(1))
+        }
+    }
+}
+
+fn render_list(list: &TaskListReply, orphans_only: bool) -> String {
+    const HEADERS: [&str; 8] = [
+        "TASK_ID",
+        "STATE",
+        "PEER",
+        "OPENED",
+        "LAST_TRANSITION_AGE",
+        "ENVELOPES",
+        "TERMINAL",
+        "ORPHAN",
+    ];
+
+    let rows: Vec<&TaskRow> = if orphans_only {
+        list.rows.iter().filter(|row| row.orphan).collect()
+    } else {
+        list.rows.iter().collect()
+    };
+
+    let mut widths: [usize; 8] = HEADERS.map(str::len);
+    let formatted: Vec<[String; 8]> = rows
+        .iter()
+        .map(|row| {
+            [
+                row.task_id.clone(),
+                row.state.clone(),
+                row.peer.clone(),
+                format_unix(row.opened_at_unix_seconds),
+                format!("{}s", row.last_transition_age_seconds),
+                row.envelope_count.to_string(),
+                row.terminal.to_string(),
+                row.orphan.to_string(),
+            ]
+        })
+        .collect();
+    for row in &formatted {
+        for (i, cell) in row.iter().enumerate() {
+            widths[i] = widths[i].max(cell.len());
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str(&format_row(&HEADERS.map(String::from), &widths));
+    for row in &formatted {
+        out.push('\n');
+        out.push_str(&format_row(row, &widths));
+    }
+    out
+}
+
+fn render_detail(detail: &TaskDetailReply) -> String {
+    const HEADERS: [&str; 6] = [
+        "ENVELOPE_ID",
+        "SENDER",
+        "RECIPIENT",
+        "FSM_TRANSITION",
+        "TIMESTAMP",
+        "SIG_VERIFIED",
+    ];
+    let mut widths: [usize; 6] = HEADERS.map(str::len);
+    let formatted: Vec<[String; 6]> = detail
+        .envelopes
+        .iter()
+        .map(|envelope| {
+            [
+                envelope.envelope_id.clone(),
+                envelope.sender.clone(),
+                envelope.recipient.clone(),
+                envelope.fsm_transition.clone(),
+                envelope.timestamp.clone(),
+                envelope.sig_verified.to_string(),
+            ]
+        })
+        .collect();
+    for row in &formatted {
+        for (i, cell) in row.iter().enumerate() {
+            widths[i] = widths[i].max(cell.len());
+        }
+    }
+
+    let mut out = format!("task_id: {}\n\n", detail.task_id);
+    out.push_str(&format_row(&HEADERS.map(String::from), &widths));
+    for row in &formatted {
+        out.push('\n');
+        out.push_str(&format_row(row, &widths));
+    }
+    out
+}
+
+fn render_detail_full(full: &TaskDetailFullReply) -> Result<String, CliError> {
+    serde_json::to_string_pretty(full)
+        .map_err(|e| CliError::Generic(format!("full detail json render: {e}")))
+}
+
+fn format_row<const N: usize>(cells: &[String; N], widths: &[usize; N]) -> String {
+    let mut out = String::new();
+    for (i, cell) in cells.iter().enumerate() {
+        if i > 0 {
+            out.push_str("  ");
+        }
+        let _ = write!(&mut out, "{cell:width$}", width = widths[i]);
+    }
+    out.trim_end().to_string()
+}
+
+fn format_unix(secs: u64) -> String {
+    let Ok(secs_i64) = i64::try_from(secs) else {
+        return secs.to_string();
+    };
+    time::OffsetDateTime::from_unix_timestamp(secs_i64).map_or_else(
+        |_| secs.to_string(),
+        |time| {
+            time.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| secs.to_string())
+        },
+    )
 }
 
 #[cfg(test)]
@@ -70,11 +244,4 @@ mod tests {
         assert!(matches!(err, CliError::Exit(1)));
     }
 
-    fn render_list(_list: &TaskListReply, _orphans_only: bool) -> String {
-        todo!("implemented in GREEN phase")
-    }
-
-    fn render_reply(_reply: &InspectTasksReply, _orphans_only: bool) -> Result<String, CliError> {
-        todo!("implemented in GREEN phase")
-    }
 }
