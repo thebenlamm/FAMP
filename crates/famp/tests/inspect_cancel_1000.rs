@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use assert_cmd::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -71,10 +71,17 @@ fn kill_and_wait(child: &mut Child) {
 }
 
 fn count_broker_fds(broker_pid: u32) -> usize {
+    let proc_fd = PathBuf::from(format!("/proc/{broker_pid}/fd"));
+    if proc_fd.is_dir() {
+        return std::fs::read_dir(&proc_fd)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", proc_fd.display()))
+            .count();
+    }
+
     let out = Command::new("lsof")
         .args(["-p", &broker_pid.to_string()])
         .output()
-        .expect("lsof must be available");
+        .expect("lsof must be available on Unix platforms without /proc/<pid>/fd");
     assert!(
         out.status.success(),
         "lsof failed: stderr={}",

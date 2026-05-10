@@ -232,7 +232,7 @@ pub struct MessageListReply {
 pub struct MessageRow {
     pub sender: String,
     pub recipient: String,
-    /// `causality.ref` if present, else `body.details.task`, else empty.
+    /// `causality.ref` if present, else `body.details.task`, else new-task envelope `id`, else empty.
     pub task_id: String,
     pub class: String,
     /// FSM-relevant state derived from envelope fields.

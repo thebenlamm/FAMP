@@ -12,7 +12,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use famp_bus::BrokerStateView;
@@ -224,10 +224,12 @@ fn inspect_tasks(
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
 
+    let mut seen_task_ids = BTreeSet::new();
     let mut rows: Vec<TaskRow> = snapshot
         .records
         .iter()
         .map(|record| {
+            seen_task_ids.insert(record.task_id.clone());
             let opened_at = parse_rfc3339_to_epoch(&record.opened_at).unwrap_or(0);
             let last_send_at = record
                 .last_send_at
@@ -262,52 +264,49 @@ fn inspect_tasks(
         })
         .collect();
 
-    if rows.is_empty() {
-        let mut by_task: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
-        for env in &all_envs {
-            if let Some(task_id) = envelope_task_id(env) {
+    let mut by_task: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
+    for env in &all_envs {
+        if let Some(task_id) = envelope_task_id(env) {
+            if !seen_task_ids.contains(&task_id) {
                 by_task.entry(task_id).or_default().push(env);
             }
         }
-        rows = by_task
-            .into_iter()
-            .map(|(task_id, envelopes)| {
-                let last_transition = envelopes
-                    .iter()
-                    .filter_map(|env| {
-                        env.get("ts")
-                            .and_then(serde_json::Value::as_str)
-                            .and_then(parse_rfc3339_to_epoch)
-                    })
-                    .max()
-                    .unwrap_or(0);
-                let first = envelopes
-                    .first()
-                    .copied()
-                    .unwrap_or(&serde_json::Value::Null);
-                TaskRow {
-                    task_id: task_id.clone(),
-                    state: envelopes
-                        .last()
-                        .copied()
-                        .map_or_else(|| "REQUESTED".to_string(), derive_fsm_state),
-                    peer: first
-                        .get("to")
-                        .or_else(|| first.get("from"))
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("")
-                        .to_string(),
-                    opened_at_unix_seconds: last_transition,
-                    last_send_at_unix_seconds: None,
-                    last_recv_at_unix_seconds: Some(last_transition),
-                    terminal: false,
-                    envelope_count: envelopes.len() as u64,
-                    last_transition_age_seconds: now.saturating_sub(last_transition),
-                    orphan: is_orphan_task_id(&task_id),
-                }
-            })
-            .collect();
     }
+    rows.extend(by_task.into_iter().map(|(task_id, envelopes)| {
+        let last_transition = envelopes
+            .iter()
+            .filter_map(|env| {
+                env.get("ts")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(parse_rfc3339_to_epoch)
+            })
+            .max()
+            .unwrap_or(0);
+        let first = envelopes
+            .first()
+            .copied()
+            .unwrap_or(&serde_json::Value::Null);
+        TaskRow {
+            task_id: task_id.clone(),
+            state: envelopes
+                .last()
+                .copied()
+                .map_or_else(|| "REQUESTED".to_string(), derive_fsm_state),
+            peer: first
+                .get("to")
+                .or_else(|| first.get("from"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            opened_at_unix_seconds: last_transition,
+            last_send_at_unix_seconds: None,
+            last_recv_at_unix_seconds: Some(last_transition),
+            terminal: false,
+            envelope_count: envelopes.len() as u64,
+            last_transition_age_seconds: now.saturating_sub(last_transition),
+            orphan: is_orphan_task_id(&task_id),
+        }
+    }));
 
     rows.sort_by(|a, b| {
         b.orphan.cmp(&a.orphan).then_with(|| {
@@ -330,7 +329,7 @@ fn inspect_messages(
         return InspectMessagesReply::List(MessageListReply { rows: vec![] });
     };
 
-    let entries: Vec<&serde_json::Value> = match req.to.as_deref() {
+    let mut entries: Vec<&serde_json::Value> = match req.to.as_deref() {
         Some(name) => snapshot
             .by_recipient
             .get(name)
@@ -338,6 +337,12 @@ fn inspect_messages(
             .unwrap_or_default(),
         None => snapshot.by_recipient.values().flatten().collect(),
     };
+    entries.sort_by_key(|env| {
+        env.get("ts")
+            .and_then(serde_json::Value::as_str)
+            .and_then(parse_rfc3339_to_epoch)
+            .unwrap_or(0)
+    });
 
     let tail = usize::try_from(req.tail.unwrap_or(50)).unwrap_or(usize::MAX);
     let start = entries.len().saturating_sub(tail);
@@ -381,7 +386,7 @@ fn inspect_messages(
 }
 
 /// Extract task_id from a parsed envelope JSON object.
-/// Order: `causality.ref` -> `body.details.task` -> envelope `id` -> `None`.
+/// Order: `causality.ref` -> `body.details.task` -> new-task envelope `id` -> `None`.
 fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
     if let Some(task_id) = env
         .get("causality")
@@ -390,12 +395,28 @@ fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
     {
         return Some(task_id.to_string());
     }
-    env.get("body")
+    if let Some(task_id) = env
+        .get("body")
         .and_then(|b| b.get("details"))
         .and_then(|d| d.get("task"))
         .and_then(serde_json::Value::as_str)
-        .or_else(|| env.get("id").and_then(serde_json::Value::as_str))
-        .map(str::to_string)
+    {
+        return Some(task_id.to_string());
+    }
+
+    if env
+        .get("body")
+        .and_then(|body| body.get("event"))
+        .and_then(serde_json::Value::as_str)
+        == Some("famp.send.new_task")
+    {
+        return env
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+    }
+
+    None
 }
 
 /// Derive FSM state from envelope fields using canonical class strings
@@ -614,6 +635,58 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_tasks_merges_mailbox_only_orphans_with_taskdir_rows() {
+        let state = empty_state();
+        let snapshot = TaskSnapshot {
+            records: vec![TaskSnapshotRow {
+                task_id: "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7".into(),
+                state: "COMMITTED".into(),
+                peer: "agent:local.bus/known".into(),
+                opened_at: "2026-05-10T18:00:00Z".into(),
+                last_send_at: None,
+                last_recv_at: None,
+                terminal: false,
+            }],
+        };
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert(
+            "known".to_string(),
+            vec![serde_json::json!({
+                "from": "agent:local.bus/alice",
+                "to": "agent:local.bus/known",
+                "class": "notice",
+                "ts": "2026-05-10T18:00:00Z",
+                "body": { "details": { "task": "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7" } }
+            })],
+        );
+        by_recipient.insert(
+            "orphan".to_string(),
+            vec![serde_json::json!({
+                "from": "agent:local.bus/alice",
+                "to": "agent:local.bus/orphan",
+                "class": "notice",
+                "ts": "2026-05-10T18:01:00Z",
+                "body": { "details": { "task": "00000000-0000-0000-0000-000000000000" } }
+            })],
+        );
+        let ctx = BrokerCtx {
+            task_data: Some(snapshot),
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest::default()),
+        );
+        let rows = value["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["orphan"], true);
+        assert_eq!(rows[0]["task_id"], "00000000-0000-0000-0000-000000000000");
+        assert_eq!(rows[1]["orphan"], false);
+    }
+
+    #[test]
     fn dispatch_tasks_orphan_classification_covers_empty_nil_and_valid() {
         let state = empty_state();
         let snapshot = TaskSnapshot {
@@ -759,6 +832,61 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_messages_unfiltered_tail_uses_global_timestamp_order() {
+        let state = empty_state();
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert(
+            "alice".to_string(),
+            vec![serde_json::json!({
+                "id": "old-lexical-first",
+                "from": "agent:local.bus/bob",
+                "to": "agent:local.bus/alice",
+                "class": "deliver",
+                "ts": "2026-05-10T18:00:00Z",
+                "body": { "details": { "task": "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7" } }
+            })],
+        );
+        by_recipient.insert(
+            "zed".to_string(),
+            vec![serde_json::json!({
+                "id": "new-lexical-last",
+                "from": "agent:local.bus/bob",
+                "to": "agent:local.bus/zed",
+                "class": "deliver",
+                "ts": "2026-05-10T18:03:00Z",
+                "body": { "details": { "task": "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7" } }
+            })],
+        );
+        by_recipient.insert(
+            "maria".to_string(),
+            vec![serde_json::json!({
+                "id": "newest-lexical-middle",
+                "from": "agent:local.bus/bob",
+                "to": "agent:local.bus/maria",
+                "class": "deliver",
+                "ts": "2026-05-10T18:05:00Z",
+                "body": { "details": { "task": "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7" } }
+            })],
+        );
+        let ctx = BrokerCtx {
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Messages(famp_inspect_proto::InspectMessagesRequest {
+                to: None,
+                tail: Some(1),
+            }),
+        );
+        let rows = value["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["recipient"], "agent:local.bus/maria");
+        assert_eq!(rows[0]["timestamp"], "2026-05-10T18:05:00Z");
+    }
+
+    #[test]
     fn dispatch_messages_hash_prefix_is_12_hex_chars() {
         let state = empty_state();
         let mut by_recipient = BTreeMap::new();
@@ -787,6 +915,72 @@ mod tests {
         let prefix = value["rows"][0]["body_sha256_prefix"].as_str().unwrap();
         assert_eq!(prefix.len(), 12);
         assert!(prefix.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn envelope_without_task_metadata_has_empty_task_id() {
+        let state = empty_state();
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert(
+            "alice".to_string(),
+            vec![serde_json::json!({
+                "id": "ordinary-envelope-id",
+                "from": "agent:local.bus/bob",
+                "to": "agent:local.bus/alice",
+                "class": "notice",
+                "ts": "2026-05-10T18:00:00Z",
+                "body": { "message": "not a task envelope" }
+            })],
+        );
+        let ctx = BrokerCtx {
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Messages(famp_inspect_proto::InspectMessagesRequest {
+                to: Some("alice".into()),
+                tail: None,
+            }),
+        );
+        assert_eq!(value["rows"][0]["task_id"], "");
+    }
+
+    #[test]
+    fn new_task_audit_log_uses_envelope_id_as_task_id() {
+        let state = empty_state();
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert(
+            "alice".to_string(),
+            vec![serde_json::json!({
+                "id": "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7",
+                "from": "agent:local.bus/bob",
+                "to": "agent:local.bus/alice",
+                "class": "audit_log",
+                "ts": "2026-05-10T18:00:00Z",
+                "body": {
+                    "event": "famp.send.new_task",
+                    "details": { "mode": "new_task", "summary": "hello" }
+                }
+            })],
+        );
+        let ctx = BrokerCtx {
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Messages(famp_inspect_proto::InspectMessagesRequest {
+                to: Some("alice".into()),
+                tail: None,
+            }),
+        );
+        assert_eq!(
+            value["rows"][0]["task_id"],
+            "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7"
+        );
     }
 
     #[test]
