@@ -50,7 +50,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md — Wave 1: Proto enum reply types + famp-inspect-server TaskSnapshot/MessageSnapshot + sync handlers (D-01/D-02 wire commitment)
 - [x] 02-02-PLAN.md — Wave 2: Broker executor spawn_blocking + timeout(500ms) wrapper + lazy taskdir/mailbox pre-read + max_blocking_threads(1024)
-- [ ] 02-03-PLAN.md — Wave 3: famp inspect tasks/messages CLI + integration tests + 1000-cancel test + nextest.toml serialization
+- [x] 02-03-PLAN.md — Wave 3: famp inspect tasks/messages CLI + integration tests + 1000-cancel test + nextest.toml serialization
 
 ### Phase 3: Load Verification & Integration Hardening
 **Goal:** Prove under integration-grade conditions that (a) inspect-call pressure does not starve bus message throughput and (b) the dead-broker diagnosis path actually disambiguates the orphan-socket-holder failure class that produced the v0.9 incident, then ship the docs.
