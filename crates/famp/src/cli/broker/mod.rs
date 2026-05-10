@@ -385,6 +385,8 @@ fn build_inspect_ctx(
         socket_path: sock_path.display().to_string(),
         build_version: env!("CARGO_PKG_VERSION").to_string(),
         mailbox_metadata,
+        task_data: None,
+        message_data: None,
     }
 }
 

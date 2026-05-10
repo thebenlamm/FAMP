@@ -790,8 +790,11 @@ dependencies = [
  "famp-envelope",
  "famp-fsm",
  "famp-inspect-proto",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
+ "time",
 ]
 
 [[package]]
