@@ -1,13 +1,25 @@
 //! INSP-RPC-05 integration test: famp.inspect.* RPC pressure must not starve
-//! concurrent bus message throughput. Validated against Phase 2's spawn_blocking
-//! + 500ms timeout inspect dispatch (Out::InspectRequest), which is designed to
-//! be starvation-resistant by construction; this test commits the public 80%
-//! threshold (STARVATION_THRESHOLD = 0.80, i.e. tolerate up to 20% degradation).
+//! concurrent bus message throughput.
+//!
+//! GAP-03-01 closure: this test applies SATURATED DIRECT inspect RPC pressure
+//! via `famp_inspect_client::connect_and_call(InspectKind::Tasks(_))` from
+//! a tight per-thread loop (no per-call sleep), NOT paced `famp inspect`
+//! subprocess invocations. The direct-RPC variant exercises Phase 03 Plan 03's
+//! non-blocking bounded inspect dispatch (`Out::InspectRequest` now runs in a
+//! `tokio::spawn`'d task that owns a bounded
+//! `MAX_CONCURRENT_INSPECT_REQUESTS` semaphore permit; permit-exhausted
+//! requests are shed immediately with the existing budget_exceeded payload —
+//! see `crates/famp/src/cli/broker/mod.rs`). The public threshold
+//! `STARVATION_THRESHOLD = 0.80` is committed: bus send throughput under
+//! saturated inspect RPC pressure must remain at >= 80% of the inspector-free
+//! baseline.
 #![cfg(unix)]
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use assert_cmd::prelude::*;
+use famp_inspect_client::connect_and_call;
+use famp_inspect_proto::{InspectKind, InspectTasksRequest};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -106,19 +118,29 @@ fn cwd_from(bus: &Bus, sub: &str) -> PathBuf {
 }
 
 /// Per-phase measurement window. Baseline + loaded phases each run for WINDOW.
-const WINDOW: Duration = Duration::from_secs(5);
+///
+/// 8 seconds, up from the pre-GAP-03-01 5s window: under SATURATED DIRECT
+/// inspect RPC pressure the inspector and sender workers contend with the
+/// broker for CPU/IO; a longer window amortizes per-second variance so the
+/// observed loaded/baseline ratio is dominated by steady-state behavior
+/// rather than transient scheduling noise near the 0.80 threshold.
+const WINDOW: Duration = Duration::from_secs(8);
 /// Concurrent `famp send --as sender` worker threads driving bus traffic.
 const SENDER_THREADS: usize = 4;
-/// Concurrent `famp inspect tasks` worker threads applying inspect-side load.
+/// Concurrent direct `InspectKind::Tasks` RPC worker threads applying
+/// saturated inspect pressure (GAP-03-01). Each worker runs a current-thread
+/// tokio runtime and tight-loops `famp_inspect_client::connect_and_call`.
 const INSPECTOR_THREADS: usize = 8;
 /// Minimum acceptable ratio of loaded-throughput / baseline-throughput.
-/// 0.80 = inspect calls may reduce bus throughput by at most 20%.
+/// 0.80 = inspect calls may reduce bus throughput by at most 20%. Locked
+/// public commitment — do not relax (see VERIFICATION.md GAP-03-01 and
+/// the testing note "STARVATION_THRESHOLD = 0.80 for INSP-RPC-05").
 const STARVATION_THRESHOLD: f64 = 0.80;
 
 /// Run SENDER_THREADS workers each looping `famp send --as sender --to receiver`
-/// for the duration of WINDOW, while INSPECTOR_THREADS workers concurrently loop
-/// `famp inspect tasks`. Returns the count of successful `famp send` invocations
-/// observed during WINDOW.
+/// for the duration of WINDOW, while INSPECTOR_THREADS workers concurrently
+/// drive saturated direct `InspectKind::Tasks` RPC calls (no pacing). Returns
+/// the count of successful `famp send` invocations observed during WINDOW.
 ///
 /// `sender_cwd` is passed so the send subprocesses inherit the same cwd as the
 /// `famp register sender` long-lived process (mirrors inspect_tasks.rs line 144).
@@ -166,22 +188,31 @@ fn measure_send_throughput(bus: &Bus, sender_cwd: &Path, inspector_threads: usiz
         }));
     }
 
-    // Inspector workers: drive `famp inspect tasks` to apply concurrent inspect pressure.
+    // Inspector workers: GAP-03-01 — drive saturated direct
+    // `InspectKind::Tasks` RPC pressure via `famp_inspect_client::
+    // connect_and_call`. NO per-call sleep: each worker tight-loops
+    // a new UDS connection + Hello + Inspect frame for the duration
+    // of WINDOW so the broker's non-blocking inspect dispatch path is
+    // exercised at saturating rate.
     for _ in 0..inspector_threads {
         let sock = bus.sock().to_path_buf();
-        let home = bus.tmp.path().to_path_buf();
         handles.push(std::thread::spawn(move || {
-            while Instant::now() < deadline {
-                let _ = Command::cargo_bin("famp")
-                    .unwrap()
-                    .env("FAMP_BUS_SOCKET", &sock)
-                    .env("HOME", &home)
-                    .args(["inspect", "tasks"])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .output();
-                std::thread::sleep(Duration::from_millis(1500));
-            }
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+                .expect("build current-thread tokio runtime");
+            rt.block_on(async move {
+                while Instant::now() < deadline {
+                    // Drop the result; we measure SEND throughput, not
+                    // inspect outcome. Each call independently
+                    // connects, performs Hello, sends the Inspect
+                    // frame, and decodes the reply.
+                    let _ =
+                        connect_and_call(&sock, InspectKind::Tasks(InspectTasksRequest::default()))
+                            .await;
+                }
+            });
         }));
     }
 
@@ -220,15 +251,19 @@ fn inspect_load_does_not_starve_bus_messages() {
         "baseline throughput must be non-zero; got {baseline}"
     );
 
-    // Phase B: throughput under saturating inspect-call load.
+    // Phase B: throughput under SATURATED DIRECT inspect RPC pressure.
+    // INSPECTOR_THREADS workers tight-loop
+    // `famp_inspect_client::connect_and_call(InspectKind::Tasks(_))` with
+    // no pacing for the full WINDOW. This is the stronger no-starvation
+    // property required by INSP-RPC-05 / GAP-03-01.
     let loaded = measure_scenario(INSPECTOR_THREADS);
 
     let ratio = loaded as f64 / baseline as f64;
     println!("inspect_load_test baseline={baseline} loaded={loaded} ratio={ratio:.2}");
     assert!(
         ratio >= STARVATION_THRESHOLD,
-        "Bus message throughput under inspect load ({loaded}) degraded below \
-         {:.0}% of baseline ({baseline}): ratio={ratio:.2}",
+        "Bus message throughput under saturated direct inspect RPC load ({loaded}) \
+         degraded below {:.0}% of baseline ({baseline}): ratio={ratio:.2}",
         STARVATION_THRESHOLD * 100.0
     );
 }
