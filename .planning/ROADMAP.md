@@ -16,7 +16,7 @@
 
 - [x] **Phase 1: Broker Diagnosis & Identity Inspection** — completed 2026-05-10 — `famp.inspect.*` namespace mounted on broker UDS, all three crates (`-proto`, `-client`, `-server`) shipped, `famp inspect broker` and `famp inspect identities` end-to-end (RPC + CLI). Closes the orphan-listener incident class in one merge.
 - [ ] **Phase 2: Task FSM & Message Visibility** — `famp inspect tasks` and `famp inspect messages` end-to-end (RPC + CLI). I/O-bound handlers (taskdir + mailbox file walks) gain the 500 ms latency budget and cancellable-handler discipline that the in-memory Phase 1 handlers don't need.
-- [ ] **Phase 3: Load Verification & Integration Hardening** — load test proving inspect-call traffic cannot starve bus message throughput (INSP-RPC-05); end-to-end orphan-listener scenario re-exercises Phase 1's `inspect broker` under integration conditions; doc + migration notes.
+- [x] **Phase 3: Load Verification & Integration Hardening** — load test proving inspect-call traffic cannot starve bus message throughput (INSP-RPC-05); end-to-end orphan-listener scenario re-exercises Phase 1's `inspect broker` under integration conditions; doc + migration notes. **Complete 2026-05-11** (GAP-03-01 resolved; saturated direct-RPC ratio 0.82-1.01 vs prior 0.17).
 
 ## Phase Details
 
@@ -217,7 +217,7 @@ Rough ordering inside v1.0+ (not committed):
 | 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 4/4 | Complete | 2026-05-04 |
 | 1. Broker Diagnosis & Identity Inspection | v0.10 | 4/4 | Complete | 2026-05-10 |
 | 2. Task FSM & Message Visibility | v0.10 | 0/3 | Ready to execute | — |
-| 3. Load Verification & Integration Hardening | v0.10 | 2/3 | Gap closure planned | — |
+| 3. Load Verification & Integration Hardening | v0.10 | 3/3 | Complete | 2026-05-11 |
 
 ## Backlog
 
