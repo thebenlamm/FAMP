@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 use famp_bus::{Broker, BrokerInput, BusReply, ClientId, MailboxName, Out, SessionRow};
 use famp_inspect_server::{BrokerCtx, MailboxMeta};
 use tokio::net::UnixListener;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Semaphore};
 
 use crate::bus_client;
 use crate::cli::error::CliError;
@@ -58,6 +58,19 @@ const BROKER_INBOX_CAPACITY: usize = 1024;
 /// Per-client reply channel capacity. 64 lets a slow client absorb
 /// burst replies (channel fan-out + drain) without blocking the broker.
 const REPLY_CHANNEL_CAPACITY: usize = 64;
+/// GAP-03-01: bound on the number of in-flight inspect dispatch tasks the
+/// broker will run concurrently. Inspect snapshot work is moved off the
+/// main `execute_outs` path into a `tokio::spawn`'d task that holds an
+/// owned semaphore permit; when no permit is available the request is
+/// rejected immediately with the existing budget-exceeded payload so
+/// saturated inspect floods cannot create an unbounded queue of
+/// blocking-pool tasks AND saturated inspect FS reads (taskdir walk +
+/// mailbox JSONL pre-read) do not starve concurrent sender mailbox
+/// writes. Sized intentionally LOW: the broker chooses to shed inspect
+/// load (returning the existing `budget_exceeded` payload) rather than
+/// degrade live bus throughput. Inspector callers re-issue trivially
+/// since `connect_and_call` is one round-trip.
+const MAX_CONCURRENT_INSPECT_REQUESTS: usize = 1;
 
 /// Args for `famp broker`.
 #[derive(clap::Args, Debug, Clone)]
@@ -193,6 +206,10 @@ pub async fn run_on_listener(
 
     let (broker_tx, mut broker_rx) = mpsc::channel::<BrokerMsg>(BROKER_INBOX_CAPACITY);
     let mut reply_senders: HashMap<ClientId, mpsc::Sender<BusReply>> = HashMap::new();
+    // GAP-03-01: bounded concurrency for non-blocking inspect dispatch.
+    // Shared across all `Out::InspectRequest` handlers; each in-flight
+    // inspect snapshot task holds one owned permit until reply is sent.
+    let inspect_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_INSPECT_REQUESTS));
     // WR-07: SessionRow data now flows through Out::SessionEnded
     // (broker snapshots `joined` before clearing state). The previous
     // executor-side `session_meta` mirror is gone.
@@ -257,6 +274,7 @@ pub async fn run_on_listener(
                     &broker,
                     sock_path,
                     bus_dir,
+                    &inspect_semaphore,
                 )
                 .await;
             }
@@ -270,6 +288,7 @@ pub async fn run_on_listener(
                     &broker,
                     sock_path,
                     bus_dir,
+                    &inspect_semaphore,
                 )
                 .await;
             }
@@ -303,6 +322,7 @@ async fn execute_outs(
     broker: &Broker<BrokerEnvHandle>,
     sock_path: &Path,
     bus_dir: &Path,
+    inspect_semaphore: &Arc<Semaphore>,
 ) {
     for out in outs {
         match out {
@@ -341,8 +361,46 @@ async fn execute_outs(
                 reply_senders.remove(&id);
             }
             Out::InspectRequest { client, kind } => {
+                // GAP-03-01: dispatch inspect snapshot work off the main
+                // `execute_outs` loop so saturated direct inspect RPC
+                // pressure does not starve ordinary bus send/receive
+                // traffic. Capture an immutable snapshot here (broker
+                // state/cursor offsets are NOT Send; the broker handle
+                // itself is borrowed through this fn) and hand it to a
+                // spawned task that owns a bounded inspect permit.
+
+                // Clone the requesting client's reply sender BEFORE
+                // any snapshot work. The spawned task must not touch
+                // the broker's reply_senders map (owned by this loop).
+                let Some(reply_tx) = reply_senders.get(&client).cloned() else {
+                    // Client disconnected between request and dispatch;
+                    // nothing to reply to.
+                    continue;
+                };
+
+                // GAP-03-01: try to acquire a permit FIRST so the
+                // fast-shed path skips the broker.view()/cursor walk
+                // when we are already at the inspect concurrency cap.
+                // try_acquire_owned never awaits.
+                let permit = match Arc::clone(inspect_semaphore).try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        // No permit; reply with budget_exceeded
+                        // (elapsed_ms=0 since no walk/dispatch was
+                        // attempted). Spawn the reply send so the main
+                        // execute_outs loop is not blocked on a
+                        // possibly-full per-client reply channel under
+                        // saturated inspect pressure.
+                        tokio::spawn(async move {
+                            let payload = inspect_budget_exceeded_payload(0);
+                            let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
+                        });
+                        continue;
+                    }
+                };
+
                 // CRITICAL (planner note): broker.cursor_offset is not Send.
-                // Capture cursors + state snapshot + path BEFORE spawn_blocking.
+                // Capture cursors + state snapshot + path BEFORE spawn.
                 let state_snapshot = broker.view();
                 let cursor_offsets: BTreeMap<String, u64> = state_snapshot
                     .clients
@@ -356,42 +414,48 @@ async fn execute_outs(
                 let sock_path_owned = sock_path.to_path_buf();
                 let kind_for_blocking = kind.clone();
 
-                // D-03/D-05: 500ms budget wraps the ENTIRE walk + dispatch.
-                let started = Instant::now();
-                let result = tokio::time::timeout(
-                    Duration::from_millis(500),
-                    tokio::task::spawn_blocking(move || {
-                        let ctx = build_inspect_ctx_blocking(
-                            &state_snapshot,
-                            &sock_path_owned,
-                            &bus_dir_owned,
-                            &cursor_offsets,
-                            &kind_for_blocking,
-                        );
-                        famp_inspect_server::dispatch(&state_snapshot, &ctx, &kind_for_blocking)
-                    }),
-                )
-                .await;
+                // Permit acquired; spawn the snapshot + dispatch + reply
+                // pipeline. The outer loop returns immediately to
+                // processing other broker outputs.
+                tokio::spawn(async move {
+                    // The permit must outlive the spawned work; binding
+                    // it to a local keeps it alive for the task body.
+                    let _permit = permit;
+                    // D-03/D-05: 500ms budget wraps the ENTIRE walk + dispatch.
+                    let started = Instant::now();
+                    let result = tokio::time::timeout(
+                        Duration::from_millis(500),
+                        tokio::task::spawn_blocking(move || {
+                            let ctx = build_inspect_ctx_blocking(
+                                &state_snapshot,
+                                &sock_path_owned,
+                                &bus_dir_owned,
+                                &cursor_offsets,
+                                &kind_for_blocking,
+                            );
+                            famp_inspect_server::dispatch(&state_snapshot, &ctx, &kind_for_blocking)
+                        }),
+                    )
+                    .await;
 
-                let payload = match result {
-                    Ok(Ok(payload)) => payload,
-                    Ok(Err(join_err)) => {
-                        // Blocking thread panicked. Surface as BudgetExceeded
-                        // with elapsed_ms = 0 to keep the codec path single.
-                        eprintln!("inspect spawn_blocking panicked: {join_err}");
-                        inspect_budget_exceeded_payload(0)
-                    }
-                    Err(_elapsed) => {
-                        // The blocking thread may continue briefly, but all
-                        // file handles are stack-local and drop on thread exit.
-                        let elapsed_ms = started.elapsed().as_millis() as u64;
-                        inspect_budget_exceeded_payload(elapsed_ms)
-                    }
-                };
+                    let payload = match result {
+                        Ok(Ok(payload)) => payload,
+                        Ok(Err(join_err)) => {
+                            // Blocking thread panicked. Surface as BudgetExceeded
+                            // with elapsed_ms = 0 to keep the codec path single.
+                            eprintln!("inspect spawn_blocking panicked: {join_err}");
+                            inspect_budget_exceeded_payload(0)
+                        }
+                        Err(_elapsed) => {
+                            // The blocking thread may continue briefly, but all
+                            // file handles are stack-local and drop on thread exit.
+                            let elapsed_ms = started.elapsed().as_millis() as u64;
+                            inspect_budget_exceeded_payload(elapsed_ms)
+                        }
+                    };
 
-                if let Some(tx) = reply_senders.get(&client) {
-                    let _ = tx.send(BusReply::InspectOk { payload }).await;
-                }
+                    let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
+                });
             }
             Out::SessionEnded { name, pid, joined } => {
                 // WR-07: append the diagnostic SessionRow with the
