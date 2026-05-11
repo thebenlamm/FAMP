@@ -63,7 +63,7 @@ Plans:
 **Plans:** 2 plans
 Plans:
 - [x] 03-01-PLAN.md — Wave 1: INSP-RPC-05 load test (`inspect_load_test.rs`) + nextest.toml `inspect-subprocess` filter extension
-- [ ] 03-02-PLAN.md — Wave 1 (parallel): v0.9-incident-class label on existing orphan E2E test + `docs/MIGRATION-v0.9-to-v0.10.md` migration doc
+- [x] 03-02-PLAN.md — Wave 1 (parallel): v0.9-incident-class label on existing orphan E2E test + `docs/MIGRATION-v0.9-to-v0.10.md` migration doc
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
