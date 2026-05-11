@@ -246,4 +246,77 @@ mod tests {
         .expect_err("budget must fail");
         assert!(matches!(err, CliError::Exit(1)));
     }
+
+    #[test]
+    fn orphan_column_value_renders_true_for_orphan_row() {
+        // An orphan row (nil UUID) must render "true" in the ORPHAN column,
+        // not just expose the ORPHAN header. Checks render_list produces the
+        // literal string "true" in addition to the column header.
+        let list = TaskListReply {
+            rows: vec![row(
+                "00000000-0000-0000-0000-000000000000",
+                "REQUESTED",
+                true,
+            )],
+        };
+        let rendered = render_list(&list, false);
+        // The ORPHAN column header must be present.
+        assert!(
+            rendered.contains("ORPHAN"),
+            "ORPHAN header missing: {rendered}"
+        );
+        // The boolean value "true" must appear as a cell in the data row.
+        // Split off the header line so we only search data rows.
+        let data_rows: Vec<&str> = rendered.lines().skip(1).collect();
+        assert!(
+            !data_rows.is_empty(),
+            "expected at least one data row: {rendered}"
+        );
+        let data_section = data_rows.join("\n");
+        assert!(
+            data_section.contains("true"),
+            "orphan column value 'true' missing from data rows: {rendered}"
+        );
+    }
+
+    #[test]
+    fn orphans_only_filter_excludes_non_orphan_rows() {
+        // render_list(&list, true) must show header + 1 orphan row only.
+        // render_list(&list, false) must show header + both rows.
+        let list = TaskListReply {
+            rows: vec![
+                row("019d9ba2-2d30-7ae2-ba77-9e55863ac7f7", "COMMITTED", false),
+                row("00000000-0000-0000-0000-000000000000", "REQUESTED", true),
+            ],
+        };
+
+        let unfiltered = render_list(&list, false);
+        let filtered = render_list(&list, true);
+
+        // Unfiltered: header + 2 data rows = 3 lines.
+        assert_eq!(
+            unfiltered.lines().count(),
+            3,
+            "unfiltered should have header + 2 rows: {unfiltered}"
+        );
+
+        // Filtered (orphans_only=true): header + 1 orphan row = 2 lines.
+        assert_eq!(
+            filtered.lines().count(),
+            2,
+            "orphans_only filter should leave header + 1 row: {filtered}"
+        );
+
+        // The orphan task ID must appear in the filtered output.
+        assert!(
+            filtered.contains("00000000-0000-0000-0000-000000000000"),
+            "orphan task ID missing from filtered output: {filtered}"
+        );
+
+        // The non-orphan task ID must NOT appear in the filtered output.
+        assert!(
+            !filtered.contains("019d9ba2-2d30-7ae2-ba77-9e55863ac7f7"),
+            "non-orphan task ID should be excluded by filter: {filtered}"
+        );
+    }
 }

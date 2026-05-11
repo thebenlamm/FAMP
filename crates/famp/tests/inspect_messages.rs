@@ -195,6 +195,10 @@ fn tail_default_is_50() {
 #[test]
 fn tail_3_returns_only_three_rows() {
     let bus = Bus::new();
+    // Explicitly start the broker before register calls so that
+    // `spawn_broker_if_absent` inside `famp register` is a no-op.
+    // This ensures no orphan broker process survives after the test.
+    let mut broker = bus.famp_spawn_broker();
     let sender_cwd = cwd_from(&bus, "sender");
     let receiver_cwd = cwd_from(&bus, "receiver");
     let mut sender = bus.famp_spawn_in(&sender_cwd, &["register", "sender"]);
@@ -240,4 +244,5 @@ fn tail_3_returns_only_three_rows() {
 
     kill_and_wait(&mut sender);
     kill_and_wait(&mut receiver);
+    kill_and_wait(&mut broker);
 }
