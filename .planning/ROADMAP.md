@@ -216,7 +216,7 @@ Rough ordering inside v1.0+ (not committed):
 | 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 4/4 | Complete | 2026-05-04 |
 | 1. Broker Diagnosis & Identity Inspection | v0.10 | 4/4 | Complete | 2026-05-10 |
 | 2. Task FSM & Message Visibility | v0.10 | 0/3 | Ready to execute | — |
-| 3. Load Verification & Integration Hardening | v0.10 | 0/0 | Not started | — |
+| 3. Load Verification & Integration Hardening | v0.10 | 2/2 | Verification gaps | — |
 
 ## Backlog
 

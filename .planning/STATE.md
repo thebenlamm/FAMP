@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: Inspector & Observability
-status: verifying
+status: gaps_found
 stopped_at: Completed 02-02-PLAN.md
 last_updated: "2026-05-11T04:55:32.691Z"
 last_activity: 2026-05-11
 progress:
   total_phases: 9
-  completed_phases: 3
+  completed_phases: 2
   total_plans: 9
   completed_plans: 9
   percent: 100
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active mile
 
 Phase: 03 (load-verification-integration-hardening) — EXECUTING
 Plan: 2 of 2
-Status: Phase complete — ready for verification
+Status: Verification gaps found — GAP-03-01 saturated inspect RPC load not proven
 Last activity: 2026-05-11
 
 ## v0.10 Phase Map
@@ -74,7 +74,8 @@ Last activity: 2026-05-11
 
 ## Issues / Blockers
 
-- None v0.10-blocking. v1.0-track items (Gate A: Ben symmetric cross-machine; Gate B: 2nd implementer) are independent of v0.10 — v0.10 ships on its own track regardless.
+- **GAP-03-01 (Phase 3 verification):** Saturated direct inspect RPC load is not proven. The committed `inspect_load_test` passes with paced concurrent `famp inspect tasks` subprocesses, but a stricter direct `famp_inspect_client::connect_and_call(InspectKind::Tasks)` saturation variant observed `baseline=1582 loaded=262 ratio=0.17`, below the 0.80 threshold. Resolve by narrowing the public claim to paced concurrent inspect load or improving broker/inspect scheduling until direct saturated RPC pressure preserves >=80% throughput.
+- v1.0-track items (Gate A: Ben symmetric cross-machine; Gate B: 2nd implementer) are independent of v0.10 — v0.10 ships on its own track regardless.
 
 ## Deferred Items
 
