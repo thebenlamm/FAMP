@@ -175,6 +175,13 @@ fn inspect_broker_stale_socket_exit_1() {
     );
 }
 
+// v0.9 incident class: non-FAMP process holds bus.sock; reproduces the
+// 2026-04-28 orphan-socket failure that blocked the bus. This is the
+// end-to-end integration scenario for Phase 3 success criterion #2 --
+// it re-exercises INSP-BROKER-02/03/04 + INSP-CLI-04 via the full CLI
+// binary path (not just unit code). The non-FAMP UnixListener simulates
+// the production failure mode: a process binds bus.sock but does not
+// speak the FAMP protocol, so connect() succeeds but Hello is rejected.
 #[test]
 fn inspect_broker_orphan_holder_exit_1() {
     let bus = Bus::new();
