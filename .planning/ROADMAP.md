@@ -60,7 +60,10 @@ Plans:
   1. A sustained load test runs concurrent `famp.inspect.*` calls at saturating rate alongside live bus message traffic; bus message throughput under inspect pressure stays within an explicit, committed percentage of unloaded throughput (target threshold set during plan-phase). No starvation.
   2. An end-to-end orphan-listener scenario test reproduces the v0.9 incident class (a non-FAMP process holds `~/.famp/bus.sock`); `famp inspect broker` correctly reports state `ORPHAN_HOLDER` with the holder PID in the evidence row, exit code 1, diagnosis on stdout — verifying INSP-BROKER-02/03/04 + INSP-CLI-04 ride the full integration path, not just unit tests.
   3. `docs/MIGRATION-v0.9-to-v0.10.md` (or the v0.10 release-notes section of the README) names the new `famp inspect` surface, the four down-state values from `famp inspect broker`, the `--json` shape commitment, and explicitly calls out the read-only discipline + the deferred items (no `--body`, no doctor, no SPA, no double-print counter).
-**Plans:** TBD
+**Plans:** 2 plans
+Plans:
+- [x] 03-01-PLAN.md — Wave 1: INSP-RPC-05 load test (`inspect_load_test.rs`) + nextest.toml `inspect-subprocess` filter extension
+- [ ] 03-02-PLAN.md — Wave 1 (parallel): v0.9-incident-class label on existing orphan E2E test + `docs/MIGRATION-v0.9-to-v0.10.md` migration doc
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
