@@ -100,15 +100,15 @@ pub struct InspectTasksRequest {
 /// **Wire commitment (D-02):** the serde tag form `tag = "kind",
 /// rename_all = "snake_case"` is locked as v0.10-era protocol. Do not
 /// change tag, content discriminator, or rename style without a
-/// deliberate FAMP_SPEC_VERSION bump - vector-pack reproducibility
+/// deliberate `FAMP_SPEC_VERSION` bump - vector-pack reproducibility
 /// when Gate B fires depends on this.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InspectTasksReply {
-    /// INSP-TASK-01/02: list of tasks grouped by task_id, with orphan
+    /// INSP-TASK-01/02: list of tasks grouped by `task_id`, with orphan
     /// rows surfaced via `TaskRow::orphan`.
     List(TaskListReply),
-    /// INSP-TASK-03: envelope chain summary for a specific task_id.
+    /// INSP-TASK-03: envelope chain summary for a specific `task_id`.
     Detail(TaskDetailReply),
     /// INSP-TASK-04: detail plus per-envelope canonical JCS bytes.
     DetailFull(TaskDetailFullReply),
@@ -125,7 +125,7 @@ pub struct TaskListReply {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskRow {
-    /// `task_id` as stored in the TaskRecord. It is a String rather than
+    /// `task_id` as stored in the `TaskRecord`. It is a String rather than
     /// a UUID because orphan rows can use the nil UUID or an invalid/empty id.
     pub task_id: String,
     /// One of `REQUESTED | COMMITTED | COMPLETED | FAILED | CANCELLED`.
@@ -138,7 +138,7 @@ pub struct TaskRow {
     pub last_recv_at_unix_seconds: Option<u64>,
     pub terminal: bool,
     pub envelope_count: u64,
-    /// Seconds since the most recent of opened/last_send/last_recv.
+    /// Seconds since the most recent of `opened/last_send/last_recv`.
     pub last_transition_age_seconds: u64,
     /// True when `task_id` is nil, empty, or not parseable as a UUID.
     pub orphan: bool,
@@ -191,10 +191,7 @@ pub fn is_orphan_task_id(task_id: &str) -> bool {
     if task_id.is_empty() {
         return true;
     }
-    match uuid::Uuid::parse_str(task_id) {
-        Ok(u) => u.is_nil(),
-        Err(_) => true,
-    }
+    uuid::Uuid::parse_str(task_id).map_or(true, |u| u.is_nil())
 }
 
 // ===== Messages reply (Phase 2 - D-01/D-02 wire commitment) =====
@@ -409,7 +406,7 @@ mod codec_roundtrip {
 // output cannot be used to verify a federation peer's signature.
 #[cfg(test)]
 #[test]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 fn canonicalize_roundtrip() {
     const VECTOR_0_HEX: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
