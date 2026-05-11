@@ -64,10 +64,13 @@ const REPLY_CHANNEL_CAPACITY: usize = 64;
 /// owned semaphore permit; when no permit is available the request is
 /// rejected immediately with the existing budget-exceeded payload so
 /// saturated inspect floods cannot create an unbounded queue of
-/// blocking-pool tasks. Sized above the load test inspector count
-/// (`INSPECTOR_THREADS = 8`) and low enough to protect the
-/// `spawn_blocking` pool.
-const MAX_CONCURRENT_INSPECT_REQUESTS: usize = 16;
+/// blocking-pool tasks AND saturated inspect FS reads (taskdir walk +
+/// mailbox JSONL pre-read) do not starve concurrent sender mailbox
+/// writes. Sized intentionally LOW: the broker chooses to shed inspect
+/// load (returning the existing `budget_exceeded` payload) rather than
+/// degrade live bus throughput. Inspector callers re-issue trivially
+/// since `connect_and_call` is one round-trip.
+const MAX_CONCURRENT_INSPECT_REQUESTS: usize = 1;
 
 /// Args for `famp broker`.
 #[derive(clap::Args, Debug, Clone)]
@@ -365,7 +368,37 @@ async fn execute_outs(
                 // state/cursor offsets are NOT Send; the broker handle
                 // itself is borrowed through this fn) and hand it to a
                 // spawned task that owns a bounded inspect permit.
-                //
+
+                // Clone the requesting client's reply sender BEFORE
+                // any snapshot work. The spawned task must not touch
+                // the broker's reply_senders map (owned by this loop).
+                let Some(reply_tx) = reply_senders.get(&client).cloned() else {
+                    // Client disconnected between request and dispatch;
+                    // nothing to reply to.
+                    continue;
+                };
+
+                // GAP-03-01: try to acquire a permit FIRST so the
+                // fast-shed path skips the broker.view()/cursor walk
+                // when we are already at the inspect concurrency cap.
+                // try_acquire_owned never awaits.
+                let permit = match Arc::clone(inspect_semaphore).try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        // No permit; reply with budget_exceeded
+                        // (elapsed_ms=0 since no walk/dispatch was
+                        // attempted). Spawn the reply send so the main
+                        // execute_outs loop is not blocked on a
+                        // possibly-full per-client reply channel under
+                        // saturated inspect pressure.
+                        tokio::spawn(async move {
+                            let payload = inspect_budget_exceeded_payload(0);
+                            let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
+                        });
+                        continue;
+                    }
+                };
+
                 // CRITICAL (planner note): broker.cursor_offset is not Send.
                 // Capture cursors + state snapshot + path BEFORE spawn.
                 let state_snapshot = broker.view();
@@ -380,29 +413,6 @@ async fn execute_outs(
                 let bus_dir_owned = bus_dir.to_path_buf();
                 let sock_path_owned = sock_path.to_path_buf();
                 let kind_for_blocking = kind.clone();
-
-                // Clone the requesting client's reply sender BEFORE
-                // spawning. The spawned task must not touch the broker's
-                // reply_senders map (owned by this loop).
-                let Some(reply_tx) = reply_senders.get(&client).cloned() else {
-                    // Client disconnected between request and dispatch;
-                    // nothing to reply to.
-                    continue;
-                };
-
-                // Try to acquire an owned inspect permit WITHOUT awaiting.
-                // If the cap is full, surface budget_exceeded immediately
-                // so floods cannot queue unbounded spawned tasks.
-                let permit = match Arc::clone(inspect_semaphore).try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // No permit; reply with budget_exceeded (elapsed_ms=0
-                        // since no walk/dispatch was attempted) and continue.
-                        let payload = inspect_budget_exceeded_payload(0);
-                        let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
-                        continue;
-                    }
-                };
 
                 // Permit acquired; spawn the snapshot + dispatch + reply
                 // pipeline. The outer loop returns immediately to
