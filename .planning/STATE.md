@@ -2,36 +2,36 @@
 gsd_state_version: 1.0
 milestone: v0.10
 milestone_name: Inspector & Observability
-status: ready_to_plan
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-05-11T11:40:22.535Z"
-last_activity: 2026-05-11 -- Phase 03 execution started
+status: Awaiting next milestone
+stopped_at: Phase 03 UAT passed — v0.10 milestone complete, ready for /gsd-complete-milestone
+last_updated: "2026-05-11T13:23:45.946Z"
+last_activity: 2026-05-11 — Milestone v0.10 completed and archived
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 10
-  completed_plans: 9
-  percent: 33
+  completed_plans: 10
+  percent: 100
 ---
 
-# STATE: FAMP — v0.10 Inspector & Observability (active)
+# STATE: FAMP — v0.10 Inspector & Observability (complete)
 
-**Last Updated:** 2026-05-10 — v0.10 Inspector & Observability roadmap recut after matt-essentialist + zed-velocity-engineer review (3 phases, 26/26 v1 reqs mapped). Phase 1: Broker Diagnosis & Identity Inspection (16 reqs — `famp inspect broker` + `famp inspect identities` end-to-end RPC + CLI; all three crates ship; closes orphan-listener incident class in one merge). Phase 2: Task FSM & Message Visibility (9 reqs — `famp inspect tasks` + `famp inspect messages` end-to-end; I/O-bound handlers gain the budget + cancel discipline that pure in-memory Phase 1 handlers don't need). Phase 3: Load Verification & Integration Hardening (1 req owned: INSP-RPC-05 no-starvation load test + orphan-listener E2E re-exercises Phase 1's `inspect broker` + docs).
+**Last Updated:** 2026-05-11 — v0.10 milestone complete. All 3 phases passed UAT. Phase 3 UAT: 5/5 tests passed (no-starvation load test ratio 0.95, all 8 inspect_broker tests pass, MAX_CONCURRENT_INSPECT_REQUESTS=1 fast-shed visible, migration guide complete, orphan-holder incident-class label present). Phase 2 completed 2026-05-10 (INSP-TASK-01..04, INSP-MSG-01..03, INSP-RPC-03, INSP-RPC-04 all validated). Phase 1 completed 2026-05-10 (16 reqs). 26/26 v1 requirements mapped and delivered.
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v0.10 Inspector & Observability is the active milestone, between v0.9 (shipped 2026-05-04) and the trigger-gated v1.0 Federation Profile. v0.10 is **independent** of the v1.0 federation gates per [`docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`](../docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md): **Gate A** (Ben's sustained symmetric cross-machine FAMP use) unlocks the `famp-gateway` plan and `v1.0.0` tag; **Gate B** (a 2nd implementer commits to interop) unlocks the conformance vector pack at whatever release tag is current. Both gates are event-driven; the 4-week clock has been retired. v0.10 ships on its own track and does not depend on either gate firing.
+See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (shipped 2026-05-11). All three phases done: read-only `famp inspect` surface (broker, identities, tasks, messages) on the v0.9 broker UDS; GAP-03-01 closed; no-starvation under saturated direct-RPC pressure; operator migration guide shipped. Next milestone: v1.0 Federation Profile (trigger-gated: Gate A = Ben's sustained symmetric cross-machine use; Gate B = 2nd implementer interop).
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.10 makes that substrate's runtime state legible to the operator running it.
 
-**Current focus:** Phase 03 — load-verification-integration-hardening
+**Current focus:** v0.10 archived — ready for next milestone planning
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-05-11
+Phase: Milestone v0.10 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-05-11 — Milestone v0.10 completed and archived
 
 ## v0.10 Phase Map
 
@@ -74,7 +74,7 @@ Last activity: 2026-05-11
 
 ## Issues / Blockers
 
-- **GAP-03-01 (Phase 3 verification):** Saturated direct inspect RPC load is not proven. The committed `inspect_load_test` passes with paced concurrent `famp inspect tasks` subprocesses, but a stricter direct `famp_inspect_client::connect_and_call(InspectKind::Tasks)` saturation variant observed `baseline=1582 loaded=262 ratio=0.17`, below the 0.80 threshold. Planned closure: `03-03-PLAN.md` improves broker inspect scheduling and converts the load test to saturated direct RPC pressure until throughput preserves >=80%.
+- **GAP-03-01: CLOSED 2026-05-11** — `03-03-PLAN.md` shipped non-blocking bounded inspect dispatch (MAX_CONCURRENT_INSPECT_REQUESTS=1, Semaphore fast-shed) and saturated direct-RPC load test; observed ratio 0.82–1.01 (≥0.80 threshold). Prior 0.17 was paced-CLI evidence; now backed by saturated direct `InspectKind::Tasks` RPC pressure.
 - v1.0-track items (Gate A: Ben symmetric cross-machine; Gate B: 2nd implementer) are independent of v0.10 — v0.10 ships on its own track regardless.
 
 ## Deferred Items
@@ -147,6 +147,10 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 ## Session
 
-**Last session:** 2026-05-10T22:35:46.908Z
-**Stopped At:** Completed 02-02-PLAN.md
+**Last session:** 2026-05-11T12:35:00Z
+**Stopped At:** Phase 03 UAT passed — v0.10 milestone complete, ready for /gsd-complete-milestone
 **Resume File:** None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

@@ -45,6 +45,8 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 Read-only inspector surface on the v0.9 broker, consumed by a `famp inspect` CLI subcommand. Closes the conversation-state opacity gap that produced three recurring v0.9 incidents (orphan socket-holder vs stale PID file, task FSM invisibility, stale-mailbox relays). Independent of the v1.0 federation gate. Detailed requirements: see `.planning/REQUIREMENTS.md` v0.10 section.
 
 - [x] Phase 1: Broker Diagnosis & Identity Inspection — *Validated 2026-05-10. `famp inspect broker` and `famp inspect identities` ship end-to-end over the v0.9 broker UDS; all three inspector crates are present; read-only, no-I/O proto, and dependency-version gates pass; `just test` passed 601/601 with 2 skipped.*
+- [x] Phase 2: Task FSM & Message Visibility — *Validated 2026-05-10. `famp inspect tasks` and `famp inspect messages` end-to-end; 500ms latency budget (INSP-RPC-03) and cancellable-handler discipline (INSP-RPC-04) enforced; 1000-concurrent-cancel test passing. INSP-TASK-01..04, INSP-MSG-01..03, INSP-RPC-03, INSP-RPC-04 satisfied.*
+- [x] Phase 3: Load Verification & Integration Hardening — *Validated 2026-05-11. GAP-03-01 closed: non-blocking bounded inspect dispatch (MAX_CONCURRENT_INSPECT_REQUESTS=1, Semaphore fast-shed) + saturated direct-RPC load test; ratio 0.82–1.01 vs prior 0.17; STARVATION_THRESHOLD=0.80 locked. Migration guide ships at `docs/MIGRATION-v0.9-to-v0.10.md`. INSP-RPC-05 satisfied.*
 
 ### Deferred — Federation Profile (v1.0+)
 
@@ -286,4 +288,4 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. 8-tool MCP surface stable across v0.8 → v0.9 → v1.0.
 
 ---
-*Last updated: 2026-05-09 — v0.10 Inspector & Observability opened. Single-phase milestone, independent of v1.0 federation gate (which has been re-framed to event-driven dual gates per `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`). v0.9 Local-First Bus shipped 2026-05-04 (5 phases, 35 plans, 85/85 reqs, audit `passed`, 193 commits over 8 days). v0.8 shipped 2026-04-26; v0.7 shipped 2026-04-14; v0.6 + v0.5.1 shipped 2026-04-13.*
+*Last updated: 2026-05-11 — v0.10 Inspector & Observability complete (3/3 phases, 10/10 plans, 26/26 requirements). `famp inspect broker/identities/tasks/messages` ships on the v0.9 broker UDS with read-only discipline, 500ms budget, cancellable handlers, and non-blocking bounded dispatch (MAX_CONCURRENT_INSPECT_REQUESTS=1). GAP-03-01 closed; saturated direct-RPC no-starvation proof delivered. Operator migration guide at `docs/MIGRATION-v0.9-to-v0.10.md`.*

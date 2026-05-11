@@ -1,5 +1,27 @@
 # Milestones
 
+## v0.10 Inspector & Observability (Shipped: 2026-05-11)
+
+**Phases completed:** 3 phases, 10 plans, 23 tasks
+
+**Key accomplishments:**
+
+- Inspector proto types, bus inspect wire variants, register cwd/listen state, and Wave-0 test scaffolds for later broker/identity inspection waves
+- Reusable inspector server/client crates and read-only broker state snapshots for the later broker and CLI wiring waves
+- Inspect RPC now leaves the pure broker actor as a sentinel, is dispatched by the broker executor with mailbox metadata, and exposes Phase 1 `famp inspect` help for broker and identities only
+- Final user-visible inspector rendering, integration coverage, and CI invariant gates for Phase 1
+- Task and message inspector RPC wire types plus tokio-free sync handlers for task snapshots and mailbox metadata.
+- Broker inspect calls now run taskdir/mailbox I/O and dispatch inside a 500 ms timeout-wrapped blocking task.
+- `famp inspect tasks` and `famp inspect messages` now expose task/message visibility end-to-end with serialized integration coverage and cancel-pressure verification.
+- Operator-facing v0.10 inspector migration guide plus explicit v0.9 orphan-holder incident labeling
+- GAP-03-01 closed: non-blocking bounded inspect dispatch in the broker (MAX_CONCURRENT_INSPECT_REQUESTS = 1, fast-shed budget_exceeded) plus a strengthened load test that drives saturated direct InspectKind::Tasks RPC pressure via famp_inspect_client::connect_and_call; loaded/baseline send throughput ratio holds >= 0.80 against the previously-observed 0.17 floor.
+
+**Audit:** `passed` (26/26 reqs, 3/3 phases verified, 5/5 flows wired) — see [milestones/v0.10-MILESTONE-AUDIT.md](milestones/v0.10-MILESTONE-AUDIT.md).
+
+**Known deferred items at close:** 40 inherited/non-v0.10 items (38 orphan quick_task slugs + 2 dormant seeds); no v0.10 UAT or verification gaps.
+
+---
+
 ## v0.9 Local-First Bus (Shipped: 2026-05-04)
 
 **Phases completed:** 5 phases (1 + 2 + 3 + 4 + close-fix Phase 5), 35 plans
@@ -49,7 +71,6 @@
 **Known deferred items at close:** 23 (22 quick_task index drift + 1 stale SEED-001 marker; see STATE.md `## Deferred Items`).
 
 ---
-
 
 ## v0.8 Usable from Claude Code (Shipped: 2026-04-15)
 
