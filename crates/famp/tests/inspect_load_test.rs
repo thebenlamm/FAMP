@@ -166,7 +166,7 @@ fn measure_send_throughput(bus: &Bus, sender_cwd: &Path, inspector_threads: usiz
         }));
     }
 
-    // Inspector workers: drive `famp inspect tasks` to saturate the inspect path.
+    // Inspector workers: drive `famp inspect tasks` to apply concurrent inspect pressure.
     for _ in 0..inspector_threads {
         let sock = bus.sock().to_path_buf();
         let home = bus.tmp.path().to_path_buf();
