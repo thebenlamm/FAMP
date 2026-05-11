@@ -64,7 +64,7 @@ Plans:
 Plans:
 - [x] 03-01-PLAN.md — Wave 1: INSP-RPC-05 load test (`inspect_load_test.rs`) + nextest.toml `inspect-subprocess` filter extension
 - [x] 03-02-PLAN.md — Wave 1 (parallel): v0.9-incident-class label on existing orphan E2E test + `docs/MIGRATION-v0.9-to-v0.10.md` migration doc
-- [ ] 03-03-PLAN.md — Wave 2 (gap closure): saturated direct inspect RPC no-starvation proof for GAP-03-01
+- [x] 03-03-PLAN.md — Wave 2 (gap closure): saturated direct inspect RPC no-starvation proof for GAP-03-01
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
