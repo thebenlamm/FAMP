@@ -34,17 +34,20 @@ Full crate selection rationale, alternatives, version compatibility, and beginne
 
 ## Listen Mode
 
-Agents can opt into automatic message wake-up by registering with `listen: true`:
+Listen mode is ON BY DEFAULT for MCP `famp_register` calls (as of 2026-05-12). Agents auto-wake on inbound messages without an explicit flag:
 
 ```
-famp_register({identity: "dk", listen: true})
+famp_register({identity: "dk"})              // listen mode ON (default)
+famp_register({identity: "dk", listen: false}) // opt out for general-purpose windows
 ```
 
-When registered with `listen: true`, the Stop hook (`~/.claude/hooks/famp-await.sh`) blocks after each turn waiting for an inbound FAMP message (up to 23h). When a message arrives, Claude wakes automatically and receives: `"New FAMP message from <sender>. Call famp_inbox to read it."` — then calls `famp_inbox` to retrieve the content.
+When listen mode is active, the Stop hook (`~/.claude/hooks/famp-await.sh`) blocks after each turn waiting for an inbound FAMP message (up to 23h). When a message arrives, Claude wakes automatically and receives: `"New FAMP message from <sender>. Call famp_inbox to read it."` — then calls `famp_inbox` to retrieve the content.
 
-**Default (`listen: false`):** The window registers but stays idle between turns. Check inbox on demand by prompting the agent: "check your famp messages" → agent calls `famp_inbox`.
+**Flipping listen mode without re-registering:** Use `famp_set_listen({listen: true|false})`. This mutates the canonical holder's listen flag in place — no mailbox replay, no new identity binding. Use this when a window registered with the wrong mode, or when an interactive window needs to toggle into listen mode for a long-running peer conversation.
 
-**When to use listen mode:** Dedicated agent windows that need sub-minute response to peer messages (e.g., Sofer's 5-agent mesh). General-purpose dev windows should omit `listen` or pass `false`.
+**Opt out (`listen: false`):** The window registers but stays idle between turns. Check inbox on demand by prompting the agent: "check your famp messages" → agent calls `famp_inbox`. Use this for general-purpose dev windows where auto-wake would be intrusive.
+
+**CLI surface (unchanged):** `famp register --as <name>` still defaults to `listen: false` — the default flip applies only to the MCP `famp_register` tool. The bus wire frame is identical either way; only the surface-level default differs.
 
 **Context cost and tool sequencing:** See [`docs/CLAUDE-CODE-CONTEXT-GUIDE.md`](docs/CLAUDE-CODE-CONTEXT-GUIDE.md) for the two retrieval flows, task_id resolution, and how to avoid the double-print pattern that doubles context cost per received message.
 
