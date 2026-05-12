@@ -152,6 +152,79 @@ fn listen_true_and_successful_register_enters_listen_mode() {
 }
 
 #[test]
+fn listen_absent_enters_listen_mode() {
+    // Fix 1 (2026-05-12): the MCP tool defaults listen=true when the
+    // field is absent (register.rs:80, unwrap_or(true)). The hook MUST
+    // match this default — treat absent listen as listen-active so the
+    // Stop hook actually blocks on inbound messages for the agent
+    // window. Before the fix, the hook's `if inp.get("listen"):`
+    // treated absent as falsy and exited no-op, silently disabling
+    // auto-wake whenever the MCP caller omitted the listen field.
+    require_hook!();
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    stage_mock_famp(&dir.path().join("bin"), &log);
+    let transcript = dir.path().join("t.jsonl");
+    // Transcript with NO `listen` field in the famp_register input — the
+    // input shape is `{"identity":"dk"}` (no listen key at all).
+    let body = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t_absent","name":"mcp__famp__famp_register","input":{"identity":"dk"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t_absent","is_error":false,"content":[{"type":"text","text":"registered as dk"}]}]}}
+"#;
+    std::fs::write(&transcript, body).unwrap();
+
+    let out = run_hook(
+        &hook_path(),
+        &transcript,
+        &dir.path().join("bin"),
+        &log,
+        &xdg,
+    );
+    assert!(
+        out.status.success(),
+        "hook failed: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as dk"),
+        "expected famp await --as dk invocation (listen defaults ON when absent), got: {argv:?}"
+    );
+}
+
+#[test]
+fn listen_null_enters_listen_mode() {
+    // Companion to `listen_absent_enters_listen_mode`: a JSON `null` for
+    // the listen field is treated identically to absent (both arrive in
+    // Python as `None`, which is `not False`).
+    require_hook!();
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    stage_mock_famp(&dir.path().join("bin"), &log);
+    let transcript = dir.path().join("t.jsonl");
+    let body = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t_null","name":"mcp__famp__famp_register","input":{"identity":"dk","listen":null}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t_null","is_error":false,"content":[{"type":"text","text":"registered as dk"}]}]}}
+"#;
+    std::fs::write(&transcript, body).unwrap();
+
+    let out = run_hook(
+        &hook_path(),
+        &transcript,
+        &dir.path().join("bin"),
+        &log,
+        &xdg,
+    );
+    assert!(out.status.success());
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as dk"),
+        "expected famp await --as dk invocation (listen:null treated as ON), got: {argv:?}"
+    );
+}
+
+#[test]
 fn listen_false_is_noop() {
     require_hook!();
     let dir = tempfile::tempdir().unwrap();

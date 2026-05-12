@@ -61,8 +61,9 @@ offset = max(0, fsize - MAX_BYTES)
 
 pos = 0
 # Known limitation: a later famp_register(listen:false) in the same session
-# does not cancel listen mode — only the most recent listen:true register is
-# tracked. Dedicated listen windows never re-register, so this is acceptable.
+# does not cancel listen mode — only the most recent listen-active register
+# (absent OR true) is tracked. Dedicated listen windows never re-register,
+# so this is acceptable.
 with open(path, encoding='utf-8', errors='replace') as f:
     if offset > 0:
         f.seek(offset)
@@ -85,7 +86,14 @@ with open(path, encoding='utf-8', errors='replace') as f:
             if t == "tool_use":
                 if name.endswith("famp_register"):
                     inp = block.get("input") or {}
-                    if inp.get("listen"):
+                    # Fix 1 (2026-05-12): listen defaults to ON when the
+                    # field is absent or JSON null, mirroring the MCP
+                    # tool default at register.rs:80 (unwrap_or(true)).
+                    # Only an explicit JSON `false` suppresses listen.
+                    # `inp.get("listen") is not False` returns True for
+                    # missing key (None) and True for JSON true; only
+                    # JSON false makes it False.
+                    if inp.get("listen") is not False:
                         ident = inp.get("identity") or inp.get("name", "")
                         uid   = block.get("id", "")
                         if ident and uid:
