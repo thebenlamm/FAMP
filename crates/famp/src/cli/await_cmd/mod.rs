@@ -217,6 +217,7 @@ pub(crate) async fn connect_bound(sock: &Path, identity: &str) -> Result<BusClie
     BusClient::connect(sock, Some(identity.to_string()))
         .await
         .map_err(|e| match e {
+            // D-10 typed Hello rejections we already classify specifically.
             BusClientError::HelloFailed {
                 kind: BusErrorKind::NotRegistered,
                 ..
@@ -230,10 +231,44 @@ pub(crate) async fn connect_bound(sock: &Path, identity: &str) -> Result<BusClie
                 kind: BusErrorKind::BrokerProtoMismatch,
                 message: mixed_binary_hint(message),
             },
+            // Any other typed Hello rejection (Internal, EnvelopeInvalid,
+            // BrokerUnreachable-as-kind, etc.) — propagate the real
+            // (kind, message) so operators see WHY the broker refused
+            // instead of a generic "broker unreachable". Mapping this
+            // family to BrokerUnreachable was the bug we just removed:
+            // `inbox list` and `await` both bind the same identity via
+            // D-10 proxy Hello, so when one refused and the other
+            // succeeded the rejection reason was unrecoverable from the
+            // CLI surface, making the Stop hook's "broker unreachable"
+            // line uninvestigable.
+            BusClientError::HelloFailed { kind, message } => CliError::BusError { kind, message },
+            // Codec corruption usually means cross-build client/broker
+            // mismatch — keep the existing hint.
             BusClientError::Frame(_) | BusClientError::Decode(_) => CliError::BusClient {
                 detail: mixed_binary_hint(format!("{e:?}")),
             },
-            _ => CliError::BrokerUnreachable,
+            // Genuine "the broker is not at this socket": NotFound /
+            // ConnectionRefused on the underlying UnixStream. Anything
+            // else (PermissionDenied, BrokenPipe, timeout, ...) deserves
+            // its real error surface.
+            BusClientError::Io(ref ioe)
+                if matches!(
+                    ioe.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                CliError::BrokerUnreachable
+            }
+            // Spawn failed, other IO error, or an unexpected non-Err
+            // reply to Hello. Each has a real cause worth printing —
+            // funnel through BusClient { detail } which preserves the
+            // Debug chain (BrokerDidNotStart wraps SpawnError, Io wraps
+            // io::Error with kind).
+            BusClientError::Io(_)
+            | BusClientError::BrokerDidNotStart(_)
+            | BusClientError::UnexpectedReply(_) => CliError::BusClient {
+                detail: format!("{e:?}"),
+            },
         })
 }
 
