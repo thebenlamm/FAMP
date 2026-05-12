@@ -99,6 +99,34 @@ use serde_json::Value;
 
 use crate::bus_client::{bus_dir, resolve_sock_path};
 use crate::cli::mcp::tools::ToolError;
+use crate::cli::util::normalize_channel;
+
+/// Validate a peer identity name before use in a path.
+/// Mirrors `register.rs::validate_identity_name`: `[A-Za-z0-9._-]+`, ≤64 bytes.
+fn validate_peer_name(name: &str) -> Result<(), ToolError> {
+    if name.is_empty() {
+        return Err(ToolError::new(
+            BusErrorKind::EnvelopeInvalid,
+            "peer name must not be empty",
+        ));
+    }
+    if name.len() > 64 {
+        return Err(ToolError::new(
+            BusErrorKind::EnvelopeInvalid,
+            format!("peer name length {} exceeds 64 bytes", name.len()),
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err(ToolError::new(
+            BusErrorKind::EnvelopeInvalid,
+            format!("invalid peer name {name:?}: must match [A-Za-z0-9._-]+"),
+        ));
+    }
+    Ok(())
+}
 
 /// Dispatch a `famp_verify` tool call.
 pub async fn call(input: &Value) -> Result<Value, ToolError> {
@@ -138,69 +166,112 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         ));
     }
 
+    // Validate names BEFORE touching the filesystem (path traversal guard).
+    if let Some(ref name) = peer {
+        validate_peer_name(name)?;
+    }
+    // normalize_channel validates the channel name and returns the canonical
+    // `#<name>` form. Rejects `##foo`, names with path components, etc.
+    let channel_normalized: Option<String> = match channel {
+        Some(ref name) => {
+            let normalized = normalize_channel(name).map_err(|e| {
+                ToolError::new(BusErrorKind::EnvelopeInvalid, e.to_string())
+            })?;
+            Some(normalized)
+        }
+        None => None,
+    };
+
     let sock = resolve_sock_path();
     let mailboxes_dir = bus_dir(&sock).join("mailboxes");
 
-    // Build the list of candidate mailbox files. Single-recipient calls
-    // (peer or channel) read exactly one file; the broker-wide fallback
-    // walks every `*.jsonl` under `mailboxes/`. The directory may not
-    // exist yet if no agent has ever registered against this socket —
-    // treat that as "no envelopes" rather than an error.
-    let candidates = match (&peer, &channel) {
+    // Build the list of candidate mailbox files using ONLY validated names.
+    let candidates = match (&peer, &channel_normalized) {
         (Some(name), None) => vec![mailboxes_dir.join(format!("{name}.jsonl"))],
         (None, Some(name)) => {
-            let bare = name.trim_start_matches('#');
-            vec![mailboxes_dir.join(format!("#{bare}.jsonl"))]
+            // name is already `#<bare>` from normalize_channel.
+            vec![mailboxes_dir.join(format!("{name}.jsonl"))]
         }
-        (None, None) => list_mailbox_files(&mailboxes_dir),
-        // peer.is_some() && channel.is_some() rejected above.
+        (None, None) => list_mailbox_files(&mailboxes_dir)?,
         _ => unreachable!("peer/channel mutual-exclusion checked earlier"),
     };
 
-    Ok(scan_files(&task_id, envelope_id.as_deref(), &candidates))
+    scan_files(&task_id, envelope_id.as_deref(), &candidates)
 }
 
-/// Enumerate `*.jsonl` files under `dir`. Missing/unreadable directory
-/// → empty Vec (the "no envelopes" outcome for verify is a clean
-/// `delivered: false`).
-fn list_mailbox_files(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
+/// Enumerate `*.jsonl` files under `dir`.
+///
+/// - `NotFound` → `Ok(empty)`: broker hasn't written any mailboxes yet;
+///   clean "no envelopes" state.
+/// - Any other IO error (permission denied, etc.) → `Err(Internal)`:
+///   ambiguous state; do NOT signal `delivered: false` to the caller.
+fn list_mailbox_files(dir: &Path) -> Result<Vec<PathBuf>, ToolError> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(ToolError::new(
+                BusErrorKind::Internal,
+                format!("cannot read mailbox directory {}: {e}", dir.display()),
+            ));
+        }
     };
-    entries
+    Ok(entries
         .filter_map(Result::ok)
         .filter_map(|e| {
             let path = e.path();
             (path.extension().and_then(|s| s.to_str()) == Some("jsonl")).then_some(path)
         })
-        .collect()
+        .collect())
 }
 
-/// Read every candidate mailbox file in order, returning the first
-/// envelope whose thread/envelope-id match. Files that don't exist or
-/// are unreadable contribute zero rows. A corrupt mid-file line is
-/// surfaced as `Internal` via `ToolError` would force the caller into
-/// the retry loop unnecessarily — instead `read_all` already tolerates
-/// the partial-tail crash case; we tolerate file-not-found here.
-fn scan_files(task_id: &str, envelope_id: Option<&str>, candidates: &[PathBuf]) -> Value {
+/// Read every candidate mailbox file and return the first matching envelope.
+///
+/// Per-file error handling:
+/// - `NotFound` → skip (mailbox never written; `delivered: false` is correct).
+/// - Any other IO error (permission denied, corrupt read, etc.) → `Err(Internal)`.
+///   Surfacing an IO error prevents the "safe to re-send" signal from firing when
+///   we simply can't read the evidence.
+fn scan_files(
+    task_id: &str,
+    envelope_id: Option<&str>,
+    candidates: &[PathBuf],
+) -> Result<Value, ToolError> {
     for path in candidates {
-        let Ok(entries) = famp_inbox::read::read_all(path) else {
-            continue;
+        let entries = match famp_inbox::read::read_all(path) {
+            Ok(e) => e,
+            Err(e) => {
+                // read_all wraps IO errors; check the inner kind via Display
+                // (famp-inbox::InboxError::Io carries the source).
+                let msg = e.to_string();
+                // NotFound → mailbox file simply doesn't exist yet; skip.
+                if msg.contains("No such file") || msg.contains("os error 2") {
+                    continue;
+                }
+                // Permission denied or any other real IO failure.
+                return Err(ToolError::new(
+                    BusErrorKind::Internal,
+                    format!("cannot read mailbox {}: {msg}", path.display()),
+                ));
+            }
         };
-        if let Some(env) = entries.into_iter().find(|env| envelope_matches(env, task_id, envelope_id)) {
+        if let Some(env) = entries
+            .into_iter()
+            .find(|env| envelope_matches(env, task_id, envelope_id))
+        {
             let row = famp_inspect_server::message_row(&env);
             let row_v = serde_json::to_value(&row).unwrap_or(Value::Null);
-            return serde_json::json!({
+            return Ok(serde_json::json!({
                 "delivered": true,
                 "task_id":   task_id,
                 "row":       row_v,
-            });
+            }));
         }
     }
-    serde_json::json!({
+    Ok(serde_json::json!({
         "delivered": false,
         "task_id":   task_id,
-    })
+    }))
 }
 
 /// Match an envelope against the verify input:
