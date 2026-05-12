@@ -47,13 +47,60 @@ use tokio::sync::Mutex;
 
 use crate::bus_client::BusClient;
 
+/// Metadata about the most-recent successful `famp_send` from this
+/// session. Recorded by `tools::send::call` on the `Ok` arm and surfaced
+/// by `tools::whoami::call` so an agent can recover when Claude Code's
+/// stdio transport drops the `famp_send` tool result mid-flight
+/// (`[Tool result missing due to internal error]`). The agent then calls
+/// `famp_whoami` to learn the `task_id` that was assigned and decides
+/// whether to retry or (more usefully) call `famp_verify` to confirm
+/// delivery before retrying.
+///
+/// Exactly one of `to_peer` / `to_channel` is populated, matching the
+/// `BusMessage::Send.to: Target` discriminant on the wire. `ts` is an
+/// RFC 3339 UTC timestamp captured at the moment the broker replied
+/// `SendOk` — i.e. proof that the call reached the broker, regardless
+/// of whether the JSON-RPC response surfaced to the model.
+///
+/// ## `task_id` vs `thread_task_id` — verify semantics
+///
+/// For `mode="open"`, `task_id` is the new task's uuid AND the value
+/// the inspector RPC will return as `MessageRow.task_id` (since the
+/// envelope has no `causality.ref`, the inspector falls through to
+/// `envelope.id`). One value, one verify path.
+///
+/// For `mode="reply"`, the broker returns `task_id = <new envelope id>`
+/// in `SendOk` (which is what `task_id` here records), but the
+/// inspector projects each row's `task_id` from `causality.ref` FIRST
+/// (`famp_inspect_server::envelope_task_id`). That means reply
+/// envelopes are keyed in the inspector by the THREAD's task id, not
+/// by the reply's own envelope id. To verify a reply landed,
+/// `famp_verify` must look up the thread id — surfaced here as
+/// `thread_task_id`. It is `Some` only for reply-mode sends; `None`
+/// for `open` (where it would duplicate `task_id`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LastSend {
+    pub task_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_task_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_peer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_channel: Option<String>,
+    pub ts: String,
+}
+
 /// The MCP server's per-process session state.
 ///
 /// `bus` is lazily opened by [`ensure_bus`] on first call. `active_identity`
 /// is set by `tools::register::call` after the broker confirms `RegisterOk`.
+/// `last_send` is set by `tools::send::call` on every successful send so
+/// `tools::whoami::call` can surface it as a recovery hint when Claude
+/// Code drops the `famp_send` tool result.
 pub struct SessionState {
     pub bus: Option<BusClient>,
     pub active_identity: Option<String>,
+    pub last_send: Option<LastSend>,
 }
 
 /// Module-scope storage for the session state.
@@ -76,6 +123,7 @@ pub fn state() -> &'static Mutex<SessionState> {
         Mutex::new(SessionState {
             bus: None,
             active_identity: None,
+            last_send: None,
         })
     })
 }
@@ -128,6 +176,21 @@ pub async fn set_active_identity(name: String) {
     state().lock().await.active_identity = Some(name);
 }
 
+/// Record metadata for the most-recent successful `famp_send`. Called
+/// by `tools::send::call` on the `Ok` arm. Surfaced by `tools::whoami::call`
+/// as a recovery hint for the Claude Code `[Tool result missing due to
+/// internal error]` failure mode (the broker delivered the message but
+/// the JSON-RPC result never reached the model).
+pub async fn set_last_send(record: LastSend) {
+    state().lock().await.last_send = Some(record);
+}
+
+/// Read the most-recent `LastSend` record (cloned). `None` until the
+/// session has performed at least one successful `famp_send`.
+pub async fn last_send() -> Option<LastSend> {
+    state().lock().await.last_send.clone()
+}
+
 /// Clear all session state. Intentionally only available under `cfg(test)`
 /// — production code never resets a session within a single process
 /// lifetime.
@@ -136,4 +199,5 @@ pub async fn clear() {
     let mut guard = state().lock().await;
     guard.bus = None;
     guard.active_identity = None;
+    guard.last_send = None;
 }

@@ -98,10 +98,22 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_whoami",
-            "description": "Return the current session's identity binding. Use this to debug session binding — for example, to confirm a famp_register call took effect, or to discover whether a window is still unregistered. Returns { active: string|null, joined: [string] }; never errors.",
+            "description": "Return the current session's identity binding plus the most-recent successful send. Use this to debug session binding — for example, to confirm a famp_register call took effect, or to discover whether a window is still unregistered. ALSO USE THIS as a recovery hook when famp_send returns '[Tool result missing due to internal error]': the broker still delivered the message, and last_send.task_id surfaces the task_id the agent never saw in the dropped response. last_send.thread_task_id (present only on reply-mode sends) is the originating thread id — pass it to famp_verify when verifying a reply landed. Returns { active: string|null, joined: [string], last_send?: { task_id, thread_task_id?, to_peer?, to_channel?, ts } }; never errors.",
             "inputSchema": {
                 "type": "object",
                 "properties": {}
+            }
+        },
+        {
+            "name": "famp_verify",
+            "description": "Confirm whether a specific task_id was delivered to a recipient's mailbox. Use this AFTER a famp_send when you suspect the JSON-RPC response was dropped (the model received '[Tool result missing due to internal error]' but the broker may have still routed the message). Workflow: 1) read task_id from famp_whoami.last_send — use last_send.thread_task_id if present (reply-mode sends are keyed in the inspector by causality.ref, not by the reply envelope's own id), else last_send.task_id, 2) call famp_verify with that task_id, 3) if delivered=true do NOT retry; if delivered=false the send did not reach the broker — safe to re-send. Works without registration so it survives session-state loss.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "task_id": { "type": "string", "description": "The UUIDv7 task_id to look up. For replies, pass famp_whoami.last_send.thread_task_id (the originating thread id — the inspector keys reply envelopes by causality.ref). For new-task sends, pass famp_whoami.last_send.task_id (the two coincide for open-mode)." },
+                    "peer":    { "type": "string", "description": "Optional recipient identity. When supplied, narrows the inspector query to that peer's mailbox; omit to scan broker-wide envelope metadata." }
+                },
+                "required": ["task_id"]
             }
         },
         {
@@ -393,11 +405,16 @@ async fn dispatch_tool(
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
     // FREE-PASS tools: famp_register sets identity; famp_whoami is a
-    // session readback. Both work at any time, before any binding has
-    // been established.
+    // session readback; famp_verify is a recovery hook that talks to the
+    // inspector socket (which performs its own Hello with bind_as: None,
+    // so no per-session identity is involved). All three must work
+    // before any binding has been established — that's exactly the
+    // state an agent ends up in after a dropped tool result + a fresh
+    // window restart.
     match name {
         "famp_register" => return tools::register::call(input).await,
         "famp_whoami" => return tools::whoami::call(input).await,
+        "famp_verify" => return tools::verify::call(input).await,
         _ => {}
     }
 

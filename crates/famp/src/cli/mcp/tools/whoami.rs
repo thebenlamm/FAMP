@@ -14,8 +14,33 @@
 //! ## Output shape
 //!
 //! ```json
-//! { "active": "<name>"|null, "joined": ["#x", "#y"] }
+//! {
+//!   "active": "<name>"|null,
+//!   "joined": ["#x", "#y"],
+//!   "last_send": {                       // optional
+//!     "task_id":        "<uuidv7>",      // SendOk.task_id (new envelope id)
+//!     "thread_task_id": "<uuidv7>",      // reply-mode only: originating thread id
+//!     "to_peer":        "bob",           // mutually exclusive with to_channel
+//!     "to_channel":     "#planning",     // mutually exclusive with to_peer
+//!     "ts":             "<rfc3339-utc>"
+//!   }
+//! }
 //! ```
+//!
+//! ### `last_send` (resilience hook)
+//!
+//! `last_send` is included only when this session has performed at least
+//! one successful `famp_send`. It mirrors the `task_id` + recipient
+//! recorded by `tools::send::call` on the `Ok` arm of the broker round-trip.
+//!
+//! Purpose: Claude Code's stdio MCP transport occasionally surfaces
+//! `[Tool result missing due to internal error]` to the model even
+//! though the underlying JSON-RPC call succeeded (the broker delivered;
+//! the JSON-RPC response was simply dropped on the way back). When that
+//! happens the agent has no `task_id` to thread a reply against and no
+//! way to confirm whether to retry. `famp_whoami` now returns `last_send`
+//! so the agent can recover: read the `task_id`, then call `famp_verify`
+//! to confirm the message landed before deciding whether to resend.
 
 use famp_bus::{BusErrorKind, BusMessage, BusReply};
 use serde_json::Value;
@@ -45,10 +70,30 @@ pub async fn call(_input: &Value) -> Result<Value, ToolError> {
         )
     })?;
     match reply {
-        BusReply::WhoamiOk { active, joined } => Ok(serde_json::json!({
-            "active": active,
-            "joined": joined,
-        })),
+        BusReply::WhoamiOk { active, joined } => {
+            // Read the last-send recovery hint (session-local, no broker
+            // round-trip). Cheap on every whoami; harmless when absent
+            // (None pre-first-send). Serialized via Serialize on
+            // `LastSend` so the optional `to_peer` / `to_channel`
+            // discriminant comes through cleanly.
+            let last_send = session::last_send().await;
+            let mut out = serde_json::json!({
+                "active": active,
+                "joined": joined,
+            });
+            if let Some(ls) = last_send {
+                if let Some(obj) = out.as_object_mut() {
+                    let v = serde_json::to_value(&ls).map_err(|e| {
+                        ToolError::new(
+                            BusErrorKind::Internal,
+                            format!("failed to serialize last_send: {e}"),
+                        )
+                    })?;
+                    obj.insert("last_send".to_string(), v);
+                }
+            }
+            Ok(out)
+        }
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         other => Err(ToolError::new(
             BusErrorKind::Internal,
