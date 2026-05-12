@@ -120,13 +120,14 @@ fn whoami_unregistered_returns_null_active() {
 }
 
 #[test]
-fn tools_list_returns_eight_tools() {
+fn tools_list_returns_nine_tools() {
     with_fresh_socket(|| {
         let mut h = Harness::with_agents(&[]);
         let r = h.call("tools/list", &serde_json::json!({}));
         let tools = r["result"]["tools"].as_array().expect("tools array");
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert_eq!(names.len(), 8, "expected 8 tools, got: {names:?}");
+        // Fix 1 (2026-05-12): added famp_set_listen → 9 tools.
+        assert_eq!(names.len(), 9, "expected 9 tools, got: {names:?}");
         for expected in [
             "famp_send",
             "famp_await",
@@ -136,6 +137,7 @@ fn tools_list_returns_eight_tools() {
             "famp_whoami",
             "famp_join",
             "famp_leave",
+            "famp_set_listen",
         ] {
             assert!(
                 names.contains(&expected),
