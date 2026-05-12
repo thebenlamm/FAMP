@@ -86,14 +86,25 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_register",
-            "description": "Bind this MCP session to a FAMP identity. CALL THIS FIRST in every new window — without it, famp_send/famp_await/famp_inbox/famp_peers all return a typed 'not_registered' error. Pass listen:true to enter listen mode: after each turn the Stop hook will block waiting for inbound messages and wake Claude automatically (sub-minute latency). Omit listen or pass false for general-purpose windows that check inbox on demand.",
+            "description": "Bind this MCP session to a FAMP identity. CALL THIS FIRST in every new window — without it, famp_send/famp_await/famp_inbox/famp_peers all return a typed 'not_registered' error. Listen mode is ON BY DEFAULT for MCP sessions: after each turn the Stop hook will block waiting for inbound messages and wake Claude automatically (sub-minute latency). Pass listen:false to opt out (general-purpose dev windows that check inbox on demand). Use famp_set_listen at any time to flip the mode without re-registering.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "identity": { "type": "string", "description": "Identity name (matches [A-Za-z0-9._-]+, max 64 chars)." },
-                    "listen": { "type": "boolean", "description": "If true, this window enters listen mode: the Stop hook will block on famp_await after each turn and wake Claude when a message arrives. Default false. Use true for dedicated agent windows; omit for general-purpose windows." }
+                    "listen": { "type": "boolean", "description": "Listen mode: when true the Stop hook blocks on famp_await after each turn and wakes Claude when a message arrives. DEFAULT true for MCP sessions (agent windows want auto-wake). Pass false explicitly for general-purpose dev windows that check inbox on demand." }
                 },
                 "required": ["identity"]
+            }
+        },
+        {
+            "name": "famp_set_listen",
+            "description": "Flip listen mode for the current session WITHOUT re-registering. Use this when a window registered with the wrong listen flag, or when an interactive window needs to toggle into auto-wake for a long-running peer conversation. Mutates the canonical holder's flag in place — no mailbox replay (re-registering would re-drain from offset 0). Returns { listen_mode: <bool> } echoing the post-mutation flag.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "listen": { "type": "boolean", "description": "Target listen-mode value. true = Stop hook auto-wakes Claude on inbound messages; false = window stays idle between turns." }
+                },
+                "required": ["listen"]
             }
         },
         {
@@ -433,6 +444,7 @@ async fn dispatch_tool(
         "famp_peers" => tools::peers::call(input).await,
         "famp_join" => tools::join::call(input).await,
         "famp_leave" => tools::leave::call(input).await,
+        "famp_set_listen" => tools::set_listen::call(input).await,
         other => Err(ToolError::new(
             BusErrorKind::Internal,
             format!("unknown tool: {other}"),

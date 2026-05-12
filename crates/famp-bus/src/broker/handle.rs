@@ -83,7 +83,61 @@ fn handle_wire<E: BrokerEnv>(
             // BrokerCtx and dispatches.
             vec![Out::InspectRequest { client, kind }]
         }
+        BusMessage::SetListen { listen } => set_listen(broker, client, listen),
     }
+}
+
+/// Fix 1 (2026-05-12): flip the canonical holder's `listen_mode` flag in
+/// place. Used by the `famp_set_listen` MCP tool so an agent can opt
+/// into/out of Stop-hook auto-wake without re-registering (which would
+/// re-drain the mailbox from offset 0).
+///
+/// Proxy (`bind_as`) connections are rejected with `NotRegistered`,
+/// mirroring the Register rejection at the top of `register` above.
+/// Slot ownership is canonical-holder-only; a proxy must reconnect
+/// without `bind_as` and `Register` itself before issuing `SetListen`.
+fn set_listen<E: BrokerEnv>(
+    broker: &mut Broker<E>,
+    client: ClientId,
+    listen: bool,
+) -> Vec<Out> {
+    let Some(state) = broker.state.clients.get_mut(&client) else {
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "client is not registered",
+        )];
+    };
+    if !state.connected {
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "client is not registered",
+        )];
+    }
+    if state.bind_as.is_some() && state.name.is_none() {
+        // Proxy connection: refuse to mutate the canonical holder's slot.
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "proxy (bind_as) connection cannot set_listen",
+        )];
+    }
+    if state.name.is_none() {
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "client is not registered",
+        )];
+    }
+    state.listen_mode = listen;
+    state.last_activity = std::time::SystemTime::now();
+    vec![Out::Reply(
+        client,
+        BusReply::SetListenOk {
+            listen_mode: listen,
+        },
+    )]
 }
 
 fn touch_activity<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) {
@@ -1720,6 +1774,115 @@ mod d10_tests {
     }
 
     // --- task_id_from regression tests ---
+
+    // --- set_listen tests ---------------------------------------------
+
+    fn find_set_listen_ok(outs: &[Out]) -> Option<bool> {
+        outs.iter().find_map(|o| match o {
+            Out::Reply(_, BusReply::SetListenOk { listen_mode }) => Some(*listen_mode),
+            _ => None,
+        })
+    }
+
+    fn find_err_kind(outs: &[Out]) -> Option<BusErrorKind> {
+        outs.iter().find_map(|o| match o {
+            Out::Reply(_, BusReply::Err { kind, .. }) => Some(*kind),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn set_listen_flips_canonical_holder_flag() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 999, now);
+        // Default after register-with-listen=false is listen_mode=false.
+        assert!(!broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .listen_mode);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::SetListen { listen: true },
+            },
+            now,
+        );
+        assert_eq!(find_set_listen_ok(&outs), Some(true));
+        assert!(broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .listen_mode);
+        // Flip back.
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::SetListen { listen: false },
+            },
+            now,
+        );
+        assert_eq!(find_set_listen_ok(&outs), Some(false));
+        assert!(!broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .listen_mode);
+    }
+
+    #[test]
+    fn set_listen_before_register_returns_not_registered() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice", now);
+        // No Register before SetListen.
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::SetListen { listen: true },
+            },
+            now,
+        );
+        assert_eq!(find_err_kind(&outs), Some(BusErrorKind::NotRegistered));
+        assert!(find_set_listen_ok(&outs).is_none());
+    }
+
+    #[test]
+    fn set_listen_from_proxy_returns_not_registered() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+        // Proxy (client 2) must not mutate canonical holder's flag.
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::SetListen { listen: true },
+            },
+            now,
+        );
+        assert_eq!(find_err_kind(&outs), Some(BusErrorKind::NotRegistered));
+        // Canonical holder's flag is unchanged (still default false).
+        assert!(!broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .listen_mode);
+    }
 
     #[test]
     fn task_id_from_reads_envelope_id_field() {

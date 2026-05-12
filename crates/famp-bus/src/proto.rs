@@ -181,6 +181,15 @@ pub enum BusMessage {
     Inspect {
         kind: famp_inspect_proto::InspectKind,
     },
+    /// Fix 1 (2026-05-12): update the canonical holder's listen-mode
+    /// flag without re-registering. Reply is `BusReply::SetListenOk`.
+    ///
+    /// Proxy (`bind_as`) connections MUST NOT issue `SetListen` — slot
+    /// ownership is canonical-holder-only, mirroring the Register
+    /// rejection at `handle::register`. Broker replies `Err{NotRegistered}`.
+    SetListen {
+        listen: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +247,12 @@ pub enum BusReply {
     /// reply on both sides; this layer just shuttles the JSON).
     InspectOk {
         payload: serde_json::Value,
+    },
+    /// Reply to `BusMessage::SetListen`. Echoes the post-mutation flag
+    /// so the client can confirm the broker's view without re-issuing
+    /// `Whoami` / `Inspect`.
+    SetListenOk {
+        listen_mode: bool,
     },
     Err {
         kind: BusErrorKind,
@@ -393,6 +408,26 @@ mod tests {
             !wire.contains("\"listen\""),
             "listen must be omitted at default; got {wire}"
         );
+    }
+
+    #[test]
+    fn roundtrip_set_listen_message() {
+        for listen in [true, false] {
+            let v = BusMessage::SetListen { listen };
+            let bytes = famp_canonical::canonicalize(&v).unwrap();
+            let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+            assert_eq!(v, decoded);
+        }
+    }
+
+    #[test]
+    fn roundtrip_set_listen_reply() {
+        for listen_mode in [true, false] {
+            let v = BusReply::SetListenOk { listen_mode };
+            let bytes = famp_canonical::canonicalize(&v).unwrap();
+            let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+            assert_eq!(v, decoded);
+        }
     }
 
     #[test]

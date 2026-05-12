@@ -68,10 +68,16 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         })?
         .to_string();
     validate_identity_name(&name)?;
+    // Fix 2 (2026-05-12): MCP sessions default to listen-mode ON. Agent
+    // windows almost always want auto-wake; the CLI `famp register`
+    // entry point retains its own default (set in the CLI subcommand
+    // args), so this is a per-surface choice, not a wire change. The
+    // Register frame still carries the resolved bool over the bus
+    // unchanged.
     let listen = input
         .get("listen")
         .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     session::ensure_bus()
         .await
