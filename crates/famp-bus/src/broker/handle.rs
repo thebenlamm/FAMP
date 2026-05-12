@@ -47,7 +47,19 @@ fn handle_wire<E: BrokerEnv>(
         )];
     }
 
-    if !matches!(msg, BusMessage::Hello { .. } | BusMessage::Register { .. }) {
+    // Fix 5 (2026-05-12): exclude `SetListen` from the pre-dispatch
+    // `touch_activity` call. `set_listen` rejects proxy callers with
+    // NotRegistered, but `touch_activity` already mapped the proxy
+    // connection's activity onto the canonical holder via
+    // `canonical_holder_id`, making a holder appear active when no
+    // legitimate op actually happened. The success path inside
+    // `set_listen` still stamps `state.last_activity` explicitly
+    // (handle.rs `set_listen` body), so canonical-holder activity
+    // tracking is preserved for accepted calls only.
+    if !matches!(
+        msg,
+        BusMessage::Hello { .. } | BusMessage::Register { .. } | BusMessage::SetListen { .. }
+    ) {
         touch_activity(broker, client);
     }
 
@@ -1882,6 +1894,100 @@ mod d10_tests {
             .find(|c| c.name == "alice")
             .unwrap()
             .listen_mode);
+    }
+
+    #[test]
+    fn set_listen_from_proxy_does_not_touch_canonical_last_activity() {
+        // Fix 5 regression: a rejected proxy SetListen must NOT advance
+        // the canonical holder's `last_activity`. Before the fix, the
+        // dispatch-loop `touch_activity` call mapped the proxy's
+        // connection to the canonical holder before `set_listen` ran
+        // its rejection, so a misbehaving proxy could make a holder
+        // appear active when it wasn't.
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice-holder", now);
+        register(&mut broker, 1, "alice", 999, now);
+        let _ = hello_proxy(&mut broker, 2, "alice", now);
+
+        let baseline = broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .last_activity;
+
+        // Sleep at least one millisecond so any unwanted timestamp
+        // mutation would be observable (SystemTime::now resolution is
+        // platform-dependent, but never finer than ms in practice).
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::SetListen { listen: true },
+            },
+            now,
+        );
+        assert_eq!(find_err_kind(&outs), Some(BusErrorKind::NotRegistered));
+
+        let after = broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .last_activity;
+        assert_eq!(
+            after, baseline,
+            "rejected proxy SetListen must not advance canonical holder's last_activity"
+        );
+    }
+
+    #[test]
+    fn set_listen_accepted_call_still_advances_last_activity() {
+        // Regression guard for Fix 5: the SetListen exclusion in the
+        // pre-dispatch `touch_activity` call must NOT prevent the
+        // canonical holder's own accepted SetListen from updating
+        // last_activity. The success path in `set_listen` explicitly
+        // stamps `last_activity` (handle.rs:134 at edit time).
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 999, now);
+
+        let baseline = broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .last_activity;
+        std::thread::sleep(std::time::Duration::from_millis(2));
+
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::SetListen { listen: true },
+            },
+            now,
+        );
+        assert_eq!(find_set_listen_ok(&outs), Some(true));
+
+        let after = broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .last_activity;
+        assert!(
+            after > baseline,
+            "accepted canonical SetListen must advance last_activity"
+        );
     }
 
     #[test]
