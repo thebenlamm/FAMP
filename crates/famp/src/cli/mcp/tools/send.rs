@@ -121,8 +121,21 @@ fn parse_input(input: &Value) -> Result<SendArgs, ToolError> {
         }
     };
 
+    // STRICT: expect_reply MUST be a JSON boolean if present.
+    let expect_reply = match input.get("expect_reply") {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+        Some(Value::Bool(true)) => true,
+        Some(_) => {
+            return Err(ToolError::new(
+                BusErrorKind::EnvelopeInvalid,
+                "field expect_reply must be a boolean",
+            ));
+        }
+    };
+
     let (new_task, task, terminal) = match mode {
-        "new_task" => {
+        // Preferred: open starts a thread; reply closes it by default.
+        "open" | "new_task" => {
             let summary = title
                 .as_deref()
                 .or(body.as_deref())
@@ -130,12 +143,17 @@ fn parse_input(input: &Value) -> Result<SendArgs, ToolError> {
                 .to_string();
             (Some(summary), None, false)
         }
+        // reply closes the thread unless expect_reply: true keeps it open.
+        "reply" => (None, task_id, !expect_reply),
+        // Legacy aliases kept for backward compatibility.
         "deliver" => (None, task_id, false),
-        "terminal" => (None, task_id, true),
+        "terminal" | "deliver_terminal" => (None, task_id, true),
         other => {
             return Err(ToolError::new(
                 BusErrorKind::EnvelopeInvalid,
-                format!("invalid mode {other:?}: expected new_task | deliver | terminal"),
+                format!(
+                    "invalid mode {other:?}: expected open | reply | new_task | deliver | terminal"
+                ),
             ));
         }
     };

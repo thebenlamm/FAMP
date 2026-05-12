@@ -35,17 +35,18 @@ fn tool_descriptors() -> serde_json::Value {
     serde_json::json!([
         {
             "name": "famp_send",
-            "description": "Send a FAMP message. Use 'new_task' to start a conversation. Use 'deliver' or 'terminal' to REPLY to an existing task (you MUST include the task_id from the inbox entry you're responding to).",
+            "description": "Send a FAMP message to a peer or channel.\n\nMODE GUIDE:\n  'open'  — Start a new conversation thread. Returns a task_id. The thread stays open until you or the peer closes it with mode='reply' (without expect_reply).\n  'reply' — Reply to a received message (use the task_id from famp_inbox). CLOSES THE THREAD by default — this is correct for answers, acknowledgements, and handoffs. Set expect_reply: true ONLY when your reply asks a question that requires the peer to respond.\n\nTHE RULE: Default to closing. Every reply is either a question (set expect_reply: true) or a close (omit expect_reply). Do not leave threads open 'just in case.'\n\nONE THREAD PER TOPIC: Never use mode='open' to reply to an existing thread. Look up the task_id from famp_inbox and use mode='reply'.\n\nLegacy aliases: 'new_task'='open', 'deliver'='reply with expect_reply:true', 'terminal'='reply that closes'.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "peer":    { "type": "string", "description": "Peer alias for direct messages (e.g. 'alice' or 'bob'). NOT for channels — use channel= for '#name' targets." },
-                    "channel": { "type": "string", "description": "Channel target (e.g. '#scs-sow' or 'scs-sow'). Mutually exclusive with peer. Accepts both '#name' and 'name' forms." },
-                    "mode":    { "type": "string", "enum": ["new_task", "deliver", "terminal"], "description": "new_task=start conversation, deliver=interim reply, terminal=final reply" },
-                    "task_id": { "type": "string", "description": "The task_id from the inbox entry you're replying to. REQUIRED for deliver/terminal modes." },
-                    "title":   { "type": "string", "description": "Summary (for new_task mode)" },
-                    "body":    { "type": "string", "description": "Task body content (the actual instructions). REQUIRED for new_task to carry content; the title field is only a short summary. For deliver/terminal modes, this is the reply text." },
-                    "more_coming": { "type": "boolean", "description": "OPTIONAL, new_task mode only. Set true when this is the FIRST of multiple envelopes briefing the same task — the receiver will hold the task as 'pending follow-up' instead of treating it as ready to commit on the first envelope. Send subsequent context via famp_send mode=deliver; the briefing is complete when you send a deliver envelope without more_coming (or mode=terminal for a final reply). Default false (the task is fully briefed in this single envelope). Mirrors the body.interim flag on deliver envelopes. Ignored outside new_task mode." }
+                    "peer":         { "type": "string", "description": "Peer identity for direct messages (e.g. 'alice'). Mutually exclusive with channel." },
+                    "channel":      { "type": "string", "description": "Channel target (e.g. '#planning' or 'planning'). Mutually exclusive with peer." },
+                    "mode":         { "type": "string", "enum": ["open", "reply", "new_task", "deliver", "terminal", "deliver_terminal"], "description": "Conversation mode. Prefer 'open' (start thread) and 'reply' (respond + close). See tool description." },
+                    "task_id":      { "type": "string", "description": "The task_id from the famp_inbox entry you are replying to. REQUIRED for mode='reply'." },
+                    "expect_reply": { "type": "boolean", "description": "mode='reply' only. Set true when your message asks a question and you need the peer to respond. Omit (or false) to close the thread. Default: false (thread closes)." },
+                    "title":        { "type": "string", "description": "Short summary for mode='open'. Used as the thread subject." },
+                    "body":         { "type": "string", "description": "Message body. For mode='open' this is the full briefing; title is just the subject line. For mode='reply' this is the reply text." },
+                    "more_coming":  { "type": "boolean", "description": "mode='open' only. Set true when this is the first of multiple envelopes briefing the same task. Send follow-up context via mode='reply' with expect_reply:true; the briefing ends when you send a reply without expect_reply. Default false." }
                 },
                 "required": ["mode"]
             }

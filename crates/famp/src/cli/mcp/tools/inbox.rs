@@ -91,8 +91,17 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
                         .and_then(Value::as_str)
                         .or_else(|| env.get("id").and_then(Value::as_str))
                         .map(str::to_string);
+                    // Infer thread state from event type so agents know
+                    // whether to reply or treat the thread as closed.
+                    let thread_state = env
+                        .get("body")
+                        .and_then(|b| b.get("event"))
+                        .and_then(Value::as_str)
+                        .map(|e| if e == "famp.send.deliver_terminal" { "CLOSED" } else { "OPEN" })
+                        .unwrap_or("OPEN");
                     serde_json::json!({
                         "task_id": task_id,
+                        "thread_state": thread_state,
                         "envelope": env,
                     })
                 })
