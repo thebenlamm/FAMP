@@ -108,27 +108,22 @@ fn whoami_carries_last_send_after_successful_send() {
 
 #[test]
 fn verify_returns_delivered_true_for_known_task_id() {
-    // The inspector's `read_message_snapshot` only walks mailboxes for
-    // identities that appear in `BrokerStateView.clients` — i.e.
-    // currently-bound canonical holders. So to assert the verify
-    // happy-path we need a second MCP session bound as the recipient,
-    // matching the real-world topology: agents send to *registered*
-    // peers, not to ghosts.
+    // Historical context (pre-2026-05-12): the inspector's
+    // `read_message_snapshot` only walked mailboxes for identities in
+    // `BrokerStateView.clients`, which forced this test to register
+    // both alice AND bob. After adversarial-review finding 2, verify
+    // reads mailbox files directly and no longer cares whether the
+    // recipient is registered. Bob's registration here is now redundant
+    // for correctness but kept for parity with the typical wire shape
+    // (registered → registered DM).
     //
-    // Two MCP processes must share the SAME local_root so they share
-    // `FAMP_BUS_SOCKET` (Harness::with_local_root sets the socket to
-    // `local_root/bus.sock` and the broker spawns from the first
-    // connect, so both MCP children rendezvous on the same broker).
+    // The companion test `verify_finds_offline_recipient_envelope`
+    // below covers the original gap (recipient never registers).
     let shared_root = tempfile::tempdir().unwrap();
     let root_path = shared_root.path().to_path_buf();
     let mut alice = Harness::with_local_root(&root_path, None);
     let mut bob = Harness::with_local_root(&root_path, None);
 
-    // Register both ends. Bob is registered SOLELY so his name shows
-    // up in BrokerStateView.clients — without this the inspector's
-    // snapshot omits his mailbox and famp_verify can't see the
-    // envelope. The actual recovery flow doesn't require bob to do
-    // anything; this is purely a test-infra artifact.
     let _ = alice.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
     let _ = bob.tool_call("famp_register", &serde_json::json!({ "identity": "bob" }));
 
@@ -178,6 +173,154 @@ fn verify_returns_delivered_true_for_known_task_id() {
         row["recipient"].as_str().unwrap_or("").contains("bob"),
         "row.recipient should mention bob: {row}"
     );
+    drop(alice);
+    drop(bob);
+    drop(shared_root);
+}
+
+#[test]
+fn verify_finds_offline_recipient_envelope() {
+    // Adversarial-review finding 2 (high): the prior verify
+    // implementation bounced through `InspectKind::Messages`, which
+    // only scans mailboxes for currently-registered canonical holders.
+    // A recipient that crashed, exited, or has never registered has
+    // its mailbox on disk (the broker writes envelopes unconditionally)
+    // but was invisible to the inspector — leaving the agent with a
+    // false `delivered: false` despite a durable write.
+    //
+    // After the fix, verify reads the mailbox JSONL file directly so
+    // offline / never-registered recipients are covered. This test
+    // exercises the offline case by NOT registering the recipient.
+    let shared_root = tempfile::tempdir().unwrap();
+    let root_path = shared_root.path().to_path_buf();
+    let mut alice = Harness::with_local_root(&root_path, None);
+
+    let _ = alice.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
+    // Bob is NEVER registered. The broker still writes his mailbox.
+    let send = alice.tool_call(
+        "famp_send",
+        &serde_json::json!({
+            "peer":  "bob",
+            "mode":  "open",
+            "title": "offline-verify",
+        }),
+    );
+    let sb = Harness::ok_content(&send);
+    let task_id = sb["task_id"].as_str().unwrap().to_string();
+
+    let verify = alice.tool_call(
+        "famp_verify",
+        &serde_json::json!({ "task_id": task_id, "peer": "bob" }),
+    );
+    let vb = Harness::ok_content(&verify);
+    assert_eq!(
+        vb["delivered"].as_bool(),
+        Some(true),
+        "verify must find envelopes destined for never-registered recipients: {vb}"
+    );
+    assert_eq!(vb["task_id"].as_str().unwrap_or(""), task_id);
+    let row = &vb["row"];
+    assert!(row.is_object(), "row must be present on hit: {vb}");
+    assert!(
+        row["sender"].as_str().unwrap_or("").contains("alice"),
+        "row.sender should mention alice: {row}"
+    );
+    drop(alice);
+    drop(shared_root);
+}
+
+#[test]
+fn verify_envelope_id_distinguishes_specific_reply_on_thread() {
+    // Adversarial-review finding 4 (medium): matching only on
+    // `causality.ref == thread_id` proves "some envelope on this
+    // thread landed" but not "MY specific reply landed." When the
+    // caller supplies envelope_id, verify additionally requires the
+    // envelope's own id to match — closing the false-positive window.
+    let shared_root = tempfile::tempdir().unwrap();
+    let root_path = shared_root.path().to_path_buf();
+    let mut alice = Harness::with_local_root(&root_path, None);
+    let mut bob = Harness::with_local_root(&root_path, None);
+
+    let _ = alice.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
+    let _ = bob.tool_call("famp_register", &serde_json::json!({ "identity": "bob" }));
+
+    // Alice opens a thread.
+    let open = alice.tool_call(
+        "famp_send",
+        &serde_json::json!({ "peer": "bob", "mode": "open", "title": "ping" }),
+    );
+    let ob = Harness::ok_content(&open);
+    let thread_id = ob["task_id"].as_str().unwrap().to_string();
+
+    // Bob replies twice on the same thread (both replies share
+    // causality.ref = thread_id; each has a distinct envelope id).
+    let reply_a = bob.tool_call(
+        "famp_send",
+        &serde_json::json!({
+            "peer": "alice",
+            "mode": "reply",
+            "task_id": thread_id,
+            "body":  "pong-1",
+            "expect_reply": true,
+        }),
+    );
+    let ra = Harness::ok_content(&reply_a);
+    let reply_a_id = ra["task_id"].as_str().unwrap().to_string();
+
+    let reply_b = bob.tool_call(
+        "famp_send",
+        &serde_json::json!({
+            "peer": "alice",
+            "mode": "reply",
+            "task_id": thread_id,
+            "body":  "pong-2",
+            "expect_reply": true,
+        }),
+    );
+    let rb = Harness::ok_content(&reply_b);
+    let reply_b_id = rb["task_id"].as_str().unwrap().to_string();
+    assert_ne!(reply_a_id, reply_b_id);
+
+    // Thread-only verify hits (some reply on the thread landed).
+    let v_thread = Harness::ok_content(&bob.tool_call(
+        "famp_verify",
+        &serde_json::json!({ "task_id": thread_id, "peer": "alice" }),
+    ));
+    assert_eq!(v_thread["delivered"].as_bool(), Some(true));
+
+    // Verify with envelope_id = reply_b_id MUST find it (proves the
+    // SECOND reply specifically landed, not just "something on thread").
+    let v_specific = Harness::ok_content(&bob.tool_call(
+        "famp_verify",
+        &serde_json::json!({
+            "task_id": thread_id,
+            "peer": "alice",
+            "envelope_id": reply_b_id,
+        }),
+    ));
+    assert_eq!(
+        v_specific["delivered"].as_bool(),
+        Some(true),
+        "verify with envelope_id must match the specific reply: {v_specific}"
+    );
+
+    // Verify with an envelope_id that's well-formed but not present
+    // must miss, EVEN though a thread match exists.
+    let bogus = "0193abcd-ef01-7fff-8fff-ffffffffffff";
+    let v_bogus = Harness::ok_content(&bob.tool_call(
+        "famp_verify",
+        &serde_json::json!({
+            "task_id": thread_id,
+            "peer": "alice",
+            "envelope_id": bogus,
+        }),
+    ));
+    assert_eq!(
+        v_bogus["delivered"].as_bool(),
+        Some(false),
+        "envelope_id mismatch must produce delivered=false even when thread matches: {v_bogus}"
+    );
+
     drop(alice);
     drop(bob);
     drop(shared_root);
