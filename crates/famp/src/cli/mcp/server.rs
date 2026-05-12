@@ -97,6 +97,17 @@ fn tool_descriptors() -> serde_json::Value {
             }
         },
         {
+            "name": "famp_set_listen",
+            "description": "Flip listen mode for the current session WITHOUT re-registering. Use this when a window registered with the wrong listen flag, or when an interactive window needs to toggle into auto-wake for a long-running peer conversation. Mutates the canonical holder's flag in place — no mailbox replay (re-registering would re-drain from offset 0). Returns { listen_mode: <bool> } echoing the post-mutation flag.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "listen": { "type": "boolean", "description": "Target listen-mode value. true = Stop hook auto-wakes Claude on inbound messages; false = window stays idle between turns." }
+                },
+                "required": ["listen"]
+            }
+        },
+        {
             "name": "famp_whoami",
             "description": "Return the current session's identity binding. Use this to debug session binding — for example, to confirm a famp_register call took effect, or to discover whether a window is still unregistered. Returns { active: string|null, joined: [string] }; never errors.",
             "inputSchema": {
@@ -416,6 +427,7 @@ async fn dispatch_tool(
         "famp_peers" => tools::peers::call(input).await,
         "famp_join" => tools::join::call(input).await,
         "famp_leave" => tools::leave::call(input).await,
+        "famp_set_listen" => tools::set_listen::call(input).await,
         other => Err(ToolError::new(
             BusErrorKind::Internal,
             format!("unknown tool: {other}"),

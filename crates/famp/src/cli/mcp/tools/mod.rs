@@ -16,6 +16,7 @@ pub mod leave;
 pub mod peers;
 pub mod register;
 pub mod send;
+pub mod set_listen;
 pub mod whoami;
 
 /// A typed tool error.
