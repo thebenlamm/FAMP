@@ -201,12 +201,13 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
 
 /// Enumerate `*.jsonl` files under `dir`.
 ///
-/// - `NotFound` → `Ok(empty)`: broker hasn't written any mailboxes yet;
-///   clean "no envelopes" state.
-/// - Any other IO error (permission denied, etc.) → `Err(Internal)`:
-///   ambiguous state; do NOT signal `delivered: false` to the caller.
+/// - `NotFound` on `read_dir` → `Ok(empty)`: broker hasn't written any
+///   mailboxes yet; clean "no envelopes" state.
+/// - Any other `read_dir` error → `Err(Internal)`: ambiguous state.
+/// - Per-entry errors during iteration → `Err(Internal)`: not silently
+///   dropped, because a partial listing could miss the evidence we need.
 fn list_mailbox_files(dir: &Path) -> Result<Vec<PathBuf>, ToolError> {
-    let entries = match std::fs::read_dir(dir) {
+    let iter = match std::fs::read_dir(dir) {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => {
@@ -216,22 +217,29 @@ fn list_mailbox_files(dir: &Path) -> Result<Vec<PathBuf>, ToolError> {
             ));
         }
     };
-    Ok(entries
-        .filter_map(Result::ok)
-        .filter_map(|e| {
-            let path = e.path();
-            (path.extension().and_then(|s| s.to_str()) == Some("jsonl")).then_some(path)
-        })
-        .collect())
+    let mut paths = Vec::new();
+    for entry in iter {
+        let entry = entry.map_err(|e| {
+            ToolError::new(
+                BusErrorKind::Internal,
+                format!("error iterating mailbox directory {}: {e}", dir.display()),
+            )
+        })?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
 }
 
 /// Read every candidate mailbox file and return the first matching envelope.
 ///
 /// Per-file error handling:
-/// - `NotFound` → skip (mailbox never written; `delivered: false` is correct).
-/// - Any other IO error (permission denied, corrupt read, etc.) → `Err(Internal)`.
-///   Surfacing an IO error prevents the "safe to re-send" signal from firing when
-///   we simply can't read the evidence.
+/// - `InboxError::Io { source }` where `source.kind() == NotFound` → skip.
+///   The mailbox file simply hasn't been written yet; `delivered: false` is correct.
+/// - Any other error → `Err(Internal)`. Permission errors, corrupt reads, etc.
+///   must not produce the `delivered: false` "safe to retry" signal.
 fn scan_files(
     task_id: &str,
     envelope_id: Option<&str>,
@@ -240,18 +248,15 @@ fn scan_files(
     for path in candidates {
         let entries = match famp_inbox::read::read_all(path) {
             Ok(e) => e,
+            Err(famp_inbox::InboxError::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound =>
+            {
+                continue;
+            }
             Err(e) => {
-                // read_all wraps IO errors; check the inner kind via Display
-                // (famp-inbox::InboxError::Io carries the source).
-                let msg = e.to_string();
-                // NotFound → mailbox file simply doesn't exist yet; skip.
-                if msg.contains("No such file") || msg.contains("os error 2") {
-                    continue;
-                }
-                // Permission denied or any other real IO failure.
                 return Err(ToolError::new(
                     BusErrorKind::Internal,
-                    format!("cannot read mailbox {}: {msg}", path.display()),
+                    format!("cannot read mailbox {}: {e}", path.display()),
                 ));
             }
         };
@@ -431,7 +436,8 @@ mod tests {
             "0193abcd-ef01-7000-8000-000000000001",
             None,
             &[path.clone()],
-        );
+        )
+        .expect("scan_files should not error on a readable mailbox");
         assert_eq!(out["delivered"], Value::Bool(true));
         assert_eq!(
             out["task_id"],
@@ -458,20 +464,21 @@ mod tests {
             "0193abcd-ef01-7000-8000-00000000ffff",
             None,
             &[path.clone()],
-        );
+        )
+        .expect("scan_files should not error on a readable mailbox");
         assert_eq!(out["delivered"], Value::Bool(false));
         assert!(out.get("row").is_none());
     }
 
     #[test]
     fn scan_files_skips_missing_mailbox_files() {
-        // Missing-file MUST not error — verify is best-effort and
-        // returns `delivered: false` for any cold-recipient case.
+        // NotFound → delivered:false (mailbox simply hasn't been written yet).
         let out = scan_files(
             "0193abcd-ef01-7000-8000-000000000001",
             None,
             &[PathBuf::from("/nonexistent/famp/mailboxes/ghost.jsonl")],
-        );
+        )
+        .expect("NotFound should be skipped, not returned as Err");
         assert_eq!(out["delivered"], Value::Bool(false));
     }
 
@@ -489,7 +496,8 @@ mod tests {
             "ghost", // never registered — the inspector would skip this mailbox
             &[open_envelope(env_id, "alice", "ghost")],
         );
-        let out = scan_files(env_id, None, &[path.clone()]);
+        let out = scan_files(env_id, None, &[path.clone()])
+            .expect("scan_files should not error on a readable mailbox");
         assert_eq!(
             out["delivered"],
             Value::Bool(true),
@@ -505,14 +513,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mb = dir.path().join("mailboxes");
         let mut envelopes = Vec::new();
-        // 100 distinct envelopes; we look up the FIRST one.
         for i in 0..100u32 {
             let id = format!("0193abcd-ef01-7000-8000-0000000{i:06x}");
             envelopes.push(open_envelope(&id, "alice", "bob"));
         }
         let path = write_mailbox(&mb, "bob", &envelopes);
         let first = format!("0193abcd-ef01-7000-8000-0000000{:06x}", 0u32);
-        let out = scan_files(&first, None, &[path.clone()]);
+        let out = scan_files(&first, None, &[path.clone()])
+            .expect("scan_files should not error on a readable mailbox");
         assert_eq!(
             out["delivered"],
             Value::Bool(true),
