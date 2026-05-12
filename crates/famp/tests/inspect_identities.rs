@@ -360,3 +360,100 @@ fn inspect_identities_mailbox_metadata_unread_total() {
     kill_and_wait(&mut receiver);
     kill_and_wait(&mut sender);
 }
+
+/// Regression test for fix 260512-jdv:
+/// `famp inspect identities` UNREAD must drop below TOTAL after the receiver
+/// drains its mailbox via `famp inbox list` + `famp inbox ack`.
+///
+/// Ack flow used here:
+///   1. `famp inbox list --as receiver` — drains messages, prints
+///      one envelope per line followed by `{"next_offset":N}` footer.
+///   2. Parse `next_offset` from the last JSON line.
+///   3. `famp inbox ack --offset <N> --as receiver` — pure local file write,
+///      writes `~/.famp/mailboxes/.receiver.cursor`. NO broker round-trip.
+///   4. `famp inspect identities --json` — reads the on-disk cursor,
+///      computes unread = read_from(cursor_offset).len() which is now 0.
+#[test]
+fn inspect_identities_unread_decreases_after_ack() {
+    let bus = Bus::new();
+    let recv_cwd = bus.tmp.path().join("recv_cwd_ack");
+    let send_cwd = bus.tmp.path().join("send_cwd_ack");
+    std::fs::create_dir_all(&recv_cwd).unwrap();
+    std::fs::create_dir_all(&send_cwd).unwrap();
+    let mut receiver = bus.famp_spawn_in(&recv_cwd, &["register", "receiver"]);
+    let mut sender = bus.famp_spawn_in(&send_cwd, &["register", "sender"]);
+    bus.wait_for_register("receiver");
+    bus.wait_for_register("sender");
+
+    for body in ["one", "two"] {
+        let out = bus.famp_cmd_in(
+            &send_cwd,
+            &[
+                "send", "--as", "sender", "--to", "receiver",
+                "--new-task", body, "--body", body,
+            ],
+        );
+        assert!(
+            out.status.success(),
+            "send failed: stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // BEFORE-ack assertion: both messages should be unread.
+    let pre = bus.famp_cmd(&["inspect", "identities", "--json"]);
+    assert!(pre.status.success());
+    let pre_val: serde_json::Value = serde_json::from_slice(&pre.stdout).unwrap();
+    let pre_row = pre_val["rows"].as_array().unwrap().iter()
+        .find(|r| r["name"] == "receiver").unwrap();
+    assert_eq!(pre_row["mailbox_total"].as_u64(), Some(2));
+    assert_eq!(
+        pre_row["mailbox_unread"].as_u64(), Some(2),
+        "pre-ack: unread must equal total (sanity): {pre_val}"
+    );
+
+    // Step 1: list the inbox to get next_offset.
+    let list_out = bus.famp_cmd(&["inbox", "list", "--as", "receiver"]);
+    assert!(
+        list_out.status.success(),
+        "inbox list failed: stderr={}",
+        String::from_utf8_lossy(&list_out.stderr)
+    );
+    let list_stdout = String::from_utf8_lossy(&list_out.stdout);
+    // The last line is the footer: {"next_offset":N}
+    let footer_line = list_stdout.lines().last().expect("inbox list produced no output");
+    let footer: serde_json::Value = serde_json::from_str(footer_line)
+        .expect("footer line is not valid JSON");
+    let next_offset = footer["next_offset"].as_u64()
+        .expect("footer has no next_offset field");
+    assert!(next_offset > 0, "next_offset must be positive after 2 messages");
+
+    // Step 2: ack (write .receiver.cursor) -- pure local file write.
+    let ack = bus.famp_cmd(&[
+        "inbox", "ack", "--offset", &next_offset.to_string(), "--as", "receiver",
+    ]);
+    assert!(
+        ack.status.success(),
+        "inbox ack failed: stderr={}",
+        String::from_utf8_lossy(&ack.stderr)
+    );
+
+    // AFTER-ack assertion: unread must drop; total unchanged.
+    let post = bus.famp_cmd(&["inspect", "identities", "--json"]);
+    assert!(post.status.success());
+    let post_val: serde_json::Value = serde_json::from_slice(&post.stdout).unwrap();
+    let post_row = post_val["rows"].as_array().unwrap().iter()
+        .find(|r| r["name"] == "receiver").unwrap();
+    assert_eq!(
+        post_row["mailbox_total"].as_u64(), Some(2),
+        "post-ack: total must remain 2: {post_val}"
+    );
+    let post_unread = post_row["mailbox_unread"].as_u64().unwrap();
+    assert!(
+        post_unread < 2,
+        "post-ack: unread must drop below total. got unread={post_unread}, val={post_val}"
+    );
+
+    kill_and_wait(&mut receiver);
+    kill_and_wait(&mut sender);
+}
