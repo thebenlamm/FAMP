@@ -329,6 +329,68 @@ fn test_mcp_bus_e2e() {
     bob.shutdown();
 }
 
+/// TEST-07 — famp_inbox task_id fallback for new_task messages.
+///
+/// Regression test for the bug where famp_inbox returned `task_id: null`
+/// for new_task messages because it only checked `causality.ref` (which
+/// only exists on reply envelopes). For new_task, the canonical task_id
+/// lives in `envelope.id` — the broker uses this in SendOk. The inbox
+/// tool must fall back to `envelope.id` so agents can always reply.
+#[test]
+fn test_inbox_task_id_populated_for_new_task() {
+    use std::time::Duration;
+
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let sock = tmp.path().join("task-id-test-bus.sock");
+
+    let mut alice = McpHarness::spawn(&sock, "alice-tid");
+    let mut bob = McpHarness::spawn(&sock, "bob-tid");
+
+    let reg_a = alice.tool_call("famp_register", &json!({ "name": "alice-tid" }));
+    McpHarness::ok_result(&reg_a, "alice register");
+    let reg_b = bob.tool_call("famp_register", &json!({ "name": "bob-tid" }));
+    McpHarness::ok_result(&reg_b, "bob register");
+
+    // alice sends a new_task to bob
+    let send = alice.tool_call(
+        "famp_send",
+        &json!({
+            "peer": "bob-tid",
+            "mode": "new_task",
+            "title": "ping from alice",
+        }),
+    );
+    let send_body = McpHarness::ok_result(&send, "alice send");
+    let send_task_id = send_body["task_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("alice send missing task_id: {send_body}"))
+        .to_string();
+    assert!(!send_task_id.is_empty(), "send task_id should be non-empty");
+
+    // Give broker time to deliver
+    std::thread::sleep(Duration::from_millis(200));
+
+    // bob reads inbox — task_id must be populated from envelope.id (not null)
+    let inbox = bob.tool_call("famp_inbox", &json!({ "action": "list" }));
+    let inbox_body = McpHarness::ok_result(&inbox, "bob inbox");
+    let entries = inbox_body["entries"]
+        .as_array()
+        .unwrap_or_else(|| panic!("inbox entries not an array: {inbox_body}"));
+    assert!(!entries.is_empty(), "bob inbox should have at least one entry");
+
+    let entry = &entries[0];
+    let inbox_task_id = entry["task_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("inbox entry task_id is null — new_task fallback broken: {entry}"));
+    assert_eq!(
+        inbox_task_id, send_task_id,
+        "inbox task_id must match the send task_id"
+    );
+
+    alice.shutdown();
+    bob.shutdown();
+}
+
 /// TEST-06 — listen mode notification path.
 ///
 /// Verifies that when alice sends to bob and bob is parked on

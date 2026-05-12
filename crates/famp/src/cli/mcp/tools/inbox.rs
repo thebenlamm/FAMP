@@ -75,9 +75,12 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     match run_at_structured(&resolve_sock_path(), args).await {
         Ok(out) => {
             // Project each envelope into the v0.8 MCP-tool entry shape:
-            // include `task_id` (extracted from `causality.ref`) at the
-            // top level alongside the raw envelope, so tests/clients can
-            // grab `task_id` without re-walking the envelope structure.
+            // include `task_id` at the top level so agents can reply without
+            // re-walking the envelope. For reply messages (deliver/terminal),
+            // task_id comes from `causality.ref`. For new_task messages,
+            // causality is absent — fall back to `envelope.id`, which the
+            // broker uses as the canonical task identifier (see task_id_from
+            // in broker/handle.rs). This ensures task_id is always non-null.
             let entries: Vec<Value> = out
                 .envelopes
                 .iter()
@@ -86,6 +89,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
                         .get("causality")
                         .and_then(|c| c.get("ref"))
                         .and_then(Value::as_str)
+                        .or_else(|| env.get("id").and_then(Value::as_str))
                         .map(str::to_string);
                     serde_json::json!({
                         "task_id": task_id,
