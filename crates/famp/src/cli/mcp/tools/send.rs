@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use crate::bus_client::resolve_sock_path;
 use crate::cli::error::CliError;
-use crate::cli::mcp::session;
+use crate::cli::mcp::session::{self, LastSend};
 use crate::cli::mcp::tools::ToolError;
 use crate::cli::send::{run_at_structured, SendArgs};
 
@@ -43,9 +43,41 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     // gate (server.rs) guarantees active_identity is Some by the time we
     // reach this code path.
     args.act_as = session::active_identity().await;
+    // Capture the target before `args` is moved into `run_at_structured` so
+    // we can stamp `LastSend.to_peer` / `to_channel` on success. This is
+    // the resilience hook for the Claude Code "Tool result missing due to
+    // internal error" failure mode: the broker delivers, but the model
+    // never sees the response. After such a drop the agent calls
+    // `famp_whoami` to learn `task_id` + recipient, then `famp_verify` to
+    // confirm delivery before deciding whether to retry.
+    let to_peer = args.to.clone();
+    let to_channel = args.channel.clone();
+    // `thread_task_id` captures the ORIGINATING task uuid for reply-mode
+    // sends. The inspector keys reply envelopes by `causality.ref`, not
+    // by the reply's own envelope id, so `famp_verify` needs the thread
+    // id to find the row. For `open` (new-task) mode `args.task` is
+    // None and we leave the field unset — the SendOk task_id and the
+    // inspector's row task_id coincide for new-task envelopes.
+    let thread_task_id = args.task.clone();
     match run_at_structured(&resolve_sock_path(), args).await {
         Ok(out) => {
             let woken_any = out.delivered_rows.iter().any(|row| row.woken);
+            // Record last-send AFTER the broker confirmed `SendOk` (we
+            // reach this arm only when `run_at_structured` returned Ok).
+            // Timestamp uses the same RFC 3339 second-precision shape as
+            // the envelope path in `cli::send::build_envelope_value` so
+            // operators see a consistent format across both surfaces.
+            let ts = time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| "<unformatted>".to_string());
+            session::set_last_send(LastSend {
+                task_id: out.task_id.clone(),
+                thread_task_id,
+                to_peer,
+                to_channel,
+                ts,
+            })
+            .await;
             Ok(serde_json::json!({
                 "task_id": out.task_id,
                 "delivered": out.delivered,
