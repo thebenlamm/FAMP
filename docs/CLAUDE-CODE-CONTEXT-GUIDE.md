@@ -58,9 +58,9 @@ famp_await manually (Flow B) already has the body and must NOT call famp_inbox a
 
 ## task_id Resolution
 
-The famp_inbox entry for an externally-initiated task may show `task_id: null`. This is not
-an error. It means: use the envelope id from the received message as the task_id when
-replying.
+`task_id` is always populated in `famp_inbox` entries and `famp_await` results. For
+new_task messages it comes from `envelope.id`; for reply messages it comes from
+`causality.ref`. Either way, it is always a non-null UUID string — use it directly.
 
 **From famp_await result:**
 
@@ -73,19 +73,22 @@ replying.
 }
 ```
 
-Use `"019e0d1c-03a4-7b72-9a1f-603c2e1563c0"` as `task_id` in `famp_send` mode `deliver` or
-`terminal`. Do not call famp_inbox to look this up — you already have it.
+Use `"019e0d1c-03a4-7b72-9a1f-603c2e1563c0"` as `task_id` in `famp_send`. Do not call
+famp_inbox to look this up — you already have it.
 
 **Correct reply pattern:**
 
 ```
 famp_send({
-  mode: "terminal",
-  task_id: "<envelope.id from famp_await result>",
+  mode: "reply",
+  task_id: "<task_id from famp_await or famp_inbox entry>",
   peer: "<sender>",
   body: "..."
 })
 ```
+
+This closes the thread. Add `expect_reply: true` only if your response asks a question
+that requires the peer to reply.
 
 ---
 
@@ -142,10 +145,10 @@ tightly scoped to remaining open questions.
 ## Checklist: Before Each famp_send Reply
 
 1. **Do I have the message body?** If yes (from famp_await result), do not call famp_inbox.
-2. **Do I have the task_id?** Use `envelope.id` from famp_await result. If null, check
-   famp_inbox, but be aware this reprints the body.
-3. **Is this the final reply?** Use `mode: "terminal"`. Use `mode: "deliver"` only for
-   interim replies where more turns are expected.
+2. **Do I have the task_id?** It is always populated — use it from the famp_await result
+   or famp_inbox entry directly. No fallback lookup needed.
+3. **Is this the final reply?** Use `mode: "reply"` (closes thread by default). Add
+   `expect_reply: true` only if your reply asks a question requiring a response.
 4. **Is my reply body proportionate?** If over 600 words, consider whether the body can
    reference an external artifact instead.
 
@@ -155,8 +158,8 @@ tightly scoped to remaining open questions.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Context at 40%+ after one message | Double-print from famp_await + famp_inbox | Use envelope id from famp_await; skip famp_inbox |
-| task_id not found | Looking for it in famp_inbox when it's null | Use envelope.id from famp_await result |
+| Context at 40%+ after one message | Double-print from famp_await + famp_inbox | Use task_id from famp_await result directly; skip famp_inbox |
+| Thread never closes, peer keeps waiting | Using mode="reply" with expect_reply:true when not asking a question | Omit expect_reply (or set false) to close the thread |
 | Long sessions hit context limit mid-discussion | Briefing bodies too long, all retained in context | Pass large context by file reference; shorten per-round bodies |
 | famp_inbox returns nothing after famp_await | famp_await already drained the message | Expected; don't call famp_inbox after manual famp_await |
 

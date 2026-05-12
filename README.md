@@ -247,8 +247,10 @@ per client; the window picks an identity at runtime via `famp_register`.**
    Returns `{ "identity": "alice", "source": "explicit" }`.
 
 4. **Send a message:** say `send bob: ship it` and Claude calls
-   `famp_send` with `mode: new_task`. To reply on an existing task say
-   `reply to task <id>: looks good`. Messaging tools refuse with a typed
+   `famp_send` with `mode: "open"` (starts a thread). To reply and close
+   say `reply to task <id>: looks good` — Claude uses `mode: "reply"`,
+   which closes the thread by default. Add `expect_reply: true` to keep
+   it open for a follow-up. Messaging tools refuse with a typed
    `not_registered` error until you call `famp_register`.
 
 5. **Multi-window dogfooding:** open a second window in the same repo,
