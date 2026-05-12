@@ -399,17 +399,8 @@ async fn execute_outs(
                     }
                 };
 
-                // CRITICAL (planner note): broker.cursor_offset is not Send.
-                // Capture cursors + state snapshot + path BEFORE spawn.
+                // state snapshot is captured before spawn because Broker is not Send.
                 let state_snapshot = broker.view();
-                let cursor_offsets: BTreeMap<String, u64> = state_snapshot
-                    .clients
-                    .iter()
-                    .map(|c| {
-                        let mailbox = MailboxName::Agent(c.name.clone());
-                        (c.name.clone(), broker.cursor_offset(&mailbox))
-                    })
-                    .collect();
                 let bus_dir_owned = bus_dir.to_path_buf();
                 let sock_path_owned = sock_path.to_path_buf();
                 let kind_for_blocking = kind.clone();
@@ -430,7 +421,6 @@ async fn execute_outs(
                                 &state_snapshot,
                                 &sock_path_owned,
                                 &bus_dir_owned,
-                                &cursor_offsets,
                                 &kind_for_blocking,
                             );
                             famp_inspect_server::dispatch(&state_snapshot, &ctx, &kind_for_blocking)
@@ -479,17 +469,15 @@ fn build_inspect_ctx_blocking(
     view: &famp_bus::BrokerStateView,
     sock_path: &Path,
     bus_dir: &Path,
-    cursor_offsets: &BTreeMap<String, u64>,
     kind: &famp_inspect_proto::InspectKind,
 ) -> BrokerCtx {
     let mailbox_metadata = view
         .clients
         .iter()
         .map(|client| {
-            let cursor_offset = cursor_offsets.get(&client.name).copied().unwrap_or(0);
             (
                 client.name.clone(),
-                read_mailbox_meta_for(bus_dir, &client.name, cursor_offset),
+                read_mailbox_meta_for(bus_dir, &client.name),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -562,7 +550,17 @@ fn inspect_budget_exceeded_payload(elapsed_ms: u64) -> serde_json::Value {
     serde_json::json!({ "kind": "budget_exceeded", "elapsed_ms": elapsed_ms })
 }
 
-fn read_mailbox_meta_for(bus_dir: &Path, name: &str, cursor_offset: u64) -> MailboxMeta {
+fn read_mailbox_meta_for(bus_dir: &Path, name: &str) -> MailboxMeta {
+    // fix 260512-jdv: cursor truth lives on disk at
+    // `<bus_dir>/mailboxes/.<name>.cursor` written by
+    // `cursor_exec::execute_advance_cursor`. The in-memory `BrokerState.cursors`
+    // map was never populated and has been deleted.
+    let cursor_path = bus_dir.join("mailboxes").join(format!(".{name}.cursor"));
+    let cursor_offset = std::fs::read_to_string(&cursor_path)
+        .ok()
+        .and_then(|s| s.trim_end_matches('\n').parse::<u64>().ok())
+        .unwrap_or(0);
+
     let path = bus_dir.join("mailboxes").join(format!("{name}.jsonl"));
     let Ok(entries) = famp_inbox::read::read_all(&path) else {
         return MailboxMeta::default();
@@ -742,12 +740,10 @@ mod tests {
         fn build_inspect_ctx_for_broker_kind_does_not_walk_taskdir_or_mailboxes() {
             let tmp = tempfile::TempDir::new().unwrap();
             let view = view_with_clients(&["alice"]);
-            let cursor_offsets = BTreeMap::from([("alice".to_string(), 0)]);
             let ctx = build_inspect_ctx_blocking(
                 &view,
                 &tmp.path().join("bus.sock"),
                 tmp.path(),
-                &cursor_offsets,
                 &famp_inspect_proto::InspectKind::Broker(
                     famp_inspect_proto::InspectBrokerRequest::default(),
                 ),

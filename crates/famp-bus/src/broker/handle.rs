@@ -245,7 +245,10 @@ fn register<E: BrokerEnv>(
     }
 
     let mailbox = MailboxName::Agent(name.clone());
-    let since = broker.state.cursors.get(&mailbox).copied().unwrap_or(0);
+    // Register drain-from-start: the in-memory `cursors` map was never
+    // populated (deleted in fix 260512-jdv); preserving the historical
+    // since=0 behavior. Replay-on-restart is tracked separately.
+    let since: u64 = 0;
     let drained = match broker.env.drain_from(&mailbox, since) {
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
@@ -522,7 +525,10 @@ fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String)
     }
 
     let mailbox = MailboxName::Channel(channel.clone());
-    let since = broker.state.cursors.get(&mailbox).copied().unwrap_or(0);
+    // Join drain-from-start: the in-memory `cursors` map was never
+    // populated (deleted in fix 260512-jdv); preserving the historical
+    // since=0 behavior.
+    let since: u64 = 0;
     let drained = match broker.env.drain_from(&mailbox, since) {
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],

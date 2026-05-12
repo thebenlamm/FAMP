@@ -91,10 +91,4 @@ impl<E: BrokerEnv> Broker<E> {
         self.state.view()
     }
 
-    /// Read-only cursor lookup for executor-side inspector metadata.
-    /// The pure actor keeps cursor ownership; the executor only needs
-    /// the current line-boundary byte offset to compute unread counts.
-    pub fn cursor_offset(&self, name: &MailboxName) -> u64 {
-        self.state.cursors.get(name).copied().unwrap_or(0)
-    }
 }

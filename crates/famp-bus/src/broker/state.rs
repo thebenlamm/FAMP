@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Instant, SystemTime};
 
-use crate::{AwaitFilter, ClientId, MailboxName};
+use crate::{AwaitFilter, ClientId};
 
 #[derive(Debug, Clone)]
 pub(super) struct ClientState {
@@ -57,12 +57,15 @@ pub(super) struct ParkedAwait {
 /// at construction; `derive(Default)` was REMOVED because Default
 /// for `SystemTime` is `UNIX_EPOCH`, which would falsely report
 /// 1970-01-01 as broker startup time (D-08).
+///
+/// The `cursors` field was removed in fix 260512-jdv: it was initialized
+/// empty and never written, so cursor truth lives on disk at
+/// `~/.famp/mailboxes/.<name>.cursor` (written by `cursor_exec::execute_advance_cursor`).
 #[derive(Debug)]
 pub(super) struct BrokerState {
     pub(super) clients: BTreeMap<ClientId, ClientState>,
     pub(super) channels: BTreeMap<String, BTreeSet<String>>,
     pub(super) pending_awaits: BTreeMap<ClientId, ParkedAwait>,
-    pub(super) cursors: BTreeMap<MailboxName, u64>,
     /// D-07: wall-clock startup time, set by the answering process.
     /// Surfaced in `famp inspect broker` reply (INSP-BROKER-01).
     /// NEVER socket file mtime (D-08): mtime lies after restart-
@@ -77,7 +80,6 @@ impl BrokerState {
             clients: BTreeMap::new(),
             channels: BTreeMap::new(),
             pending_awaits: BTreeMap::new(),
-            cursors: BTreeMap::new(),
             started_at: SystemTime::now(),
         }
     }
