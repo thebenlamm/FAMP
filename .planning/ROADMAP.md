@@ -291,5 +291,38 @@ Plans:
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
+### Phase 999.7: Broker inspect ingress prioritization (BACKLOG)
+
+**Goal:** Prevent saturated inspect RPC traffic from monopolizing the broker's shared ingress queue before the inspect semaphore is reached.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Captured 2026-05-13 after adversarial review of the `inspect_load_does_not_starve_bus_messages` flake fix. The current mitigation bounds inspect filesystem dispatch and removes unbounded shed-path reply tasks, but all client frames still share `broker_rx`: inspect `Hello`, `Inspect`, and disconnect frames can fill or monopolize ingress before `Out::InspectRequest` reaches the semaphore. Future planning should evaluate splitting inspect ingress from ordinary bus ingress, classifying inspect frames before the shared broker actor queue, or giving ordinary bus traffic priority/budgeted draining so live `Send`/`Inbox` traffic cannot be delayed by saturated inspect connection churn.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.8: Audit-log FSM state handling for inspect tasks (BACKLOG)
+
+**Goal:** Teach `famp inspect tasks` and message metadata to derive stable FSM states from v0.9/v0.10 `audit_log` send envelopes, not only canonical `request|commit|deliver|control` classes.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Captured 2026-05-13 during adversarial review of inspect load-test hardening. `derive_fsm_state` currently maps canonical envelope classes explicitly, but current local bus sends are encoded as `class: "audit_log"` with `body.event` and `body.details.mode`. Mailbox-only task rows and message metadata can therefore surface `UNKNOWN` for valid local bus task traffic. Future work should add explicit audit-log send-mode handling, e.g. `famp.send.new_task` / `mode: new_task` -> `REQUESTED`, `mode: deliver` -> `COMMITTED`, terminal deliver modes -> `COMPLETED|FAILED|CANCELLED`, with focused unit tests for task rows and message rows.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+### Phase 999.9: Review unrelated local worktree changes (BACKLOG)
+
+**Goal:** Decide whether the unrelated `Justfile` and `.claude/*` worktree changes observed during the inspect-load investigation should be kept, reviewed, committed separately, or discarded by the user.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Captured 2026-05-13 after the inspect-load investigation. The working tree contained unrelated changes to `Justfile` and untracked `.claude/scheduled_tasks.lock` / `.claude/settings.json` that were not part of the inspect starvation fix. They were intentionally left untouched to avoid reverting user-owned work. Future cleanup should inspect their provenance and either fold them into an intentional change, add ignore rules if generated, or remove them manually if they are accidental.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
 ---
 *Roadmap updated: 2026-05-10 — v0.10 Inspector & Observability recut after matt-essentialist + zed-velocity-engineer review. Three-phase structure: Phase 1 (Broker Diagnosis & Identity Inspection — closes orphan-listener incident class end-to-end, 16 reqs), Phase 2 (Task FSM & Message Visibility — I/O-bound handlers + the budget/cancel reqs that finally have something real to enforce against, 9 reqs), Phase 3 (Load Verification & Integration Hardening, 1 req). 26/26 v1 requirements mapped. Original cut (RPC-foundation-with-stub-handlers in Phase 1, all CLI in Phase 2) rejected as yak-shaving — Phase 1 success criteria around budget+cancel were testing synthetic test-only handlers, not the inspector's real work surface. INSP-RPC-02 reworded from runtime property test to compile-time `&BrokerState` signature + workspace dep-graph gate (`just check-inspect-readonly`). Phase numbering reset to Phase 1 per FAMP convention (v0.7/v0.8/v0.9 each reset; v0.10 follows). Independent of v1.0 federation gates (Gate A: Ben symmetric cross-machine; Gate B: 2nd implementer interop) which were unwelded 2026-05-09 per `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`. v0.9 Local-First Bus shipped 2026-05-04; v0.8 shipped 2026-04-26; v0.7 shipped 2026-04-14; v0.6 + v0.5.1 shipped 2026-04-13.*

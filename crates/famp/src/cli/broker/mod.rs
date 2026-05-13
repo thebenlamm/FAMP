@@ -390,14 +390,19 @@ async fn execute_outs(
                 let Ok(permit) = Arc::clone(inspect_semaphore).try_acquire_owned() else {
                     // No permit; reply with budget_exceeded
                     // (elapsed_ms=0 since no walk/dispatch was
-                    // attempted). Spawn the reply send so the main
-                    // execute_outs loop is not blocked on a
-                    // possibly-full per-client reply channel under
-                    // saturated inspect pressure.
-                    tokio::spawn(async move {
-                        let payload = inspect_budget_exceeded_payload(0);
-                        let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
-                    });
+                    // attempted). Prefer a direct channel send so the
+                    // saturated fast-shed path does not create one task
+                    // per rejected inspect call. If the per-client reply
+                    // channel is full, the inspector client is not keeping
+                    // up; shed the reply and drop its sender instead of
+                    // parking unbounded tasks behind it.
+                    let payload = inspect_budget_exceeded_payload(0);
+                    match reply_tx.try_send(BusReply::InspectOk { payload }) {
+                        Ok(()) | Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            reply_senders.remove(&client);
+                        }
+                    }
                     continue;
                 };
 
@@ -411,9 +416,6 @@ async fn execute_outs(
                 // pipeline. The outer loop returns immediately to
                 // processing other broker outputs.
                 tokio::spawn(async move {
-                    // The permit must outlive the spawned work; binding
-                    // it to a local keeps it alive for the task body.
-                    let _permit = permit;
                     // D-03/D-05: 500ms budget wraps the ENTIRE walk + dispatch.
                     let started = Instant::now();
                     let result = tokio::time::timeout(
@@ -425,13 +427,25 @@ async fn execute_outs(
                                 &bus_dir_owned,
                                 &kind_for_blocking,
                             );
-                            famp_inspect_server::dispatch(&state_snapshot, &ctx, &kind_for_blocking)
+                            let payload = famp_inspect_server::dispatch(
+                                &state_snapshot,
+                                &ctx,
+                                &kind_for_blocking,
+                            );
+                            (permit, payload)
                         }),
                     )
                     .await;
 
                     let payload = match result {
-                        Ok(Ok(payload)) => payload,
+                        Ok(Ok((permit, payload))) => {
+                            // Hold the permit until the reply is handed to
+                            // the per-client writer, preserving the
+                            // in-flight inspect cap for successful dispatches.
+                            let _permit = permit;
+                            let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
+                            return;
+                        }
                         Ok(Err(join_err)) => {
                             // Blocking thread panicked. Surface as BudgetExceeded
                             // with elapsed_ms = 0 to keep the codec path single.

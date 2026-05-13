@@ -229,6 +229,13 @@ fn inspect_tasks(
         return inspect_tasks_by_id(&all_envs, uuid.to_string(), req.full);
     }
 
+    let mut by_task: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
+    for env in &all_envs {
+        if let Some(task_id) = envelope_task_id(env) {
+            by_task.entry(task_id).or_default().push(env);
+        }
+    }
+
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -253,10 +260,10 @@ fn inspect_tasks(
                 .flatten()
                 .max()
                 .unwrap_or(0);
-            let envelope_count = all_envs
-                .iter()
-                .filter(|env| envelope_task_id(env).as_deref() == Some(record.task_id.as_str()))
-                .count() as u64;
+            let envelope_count = by_task
+                .get(&record.task_id)
+                .map(|envelopes| envelopes.len() as u64)
+                .unwrap_or_default();
 
             TaskRow {
                 task_id: record.task_id.clone(),
@@ -273,14 +280,10 @@ fn inspect_tasks(
         })
         .collect();
 
-    let mut by_task: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
-    for env in &all_envs {
-        if let Some(task_id) = envelope_task_id(env) {
-            if !seen_task_ids.contains(&task_id) {
-                by_task.entry(task_id).or_default().push(env);
-            }
-        }
+    for task_id in &seen_task_ids {
+        by_task.remove(task_id);
     }
+
     rows.extend(by_task.into_iter().map(|(task_id, envelopes)| {
         let last_transition = envelopes
             .iter()

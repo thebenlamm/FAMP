@@ -18,12 +18,14 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use assert_cmd::prelude::*;
+use famp::bus_client::BusClient;
+use famp_bus::{BusMessage, BusReply, Target};
 use famp_inspect_client::connect_and_call;
 use famp_inspect_proto::{InspectKind, InspectTasksRequest};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::time::{Duration, Instant};
 
 struct Bus {
@@ -125,7 +127,7 @@ fn cwd_from(bus: &Bus, sub: &str) -> PathBuf {
 /// observed loaded/baseline ratio is dominated by steady-state behavior
 /// rather than transient scheduling noise near the 0.80 threshold.
 const WINDOW: Duration = Duration::from_secs(8);
-/// Concurrent `famp send --as sender` worker threads driving bus traffic.
+/// Concurrent direct bus-send worker threads driving bus traffic.
 const SENDER_THREADS: usize = 4;
 /// Concurrent direct `InspectKind::Tasks` RPC worker threads applying
 /// saturated inspect pressure (GAP-03-01). Each worker runs a current-thread
@@ -137,55 +139,163 @@ const INSPECTOR_THREADS: usize = 8;
 /// the testing note `STARVATION_THRESHOLD` = 0.80 for INSP-RPC-05).
 const STARVATION_THRESHOLD: f64 = 0.80;
 
-/// Run `SENDER_THREADS` workers each looping `famp send --as sender --to receiver`
-/// for the duration of WINDOW, while `INSPECTOR_THREADS` workers concurrently
-/// drive saturated direct `InspectKind::Tasks` RPC calls (no pacing). Returns
-/// the count of successful `famp send` invocations observed during WINDOW.
-///
-/// `sender_cwd` is passed so the send subprocesses inherit the same cwd as the
-/// `famp register sender` long-lived process (mirrors `inspect_tasks.rs` line 144).
-fn measure_send_throughput(bus: &Bus, sender_cwd: &Path, inspector_threads: usize) -> u64 {
-    let delivered = Arc::new(AtomicU64::new(0));
-    let deadline = Instant::now() + WINDOW;
-    let mut handles = Vec::with_capacity(SENDER_THREADS + inspector_threads);
+#[derive(Debug, Default)]
+struct Measurement {
+    delivered: u64,
+    inspect_attempts: u64,
+    inspect_ok: u64,
+    inspect_budget_exceeded: u64,
+    inspect_errors: u64,
+}
 
-    // Sender workers: drive `famp send --as sender --to receiver --new-task <uniq> --body <uniq>`.
-    for worker_id in 0..SENDER_THREADS {
-        let sock = bus.sock().to_path_buf();
-        let home = bus.tmp.path().to_path_buf();
-        let cwd = sender_cwd.to_path_buf();
-        let delivered = Arc::clone(&delivered);
-        handles.push(std::thread::spawn(move || {
+/// Build a minimal valid `audit_log` envelope JSON value. This test
+/// measures broker send throughput, not CLI envelope construction, so it
+/// drives the same `BusMessage::Send` wire surface directly.
+fn audit_log_envelope(worker_id: usize, iter: u64) -> serde_json::Value {
+    let value = serde_json::json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": uuid::Uuid::now_v7().to_string(),
+        "from": "agent:local.bus/sender",
+        "to": "agent:local.bus/receiver",
+        "authority": "advisory",
+        "ts": "2026-05-10T18:00:00Z",
+        "body": {
+            "event": "inspect_load_test.send",
+            "details": {
+                "worker": worker_id,
+                "iter": iter
+            }
+        }
+    });
+    let bytes = famp_canonical::canonicalize(&value).expect("audit_log envelope canonicalizes");
+    famp_envelope::AnyBusEnvelope::decode(&bytes).expect("audit_log envelope decodes");
+    value
+}
+
+fn current_thread_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .enable_time()
+        .build()
+        .expect("build current-thread tokio runtime")
+}
+
+fn delivered_to_receiver(reply: Result<BusReply, famp::bus_client::BusClientError>) -> bool {
+    let Ok(BusReply::SendOk {
+        delivered: rows, ..
+    }) = reply
+    else {
+        return false;
+    };
+    rows.iter().any(|row| {
+        row.ok
+            && matches!(
+                &row.to,
+                Target::Agent { name } if name == "receiver"
+            )
+    })
+}
+
+fn spawn_sender_worker(
+    handles: &mut Vec<std::thread::JoinHandle<()>>,
+    sock: PathBuf,
+    start_gate: Arc<Barrier>,
+    delivered: Arc<AtomicU64>,
+    worker_id: usize,
+) {
+    handles.push(std::thread::spawn(move || {
+        start_gate.wait();
+        let deadline = Instant::now() + WINDOW;
+        current_thread_runtime().block_on(async move {
             let mut iter: u64 = 0;
             while Instant::now() < deadline {
-                let task = format!("t-{worker_id}-{iter}");
-                let body = format!("load-{worker_id}-{iter}");
-                let out = Command::cargo_bin("famp")
-                    .unwrap()
-                    .env("FAMP_BUS_SOCKET", &sock)
-                    .env("HOME", &home)
-                    .current_dir(&cwd)
-                    .args([
-                        "send",
-                        "--as",
-                        "sender",
-                        "--to",
-                        "receiver",
-                        "--new-task",
-                        &task,
-                        "--body",
-                        &body,
-                    ])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .output()
-                    .expect("spawn famp send");
-                if out.status.success() {
-                    delivered.fetch_add(1, Ordering::SeqCst);
+                if let Ok(mut bus) = BusClient::connect(&sock, Some("sender".to_string())).await {
+                    let reply = bus
+                        .send_recv(BusMessage::Send {
+                            to: Target::Agent {
+                                name: "receiver".to_string(),
+                            },
+                            envelope: audit_log_envelope(worker_id, iter),
+                        })
+                        .await;
+                    if delivered_to_receiver(reply) {
+                        delivered.fetch_add(1, Ordering::SeqCst);
+                    }
+                    bus.shutdown().await;
                 }
                 iter += 1;
             }
-        }));
+        });
+    }));
+}
+
+fn spawn_inspector_worker(
+    handles: &mut Vec<std::thread::JoinHandle<()>>,
+    sock: PathBuf,
+    start_gate: Arc<Barrier>,
+    attempts: Arc<AtomicU64>,
+    ok: Arc<AtomicU64>,
+    budget_exceeded: Arc<AtomicU64>,
+    errors: Arc<AtomicU64>,
+) {
+    handles.push(std::thread::spawn(move || {
+        start_gate.wait();
+        let deadline = Instant::now() + WINDOW;
+        current_thread_runtime().block_on(async move {
+            while Instant::now() < deadline {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                match connect_and_call(&sock, InspectKind::Tasks(InspectTasksRequest::default()))
+                    .await
+                {
+                    Ok(payload) => {
+                        ok.fetch_add(1, Ordering::SeqCst);
+                        if payload.get("kind").and_then(serde_json::Value::as_str)
+                            == Some("budget_exceeded")
+                        {
+                            budget_exceeded.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                    Err(_) => {
+                        errors.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }
+        });
+    }));
+}
+
+/// Run `SENDER_THREADS` workers each looping direct `BusMessage::Send`
+/// for the duration of WINDOW, while `INSPECTOR_THREADS` workers concurrently
+/// drive saturated direct `InspectKind::Tasks` RPC calls (no pacing). Returns
+/// the count of successful sends observed during WINDOW.
+///
+/// This intentionally bypasses the `famp send` subprocess path. The property
+/// under test is broker send throughput under inspect RPC pressure; including
+/// thousands of CLI process launches made the ratio sensitive to CI process
+/// scheduling instead of broker starvation.
+fn measure_send_throughput(bus: &Bus, inspector_threads: usize) -> Measurement {
+    let delivered = Arc::new(AtomicU64::new(0));
+    let inspect_attempts = Arc::new(AtomicU64::new(0));
+    let inspect_ok = Arc::new(AtomicU64::new(0));
+    let inspect_budget_exceeded = Arc::new(AtomicU64::new(0));
+    let inspect_errors = Arc::new(AtomicU64::new(0));
+    let start_gate = Arc::new(Barrier::new(SENDER_THREADS + inspector_threads));
+    let mut handles = Vec::with_capacity(SENDER_THREADS + inspector_threads);
+
+    // Sender workers: direct one-shot bus RPC. Each measured send opens
+    // its own proxy connection, sends once, and shuts down. This preserves
+    // accept + Hello pressure without the unrelated `famp` subprocess
+    // launch cost.
+    for worker_id in 0..SENDER_THREADS {
+        spawn_sender_worker(
+            &mut handles,
+            bus.sock().to_path_buf(),
+            Arc::clone(&start_gate),
+            Arc::clone(&delivered),
+            worker_id,
+        );
     }
 
     // Inspector workers: GAP-03-01 — drive saturated direct
@@ -195,34 +305,30 @@ fn measure_send_throughput(bus: &Bus, sender_cwd: &Path, inspector_threads: usiz
     // of WINDOW so the broker's non-blocking inspect dispatch path is
     // exercised at saturating rate.
     for _ in 0..inspector_threads {
-        let sock = bus.sock().to_path_buf();
-        handles.push(std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_io()
-                .enable_time()
-                .build()
-                .expect("build current-thread tokio runtime");
-            rt.block_on(async move {
-                while Instant::now() < deadline {
-                    // Drop the result; we measure SEND throughput, not
-                    // inspect outcome. Each call independently
-                    // connects, performs Hello, sends the Inspect
-                    // frame, and decodes the reply.
-                    let _ =
-                        connect_and_call(&sock, InspectKind::Tasks(InspectTasksRequest::default()))
-                            .await;
-                }
-            });
-        }));
+        spawn_inspector_worker(
+            &mut handles,
+            bus.sock().to_path_buf(),
+            Arc::clone(&start_gate),
+            Arc::clone(&inspect_attempts),
+            Arc::clone(&inspect_ok),
+            Arc::clone(&inspect_budget_exceeded),
+            Arc::clone(&inspect_errors),
+        );
     }
 
     for h in handles {
         h.join().unwrap();
     }
-    delivered.load(Ordering::SeqCst)
+    Measurement {
+        delivered: delivered.load(Ordering::SeqCst),
+        inspect_attempts: inspect_attempts.load(Ordering::SeqCst),
+        inspect_ok: inspect_ok.load(Ordering::SeqCst),
+        inspect_budget_exceeded: inspect_budget_exceeded.load(Ordering::SeqCst),
+        inspect_errors: inspect_errors.load(Ordering::SeqCst),
+    }
 }
 
-fn measure_scenario(inspector_threads: usize) -> u64 {
+fn measure_scenario(inspector_threads: usize) -> Measurement {
     let bus = Bus::new();
     let mut broker = bus.famp_spawn_broker();
 
@@ -233,7 +339,7 @@ fn measure_scenario(inspector_threads: usize) -> u64 {
     bus.wait_for_register("sender");
     bus.wait_for_register("receiver");
 
-    let delivered = measure_send_throughput(&bus, &sender_cwd, inspector_threads);
+    let delivered = measure_send_throughput(&bus, inspector_threads);
 
     kill_and_wait(&mut sender);
     kill_and_wait(&mut receiver);
@@ -245,26 +351,51 @@ fn measure_scenario(inspector_threads: usize) -> u64 {
 #[test]
 #[allow(clippy::cast_precision_loss)]
 fn inspect_load_does_not_starve_bus_messages() {
-    // Phase A: baseline throughput (no concurrent inspect pressure).
-    let baseline = measure_scenario(0);
-    assert!(
-        baseline > 0,
-        "baseline throughput must be non-zero; got {baseline}"
-    );
+    // Collect SAMPLES independent (baseline, loaded) pairs and require every
+    // ratio to satisfy the public threshold. Multiple samples make a timing
+    // anomaly visible without weakening the INSP-RPC-05 guarantee.
+    const SAMPLES: usize = 3;
 
-    // Phase B: throughput under SATURATED DIRECT inspect RPC pressure.
-    // INSPECTOR_THREADS workers tight-loop
-    // `famp_inspect_client::connect_and_call(InspectKind::Tasks(_))` with
-    // no pacing for the full WINDOW. This is the stronger no-starvation
-    // property required by INSP-RPC-05 / GAP-03-01.
-    let loaded = measure_scenario(INSPECTOR_THREADS);
+    let mut ratios: Vec<f64> = Vec::with_capacity(SAMPLES);
+    for i in 0..SAMPLES {
+        let baseline = measure_scenario(0);
+        assert!(
+            baseline.delivered > 0,
+            "baseline throughput must be non-zero on sample {i}; got {baseline:?}"
+        );
+        let loaded = measure_scenario(INSPECTOR_THREADS);
+        assert!(
+            loaded.inspect_attempts >= 100,
+            "sample {i} did not apply enough inspect pressure: {loaded:?}"
+        );
+        assert!(
+            loaded.inspect_ok > 0,
+            "sample {i} had no successful inspect replies: {loaded:?}"
+        );
+        assert!(
+            loaded.inspect_budget_exceeded > 0,
+            "sample {i} did not saturate inspect budget: {loaded:?}"
+        );
+        let ratio = loaded.delivered as f64 / baseline.delivered as f64;
+        println!(
+            "inspect_load_test sample={i} baseline={} loaded={} ratio={ratio:.2} \
+             inspect_attempts={} inspect_ok={} inspect_budget_exceeded={} inspect_errors={}",
+            baseline.delivered,
+            loaded.delivered,
+            loaded.inspect_attempts,
+            loaded.inspect_ok,
+            loaded.inspect_budget_exceeded,
+            loaded.inspect_errors
+        );
+        ratios.push(ratio);
+    }
 
-    let ratio = loaded as f64 / baseline as f64;
-    println!("inspect_load_test baseline={baseline} loaded={loaded} ratio={ratio:.2}");
-    assert!(
-        ratio >= STARVATION_THRESHOLD,
-        "Bus message throughput under saturated direct inspect RPC load ({loaded}) \
-         degraded below {:.0}% of baseline ({baseline}): ratio={ratio:.2}",
-        STARVATION_THRESHOLD * 100.0
-    );
+    for ratio in ratios {
+        assert!(
+            ratio >= STARVATION_THRESHOLD,
+            "ratio {ratio:.2} below {:.0}% threshold — bus throughput under saturated inspect \
+             RPC load degraded too far",
+            STARVATION_THRESHOLD * 100.0
+        );
+    }
 }
