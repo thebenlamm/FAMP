@@ -273,9 +273,10 @@ pub(crate) async fn connect_bound(sock: &Path, identity: &str) -> Result<BusClie
 }
 
 fn mixed_binary_hint(detail: impl AsRef<str>) -> String {
-    let exe = std::env::current_exe()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "(unknown current executable)".to_string());
+    let exe = std::env::current_exe().map_or_else(
+        |_| "(unknown current executable)".to_string(),
+        |p| p.display().to_string(),
+    );
     format!(
         "{}. This can happen when a client from one FAMP build talks to a broker from another build. Current client: {exe}. Run `famp inspect broker` to see the broker pid/build/socket, then restart the broker if needed.",
         detail.as_ref()
@@ -287,16 +288,16 @@ async fn timeout_diagnostic(
     identity: &str,
     task: Option<uuid::Uuid>,
 ) -> String {
-    let base = match task {
-        Some(task) => format!("await timed out waiting for new messages on task {task}"),
-        None => "await timed out waiting for a new message".to_string(),
-    };
+    let base = task.map_or_else(
+        || "await timed out waiting for a new message".to_string(),
+        |task| format!("await timed out waiting for new messages on task {task}"),
+    );
     let hint = format!(
         "Run `famp inbox list --as {identity} --include-terminal` to inspect already-delivered messages, or use `famp wait-reply --as {identity} --task <task_id>` for reply waits that check the inbox before blocking."
     );
 
     if let Some(task) = task {
-        if let Ok(true) = inbox_has_reply_for_task(bus, task).await {
+        if matches!(inbox_has_reply_for_task(bus, task).await, Ok(true)) {
             return format!(
                 "{base}; a matching reply is already present in the inbox but was not new past the await cursor. {hint}"
             );

@@ -13,7 +13,7 @@ use crate::cli::error::CliError;
 
 #[derive(Args, Debug)]
 pub struct InspectTasksArgs {
-    /// Filter to a specific task_id.
+    /// Filter to a specific `task_id`.
     #[arg(long)]
     pub id: Option<uuid::Uuid>,
     /// Emit each envelope in canonical JCS form. Requires `--id`.
@@ -199,6 +199,7 @@ fn format_unix(secs: u64) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use famp_inspect_proto::{InspectTasksReply, TaskListReply, TaskRow};

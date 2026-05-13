@@ -127,11 +127,10 @@ fn poll_for_task_id(bus: &Bus, max_wait: Duration) -> String {
                 return task_id.to_string();
             }
         }
-        if start.elapsed() >= max_wait {
-            panic!(
-                "poll_for_task_id timed out after {max_wait:?}; taskdir never settled with >=1 row"
-            );
-        }
+        assert!(
+            start.elapsed() < max_wait,
+            "poll_for_task_id timed out after {max_wait:?}; taskdir never settled with >=1 row"
+        );
         std::thread::sleep(Duration::from_millis(200));
     }
 }

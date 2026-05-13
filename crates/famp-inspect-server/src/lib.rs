@@ -37,10 +37,11 @@ pub struct MailboxMeta {
     pub last_received_at_unix_seconds: Option<u64>,
 }
 
-/// Pre-walked task data from the broker executor. Plain data type
-/// (no `famp-taskdir` import in this crate - INSP-RPC-02 dep-graph
-/// gate). The executor converts task records before passing them to
-/// `BrokerCtx`.
+/// Pre-walked task data from the broker executor.
+///
+/// Plain data type (no `famp-taskdir` import in this crate — `INSP-RPC-02`
+/// dep-graph gate). The executor converts task records before passing them to
+/// [`BrokerCtx`].
 #[derive(Debug, Clone, Default)]
 pub struct TaskSnapshot {
     pub records: Vec<TaskSnapshotRow>,
@@ -48,7 +49,7 @@ pub struct TaskSnapshot {
 
 #[derive(Debug, Clone)]
 pub struct TaskSnapshotRow {
-    /// `task_id` as stored in the TaskRecord - String, not UUID.
+    /// `task_id` as stored in the `TaskRecord` - String, not UUID.
     pub task_id: String,
     /// One of `REQUESTED | COMMITTED | COMPLETED | FAILED | CANCELLED`.
     pub state: String,
@@ -142,7 +143,74 @@ fn inspect_identities(state: &BrokerStateView, ctx: &BrokerCtx) -> InspectIdenti
     InspectIdentitiesReply { rows }
 }
 
+fn inspect_tasks_by_id(
+    all_envs: &[&serde_json::Value],
+    id_str: String,
+    full: bool,
+) -> InspectTasksReply {
+    let envelopes_for_task: Vec<&serde_json::Value> = all_envs
+        .iter()
+        .copied()
+        .filter(|env| envelope_task_id(env).as_deref() == Some(id_str.as_str()))
+        .collect();
+
+    if full {
+        let envelopes = envelopes_for_task
+            .iter()
+            .map(|env| TaskEnvelopeFull {
+                envelope_id: env
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                bytes: famp_canonical::canonicalize(env)
+                    .ok()
+                    .and_then(|b| String::from_utf8(b).ok()),
+                reason: None,
+            })
+            .collect();
+        return InspectTasksReply::DetailFull(TaskDetailFullReply {
+            task_id: id_str,
+            envelopes,
+        });
+    }
+
+    let envelopes = envelopes_for_task
+        .iter()
+        .map(|env| TaskEnvelopeSummary {
+            envelope_id: env
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            sender: env
+                .get("from")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            recipient: env
+                .get("to")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            fsm_transition: derive_fsm_state(env),
+            timestamp: env
+                .get("ts")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            sig_verified: true,
+        })
+        .collect();
+
+    InspectTasksReply::Detail(TaskDetailReply {
+        task_id: id_str,
+        envelopes,
+    })
+}
+
 /// INSP-TASK-01..04 dispatch.
+#[allow(clippy::too_many_lines)]
 fn inspect_tasks(
     _state: &BrokerStateView,
     ctx: &BrokerCtx,
@@ -152,72 +220,13 @@ fn inspect_tasks(
         return InspectTasksReply::List(TaskListReply { rows: vec![] });
     };
 
-    let all_envs: Vec<&serde_json::Value> = match ctx.message_data.as_ref() {
-        Some(message_data) => message_data.by_recipient.values().flatten().collect(),
-        None => Vec::new(),
-    };
+    let all_envs: Vec<&serde_json::Value> = ctx
+        .message_data
+        .as_ref()
+        .map_or_else(Vec::new, |md| md.by_recipient.values().flatten().collect());
 
     if let Some(uuid) = req.id {
-        let id_str = uuid.to_string();
-        let envelopes_for_task: Vec<&serde_json::Value> = all_envs
-            .iter()
-            .copied()
-            .filter(|env| envelope_task_id(env).as_deref() == Some(id_str.as_str()))
-            .collect();
-
-        if req.full {
-            let envelopes = envelopes_for_task
-                .iter()
-                .map(|env| TaskEnvelopeFull {
-                    envelope_id: env
-                        .get("id")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("")
-                        .to_string(),
-                    bytes: famp_canonical::canonicalize(env)
-                        .ok()
-                        .and_then(|b| String::from_utf8(b).ok()),
-                    reason: None,
-                })
-                .collect();
-            return InspectTasksReply::DetailFull(TaskDetailFullReply {
-                task_id: id_str,
-                envelopes,
-            });
-        }
-
-        let envelopes = envelopes_for_task
-            .iter()
-            .map(|env| TaskEnvelopeSummary {
-                envelope_id: env
-                    .get("id")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                sender: env
-                    .get("from")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                recipient: env
-                    .get("to")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                fsm_transition: derive_fsm_state(env),
-                timestamp: env
-                    .get("ts")
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                sig_verified: true,
-            })
-            .collect();
-
-        return InspectTasksReply::Detail(TaskDetailReply {
-            task_id: id_str,
-            envelopes,
-        });
+        return inspect_tasks_by_id(&all_envs, uuid.to_string(), req.full);
     }
 
     let now = SystemTime::now()
@@ -329,14 +338,16 @@ fn inspect_messages(
         return InspectMessagesReply::List(MessageListReply { rows: vec![] });
     };
 
-    let mut entries: Vec<&serde_json::Value> = match req.to.as_deref() {
-        Some(name) => snapshot
-            .by_recipient
-            .get(name)
-            .map(|values| values.iter().collect())
-            .unwrap_or_default(),
-        None => snapshot.by_recipient.values().flatten().collect(),
-    };
+    let mut entries: Vec<&serde_json::Value> = req.to.as_deref().map_or_else(
+        || snapshot.by_recipient.values().flatten().collect(),
+        |name| {
+            snapshot
+                .by_recipient
+                .get(name)
+                .map(|values| values.iter().collect())
+                .unwrap_or_default()
+        },
+    );
     entries.sort_by_key(|env| {
         env.get("ts")
             .and_then(serde_json::Value::as_str)
@@ -346,13 +357,17 @@ fn inspect_messages(
 
     let tail = usize::try_from(req.tail.unwrap_or(50)).unwrap_or(usize::MAX);
     let start = entries.len().saturating_sub(tail);
-    let rows = entries[start..].iter().map(|env| message_row(env)).collect();
+    let rows = entries[start..]
+        .iter()
+        .map(|env| message_row(env))
+        .collect();
 
     InspectMessagesReply::List(MessageListReply { rows })
 }
 
-/// Project a single envelope JSON value into a `MessageRow` using the
-/// exact same field-extraction logic the inspector RPC uses for
+/// Project an envelope JSON value into a [`MessageRow`].
+///
+/// Uses the exact same field-extraction logic the inspector RPC uses for
 /// `InspectKind::Messages`. Exposed so callers that need to derive rows
 /// from raw mailbox JSONL (e.g. `famp_verify` reading mailbox files
 /// directly to cover offline recipients) stay in lockstep with the
@@ -398,7 +413,7 @@ pub fn message_row(env: &serde_json::Value) -> MessageRow {
     }
 }
 
-/// Extract task_id from a parsed envelope JSON object.
+/// Extract `task_id` from a parsed envelope JSON object.
 /// Order: `causality.ref` -> `body.details.task` -> new-task envelope `id` -> `None`.
 fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
     if let Some(task_id) = env
@@ -433,7 +448,7 @@ fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
 }
 
 /// Derive FSM state from envelope fields using canonical class strings
-/// and `famp_core::TerminalStatus` snake_case mode strings.
+/// and `famp_core::TerminalStatus` `snake_case` mode strings.
 fn derive_fsm_state(env: &serde_json::Value) -> String {
     let class = env
         .get("class")
@@ -455,15 +470,10 @@ fn derive_fsm_state(env: &serde_json::Value) -> String {
 
     match (class, mode, terminal, action) {
         ("request", _, _, _) => "REQUESTED".into(),
-        ("commit", _, _, _) => "COMMITTED".into(),
-        ("deliver", "completed", true, _) => "COMPLETED".into(),
+        ("commit", _, _, _) | ("deliver", _, false, _) => "COMMITTED".into(),
         ("deliver", "failed", true, _) => "FAILED".into(),
-        ("deliver", "cancelled", true, _) => "CANCELLED".into(),
+        ("deliver", "cancelled", true, _) | ("control", _, _, _) => "CANCELLED".into(),
         ("deliver", _, true, _) => "COMPLETED".into(),
-        ("deliver", _, false, _) => "COMMITTED".into(),
-        ("control", "cancelled", _, _) => "CANCELLED".into(),
-        ("control", _, _, "cancel") => "CANCELLED".into(),
-        ("control", _, _, _) => "CANCELLED".into(),
         _ => "UNKNOWN".into(),
     }
 }
@@ -705,7 +715,7 @@ mod tests {
         let snapshot = TaskSnapshot {
             records: vec![
                 TaskSnapshotRow {
-                    task_id: "".into(),
+                    task_id: String::new(),
                     state: "REQUESTED".into(),
                     peer: "agent:local.bus/empty".into(),
                     opened_at: "2026-05-10T18:00:00Z".into(),

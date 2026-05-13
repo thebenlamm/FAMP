@@ -8,7 +8,7 @@
 //! non-blocking bounded inspect dispatch (`Out::InspectRequest` now runs in a
 //! `tokio::spawn`'d task that owns a bounded
 //! `MAX_CONCURRENT_INSPECT_REQUESTS` semaphore permit; permit-exhausted
-//! requests are shed immediately with the existing budget_exceeded payload —
+//! requests are shed immediately with the existing `budget_exceeded` payload —
 //! see `crates/famp/src/cli/broker/mod.rs`). The public threshold
 //! `STARVATION_THRESHOLD = 0.80` is committed: bus send throughput under
 //! saturated inspect RPC pressure must remain at >= 80% of the inspector-free
@@ -134,16 +134,16 @@ const INSPECTOR_THREADS: usize = 8;
 /// Minimum acceptable ratio of loaded-throughput / baseline-throughput.
 /// 0.80 = inspect calls may reduce bus throughput by at most 20%. Locked
 /// public commitment — do not relax (see VERIFICATION.md GAP-03-01 and
-/// the testing note "STARVATION_THRESHOLD = 0.80 for INSP-RPC-05").
+/// the testing note `STARVATION_THRESHOLD` = 0.80 for INSP-RPC-05).
 const STARVATION_THRESHOLD: f64 = 0.80;
 
-/// Run SENDER_THREADS workers each looping `famp send --as sender --to receiver`
-/// for the duration of WINDOW, while INSPECTOR_THREADS workers concurrently
+/// Run `SENDER_THREADS` workers each looping `famp send --as sender --to receiver`
+/// for the duration of WINDOW, while `INSPECTOR_THREADS` workers concurrently
 /// drive saturated direct `InspectKind::Tasks` RPC calls (no pacing). Returns
 /// the count of successful `famp send` invocations observed during WINDOW.
 ///
 /// `sender_cwd` is passed so the send subprocesses inherit the same cwd as the
-/// `famp register sender` long-lived process (mirrors inspect_tasks.rs line 144).
+/// `famp register sender` long-lived process (mirrors `inspect_tasks.rs` line 144).
 fn measure_send_throughput(bus: &Bus, sender_cwd: &Path, inspector_threads: usize) -> u64 {
     let delivered = Arc::new(AtomicU64::new(0));
     let deadline = Instant::now() + WINDOW;
@@ -243,6 +243,7 @@ fn measure_scenario(inspector_threads: usize) -> u64 {
 }
 
 #[test]
+#[allow(clippy::cast_precision_loss)]
 fn inspect_load_does_not_starve_bus_messages() {
     // Phase A: baseline throughput (no concurrent inspect pressure).
     let baseline = measure_scenario(0);

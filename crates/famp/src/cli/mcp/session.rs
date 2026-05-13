@@ -47,10 +47,11 @@ use tokio::sync::Mutex;
 
 use crate::bus_client::BusClient;
 
-/// Metadata about the most-recent successful `famp_send` from this
-/// session. Recorded by `tools::send::call` on the `Ok` arm and surfaced
-/// by `tools::whoami::call` so an agent can recover when Claude Code's
-/// stdio transport drops the `famp_send` tool result mid-flight
+/// Metadata about the most-recent successful `famp_send` from this session.
+///
+/// Recorded by `tools::send::call` on the `Ok` arm and surfaced by
+/// `tools::whoami::call` so an agent can recover when Claude Code's stdio
+/// transport drops the `famp_send` tool result mid-flight
 /// (`[Tool result missing due to internal error]`). The agent then calls
 /// `famp_whoami` to learn the `task_id` that was assigned and decides
 /// whether to retry or (more usefully) call `famp_verify` to confirm
@@ -176,8 +177,9 @@ pub async fn set_active_identity(name: String) {
     state().lock().await.active_identity = Some(name);
 }
 
-/// Record metadata for the most-recent successful `famp_send`. Called
-/// by `tools::send::call` on the `Ok` arm. Surfaced by `tools::whoami::call`
+/// Record metadata for the most-recent successful `famp_send`.
+///
+/// Called by `tools::send::call` on the `Ok` arm. Surfaced by `tools::whoami::call`
 /// as a recovery hint for the Claude Code `[Tool result missing due to
 /// internal error]` failure mode (the broker delivered the message but
 /// the JSON-RPC result never reached the model).

@@ -31,6 +31,7 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // ── tool descriptors (sent in tools/list) ─────────────────────────────────────
 
+#[allow(clippy::too_many_lines)]
 fn tool_descriptors() -> serde_json::Value {
     serde_json::json!([
         {

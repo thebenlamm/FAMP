@@ -387,21 +387,18 @@ async fn execute_outs(
                 // fast-shed path skips the broker.view()/cursor walk
                 // when we are already at the inspect concurrency cap.
                 // try_acquire_owned never awaits.
-                let permit = match Arc::clone(inspect_semaphore).try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        // No permit; reply with budget_exceeded
-                        // (elapsed_ms=0 since no walk/dispatch was
-                        // attempted). Spawn the reply send so the main
-                        // execute_outs loop is not blocked on a
-                        // possibly-full per-client reply channel under
-                        // saturated inspect pressure.
-                        tokio::spawn(async move {
-                            let payload = inspect_budget_exceeded_payload(0);
-                            let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
-                        });
-                        continue;
-                    }
+                let Ok(permit) = Arc::clone(inspect_semaphore).try_acquire_owned() else {
+                    // No permit; reply with budget_exceeded
+                    // (elapsed_ms=0 since no walk/dispatch was
+                    // attempted). Spawn the reply send so the main
+                    // execute_outs loop is not blocked on a
+                    // possibly-full per-client reply channel under
+                    // saturated inspect pressure.
+                    tokio::spawn(async move {
+                        let payload = inspect_budget_exceeded_payload(0);
+                        let _ = reply_tx.send(BusReply::InspectOk { payload }).await;
+                    });
+                    continue;
                 };
 
                 // state snapshot is captured before spawn because Broker is not Send.
@@ -444,7 +441,8 @@ async fn execute_outs(
                         Err(_elapsed) => {
                             // The blocking thread may continue briefly, but all
                             // file handles are stack-local and drop on thread exit.
-                            let elapsed_ms = started.elapsed().as_millis() as u64;
+                            let elapsed_ms =
+                                u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
                             inspect_budget_exceeded_payload(elapsed_ms)
                         }
                     };

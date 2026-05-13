@@ -126,6 +126,7 @@ fn format_row<const N: usize>(cells: &[String; N], widths: &[usize; N]) -> Strin
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use famp_inspect_proto::{InspectMessagesReply, MessageListReply, MessageRow};

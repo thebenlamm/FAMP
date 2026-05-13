@@ -108,11 +108,7 @@ fn handle_wire<E: BrokerEnv>(
 /// mirroring the Register rejection at the top of `register` above.
 /// Slot ownership is canonical-holder-only; a proxy must reconnect
 /// without `bind_as` and `Register` itself before issuing `SetListen`.
-fn set_listen<E: BrokerEnv>(
-    broker: &mut Broker<E>,
-    client: ClientId,
-    listen: bool,
-) -> Vec<Out> {
+fn set_listen<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, listen: bool) -> Vec<Out> {
     let Some(state) = broker.state.clients.get_mut(&client) else {
         return vec![err(
             client,
@@ -1811,13 +1807,15 @@ mod d10_tests {
         hello_canonical(&mut broker, 1, "alice", now);
         register(&mut broker, 1, "alice", 999, now);
         // Default after register-with-listen=false is listen_mode=false.
-        assert!(!broker
-            .view()
-            .clients
-            .iter()
-            .find(|c| c.name == "alice")
-            .unwrap()
-            .listen_mode);
+        assert!(
+            !broker
+                .view()
+                .clients
+                .iter()
+                .find(|c| c.name == "alice")
+                .unwrap()
+                .listen_mode
+        );
         let outs = broker.handle(
             BrokerInput::Wire {
                 client: ClientId::from(1_u64),
@@ -1826,13 +1824,15 @@ mod d10_tests {
             now,
         );
         assert_eq!(find_set_listen_ok(&outs), Some(true));
-        assert!(broker
-            .view()
-            .clients
-            .iter()
-            .find(|c| c.name == "alice")
-            .unwrap()
-            .listen_mode);
+        assert!(
+            broker
+                .view()
+                .clients
+                .iter()
+                .find(|c| c.name == "alice")
+                .unwrap()
+                .listen_mode
+        );
         // Flip back.
         let outs = broker.handle(
             BrokerInput::Wire {
@@ -1842,13 +1842,15 @@ mod d10_tests {
             now,
         );
         assert_eq!(find_set_listen_ok(&outs), Some(false));
-        assert!(!broker
-            .view()
-            .clients
-            .iter()
-            .find(|c| c.name == "alice")
-            .unwrap()
-            .listen_mode);
+        assert!(
+            !broker
+                .view()
+                .clients
+                .iter()
+                .find(|c| c.name == "alice")
+                .unwrap()
+                .listen_mode
+        );
     }
 
     #[test]
@@ -1887,13 +1889,15 @@ mod d10_tests {
         );
         assert_eq!(find_err_kind(&outs), Some(BusErrorKind::NotRegistered));
         // Canonical holder's flag is unchanged (still default false).
-        assert!(!broker
-            .view()
-            .clients
-            .iter()
-            .find(|c| c.name == "alice")
-            .unwrap()
-            .listen_mode);
+        assert!(
+            !broker
+                .view()
+                .clients
+                .iter()
+                .find(|c| c.name == "alice")
+                .unwrap()
+                .listen_mode
+        );
     }
 
     #[test]

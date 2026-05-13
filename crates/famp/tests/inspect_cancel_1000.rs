@@ -91,6 +91,7 @@ fn count_broker_fds(broker_pid: u32) -> usize {
 }
 
 #[test]
+#[allow(clippy::cast_possible_truncation)]
 fn one_thousand_cancel_no_leak() {
     let bus = Bus::new();
     let mut broker = bus.famp_spawn_broker();

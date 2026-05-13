@@ -62,7 +62,7 @@
 //!
 //! - `task_id` (required): the `UUIDv7` to look up. For `mode="open"`
 //!   sends this is the envelope's own `id`. For `mode="reply"` sends
-//!   pass the originating thread's task_id (surfaced as
+//!   pass the originating thread's `task_id` (surfaced as
 //!   `famp_whoami.last_send.thread_task_id`).
 //! - `peer` (optional): canonical agent identity to verify against.
 //!   Recommended for agent DMs; without it (and without `channel`) the
@@ -129,6 +129,7 @@ fn validate_peer_name(name: &str) -> Result<(), ToolError> {
 }
 
 /// Dispatch a `famp_verify` tool call.
+#[allow(clippy::unused_async)]
 pub async fn call(input: &Value) -> Result<Value, ToolError> {
     let task_id = input
         .get("task_id")
@@ -174,9 +175,8 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     // `#<name>` form. Rejects `##foo`, names with path components, etc.
     let channel_normalized: Option<String> = match channel {
         Some(ref name) => {
-            let normalized = normalize_channel(name).map_err(|e| {
-                ToolError::new(BusErrorKind::EnvelopeInvalid, e.to_string())
-            })?;
+            let normalized = normalize_channel(name)
+                .map_err(|e| ToolError::new(BusErrorKind::EnvelopeInvalid, e.to_string()))?;
             Some(normalized)
         }
         None => None,
@@ -298,10 +298,7 @@ fn envelope_matches(env: &Value, task_id: &str, envelope_id: Option<&str>) -> bo
     if !thread_hit {
         return false;
     }
-    match envelope_id {
-        Some(want) => id == Some(want),
-        None => true,
-    }
+    envelope_id.is_none_or(|want| id == Some(want))
 }
 
 #[cfg(test)]
@@ -435,7 +432,7 @@ mod tests {
         let out = scan_files(
             "0193abcd-ef01-7000-8000-000000000001",
             None,
-            &[path.clone()],
+            std::slice::from_ref(&path),
         )
         .expect("scan_files should not error on a readable mailbox");
         assert_eq!(out["delivered"], Value::Bool(true));
@@ -463,7 +460,7 @@ mod tests {
         let out = scan_files(
             "0193abcd-ef01-7000-8000-00000000ffff",
             None,
-            &[path.clone()],
+            std::slice::from_ref(&path),
         )
         .expect("scan_files should not error on a readable mailbox");
         assert_eq!(out["delivered"], Value::Bool(false));
@@ -496,7 +493,7 @@ mod tests {
             "ghost", // never registered — the inspector would skip this mailbox
             &[open_envelope(env_id, "alice", "ghost")],
         );
-        let out = scan_files(env_id, None, &[path.clone()])
+        let out = scan_files(env_id, None, std::slice::from_ref(&path))
             .expect("scan_files should not error on a readable mailbox");
         assert_eq!(
             out["delivered"],
@@ -519,7 +516,7 @@ mod tests {
         }
         let path = write_mailbox(&mb, "bob", &envelopes);
         let first = format!("0193abcd-ef01-7000-8000-0000000{:06x}", 0u32);
-        let out = scan_files(&first, None, &[path.clone()])
+        let out = scan_files(&first, None, std::slice::from_ref(&path))
             .expect("scan_files should not error on a readable mailbox");
         assert_eq!(
             out["delivered"],

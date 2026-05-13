@@ -155,7 +155,7 @@ fn parse_input(input: &Value) -> Result<SendArgs, ToolError> {
 
     // STRICT: expect_reply MUST be a JSON boolean if present.
     let expect_reply = match input.get("expect_reply") {
-        None | Some(Value::Null) | Some(Value::Bool(false)) => false,
+        None | Some(Value::Null | Value::Bool(false)) => false,
         Some(Value::Bool(true)) => true,
         Some(_) => {
             return Err(ToolError::new(

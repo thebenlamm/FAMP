@@ -90,5 +90,4 @@ impl<E: BrokerEnv> Broker<E> {
     pub fn view(&self) -> BrokerStateView {
         self.state.view()
     }
-
 }

@@ -74,10 +74,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     // args), so this is a per-surface choice, not a wire change. The
     // Register frame still carries the resolved bool over the bus
     // unchanged.
-    let listen = input
-        .get("listen")
-        .and_then(Value::as_bool)
-        .unwrap_or(true);
+    let listen = input.get("listen").and_then(Value::as_bool).unwrap_or(true);
 
     session::ensure_bus()
         .await

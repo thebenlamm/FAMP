@@ -278,8 +278,8 @@ fn verify_envelope_id_distinguishes_specific_reply_on_thread() {
         }),
     );
     let rb = Harness::ok_content(&reply_b);
-    let reply_b_id = rb["task_id"].as_str().unwrap().to_string();
-    assert_ne!(reply_a_id, reply_b_id);
+    let second_reply_id = rb["task_id"].as_str().unwrap().to_string();
+    assert_ne!(reply_a_id, second_reply_id);
 
     // Thread-only verify hits (some reply on the thread landed).
     let v_thread = Harness::ok_content(&bob.tool_call(
@@ -288,14 +288,14 @@ fn verify_envelope_id_distinguishes_specific_reply_on_thread() {
     ));
     assert_eq!(v_thread["delivered"].as_bool(), Some(true));
 
-    // Verify with envelope_id = reply_b_id MUST find it (proves the
+    // Verify with envelope_id = second_reply_id MUST find it (proves the
     // SECOND reply specifically landed, not just "something on thread").
     let v_specific = Harness::ok_content(&bob.tool_call(
         "famp_verify",
         &serde_json::json!({
             "task_id": thread_id,
             "peer": "alice",
-            "envelope_id": reply_b_id,
+            "envelope_id": second_reply_id,
         }),
     ));
     assert_eq!(

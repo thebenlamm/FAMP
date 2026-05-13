@@ -139,7 +139,7 @@ async fn test_broker_idle_exit() {
 /// connects. This is the orphan-broker regression: when a spawning client
 /// crashes before connecting, the broker previously had `idle = None` at
 /// startup and ran forever. With the startup idle timer armed, it now exits
-/// after IDLE_TIMEOUT.
+/// after `IDLE_TIMEOUT`.
 #[tokio::test(start_paused = true)]
 async fn test_broker_idle_exit_with_no_clients_ever_connected() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -167,10 +167,7 @@ async fn test_broker_idle_exit_with_no_clients_ever_connected() {
         .expect("broker did not exit in time")
         .expect("broker task panicked")
         .expect("broker exited with error");
-    assert!(
-        !sock.exists(),
-        "broker must unlink socket on idle exit"
-    );
+    assert!(!sock.exists(), "broker must unlink socket on idle exit");
 }
 
 /// CLI-11: the broker MUST NOT consult `sessions.jsonl` to populate the

@@ -324,9 +324,8 @@ fn inspect_identities_mailbox_metadata_unread_total() {
         .into_iter()
         .find(|line| line.contains("receiver"))
         .unwrap_or_else(|| panic!("missing receiver row: {stdout}"));
-    let cells: Vec<&str> = receiver_row.split_whitespace().collect();
     assert!(
-        cells.contains(&"2"),
+        receiver_row.split_whitespace().any(|c| c == "2"),
         "receiver row should contain unread/total counts: {receiver_row}"
     );
     assert!(
@@ -372,7 +371,7 @@ fn inspect_identities_mailbox_metadata_unread_total() {
 ///   3. `famp inbox ack --offset <N> --as receiver` — pure local file write,
 ///      writes `~/.famp/mailboxes/.receiver.cursor`. NO broker round-trip.
 ///   4. `famp inspect identities --json` — reads the on-disk cursor,
-///      computes unread = read_from(cursor_offset).len() which is now 0.
+///      computes unread = `read_from(cursor_offset).len()` which is now 0.
 #[test]
 fn inspect_identities_unread_decreases_after_ack() {
     let bus = Bus::new();
@@ -389,8 +388,15 @@ fn inspect_identities_unread_decreases_after_ack() {
         let out = bus.famp_cmd_in(
             &send_cwd,
             &[
-                "send", "--as", "sender", "--to", "receiver",
-                "--new-task", body, "--body", body,
+                "send",
+                "--as",
+                "sender",
+                "--to",
+                "receiver",
+                "--new-task",
+                body,
+                "--body",
+                body,
             ],
         );
         assert!(
@@ -404,11 +410,16 @@ fn inspect_identities_unread_decreases_after_ack() {
     let pre = bus.famp_cmd(&["inspect", "identities", "--json"]);
     assert!(pre.status.success());
     let pre_val: serde_json::Value = serde_json::from_slice(&pre.stdout).unwrap();
-    let pre_row = pre_val["rows"].as_array().unwrap().iter()
-        .find(|r| r["name"] == "receiver").unwrap();
+    let pre_row = pre_val["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "receiver")
+        .unwrap();
     assert_eq!(pre_row["mailbox_total"].as_u64(), Some(2));
     assert_eq!(
-        pre_row["mailbox_unread"].as_u64(), Some(2),
+        pre_row["mailbox_unread"].as_u64(),
+        Some(2),
         "pre-ack: unread must equal total (sanity): {pre_val}"
     );
 
@@ -421,16 +432,28 @@ fn inspect_identities_unread_decreases_after_ack() {
     );
     let list_stdout = String::from_utf8_lossy(&list_out.stdout);
     // The last line is the footer: {"next_offset":N}
-    let footer_line = list_stdout.lines().last().expect("inbox list produced no output");
-    let footer: serde_json::Value = serde_json::from_str(footer_line)
-        .expect("footer line is not valid JSON");
-    let next_offset = footer["next_offset"].as_u64()
+    let footer_line = list_stdout
+        .lines()
+        .last()
+        .expect("inbox list produced no output");
+    let footer: serde_json::Value =
+        serde_json::from_str(footer_line).expect("footer line is not valid JSON");
+    let next_offset = footer["next_offset"]
+        .as_u64()
         .expect("footer has no next_offset field");
-    assert!(next_offset > 0, "next_offset must be positive after 2 messages");
+    assert!(
+        next_offset > 0,
+        "next_offset must be positive after 2 messages"
+    );
 
     // Step 2: ack (write .receiver.cursor) -- pure local file write.
     let ack = bus.famp_cmd(&[
-        "inbox", "ack", "--offset", &next_offset.to_string(), "--as", "receiver",
+        "inbox",
+        "ack",
+        "--offset",
+        &next_offset.to_string(),
+        "--as",
+        "receiver",
     ]);
     assert!(
         ack.status.success(),
@@ -442,10 +465,15 @@ fn inspect_identities_unread_decreases_after_ack() {
     let post = bus.famp_cmd(&["inspect", "identities", "--json"]);
     assert!(post.status.success());
     let post_val: serde_json::Value = serde_json::from_slice(&post.stdout).unwrap();
-    let post_row = post_val["rows"].as_array().unwrap().iter()
-        .find(|r| r["name"] == "receiver").unwrap();
+    let post_row = post_val["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "receiver")
+        .unwrap();
     assert_eq!(
-        post_row["mailbox_total"].as_u64(), Some(2),
+        post_row["mailbox_total"].as_u64(),
+        Some(2),
         "post-ack: total must remain 2: {post_val}"
     );
     let post_unread = post_row["mailbox_unread"].as_u64().unwrap();
