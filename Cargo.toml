@@ -74,6 +74,10 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+# Pedantic lints that produce churn without improving correctness or readability:
+doc_markdown = "allow"        # backtick-policing of identifiers in doc comments
+similar_names = "allow"       # flags intentionally paired names (reply_a_id / reply_b_id)
+option_if_let_else = "allow"  # pushes readable match blocks into closure-heavy map_or_else
 
 [profile.release]
 lto = "thin"

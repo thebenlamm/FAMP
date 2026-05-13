@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# FAMP pre-push hook — clippy CI-parity gate.
+#
+# Mirrors the `clippy` GitHub Actions job exactly:
+#   cargo clippy --workspace --all-targets -- -D warnings
+#
+# Runs on push (not pre-commit) so commit latency stays fast.
+# Bypass with `git push --no-verify` only if you have a real reason.
+
+set -euo pipefail
+
+# Check whether any of the commits being pushed touch Rust files.
+# stdin: lines of "<local_ref> <local_sha> <remote_ref> <remote_sha>"
+has_rust_changes=false
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    # Deletion push — nothing to check.
+    [[ "$local_sha" == "0000000000000000000000000000000000000000" ]] && continue
+    if [[ "$remote_sha" == "0000000000000000000000000000000000000000" ]]; then
+        # New branch: inspect files touched by the tip commit only (fast path).
+        files=$(git show --name-only --format="" "$local_sha" 2>/dev/null || true)
+    else
+        files=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+    fi
+    if echo "$files" | grep -qE '\.rs$'; then
+        has_rust_changes=true
+        break
+    fi
+done
+
+if ! $has_rust_changes; then
+    exit 0
+fi
+
+# Some shells (e.g. GUI git clients) don't inherit ~/.cargo/bin on PATH.
+if ! command -v cargo >/dev/null 2>&1; then
+    if [ -x "$HOME/.cargo/bin/cargo" ]; then
+        export PATH="$HOME/.cargo/bin:$PATH"
+    else
+        echo "pre-push: cargo not found on PATH; cannot run clippy" >&2
+        echo "  install rustup or remove core.hooksPath to bypass" >&2
+        exit 1
+    fi
+fi
+
+if ! cargo clippy --workspace --all-targets -- -D warnings; then
+    echo
+    echo "✗ pre-push: clippy errors detected (this would fail CI)."
+    echo "  Fix:  just lint   # or: cargo clippy --workspace --all-targets -- -D warnings"
+    echo "  Then push again."
+    exit 1
+fi
