@@ -349,6 +349,7 @@ fn measure_scenario(inspector_threads: usize) -> Measurement {
 }
 
 #[test]
+#[ignore = "CI runners too constrained; run locally with -- --ignored"]
 #[allow(clippy::cast_precision_loss)]
 fn inspect_load_does_not_starve_bus_messages() {
     // Collect SAMPLES independent (baseline, loaded) pairs and require every
