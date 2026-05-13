@@ -468,12 +468,20 @@ fn derive_fsm_state(env: &serde_json::Value) -> String {
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
 
+    // FSM truth table — keep each (class, mode, terminal, action) arm explicit
+    // so protocol extensions see the full decision surface.
+    #[allow(clippy::match_same_arms)]
     match (class, mode, terminal, action) {
         ("request", _, _, _) => "REQUESTED".into(),
-        ("commit", _, _, _) | ("deliver", _, false, _) => "COMMITTED".into(),
+        ("commit", _, _, _) => "COMMITTED".into(),
+        ("deliver", "completed", true, _) => "COMPLETED".into(),
         ("deliver", "failed", true, _) => "FAILED".into(),
-        ("deliver", "cancelled", true, _) | ("control", _, _, _) => "CANCELLED".into(),
+        ("deliver", "cancelled", true, _) => "CANCELLED".into(),
         ("deliver", _, true, _) => "COMPLETED".into(),
+        ("deliver", _, false, _) => "COMMITTED".into(),
+        ("control", "cancelled", _, _) => "CANCELLED".into(),
+        ("control", _, _, "cancel") => "CANCELLED".into(),
+        ("control", _, _, _) => "CANCELLED".into(),
         _ => "UNKNOWN".into(),
     }
 }
