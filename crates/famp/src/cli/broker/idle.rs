@@ -1,9 +1,9 @@
 //! Idle-timer state machine helper for the broker run loop.
 //!
-//! The broker arms a 5-minute `tokio::time::Sleep` whenever the live
-//! client count drops `1 → 0` (per BROKER-04). A new connection cancels
-//! the timer by setting the slot back to `None`. The select arm needs a
-//! future that:
+//! The broker arms a 5-minute `tokio::time::Sleep` at startup (zero
+//! clients) and again whenever the live client count drops `1 → 0`
+//! (per BROKER-04). A new connection cancels the timer by setting the
+//! slot back to `None`. The select arm needs a future that:
 //!   - polls the inner `Sleep` when `idle = Some(_)`
 //!   - never resolves when `idle = None`
 //!

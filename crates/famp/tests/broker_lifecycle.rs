@@ -135,6 +135,44 @@ async fn test_broker_idle_exit() {
     );
 }
 
+/// BROKER-04b: broker must exit after idle-timeout even when no client ever
+/// connects. This is the orphan-broker regression: when a spawning client
+/// crashes before connecting, the broker previously had `idle = None` at
+/// startup and ran forever. With the startup idle timer armed, it now exits
+/// after IDLE_TIMEOUT.
+#[tokio::test(start_paused = true)]
+async fn test_broker_idle_exit_with_no_clients_ever_connected() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let bus_dir = tmp.path().to_path_buf();
+    let sock = bus_dir.join("bus.sock");
+    let listener = UnixListener::bind(&sock).unwrap();
+
+    let never_shutdown = std::future::pending::<()>();
+    let sock_clone = sock.clone();
+    let bus_dir_clone = bus_dir.clone();
+    let broker = tokio::spawn(async move {
+        famp::cli::broker::run_on_listener(&sock_clone, &bus_dir_clone, listener, never_shutdown)
+            .await
+    });
+
+    // Yield so the broker enters its select loop and arms the startup timer.
+    tokio::task::yield_now().await;
+
+    // No client ever connects. Advance virtual time past the 300s threshold.
+    tokio::time::advance(Duration::from_secs(301)).await;
+    tokio::task::yield_now().await;
+
+    tokio::time::timeout(Duration::from_secs(5), broker)
+        .await
+        .expect("broker did not exit in time")
+        .expect("broker task panicked")
+        .expect("broker exited with error");
+    assert!(
+        !sock.exists(),
+        "broker must unlink socket on idle exit"
+    );
+}
+
 /// CLI-11: the broker MUST NOT consult `sessions.jsonl` to populate the
 /// `Sessions` reply — the file is diagnostic-only, intended for human
 /// post-mortems. Pre-write a row referencing a guaranteed-dead PID, and

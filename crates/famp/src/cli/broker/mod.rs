@@ -214,7 +214,12 @@ pub async fn run_on_listener(
     // (broker snapshots `joined` before clearing state). The previous
     // executor-side `session_meta` mirror is gone.
     let mut client_count: u32 = 0;
-    let mut idle: Option<Pin<Box<tokio::time::Sleep>>> = None;
+    // BROKER-04: arm at startup so a broker whose parent crashes before
+    // connecting self-terminates after IDLE_TIMEOUT instead of running
+    // forever. A connecting client cancels the timer (idle = None); a
+    // disconnecting client re-arms it.
+    let mut idle: Option<Pin<Box<tokio::time::Sleep>>> =
+        Some(Box::pin(tokio::time::sleep(IDLE_TIMEOUT)));
     let mut next_id: u64 = 0;
     let mut tick_interval = tokio::time::interval(TICK_INTERVAL);
     // Skip the immediate first tick so we don't spin Broker::handle
