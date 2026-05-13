@@ -199,7 +199,7 @@ fn inspect_tasks_by_id(
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("")
                 .to_string(),
-            sig_verified: true,
+            sig_verified: true, // TODO(INSP-SIG-VERIFY): hardcoded; signatures are not actually verified here
         })
         .collect();
 
