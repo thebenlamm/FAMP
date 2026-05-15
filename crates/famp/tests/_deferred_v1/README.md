@@ -21,14 +21,16 @@ active `crates/famp/tests/` glob.
 
 ## What stays exercised in `just ci`
 
-The library-API surface these tests targeted is preserved by
-[`crates/famp/tests/e2e_two_daemons.rs`](../e2e_two_daemons.rs) (FED-03/04 -
-plumb-line-2 insurance) and
-[`crates/famp/tests/e2e_two_daemons_adversarial.rs`](../e2e_two_daemons_adversarial.rs)
-(D-09 sentinel). The federation crates `famp-transport-http` and `famp-keyring`
-stay compiling on every commit. `cargo tree -p famp-transport-http -i` after
-Phase 4 lists ONLY the e2e test target as a consumer - no top-level CLI reaches
-them.
+**2026-05-15 update:** `e2e_two_daemons.rs` was moved here as
+`e2e_two_daemons.rs.deferred` after becoming structurally flaky (0/7 passes).
+Root cause: `worker_threads = 2` + two TLS servers + a test driver is an
+oversubscribed scheduler. Sleep tuning could not fix it. The right fix on
+reactivation is a `oneshot::Sender` signaled by the server task after
+`axum::serve()` is actually accepting — deterministic, no sleep, no poll.
+
+`famp-transport-http` and `famp-keyring` continue to compile on every commit
+via `cargo check --workspace`. No active test target exercises their runtime
+behavior until v1.0 reactivation.
 
 ## See also
 

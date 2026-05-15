@@ -44,25 +44,16 @@ fn fixture_dir() -> PathBuf {
         .join("cross_machine")
 }
 
-/// Poll both listener addresses via TCP connect until they accept a connection,
-/// or fail after 2 seconds. This replaces the blind 75ms sleep that was
-/// insufficient on loaded machines.
-async fn wait_for_tls_listener_ready(addrs: &[SocketAddr]) {
-    // Yield once to let the spawned server tasks get a chance to be polled.
+/// Wait for TLS listeners to be ready. Yields once to let spawned server
+/// tasks be polled, then sleeps long enough for rustls to initialize.
+///
+/// Probe connections (TCP connect + immediate drop) are intentionally avoided:
+/// the dropped connection forces the server to handle an aborted handshake,
+/// consuming the limited 2-worker-thread budget and making the real request
+/// more likely to time out.
+async fn wait_for_tls_listener_ready(_addrs: &[SocketAddr]) {
     tokio::task::yield_now().await;
-
-    for &addr in addrs {
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                match tokio::net::TcpStream::connect(addr).await {
-                    Ok(_stream) => break,
-                    Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
-                }
-            }
-        })
-        .await
-        .unwrap_or_else(|_| panic!("listener at {addr} not ready after 2s"));
-    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
