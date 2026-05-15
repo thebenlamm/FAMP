@@ -4,8 +4,8 @@ milestone: v0.10
 milestone_name: Inspector & Observability
 status: Awaiting next milestone
 stopped_at: Phase 03 UAT passed — v0.10 milestone complete, ready for /gsd-complete-milestone
-last_updated: "2026-05-11T13:23:45.946Z"
-last_activity: 2026-05-12 - Completed quick task 260512-jdv: Fix famp inspect identities UNREAD always equals TOTAL: source cursor from disk, delete dead BrokerState.cursors
+last_updated: "2026-05-15T17:39:01.002Z"
+last_activity: 2026-05-15 - Completed quick task 260515-iyi: Add famp_channel_log MCP tool for channel history
 progress:
   total_phases: 9
   completed_phases: 3
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 Phase: Milestone v0.10 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-05-11 — Milestone v0.10 completed and archived
+Last activity: 2026-05-15 — Completed quick task 260515-iyi: Add famp_channel_log MCP tool for channel history
 
 ## v0.10 Phase Map
 
@@ -133,6 +133,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | 260508-ib4 | Add woken bool to SendOk so famp_send callers can tell if recipient was live at delivery time | 2026-05-08 | c699859 | [260508-ib4-add-woken-bool-to-sendok-so-famp-send-ca](./quick/260508-ib4-add-woken-bool-to-sendok-so-famp-send-ca/) |
 | 260509-kcf | Propagate v1.0 trigger unweld decision into project docs | 2026-05-09 | ba66ee4 | [260509-kcf-propagate-v1-0-trigger-unweld-decision-i](./quick/260509-kcf-propagate-v1-0-trigger-unweld-decision-i/) |
 | 260512-jdv | Fix famp inspect identities UNREAD always equals TOTAL: source cursor from disk, delete dead BrokerState.cursors | 2026-05-12 | 765171f | [260512-jdv-fix-famp-inspect-identities-unread-total](./quick/260512-jdv-fix-famp-inspect-identities-unread-total/) |
+| 260515-iyi | Add famp_channel_log MCP tool for channel history | 2026-05-15 | cb7ee11 | [260515-iyi-add-famp-channel-log-mcp-tool-for-channe](./quick/260515-iyi-add-famp-channel-log-mcp-tool-for-channe/) |
 
 ## Performance Metrics
 
