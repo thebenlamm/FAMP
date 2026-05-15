@@ -21,8 +21,9 @@ use famp_envelope as _;
 use famp_fsm as _;
 use famp_inspect_proto::{
     is_orphan_task_id, IdentityRow, InspectBrokerReply, InspectIdentitiesReply, InspectKind,
-    InspectMessagesReply, InspectTasksReply, MessageListReply, MessageRow, TaskDetailFullReply,
-    TaskDetailReply, TaskEnvelopeFull, TaskEnvelopeSummary, TaskListReply, TaskRow,
+    InspectMessagesReply, InspectTasksReply, InspectWaitersReply, MessageListReply, MessageRow,
+    TaskDetailFullReply, TaskDetailReply, TaskEnvelopeFull, TaskEnvelopeSummary, TaskListReply,
+    TaskRow, WaiterRow,
 };
 use serde as _;
 use sha2::{Digest, Sha256};
@@ -103,6 +104,9 @@ pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) ->
         }
         InspectKind::Messages(req) => serde_json::to_value(inspect_messages(state, ctx, req))
             .unwrap_or(serde_json::Value::Null),
+        InspectKind::Waiters(_) => {
+            serde_json::to_value(inspect_waiters(state)).unwrap_or(serde_json::Value::Null)
+        }
     }
 }
 
@@ -141,6 +145,24 @@ fn inspect_identities(state: &BrokerStateView, ctx: &BrokerCtx) -> InspectIdenti
         })
         .collect();
     InspectIdentitiesReply { rows }
+}
+
+/// INSP-WAIT-01: one row per (parked await × subscribed mailbox).
+///
+/// The view already fans out rows in `BrokerStateView.waiters`, so this
+/// handler is just a projection of the pre-computed view into the reply type.
+fn inspect_waiters(state: &BrokerStateView) -> InspectWaitersReply {
+    let rows = state
+        .waiters
+        .iter()
+        .map(|w| WaiterRow {
+            name: w.name.clone(),
+            mailbox: w.mailbox.clone(),
+            cursor: w.cursor,
+            deadline_ms: w.deadline_ms,
+        })
+        .collect();
+    InspectWaitersReply { rows }
 }
 
 fn inspect_tasks_by_id(
@@ -510,6 +532,7 @@ mod tests {
         BrokerStateView {
             started_at: SystemTime::now(),
             clients: vec![],
+            waiters: vec![],
         }
     }
 
@@ -554,6 +577,7 @@ mod tests {
                 last_activity: now,
                 joined: vec![],
             }],
+            waiters: vec![],
         };
         let mut meta = BTreeMap::new();
         meta.insert(
@@ -602,6 +626,7 @@ mod tests {
                 last_activity: SystemTime::now(),
                 joined: vec![],
             }],
+            waiters: vec![],
         };
         let ctx = ctx_with(1, "/tmp/x");
         let value = dispatch(
@@ -1051,5 +1076,55 @@ mod tests {
             "body": { "details": { "mode": "in_progress", "terminal": false } }
         });
         assert_eq!(derive_fsm_state(&env), "COMMITTED");
+    }
+
+    #[test]
+    fn dispatch_waiters_empty_when_no_pending_awaits() {
+        let state = empty_state();
+        let ctx = ctx_with(1, "/tmp/x");
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Waiters(famp_inspect_proto::InspectWaitersRequest::default()),
+        );
+        assert_eq!(value["rows"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn dispatch_waiters_returns_waiter_rows() {
+        use famp_bus::WaiterStateView;
+
+        let state = BrokerStateView {
+            started_at: SystemTime::now(),
+            clients: vec![],
+            waiters: vec![
+                WaiterStateView {
+                    name: "alice".into(),
+                    mailbox: "alice".into(),
+                    cursor: 0,
+                    deadline_ms: 30000,
+                },
+                WaiterStateView {
+                    name: "alice".into(),
+                    mailbox: "#planning".into(),
+                    cursor: 512,
+                    deadline_ms: 30000,
+                },
+            ],
+        };
+        let ctx = ctx_with(1, "/tmp/x");
+        let value = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Waiters(famp_inspect_proto::InspectWaitersRequest::default()),
+        );
+        let rows = value["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["name"], "alice");
+        assert_eq!(rows[0]["mailbox"], "alice");
+        assert_eq!(rows[0]["cursor"], 0);
+        assert_eq!(rows[0]["deadline_ms"], 30000_u64);
+        assert_eq!(rows[1]["mailbox"], "#planning");
+        assert_eq!(rows[1]["cursor"], 512);
     }
 }

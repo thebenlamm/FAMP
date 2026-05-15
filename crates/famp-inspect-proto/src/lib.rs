@@ -20,6 +20,8 @@ pub enum InspectKind {
     Tasks(InspectTasksRequest),
     /// Phase 2 message inspection request.
     Messages(InspectMessagesRequest),
+    /// Inspect clients currently parked in `famp_await`.
+    Waiters(InspectWaitersRequest),
 }
 
 // ===== Broker =====
@@ -240,6 +242,37 @@ pub struct MessageRow {
     pub body_sha256_prefix: String,
 }
 
+// ===== Waiters =====
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InspectWaitersRequest {}
+
+/// One row per (waiting client × monitored mailbox).
+///
+/// A single `famp_await` call watches the waiter's own agent mailbox
+/// PLUS every joined channel, so one parked await fan-outs into
+/// multiple rows (one per subscribed mailbox). `deadline_ms` is the
+/// *remaining* wait time in milliseconds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaiterRow {
+    /// Canonical identity name (resolved from ClientId by the broker).
+    pub name: String,
+    /// Mailbox being monitored: `"alice"` for agent or `"#planning"` for channel.
+    pub mailbox: String,
+    /// Current await offset for this mailbox (bytes already consumed).
+    pub cursor: u64,
+    /// Remaining wait time in milliseconds (0 if already past deadline).
+    pub deadline_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InspectWaitersReply {
+    pub rows: Vec<WaiterRow>,
+}
+
 // ===== INSP-IDENT-03: schema-level rejection of forbidden field names =====
 
 #[cfg(test)]
@@ -387,6 +420,29 @@ mod codec_roundtrip {
         let v = InspectMessagesReply::BudgetExceeded { elapsed_ms: 500 };
         let bytes = canonicalize(&v).unwrap();
         let decoded: InspectMessagesReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn inspectkind_waiters_roundtrips() {
+        let v = InspectKind::Waiters(InspectWaitersRequest::default());
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectKind = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn inspectwaitersreply_roundtrips() {
+        let v = InspectWaitersReply {
+            rows: vec![WaiterRow {
+                name: "alice".into(),
+                mailbox: "#planning".into(),
+                cursor: 1024,
+                deadline_ms: 82000,
+            }],
+        };
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectWaitersReply = famp_canonical::from_slice_strict(&bytes).unwrap();
         assert_eq!(v, decoded);
     }
 

@@ -113,9 +113,79 @@ impl BrokerState {
                 joined: c.joined.iter().cloned().collect(),
             })
             .collect();
+
+        // Fan-out waiters: one row per (pending_await × monitored mailbox).
+        // A parked await watches the identity's own agent mailbox plus all
+        // joined channels. `await_offsets` holds current cursor per mailbox;
+        // deadline_ms is clamped to zero if already past (Instant is monotonic).
+        let now = Instant::now();
+        let mut waiters: Vec<WaiterStateView> = Vec::new();
+        for (client_id, parked) in &self.pending_awaits {
+            // Resolve canonical identity name from ClientId.
+            let Some(client_state) = self.clients.get(client_id) else {
+                continue;
+            };
+            let name = match (&client_state.name, &client_state.bind_as) {
+                (Some(n), _) => n.clone(),
+                (None, Some(b)) => b.clone(),
+                (None, None) => continue,
+            };
+            // Resolve owner (canonical holder) — for proxy connections the
+            // await_offsets live on the canonical holder's ClientState.
+            let owner_id = if client_state.name.is_some() {
+                *client_id
+            } else {
+                // Look up the canonical holder by bind_as name.
+                let bound = client_state.bind_as.as_deref().unwrap_or("");
+                self.clients
+                    .iter()
+                    .find_map(|(id, s)| {
+                        if s.connected && s.name.as_deref() == Some(bound) {
+                            Some(*id)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(*client_id)
+            };
+            let owner_state = self.clients.get(&owner_id);
+
+            let deadline_ms = parked
+                .deadline
+                .checked_duration_since(now)
+                .map_or(0, |d| d.as_millis() as u64);
+
+            // Agent mailbox (always watched).
+            let agent_mailbox = crate::MailboxName::Agent(name.clone());
+            let cursor = owner_state
+                .and_then(|s| s.await_offsets.get(&agent_mailbox).copied())
+                .unwrap_or(0);
+            waiters.push(WaiterStateView {
+                name: name.clone(),
+                mailbox: name.clone(), // agent mailbox key = identity name
+                cursor,
+                deadline_ms,
+            });
+
+            // Channel mailboxes (one row per joined channel).
+            if let Some(s) = owner_state {
+                for channel in &s.joined {
+                    let ch_mailbox = crate::MailboxName::Channel(channel.clone());
+                    let ch_cursor = s.await_offsets.get(&ch_mailbox).copied().unwrap_or(0);
+                    waiters.push(WaiterStateView {
+                        name: name.clone(),
+                        mailbox: channel.clone(),
+                        cursor: ch_cursor,
+                        deadline_ms,
+                    });
+                }
+            }
+        }
+
         BrokerStateView {
             started_at: self.started_at,
             clients,
+            waiters,
         }
     }
 }
@@ -133,6 +203,23 @@ impl BrokerState {
 pub struct BrokerStateView {
     pub started_at: SystemTime,
     pub clients: Vec<ClientStateView>,
+    /// Fan-out rows for pending awaits: one row per (waiter × mailbox).
+    pub waiters: Vec<WaiterStateView>,
+}
+
+/// One row in the waiters view: a single (identity, mailbox) pair for
+/// a client currently parked in `famp_await`. Fan-out: one parked
+/// await yields one row for the agent mailbox plus one per joined channel.
+#[derive(Debug, Clone)]
+pub struct WaiterStateView {
+    /// Canonical identity name of the waiting client.
+    pub name: String,
+    /// Mailbox being watched: identity name for agent, `"#channel"` for channel.
+    pub mailbox: String,
+    /// Current await offset (bytes already consumed from this mailbox).
+    pub cursor: u64,
+    /// Remaining wait time in milliseconds (0 if past deadline).
+    pub deadline_ms: u64,
 }
 
 /// One row per registered client, derived from `ClientState`.

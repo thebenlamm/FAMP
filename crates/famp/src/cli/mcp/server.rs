@@ -164,6 +164,14 @@ fn tool_descriptors() -> serde_json::Value {
                 },
                 "required": ["channel"]
             }
+        },
+        {
+            "name": "famp_inspect_waiters",
+            "description": "List all clients currently parked in famp_await. Returns one row per (client × mailbox): an awaiting client produces one row for its own agent mailbox plus one row per joined channel it subscribes to. Works without registration. Each row: { name, mailbox, cursor, deadline_ms }.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
         }
     ])
 }
@@ -442,6 +450,7 @@ async fn dispatch_tool(
         "famp_whoami" => return tools::whoami::call(input).await,
         "famp_verify" => return tools::verify::call(input).await,
         "famp_channel_log" => return tools::channel_log::call(input).await,
+        "famp_inspect_waiters" => return tools::inspect_waiters::call(input).await,
         _ => {}
     }
 

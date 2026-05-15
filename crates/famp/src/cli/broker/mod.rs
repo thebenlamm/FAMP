@@ -687,6 +687,7 @@ mod tests {
                         joined: vec![],
                     })
                     .collect(),
+                waiters: vec![],
             }
         }
 

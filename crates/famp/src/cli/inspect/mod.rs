@@ -12,6 +12,7 @@ pub mod broker;
 pub mod identities;
 pub mod messages;
 pub mod tasks;
+pub mod waiters;
 
 #[derive(Args, Debug)]
 pub struct InspectArgs {
@@ -29,6 +30,8 @@ pub enum InspectSubcommand {
     Tasks(tasks::InspectTasksArgs),
     /// List envelope metadata for a mailbox.
     Messages(messages::InspectMessagesArgs),
+    /// List clients currently parked in famp_await.
+    Waiters(waiters::InspectWaitersArgs),
 }
 
 pub async fn run(args: InspectArgs) -> Result<(), CliError> {
@@ -37,5 +40,6 @@ pub async fn run(args: InspectArgs) -> Result<(), CliError> {
         InspectSubcommand::Identities(args) => identities::run(args).await,
         InspectSubcommand::Tasks(args) => tasks::run(args).await,
         InspectSubcommand::Messages(args) => messages::run(args).await,
+        InspectSubcommand::Waiters(args) => waiters::run(args).await,
     }
 }

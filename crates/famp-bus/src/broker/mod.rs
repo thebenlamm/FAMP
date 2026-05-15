@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use crate::{AwaitFilter, BrokerEnv, BusMessage, BusReply, ClientId, MailboxName};
 
-pub use state::{BrokerStateView, ClientStateView};
+pub use state::{BrokerStateView, ClientStateView, WaiterStateView};
 
 #[derive(Debug, Clone)]
 pub enum BrokerInput {
