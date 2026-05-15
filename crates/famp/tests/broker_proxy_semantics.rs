@@ -119,6 +119,7 @@ fn test_proxy_join_persists_after_disconnect() {
             let reply = proxy
                 .send_recv(BusMessage::Join {
                     channel: "#planning".into(),
+                    role: None,
                 })
                 .await
                 .expect("join send_recv");

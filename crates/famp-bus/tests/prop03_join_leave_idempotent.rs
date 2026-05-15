@@ -55,7 +55,7 @@ proptest! {
         for op in ops {
             let msg = if op {
                 expected_joined = true;
-                BusMessage::Join { channel: channel.clone() }
+                BusMessage::Join { channel: channel.clone(), role: None }
             } else {
                 expected_joined = false;
                 BusMessage::Leave { channel: channel.clone() }

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::broker::state::{ClientState, ParkedAwait};
 use crate::{
     AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId,
-    Delivered, MailboxName, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
+    Delivered, MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
 };
 
 const AWAIT_BATCH_CAP: usize = 50;
@@ -85,7 +85,7 @@ fn handle_wire<E: BrokerEnv>(
         BusMessage::Await { timeout_ms, task } => {
             await_envelope(broker, client, timeout_ms, task, now)
         }
-        BusMessage::Join { channel } => join(broker, client, channel),
+        BusMessage::Join { channel, role } => join(broker, client, channel, role),
         BusMessage::Leave { channel } => leave(broker, client, channel),
         BusMessage::Sessions {} => sessions(broker, client),
         BusMessage::Whoami {} => whoami(broker, client),
@@ -604,7 +604,12 @@ fn await_envelope<E: BrokerEnv>(
     }]
 }
 
-fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String) -> Vec<Out> {
+fn join<E: BrokerEnv>(
+    broker: &mut Broker<E>,
+    client: ClientId,
+    channel: String,
+    role: Option<String>,
+) -> Vec<Out> {
     // D-10: resolve effective identity; for proxies, the holder ID is
     // the canonical registered slot, NOT the proxy connection.
     let Ok(name) = resolve_op_identity(broker, client) else {
@@ -628,6 +633,14 @@ fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String)
         state.joined.insert(channel.clone());
     }
 
+    // Store the declared role in `channel_roles` if provided.
+    if let Some(ref r) = role {
+        broker
+            .state
+            .channel_roles
+            .insert((channel.clone(), name.clone()), r.clone());
+    }
+
     let mailbox = MailboxName::Channel(channel.clone());
     // Join drain-from-start: the in-memory `cursors` map was never
     // populated (deleted in fix 260512-jdv); preserving the historical
@@ -646,11 +659,24 @@ fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String)
             .await_offsets
             .insert(mailbox.clone(), drained.next_offset);
     }
-    let members = broker
+    // Build MemberInfo list: look up each member's role from channel_roles.
+    let members: Vec<MemberInfo> = broker
         .state
         .channels
         .get(&channel)
-        .map(|members| members.iter().cloned().collect())
+        .map(|member_names| {
+            member_names
+                .iter()
+                .map(|member_name| MemberInfo {
+                    name: member_name.clone(),
+                    role: broker
+                        .state
+                        .channel_roles
+                        .get(&(channel.clone(), member_name.clone()))
+                        .cloned(),
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
     vec![
@@ -686,6 +712,11 @@ fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.remove(&channel);
     }
+    // Clean up role entry to avoid leaking stale roles.
+    broker
+        .state
+        .channel_roles
+        .remove(&(channel.clone(), name));
     vec![Out::Reply(client, BusReply::LeaveOk { channel })]
 }
 
@@ -1282,6 +1313,7 @@ mod d10_tests {
                     client: ClientId::from(client),
                     msg: BusMessage::Join {
                         channel: "#burst".into(),
+                        role: None,
                     },
                 },
                 now,
@@ -1480,6 +1512,7 @@ mod d10_tests {
                 client: ClientId::from(2_u64),
                 msg: BusMessage::Join {
                     channel: "#x".into(),
+                    role: None,
                 },
             },
             now,
@@ -1954,6 +1987,7 @@ mod d10_tests {
                 client: ClientId::from(1_u64),
                 msg: BusMessage::Join {
                     channel: "#x".into(),
+                    role: None,
                 },
             },
             now,
@@ -1963,6 +1997,7 @@ mod d10_tests {
                 client: ClientId::from(2_u64),
                 msg: BusMessage::Join {
                     channel: "#x".into(),
+                    role: None,
                 },
             },
             now,

@@ -127,7 +127,8 @@ fn tools_list_returns_expected_tools() {
         let tools = r["result"]["tools"].as_array().expect("tools array");
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         // 2026-05-15: famp_channel_log adds no-registration channel history recovery.
-        assert_eq!(names.len(), 11, "expected 11 tools, got: {names:?}");
+        // 2026-05-15: famp_inspect_waiters adds awaiter visibility.
+        assert_eq!(names.len(), 12, "expected 12 tools, got: {names:?}");
         for expected in [
             "famp_send",
             "famp_await",
@@ -140,6 +141,7 @@ fn tools_list_returns_expected_tools() {
             "famp_verify",
             "famp_set_listen",
             "famp_channel_log",
+            "famp_inspect_waiters",
         ] {
             assert!(
                 names.contains(&expected),

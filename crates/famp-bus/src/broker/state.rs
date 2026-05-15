@@ -75,6 +75,9 @@ pub(super) struct BrokerState {
     pub(super) clients: BTreeMap<ClientId, ClientState>,
     pub(super) channels: BTreeMap<String, BTreeSet<String>>,
     pub(super) pending_awaits: BTreeMap<ClientId, ParkedAwait>,
+    /// Keyed by `(channel_name, member_name)`. Populated on `Join` when a
+    /// role is provided; removed on `Leave` to avoid leaking stale roles.
+    pub(super) channel_roles: BTreeMap<(String, String), String>,
     /// D-07: wall-clock startup time, set by the answering process.
     /// Surfaced in `famp inspect broker` reply (INSP-BROKER-01).
     /// NEVER socket file mtime (D-08): mtime lies after restart-
@@ -89,6 +92,7 @@ impl BrokerState {
             clients: BTreeMap::new(),
             channels: BTreeMap::new(),
             pending_awaits: BTreeMap::new(),
+            channel_roles: BTreeMap::new(),
             started_at: SystemTime::now(),
         }
     }

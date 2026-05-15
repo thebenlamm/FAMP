@@ -69,7 +69,7 @@ proptest! {
             let _ = broker.handle(
                 BrokerInput::Wire {
                     client: ClientId::from(client),
-                    msg: BusMessage::Join { channel: channel.clone() },
+                    msg: BusMessage::Join { channel: channel.clone(), role: None },
                 },
                 now,
             );

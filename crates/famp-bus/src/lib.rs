@@ -61,5 +61,6 @@ pub use famp_envelope::bus::{AnyBusEnvelope, BusEnvelope};
 pub use liveness::{AlwaysAliveLiveness, FakeLiveness, LivenessProbe};
 pub use mailbox::{DrainResult, InMemoryMailbox, MailboxErr, MailboxName, MailboxRead};
 pub use proto::{
-    AwaitFilter, BusMessage, BusReply, ClientId, Delivered, SessionRow, Target, BUS_PROTO_VERSION,
+    AwaitFilter, BusMessage, BusReply, ClientId, Delivered, MemberInfo, SessionRow, Target,
+    BUS_PROTO_VERSION,
 };

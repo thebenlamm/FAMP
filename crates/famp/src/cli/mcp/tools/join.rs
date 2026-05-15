@@ -1,18 +1,20 @@
 //! `famp_join` MCP tool — NEW in Phase 02 plan 02-09.
 //!
 //! Thin wrapper over `cli::join::run_at_structured`. Sends
-//! `BusMessage::Join { channel }` to the broker and surfaces the typed
+//! `BusMessage::Join { channel, role }` to the broker and surfaces the typed
 //! outcome.
 //!
 //! ## Input contract
 //!
 //! - `channel: string` — required. Accepts both `"#planning"` and
 //!   `"planning"` (CLI's `normalize_channel` adds the leading `#`).
+//! - `role: string` — optional. Self-declared role for this member
+//!   (e.g. `"judge"`, `"peer"`). Surfaced in `JoinOk.members` for all members.
 //!
 //! ## Output shape
 //!
 //! ```json
-//! { "channel": "#planning", "members": ["alice","bob"], "drained": <count> }
+//! { "channel": "#planning", "members": [{"name":"alice","role":"judge"},{"name":"bob"}], "drained": <count> }
 //! ```
 //!
 //! `drained` is the *count* of typed envelopes the broker drained on
@@ -41,6 +43,11 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         })?
         .to_string();
 
+    let role = input
+        .get("role")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
     let args = JoinArgs {
         channel,
         // Carry MCP session's bound identity through so
@@ -48,6 +55,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         // fall back to wires.tsv. dispatch_tool guarantees
         // active_identity is Some by this point.
         act_as: session::active_identity().await,
+        role,
     };
     match run_at_structured(&resolve_sock_path(), args).await {
         Ok(out) => Ok(serde_json::json!({

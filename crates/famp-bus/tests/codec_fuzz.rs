@@ -39,6 +39,7 @@ fn arb_busmessage() -> impl Strategy<Value = BusMessage> {
         }),
         Just(BusMessage::Join {
             channel: "#team".into(),
+            role: None,
         }),
         Just(BusMessage::Leave {
             channel: "#team".into(),

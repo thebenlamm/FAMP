@@ -163,6 +163,11 @@ pub enum BusMessage {
     },
     Join {
         channel: String,
+        /// Optional self-declared role for this member (e.g. "judge", "peer").
+        /// `skip_serializing_if = Option::is_none` preserves byte-exact
+        /// round-trip for pre-role senders that omit the field.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        role: Option<String>,
     },
     Leave {
         channel: String,
@@ -228,7 +233,7 @@ pub enum BusReply {
     AwaitTimeout {},
     JoinOk {
         channel: String,
-        members: Vec<String>,
+        members: Vec<MemberInfo>,
         drained: Vec<serde_json::Value>,
     },
     LeaveOk {
@@ -293,6 +298,22 @@ pub struct SessionRow {
     pub joined: Vec<String>,
 }
 
+/// Per-member info in [`BusReply::JoinOk`].
+///
+/// `role` is `None` for members that joined without declaring a role.
+/// Wire compat: `skip_serializing_if = Option::is_none` omits the field
+/// when absent so pre-role peers (which used `Vec<String>` and expected
+/// only a name string) are not impacted — note this is a breaking change
+/// to the JoinOk shape; callers must accept `Vec<MemberInfo>` not
+/// `Vec<String>` after this version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemberInfo {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+}
+
 // #[serde(deny_unknown_fields)] for Target agent variant.
 // #[serde(deny_unknown_fields)] for Target channel variant.
 // #[serde(deny_unknown_fields)] for BusMessage variant payloads.
@@ -301,7 +322,7 @@ pub struct SessionRow {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{BusMessage, BusReply, Delivered, SessionRow, Target};
+    use super::{BusMessage, BusReply, Delivered, MemberInfo, SessionRow, Target};
     use crate::{BusErrorKind, MailboxName};
     use serde_json::json;
 
@@ -621,5 +642,71 @@ mod tests {
                 bind_as: None,
             }
         );
+    }
+
+    /// Join with no role omits the field on the wire (wire compat).
+    #[test]
+    fn join_without_role_byte_exact_no_role_field() {
+        let v = BusMessage::Join {
+            channel: "#team".into(),
+            role: None,
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let wire = String::from_utf8(bytes.clone()).unwrap();
+        assert!(
+            !wire.contains("\"role\""),
+            "role must be omitted at default; got {wire}"
+        );
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    /// Join with a role includes the field on the wire.
+    #[test]
+    fn join_with_role_roundtrips() {
+        let v = BusMessage::Join {
+            channel: "#team".into(),
+            role: Some("judge".into()),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let wire = String::from_utf8(bytes.clone()).unwrap();
+        assert!(
+            wire.contains("\"role\""),
+            "role must be present; got {wire}"
+        );
+        let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    /// JoinOk with MemberInfo, one with role and one without.
+    #[test]
+    fn joinok_memberinfo_roundtrips() {
+        let v = BusReply::JoinOk {
+            channel: "#team".into(),
+            members: vec![
+                MemberInfo {
+                    name: "alice".into(),
+                    role: Some("judge".into()),
+                },
+                MemberInfo {
+                    name: "bob".into(),
+                    role: None,
+                },
+            ],
+            drained: vec![],
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+        // Bob has no role — verify field is absent in wire JSON.
+        let wire = String::from_utf8(bytes).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        let bob = parsed["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["name"] == "bob")
+            .unwrap();
+        assert!(bob.get("role").is_none(), "bob should have no role field");
     }
 }

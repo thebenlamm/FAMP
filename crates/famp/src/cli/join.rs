@@ -1,4 +1,4 @@
-//! `famp join <#channel> [--as <name>]` — Phase 02 Plan 02-07 (CLI-06).
+//! `famp join <#channel> [--as <name>] [--role <role>]` — Phase 02 Plan 02-07 (CLI-06).
 //!
 //! Joins a channel via the local UDS broker. Identity binding follows
 //! D-10: connection-level via `Hello { bind_as: Some(resolved_identity) }`,
@@ -11,7 +11,7 @@
 //! ## Output
 //!
 //! ```text
-//! {"channel":"#planning","members":["alice","bob"],"drained":3}
+//! {"channel":"#planning","members":[{"name":"alice","role":"judge"},{"name":"bob"}],"drained":3}
 //! ```
 //!
 //! `drained` is the *count* of typed envelopes drained on join — the full
@@ -23,7 +23,7 @@
 
 use std::path::Path;
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply};
+use famp_bus::{BusErrorKind, BusMessage, BusReply, MemberInfo};
 
 use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
 use crate::cli::error::CliError;
@@ -40,6 +40,10 @@ pub struct JoinArgs {
     /// field is `act_as` because `as` is a reserved keyword.
     #[arg(long = "as")]
     pub act_as: Option<String>,
+    /// Optional self-declared role for this member in the channel (e.g. "judge", "peer").
+    /// Surfaced in the `JoinOk` reply so other members can see your role.
+    #[arg(long)]
+    pub role: Option<String>,
 }
 
 /// Structured outcome — same shape as [`BusReply::JoinOk`]. Used by the
@@ -48,7 +52,7 @@ pub struct JoinArgs {
 #[derive(Debug, Clone)]
 pub struct JoinOutcome {
     pub channel: String,
-    pub members: Vec<String>,
+    pub members: Vec<MemberInfo>,
     /// Typed envelopes drained on join (Phase-1 D-09 wire shape). The
     /// stdout JSONL form surfaces only the length; structured callers see
     /// the full envelopes.
@@ -87,6 +91,7 @@ pub async fn run_at_structured(sock: &Path, args: JoinArgs) -> Result<JoinOutcom
     let reply = bus
         .send_recv(BusMessage::Join {
             channel: channel.clone(),
+            role: args.role.clone(),
         })
         .await
         .map_err(|e| CliError::BusClient {

@@ -145,11 +145,12 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_join",
-            "description": "Join a channel; the broker drains any pending channel messages on join completion and adds the canonical holder to the channel members.",
+            "description": "Join a channel. The broker drains any pending channel messages on join and adds the canonical holder to the member list. Optionally declare a role (e.g. 'judge', 'peer') — roles are surfaced in the JoinOk members list so other agents know who's who. Returns { channel, members: [{name, role?}], drained: <count> }.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "channel": { "type": "string", "description": "Channel name (with or without leading '#')." }
+                    "channel": { "type": "string", "description": "Channel name (with or without leading '#')." },
+                    "role": { "type": "string", "description": "Optional self-declared role in this channel (e.g. 'judge', 'peer', 'observer')." }
                 },
                 "required": ["channel"]
             }
