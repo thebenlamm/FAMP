@@ -324,5 +324,16 @@ Plans:
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
+### Phase 999.10: `famp inspect waiters` — parked await visibility (BACKLOG)
+
+**Goal:** Add an operator-facing `famp inspect waiters` view showing currently parked `Await` consumers, their effective identity, listen-mode state, task filter, mailbox offsets, and deadline.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+**Context:** Surfaced 2026-05-15 while fixing batch `AwaitOk` delivery for burst channel messages. The broker now has meaningful session-owned await state (`pending_awaits` plus per-mailbox delivery offsets), but operators still cannot ask "who is currently waiting and on which mailbox/filter?" This belongs beside the v0.10 inspector surface, not in the batch-delivery fix.
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
 ---
 *Roadmap updated: 2026-05-10 — v0.10 Inspector & Observability recut after matt-essentialist + zed-velocity-engineer review. Three-phase structure: Phase 1 (Broker Diagnosis & Identity Inspection — closes orphan-listener incident class end-to-end, 16 reqs), Phase 2 (Task FSM & Message Visibility — I/O-bound handlers + the budget/cancel reqs that finally have something real to enforce against, 9 reqs), Phase 3 (Load Verification & Integration Hardening, 1 req). 26/26 v1 requirements mapped. Original cut (RPC-foundation-with-stub-handlers in Phase 1, all CLI in Phase 2) rejected as yak-shaving — Phase 1 success criteria around budget+cancel were testing synthetic test-only handlers, not the inspector's real work surface. INSP-RPC-02 reworded from runtime property test to compile-time `&BrokerState` signature + workspace dep-graph gate (`just check-inspect-readonly`). Phase numbering reset to Phase 1 per FAMP convention (v0.7/v0.8/v0.9 each reset; v0.10 follows). Independent of v1.0 federation gates (Gate A: Ben symmetric cross-machine; Gate B: 2nd implementer interop) which were unwelded 2026-05-09 per `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`. v0.9 Local-First Bus shipped 2026-05-04; v0.8 shipped 2026-04-26; v0.7 shipped 2026-04-14; v0.6 + v0.5.1 shipped 2026-04-13.*
