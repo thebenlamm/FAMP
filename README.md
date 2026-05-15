@@ -282,7 +282,8 @@ Closing a window removes them. Use it to confirm a target is up before sending.
 
 Channels are IRC-style broadcast groups. Every member receives every message
 sent to the channel. The `#` prefix is optional — both `planning` and
-`#planning` work as the target.
+`#planning` work as the target. Channels are created automatically the first
+time any agent joins — no pre-creation step required.
 
 ```bash
 # Terminal A
