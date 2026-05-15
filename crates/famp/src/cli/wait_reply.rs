@@ -52,7 +52,9 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
                 .find(|envelope| is_reply_for_task(envelope, args.task))
             {
                 return Ok(AwaitOutcome {
-                    envelope: Some(envelope),
+                    envelopes: vec![envelope],
+                    mailbox: None,
+                    next_offset: None,
                     timed_out: false,
                     diagnostic: None,
                 });
@@ -85,13 +87,21 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
         })?;
 
     match await_reply {
-        BusReply::AwaitOk { envelope } => Ok(AwaitOutcome {
-            envelope: Some(envelope),
+        BusReply::AwaitOk {
+            envelopes,
+            mailbox,
+            next_offset,
+        } => Ok(AwaitOutcome {
+            envelopes,
+            mailbox: Some(mailbox),
+            next_offset: Some(next_offset),
             timed_out: false,
             diagnostic: None,
         }),
         BusReply::AwaitTimeout {} => Ok(AwaitOutcome {
-            envelope: None,
+            envelopes: Vec::new(),
+            mailbox: None,
+            next_offset: None,
             timed_out: true,
             diagnostic: Some(format!(
                 "wait-reply timed out for task {} after checking the existing inbox, including terminal messages",

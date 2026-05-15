@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Instant, SystemTime};
 
-use crate::{AwaitFilter, ClientId};
+use crate::{AwaitFilter, ClientId, MailboxName};
 
 #[derive(Debug, Clone)]
 pub(super) struct ClientState {
@@ -44,6 +44,13 @@ pub(super) struct ClientState {
     /// arm updates it on inspect calls. Pre-existing identity rows
     /// are populated retroactively from `registered_at`.
     pub(super) last_activity: SystemTime,
+    /// Broker-owned delivery offsets for `Await`.
+    ///
+    /// These are per canonical session identity, not per proxy client.
+    /// One-shot CLI/MCP `Await` calls connect as D-10 proxies and then
+    /// disappear, so the offset must live on the canonical holder if
+    /// repeated awaits are to drain without replaying old messages.
+    pub(super) await_offsets: BTreeMap<MailboxName, u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,9 +65,11 @@ pub(super) struct ParkedAwait {
 /// for `SystemTime` is `UNIX_EPOCH`, which would falsely report
 /// 1970-01-01 as broker startup time (D-08).
 ///
-/// The `cursors` field was removed in fix 260512-jdv: it was initialized
-/// empty and never written, so cursor truth lives on disk at
-/// `~/.famp/mailboxes/.<name>.cursor` (written by `cursor_exec::execute_advance_cursor`).
+/// Disk cursor truth for inspector unread counts lives at
+/// `~/.famp/mailboxes/.<name>.cursor` (written by
+/// `cursor_exec::execute_advance_cursor`). `await_offsets` is separate:
+/// it is in-memory, session-scoped delivery state used only by
+/// `BusMessage::Await`.
 #[derive(Debug)]
 pub(super) struct BrokerState {
     pub(super) clients: BTreeMap<ClientId, ClientState>,

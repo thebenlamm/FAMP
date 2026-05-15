@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use crate::broker::state::{ClientState, ParkedAwait};
@@ -6,6 +6,8 @@ use crate::{
     AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId,
     Delivered, MailboxName, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
 };
+
+const AWAIT_BATCH_CAP: usize = 50;
 
 pub(crate) fn handle<E: BrokerEnv>(
     broker: &mut Broker<E>,
@@ -227,6 +229,7 @@ fn hello<E: BrokerEnv>(
                 listen_mode: false,
                 registered_at: std::time::SystemTime::now(),
                 last_activity: std::time::SystemTime::now(),
+                await_offsets: BTreeMap::default(),
             },
         );
         return vec![Out::Reply(
@@ -250,6 +253,7 @@ fn hello<E: BrokerEnv>(
             listen_mode: false,
             registered_at: std::time::SystemTime::now(),
             last_activity: std::time::SystemTime::now(),
+            await_offsets: BTreeMap::default(),
         },
     );
     vec![Out::Reply(
@@ -336,6 +340,9 @@ fn register<E: BrokerEnv>(
     let now_wall = std::time::SystemTime::now();
     state.registered_at = now_wall;
     state.last_activity = now_wall;
+    state
+        .await_offsets
+        .insert(mailbox.clone(), drained.next_offset);
 
     vec![
         Out::Reply(
@@ -401,6 +408,7 @@ fn send_agent<E: BrokerEnv>(
     let task_id = task_id_from(envelope);
     let waiters = waiting_clients_for_name(broker, &name, envelope);
     let woken = !waiters.is_empty();
+    let line_len = line.len();
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply.
     let mut out = Vec::with_capacity(2 + 2 * waiters.len());
@@ -412,13 +420,18 @@ fn send_agent<E: BrokerEnv>(
     if !waiters.is_empty() {
         tracing::debug!(waiters = waiters.len(), name = %name, "wake_broadcast");
         for waiting in &waiters {
-            broker.state.pending_awaits.remove(waiting);
-            out.push(Out::Reply(
+            let Some(parked) = broker.state.pending_awaits.remove(waiting) else {
+                continue;
+            };
+            let mailbox = MailboxName::Agent(name.clone());
+            let reply = await_reply_for_mailbox(
+                broker,
                 *waiting,
-                BusReply::AwaitOk {
-                    envelope: envelope.clone(),
-                },
-            ));
+                &mailbox,
+                &parked.filter,
+                Some((envelope, line_len)),
+            );
+            out.push(Out::Reply(*waiting, reply));
             out.push(Out::UnparkAwait { client: *waiting });
         }
     }
@@ -442,6 +455,7 @@ fn send_channel<E: BrokerEnv>(
 ) -> Vec<Out> {
     let members = broker.state.channels.get(name).cloned().unwrap_or_default();
     let task_id = task_id_from(envelope);
+    let line_len = line.len();
     let mut out = Vec::new();
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply. Previously
@@ -459,13 +473,18 @@ fn send_channel<E: BrokerEnv>(
         }
         tracing::debug!(waiters = waiters.len(), name = %member, "wake_broadcast");
         for waiting in &waiters {
-            broker.state.pending_awaits.remove(waiting);
-            out.push(Out::Reply(
+            let Some(parked) = broker.state.pending_awaits.remove(waiting) else {
+                continue;
+            };
+            let mailbox = MailboxName::Channel(name.to_owned());
+            let reply = await_reply_for_mailbox(
+                broker,
                 *waiting,
-                BusReply::AwaitOk {
-                    envelope: envelope.clone(),
-                },
-            ));
+                &mailbox,
+                &parked.filter,
+                Some((envelope, line_len)),
+            );
+            out.push(Out::Reply(*waiting, reply));
             out.push(Out::UnparkAwait { client: *waiting });
         }
     }
@@ -532,15 +551,38 @@ fn await_envelope<E: BrokerEnv>(
 
     // D-10: proxy connections can `Await` on the canonical holder's
     // mailbox; reject if neither a registered holder nor a live proxy
-    // binding is present.
-    if resolve_op_identity(broker, client).is_err() {
+    // binding is present. Delivery offsets are stored on the canonical
+    // holder so one-shot proxy awaits do not replay from zero every call.
+    let Ok((identity, owner)) = resolve_await_owner(broker, client) else {
         return vec![err(
             client,
             BusErrorKind::NotRegistered,
             "client is not registered",
         )];
-    }
+    };
     let filter = task.map_or(AwaitFilter::Any, AwaitFilter::Task);
+
+    for mailbox in await_mailboxes(broker, owner, &identity) {
+        let since = await_offset(broker, owner, &mailbox);
+        let batch = match drain_await_batch(broker, owner, &mailbox, &filter, None) {
+            Ok(batch) => batch,
+            Err((kind, message)) => return vec![err(client, kind, message)],
+        };
+        if batch.next_offset != since {
+            set_await_offset(broker, owner, &mailbox, batch.next_offset);
+        }
+        if !batch.envelopes.is_empty() {
+            return vec![Out::Reply(
+                client,
+                BusReply::AwaitOk {
+                    envelopes: batch.envelopes,
+                    mailbox: batch.mailbox,
+                    next_offset: batch.next_offset,
+                },
+            )];
+        }
+    }
+
     // WR-05: cap timeout_ms before adding to `now`. `Instant + Duration`
     // panics on overflow; `Duration::from_millis(u64::MAX)` is ~584M
     // years and a malicious or buggy client sending the max would crash
@@ -599,6 +641,11 @@ fn join<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String)
         Ok(values) => values,
         Err(message) => return vec![err(client, BusErrorKind::EnvelopeInvalid, message)],
     };
+    if let Some(state) = broker.state.clients.get_mut(&target_client) {
+        state
+            .await_offsets
+            .insert(mailbox.clone(), drained.next_offset);
+    }
     let members = broker
         .state
         .channels
@@ -868,6 +915,135 @@ fn connected_names(clients: &std::collections::BTreeMap<ClientId, ClientState>) 
         .collect()
 }
 
+#[derive(Debug)]
+struct AwaitBatch {
+    mailbox: MailboxName,
+    envelopes: Vec<serde_json::Value>,
+    next_offset: u64,
+}
+
+fn resolve_await_owner<E: BrokerEnv>(
+    broker: &Broker<E>,
+    client: ClientId,
+) -> Result<(String, ClientId), BusErrorKind> {
+    let identity = resolve_op_identity(broker, client)?;
+    let owner = canonical_holder_id(broker, &identity).unwrap_or(client);
+    Ok((identity, owner))
+}
+
+fn await_mailboxes<E: BrokerEnv>(
+    broker: &Broker<E>,
+    owner: ClientId,
+    identity: &str,
+) -> Vec<MailboxName> {
+    let mut mailboxes = vec![MailboxName::Agent(identity.to_owned())];
+    if let Some(state) = broker.state.clients.get(&owner) {
+        mailboxes.extend(state.joined.iter().cloned().map(MailboxName::Channel));
+    }
+    mailboxes
+}
+
+fn await_offset<E: BrokerEnv>(broker: &Broker<E>, owner: ClientId, mailbox: &MailboxName) -> u64 {
+    broker
+        .state
+        .clients
+        .get(&owner)
+        .and_then(|state| state.await_offsets.get(mailbox).copied())
+        .unwrap_or(0)
+}
+
+fn set_await_offset<E: BrokerEnv>(
+    broker: &mut Broker<E>,
+    owner: ClientId,
+    mailbox: &MailboxName,
+    offset: u64,
+) {
+    if let Some(state) = broker.state.clients.get_mut(&owner) {
+        state.await_offsets.insert(mailbox.clone(), offset);
+    }
+}
+
+fn await_reply_for_mailbox<E: BrokerEnv>(
+    broker: &mut Broker<E>,
+    client: ClientId,
+    mailbox: &MailboxName,
+    filter: &AwaitFilter,
+    trigger: Option<(&serde_json::Value, usize)>,
+) -> BusReply {
+    let Ok((_, owner)) = resolve_await_owner(broker, client) else {
+        return BusReply::Err {
+            kind: BusErrorKind::NotRegistered,
+            message: "client is not registered".into(),
+        };
+    };
+    match drain_await_batch(broker, owner, mailbox, filter, trigger) {
+        Ok(batch) if !batch.envelopes.is_empty() => {
+            set_await_offset(broker, owner, mailbox, batch.next_offset);
+            BusReply::AwaitOk {
+                envelopes: batch.envelopes,
+                mailbox: batch.mailbox,
+                next_offset: batch.next_offset,
+            }
+        }
+        Ok(batch) => {
+            set_await_offset(broker, owner, mailbox, batch.next_offset);
+            BusReply::Err {
+                kind: BusErrorKind::Internal,
+                message: "await wake produced no matching envelopes".into(),
+            }
+        }
+        Err((kind, message)) => BusReply::Err { kind, message },
+    }
+}
+
+fn drain_await_batch<E: BrokerEnv>(
+    broker: &Broker<E>,
+    owner: ClientId,
+    mailbox: &MailboxName,
+    filter: &AwaitFilter,
+    trigger: Option<(&serde_json::Value, usize)>,
+) -> Result<AwaitBatch, (BusErrorKind, String)> {
+    let since = await_offset(broker, owner, mailbox);
+    let drained = broker
+        .env
+        .drain_from(mailbox, since)
+        .map_err(|error| (BusErrorKind::Internal, error.to_string()))?;
+
+    let mut next_offset = since;
+    let mut envelopes = Vec::new();
+    for line in drained.lines {
+        let line_next_offset = next_offset + (line.len() + 1) as u64;
+        let value =
+            decode_line(&line).map_err(|message| (BusErrorKind::EnvelopeInvalid, message))?;
+        if filter_matches(filter, &value) {
+            envelopes.push(value);
+            if envelopes.len() == AWAIT_BATCH_CAP {
+                return Ok(AwaitBatch {
+                    mailbox: mailbox.clone(),
+                    envelopes,
+                    next_offset: line_next_offset,
+                });
+            }
+        }
+        next_offset = line_next_offset;
+    }
+    debug_assert_eq!(next_offset, drained.next_offset);
+
+    if let Some((trigger_envelope, trigger_line_len)) = trigger {
+        let trigger_next_offset = next_offset + (trigger_line_len + 1) as u64;
+        if filter_matches(filter, trigger_envelope) {
+            envelopes.push(trigger_envelope.clone());
+        }
+        next_offset = trigger_next_offset;
+    }
+
+    Ok(AwaitBatch {
+        mailbox: mailbox.clone(),
+        envelopes,
+        next_offset,
+    })
+}
+
 fn waiting_clients_for_name<E: BrokerEnv>(
     broker: &Broker<E>,
     name: &str,
@@ -944,16 +1120,13 @@ fn encode_envelope(envelope: &serde_json::Value, client: ClientId) -> Result<Vec
 }
 
 fn decode_lines(lines: Vec<Vec<u8>>) -> Result<Vec<serde_json::Value>, String> {
-    lines
-        .into_iter()
-        .map(|line| {
-            famp_envelope::AnyBusEnvelope::decode(&line).map_err(|error| {
-                format!("drain line rejected by AnyBusEnvelope::decode: {error}")
-            })?;
-            famp_canonical::from_slice_strict::<serde_json::Value>(&line)
-                .map_err(|error| error.to_string())
-        })
-        .collect()
+    lines.into_iter().map(|line| decode_line(&line)).collect()
+}
+
+fn decode_line(line: &[u8]) -> Result<serde_json::Value, String> {
+    famp_envelope::AnyBusEnvelope::decode(line)
+        .map_err(|error| format!("drain line rejected by AnyBusEnvelope::decode: {error}"))?;
+    famp_canonical::from_slice_strict::<serde_json::Value>(line).map_err(|error| error.to_string())
 }
 
 fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool, woken: bool) -> Out {
@@ -1063,6 +1236,113 @@ mod d10_tests {
             },
             now,
         )
+    }
+
+    fn audit_log_envelope(seq: usize, sender: &str) -> serde_json::Value {
+        serde_json::json!({
+            "famp": "0.5.2",
+            "class": "audit_log",
+            "scope": "standalone",
+            "id": format!("01890000-0000-7000-8000-{seq:012}"),
+            "from": format!("agent:example.test/{sender}"),
+            "to": "agent:example.test/dave",
+            "authority": "advisory",
+            "ts": "2026-05-15T12:00:00Z",
+            "body": {
+                "event": "famp.send.channel_post",
+                "details": { "seq": seq }
+            }
+        })
+    }
+
+    fn apply_mailbox(env: &TestEnv, outs: &[Out]) {
+        for out in outs {
+            if let Out::AppendMailbox { target, line } = out {
+                env.mailbox.append(target, line.clone());
+            }
+        }
+    }
+
+    #[test]
+    fn test_channel_burst_while_not_parked_batches_on_next_await() {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env.clone());
+        let now = Instant::now();
+
+        for (client, name, pid) in [
+            (1_u64, "alice", 100_u32),
+            (2_u64, "bob", 200_u32),
+            (3_u64, "carol", 300_u32),
+            (4_u64, "dave", 400_u32),
+        ] {
+            hello_canonical(&mut broker, client, name, now);
+            register(&mut broker, client, name, pid, now);
+            let join_outs = broker.handle(
+                BrokerInput::Wire {
+                    client: ClientId::from(client),
+                    msg: BusMessage::Join {
+                        channel: "#burst".into(),
+                    },
+                },
+                now,
+            );
+            apply_mailbox(&env, &join_outs);
+        }
+
+        for (client, sender, seq) in [
+            (1_u64, "alice", 1_usize),
+            (2_u64, "bob", 2_usize),
+            (3_u64, "carol", 3_usize),
+        ] {
+            let outs = broker.handle(
+                BrokerInput::Wire {
+                    client: ClientId::from(client),
+                    msg: BusMessage::Send {
+                        to: Target::Channel {
+                            name: "#burst".into(),
+                        },
+                        envelope: audit_log_envelope(seq, sender),
+                    },
+                },
+                now,
+            );
+            apply_mailbox(&env, &outs);
+        }
+
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(4_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+
+        let (mailbox, envelopes, next_offset) = outs
+            .into_iter()
+            .find_map(|out| match out {
+                Out::Reply(
+                    ClientId(4),
+                    BusReply::AwaitOk {
+                        envelopes,
+                        mailbox,
+                        next_offset,
+                    },
+                ) => Some((mailbox, envelopes, next_offset)),
+                _ => None,
+            })
+            .expect("dave's Await should return the queued channel burst");
+
+        assert_eq!(mailbox, MailboxName::Channel("#burst".into()));
+        assert_eq!(envelopes.len(), 3, "dave must receive the whole burst");
+        let observed: Vec<u64> = envelopes
+            .iter()
+            .map(|envelope| envelope["body"]["details"]["seq"].as_u64().unwrap())
+            .collect();
+        assert_eq!(observed, vec![1, 2, 3]);
+        assert!(next_offset > 0, "AwaitOk should carry the resume offset");
     }
 
     #[test]

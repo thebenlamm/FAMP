@@ -54,7 +54,7 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_await",
-            "description": "Block until a new inbox message arrives. This is the canonical real-time signal — unlike famp_inbox list (which hides entries for tasks that have reached a terminal FSM state), famp_await delivers every message including the closing 'terminal' reply that finishes a task. USE THIS to detect when a task you sent via famp_send completes. Pass task_id to wait only for a reply to that specific task.",
+            "description": "Block until one or more new messages arrive. Returns { envelopes: [...], mailbox, next_offset } for the first mailbox with queued messages, capped at 50 envelopes per call; re-call immediately if you need to drain more. AwaitTimeout remains { timeout: true }. This is the canonical real-time signal — unlike famp_inbox list (which hides entries for tasks that have reached a terminal FSM state), famp_await delivers every message including the closing 'terminal' reply that finishes a task. USE THIS to detect when a task you sent via famp_send completes. Pass task_id to wait only for a reply to that specific task.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

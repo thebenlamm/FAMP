@@ -74,7 +74,7 @@ impl Drop for McpProc {
 }
 
 #[test]
-fn wait_reply_finds_existing_terminal_reply_that_await_misses() {
+fn wait_reply_and_await_find_existing_terminal_reply() {
     let tmp = tempfile::TempDir::new().unwrap();
     let sock = tmp.path().join("bus.sock");
 
@@ -129,14 +129,11 @@ fn wait_reply_finds_existing_terminal_reply_that_await_misses() {
         "await failed: stderr={}",
         String::from_utf8_lossy(&await_out.stderr)
     );
-    let await_json: Value = serde_json::from_slice(&await_out.stdout).unwrap();
-    assert_eq!(await_json["timeout"], true);
+    let await_envelope: Value = serde_json::from_slice(&await_out.stdout).unwrap();
+    assert_eq!(await_envelope["causality"]["ref"], task_id);
     assert!(
-        await_json["diagnostic"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("already present in the inbox"),
-        "diagnostic should explain missed existing reply: {await_json}"
+        await_envelope["body"].to_string().contains("done"),
+        "await returned wrong envelope: {await_envelope}"
     );
 
     let wait_reply_out = Command::new(env!("CARGO_BIN_EXE_famp"))

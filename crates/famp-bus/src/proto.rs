@@ -8,7 +8,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-use crate::BusErrorKind;
+use crate::{BusErrorKind, MailboxName};
 
 /// Current local bus protocol version.
 pub const BUS_PROTO_VERSION: u32 = 1;
@@ -221,7 +221,9 @@ pub enum BusReply {
         next_offset: u64,
     },
     AwaitOk {
-        envelope: serde_json::Value,
+        envelopes: Vec<serde_json::Value>,
+        mailbox: MailboxName,
+        next_offset: u64,
     },
     AwaitTimeout {},
     JoinOk {
@@ -300,7 +302,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::{BusMessage, BusReply, Delivered, SessionRow, Target};
-    use crate::BusErrorKind;
+    use crate::{BusErrorKind, MailboxName};
     use serde_json::json;
 
     #[test]
@@ -364,6 +366,18 @@ mod tests {
     fn roundtrip_busreply_inspect_ok() {
         let v = BusReply::InspectOk {
             payload: serde_json::json!({"state": "HEALTHY", "pid": 1234_u32}),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn roundtrip_await_ok_batch() {
+        let v = BusReply::AwaitOk {
+            envelopes: vec![serde_json::json!({"body": "hello"})],
+            mailbox: MailboxName::Channel("#team".into()),
+            next_offset: 42,
         };
         let bytes = famp_canonical::canonicalize(&v).unwrap();
         let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();

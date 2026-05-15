@@ -185,16 +185,41 @@ if [ -z "${MSG//[[:space:]]/}" ]; then
     exit 0
 fi
 
-# --- Extract sender for notification string ---------------------------
-# Best-effort: parse `from` field from the envelope JSON.
-SENDER="$(python3 -c '
+# --- Extract count + latest sender for notification string -------------
+# Best-effort: `famp await` prints one envelope JSON object per line.
+META="$(python3 -c '
 import json, sys
-try:
-    env = json.loads(sys.argv[1])
-    print(env.get("from", env.get("sender", "unknown")))
-except Exception:
-    print("unknown")
-' "$MSG" 2>/dev/null || echo "unknown")"
+count = 0
+sender = "unknown"
+for line in sys.argv[1].splitlines():
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        env = json.loads(line)
+    except Exception:
+        continue
+    if env.get("timeout") is True:
+        continue
+    if isinstance(env.get("envelopes"), list):
+        for item in env["envelopes"]:
+            if isinstance(item, dict):
+                count += 1
+                sender = item.get("from", item.get("sender", "unknown"))
+        continue
+    count += 1
+    sender = env.get("from", env.get("sender", "unknown"))
+print(f"{count}|{sender}")
+' "$MSG" 2>/dev/null || printf '1|unknown\n')"
+COUNT="${META%%|*}"
+SENDER="${META#*|}"
+case "$COUNT" in
+    ''|*[!0-9]*) COUNT=1 ;;
+esac
+if [ "$COUNT" -lt 1 ]; then
+    log "await timeout payload; clean stop"
+    exit 0
+fi
 
 # Validate sender — reject anything outside printable word/punct chars.
 if ! printf '%s' "$SENDER" | grep -qE '^[A-Za-z0-9@._:/-]{1,128}$'; then
@@ -210,7 +235,11 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
 
-REASON="[FAMP listen mode] New message from ${SENDER}. Call famp_inbox to read it."
+if [ "$COUNT" -gt 1 ]; then
+    REASON="[FAMP listen mode] ${COUNT} new FAMP messages, latest from ${SENDER}. Call famp_inbox to read them."
+else
+    REASON="[FAMP listen mode] New FAMP message from ${SENDER}. Call famp_inbox to read it."
+fi
 OUT=$(jq -n --arg r "$REASON" '{decision: "block", reason: $r}')
-log "emitting block decision (${#OUT} bytes); sender=$SENDER"
+log "emitting block decision (${#OUT} bytes); count=$COUNT sender=$SENDER"
 printf '%s\n' "$OUT"

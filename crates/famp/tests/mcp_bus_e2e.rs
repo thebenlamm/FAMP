@@ -281,11 +281,11 @@ fn test_mcp_bus_e2e() {
         await_body.get("timeout").is_none(),
         "bob await unexpectedly timed out: {await_body}"
     );
-    let envelope = &await_body["envelope"];
-    assert!(
-        !envelope.is_null(),
-        "bob await missing envelope: {await_body}"
-    );
+    let envelopes = await_body["envelopes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("bob await missing envelopes array: {await_body}"));
+    assert_eq!(envelopes.len(), 1, "bob await should return one envelope");
+    let envelope = &envelopes[0];
 
     // The broker stamps `from` via D-10's `effective_identity(state)`,
     // so for a proxy connection (`bind_as = Some("alice")`) the
@@ -455,11 +455,15 @@ fn test_listen_mode_await_unblocks_on_send() {
     );
 
     // Must have an `envelope` field with a `from` field (hook uses this for the notification string)
-    let envelope = &await_body["envelope"];
-    assert!(
-        !envelope.is_null(),
-        "bob-listen await missing envelope: {await_body}"
+    let envelopes = await_body["envelopes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("bob-listen await missing envelopes array: {await_body}"));
+    assert_eq!(
+        envelopes.len(),
+        1,
+        "bob-listen await should return one envelope"
     );
+    let envelope = &envelopes[0];
     let from = envelope["from"]
         .as_str()
         .unwrap_or_else(|| panic!("envelope.from not a string: {envelope}"));

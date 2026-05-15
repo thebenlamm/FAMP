@@ -5,8 +5,8 @@
 //! of two output shapes:
 //!
 //! ```json
-//! { "envelope": <typed-envelope> }   // on AwaitOk
-//! { "timeout": true }                // on AwaitTimeout
+//! { "envelopes": [<typed-envelope>], "mailbox": <mailbox>, "next_offset": 123 } // on AwaitOk
+//! { "timeout": true }                                                       // on AwaitTimeout
 //! ```
 //!
 //! ## Input contract
@@ -78,10 +78,19 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             }
             Ok(value)
         }
-        Ok(out) => Ok(out.envelope.map_or_else(
-            || serde_json::json!({ "timeout": true }),
-            |env| serde_json::json!({ "envelope": env }),
-        )),
+        Ok(out) => {
+            let Some(mailbox) = out.mailbox else {
+                return Ok(serde_json::json!({ "timeout": true }));
+            };
+            let Some(next_offset) = out.next_offset else {
+                return Ok(serde_json::json!({ "timeout": true }));
+            };
+            Ok(serde_json::json!({
+                "envelopes": out.envelopes,
+                "mailbox": mailbox,
+                "next_offset": next_offset,
+            }))
+        }
         Err(CliError::BusError { kind, message }) => Err(ToolError::new(kind, message)),
         Err(CliError::NotRegisteredHint { .. }) => Err(ToolError::not_registered()),
         Err(CliError::BrokerUnreachable) => Err(ToolError::new(

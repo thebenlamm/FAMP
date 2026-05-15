@@ -6,6 +6,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use serde::{
+    de::{Error as DeError, MapAccess, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
+
 mod private {
     pub trait Sealed {}
     impl<T> Sealed for T {}
@@ -15,6 +20,88 @@ mod private {
 pub enum MailboxName {
     Agent(String),
     Channel(String),
+}
+
+impl Serialize for MailboxName {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            kind: &'a str,
+            name: &'a str,
+        }
+
+        let wire = match self {
+            Self::Agent(name) => Wire {
+                kind: "agent",
+                name,
+            },
+            Self::Channel(name) => Wire {
+                kind: "channel",
+                name,
+            },
+        };
+        wire.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MailboxName {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Kind,
+            Name,
+        }
+
+        struct MailboxNameVisitor;
+
+        impl<'de> Visitor<'de> for MailboxNameVisitor {
+            type Value = MailboxName;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a mailbox object with kind and name")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut kind: Option<String> = None;
+                let mut name: Option<String> = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Kind => {
+                            if kind.is_some() {
+                                return Err(DeError::duplicate_field("kind"));
+                            }
+                            kind = Some(map.next_value()?);
+                        }
+                        Field::Name => {
+                            if name.is_some() {
+                                return Err(DeError::duplicate_field("name"));
+                            }
+                            name = Some(map.next_value()?);
+                        }
+                    }
+                }
+                let kind = kind.ok_or_else(|| DeError::missing_field("kind"))?;
+                let name = name.ok_or_else(|| DeError::missing_field("name"))?;
+                match kind.as_str() {
+                    "agent" => Ok(MailboxName::Agent(name)),
+                    "channel" => Ok(MailboxName::Channel(name)),
+                    _ => Err(DeError::unknown_variant(&kind, &["agent", "channel"])),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(MailboxNameVisitor)
+    }
 }
 
 impl fmt::Display for MailboxName {

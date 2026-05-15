@@ -13,8 +13,8 @@
 //!    as `BusClientError::HelloFailed { kind: NotRegistered, .. }` which
 //!    we translate to `CliError::NotRegisteredHint` (D-02 hard error).
 //! 3. Send `BusMessage::Await { timeout_ms, task }` and wait for one reply.
-//! 4. On `BusReply::AwaitOk { envelope }` print the typed envelope as one
-//!    JSONL line on stdout and exit 0.
+//! 4. On `BusReply::AwaitOk { envelopes, .. }` print each typed envelope as
+//!    one JSONL line on stdout and exit 0.
 //! 5. On `BusReply::AwaitTimeout {}` print `{"timeout":true}` on stdout and
 //!    exit 0 — timeout is NOT an error per D-02; only `BusReply::Err` is.
 //! 6. On `BusReply::Err { kind: NotRegistered, .. }` (per-op liveness
@@ -36,7 +36,7 @@
 //! ## Output shape (locked by D-02 + plan 02-06)
 //!
 //! ```json
-//! {"famp":"0.5.2", "id":"...", "from":"...", ... }    // envelope JSONL on AwaitOk
+//! {"famp":"0.5.2", "id":"...", "from":"...", ... }    // one line per AwaitOk envelope
 //! {"timeout":true}                                     // on AwaitTimeout
 //! ```
 //!
@@ -46,7 +46,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply};
+use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName};
 use serde_json::Value;
 
 use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
@@ -87,13 +87,19 @@ pub struct AwaitArgs {
     pub act_as: Option<String>,
 }
 
-/// Structured outcome from [`run_at_structured`]. `envelope` is `None`
-/// on `AwaitTimeout`, `Some(value)` on `AwaitOk`. `timed_out` is the
-/// orthogonal flag the MCP tool surfaces in the JSON-RPC result.
+/// Structured outcome from [`run_at_structured`]. `envelopes` is empty
+/// on `AwaitTimeout`; on `AwaitOk` it carries the broker-delivered batch.
+///
+/// `timed_out` is the orthogonal flag the MCP tool surfaces in the
+/// JSON-RPC result.
 #[derive(Debug, Clone)]
 pub struct AwaitOutcome {
-    /// The typed envelope returned by the broker, or `None` on timeout.
-    pub envelope: Option<serde_json::Value>,
+    /// Typed envelopes returned by the broker. Empty on timeout.
+    pub envelopes: Vec<serde_json::Value>,
+    /// Mailbox that produced this batch. None on timeout.
+    pub mailbox: Option<MailboxName>,
+    /// Resume offset for `mailbox`. None on timeout.
+    pub next_offset: Option<u64>,
     /// `true` when the broker returned `BusReply::AwaitTimeout {}`.
     pub timed_out: bool,
     /// Optional human-readable diagnostic printed with timeout JSON.
@@ -126,15 +132,17 @@ pub(crate) fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Resu
             path: std::path::PathBuf::new(),
             source: e,
         })?;
-    } else if let Some(env) = outcome.envelope.as_ref() {
-        let line = serde_json::to_string(env).map_err(|e| CliError::Io {
-            path: std::path::PathBuf::new(),
-            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-        })?;
-        writeln!(out, "{line}").map_err(|e| CliError::Io {
-            path: std::path::PathBuf::new(),
-            source: e,
-        })?;
+    } else {
+        for env in &outcome.envelopes {
+            let line = serde_json::to_string(env).map_err(|e| CliError::Io {
+                path: std::path::PathBuf::new(),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+            })?;
+            writeln!(out, "{line}").map_err(|e| CliError::Io {
+                path: std::path::PathBuf::new(),
+                source: e,
+            })?;
+        }
     }
     Ok(())
 }
@@ -189,15 +197,23 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
     //    plan acceptance this is a `BusClient { source: ... }` error,
     //    NOT a `BusError`-with-kind, because there is no kind to carry.
     match reply {
-        BusReply::AwaitOk { envelope } => Ok(AwaitOutcome {
-            envelope: Some(envelope),
+        BusReply::AwaitOk {
+            envelopes,
+            mailbox,
+            next_offset,
+        } => Ok(AwaitOutcome {
+            envelopes,
+            mailbox: Some(mailbox),
+            next_offset: Some(next_offset),
             timed_out: false,
             diagnostic: None,
         }),
         BusReply::AwaitTimeout {} => {
             let diagnostic = timeout_diagnostic(&mut bus, &identity, args.task).await;
             Ok(AwaitOutcome {
-                envelope: None,
+                envelopes: Vec::new(),
+                mailbox: None,
+                next_offset: None,
                 timed_out: true,
                 diagnostic: Some(diagnostic),
             })
