@@ -24,9 +24,11 @@
 mod cycle_driver;
 
 use std::{
+    net::SocketAddr,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use famp_core::Principal;
@@ -42,9 +44,25 @@ fn fixture_dir() -> PathBuf {
         .join("cross_machine")
 }
 
-async fn wait_for_tls_listener_ready() {
+/// Poll both listener addresses via TCP connect until they accept a connection,
+/// or fail after 2 seconds. This replaces the blind 75ms sleep that was
+/// insufficient on loaded machines.
+async fn wait_for_tls_listener_ready(addrs: &[SocketAddr]) {
+    // Yield once to let the spawned server tasks get a chance to be polled.
     tokio::task::yield_now().await;
-    tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+
+    for &addr in addrs {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match tokio::net::TcpStream::connect(addr).await {
+                    Ok(_stream) => break,
+                    Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("listener at {addr} not ready after 2s"));
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -123,7 +141,7 @@ async fn e2e_two_daemons_happy_path() {
     bob_transport.attach_server(bob_handle).await;
     alice_transport.attach_server(alice_handle).await;
 
-    wait_for_tls_listener_ready().await;
+    wait_for_tls_listener_ready(&[bob_addr, alice_addr]).await;
 
     // --- Drive the cycle via the shared helper ---
     let trace_alice: cycle_driver::Trace = Arc::new(Mutex::new(Vec::new()));
