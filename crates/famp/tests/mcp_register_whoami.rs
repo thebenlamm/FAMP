@@ -120,14 +120,14 @@ fn whoami_unregistered_returns_null_active() {
 }
 
 #[test]
-fn tools_list_returns_nine_tools() {
+fn tools_list_returns_expected_tools() {
     with_fresh_socket(|| {
         let mut h = Harness::with_agents(&[]);
         let r = h.call("tools/list", &serde_json::json!({}));
         let tools = r["result"]["tools"].as_array().expect("tools array");
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-        // 2026-05-12: famp_verify (resilience recovery) + famp_set_listen → 10 tools.
-        assert_eq!(names.len(), 10, "expected 10 tools, got: {names:?}");
+        // 2026-05-15: famp_channel_log adds no-registration channel history recovery.
+        assert_eq!(names.len(), 11, "expected 11 tools, got: {names:?}");
         for expected in [
             "famp_send",
             "famp_await",
@@ -139,6 +139,7 @@ fn tools_list_returns_nine_tools() {
             "famp_leave",
             "famp_verify",
             "famp_set_listen",
+            "famp_channel_log",
         ] {
             assert!(
                 names.contains(&expected),

@@ -10,6 +10,7 @@
 use famp_bus::BusErrorKind;
 
 pub mod await_;
+pub mod channel_log;
 pub mod inbox;
 pub mod join;
 pub mod leave;

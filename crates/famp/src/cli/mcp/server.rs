@@ -11,7 +11,7 @@
 //! |-------------------------|--------------------------------------|
 //! | `initialize`            | Returns server info + tool capability |
 //! | `notifications/initialized` | No-op notification (no response) |
-//! | `tools/list`            | Returns the four tool descriptors    |
+//! | `tools/list`            | Returns the tool descriptors         |
 //! | `tools/call`            | Dispatches to the right tool handler |
 //! | anything else           | JSON-RPC `-32601 Method not found`   |
 
@@ -75,6 +75,19 @@ fn tool_descriptors() -> serde_json::Value {
                     "include_terminal": { "type": "boolean", "description": "When action=list, include entries for tasks in a terminal FSM state. Default false. Use famp_await, not this flag, to observe completion in real time — this override is for full-history inspection." }
                 },
                 "required": ["action"]
+            }
+        },
+        {
+            "name": "famp_channel_log",
+            "description": "Read a channel mailbox history directly, without registration. Use this to recover channel messages that may have arrived while you were composing and were not observed through famp_await. Returns ordered raw envelopes plus next_offset for pagination; pass the returned next_offset as since to continue.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "channel": { "type": "string", "description": "Channel name with or without leading '#', e.g. '#planning' or 'planning'." },
+                    "since":   { "type": "integer", "description": "Byte offset to start from (default 0)." },
+                    "limit":   { "type": "integer", "description": "Maximum envelopes to return (default 50)." }
+                },
+                "required": ["channel"]
             }
         },
         {
@@ -419,16 +432,16 @@ async fn dispatch_tool(
     input: &serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
     // FREE-PASS tools: famp_register sets identity; famp_whoami is a
-    // session readback; famp_verify is a recovery hook that talks to the
-    // inspector socket (which performs its own Hello with bind_as: None,
-    // so no per-session identity is involved). All three must work
-    // before any binding has been established — that's exactly the
-    // state an agent ends up in after a dropped tool result + a fresh
-    // window restart.
+    // session readback; famp_verify and famp_channel_log are recovery
+    // hooks that read mailbox state without a per-session identity. These
+    // must work before any binding has been established — that's exactly
+    // the state an agent ends up in after a dropped tool result, a fresh
+    // window restart, or missed channel await wake-up.
     match name {
         "famp_register" => return tools::register::call(input).await,
         "famp_whoami" => return tools::whoami::call(input).await,
         "famp_verify" => return tools::verify::call(input).await,
+        "famp_channel_log" => return tools::channel_log::call(input).await,
         _ => {}
     }
 
