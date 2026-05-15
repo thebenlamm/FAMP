@@ -177,6 +177,18 @@ fn parse_input(input: &Value) -> Result<SendArgs, ToolError> {
         }
         // reply closes the thread unless expect_reply: true keeps it open.
         "reply" => (None, task_id, !expect_reply),
+        // Convergence signal: agent has nothing more to add, standing down.
+        // Sends a top-level channel post (new_task shape) so the message
+        // appears in the channel log. Body convention: use the body field
+        // to carry the convergence payload (e.g. "YIELD" or a brief summary).
+        "yield" => {
+            let summary = title
+                .as_deref()
+                .or(body.as_deref())
+                .unwrap_or("YIELD")
+                .to_string();
+            (Some(summary), None, false)
+        }
         // Legacy aliases kept for backward compatibility.
         "deliver" => (None, task_id, false),
         "terminal" | "deliver_terminal" => (None, task_id, true),
@@ -184,7 +196,7 @@ fn parse_input(input: &Value) -> Result<SendArgs, ToolError> {
             return Err(ToolError::new(
                 BusErrorKind::EnvelopeInvalid,
                 format!(
-                    "invalid mode {other:?}: expected open | reply | new_task | deliver | terminal"
+                    "invalid mode {other:?}: expected open | reply | yield | new_task | deliver | terminal"
                 ),
             ));
         }
