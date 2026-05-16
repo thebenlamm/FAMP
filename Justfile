@@ -267,6 +267,7 @@ smoke-test:
 # Run this after any change to the MCP tool surface (server.rs, tool schemas).
 install:
     cargo install --path crates/famp --locked --force
+    famp install-claude-code
 
 # Clean build artifacts
 clean:
