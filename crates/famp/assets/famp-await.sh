@@ -185,12 +185,16 @@ if [ -z "${MSG//[[:space:]]/}" ]; then
     exit 0
 fi
 
-# --- Extract count + latest sender for notification string -------------
-# Best-effort: `famp await` prints one envelope JSON object per line.
+# --- Extract count + latest sender + mailbox kind/name for notification ---
+# `famp await` now prints a single wrapper JSON object:
+#   {"mailbox": {"kind": "channel"/"agent", "name": "..."}, "envelopes": [...]}
+# Fallback branch handles legacy raw-envelope lines for backward compat.
 META="$(python3 -c '
 import json, sys
 count = 0
 sender = "unknown"
+mailbox_kind = "agent"
+mailbox_name = ""
 for line in sys.argv[1].splitlines():
     line = line.strip()
     if not line:
@@ -202,17 +206,28 @@ for line in sys.argv[1].splitlines():
     if env.get("timeout") is True:
         continue
     if isinstance(env.get("envelopes"), list):
+        mb = env.get("mailbox") or {}
+        if isinstance(mb, dict):
+            mailbox_kind = mb.get("kind", "agent")
+            mailbox_name = mb.get("name", "")
         for item in env["envelopes"]:
             if isinstance(item, dict):
                 count += 1
                 sender = item.get("from", item.get("sender", "unknown"))
         continue
+    # Fallback: raw envelope line (backward compat)
     count += 1
     sender = env.get("from", env.get("sender", "unknown"))
-print(f"{count}|{sender}")
-' "$MSG" 2>/dev/null || printf '1|unknown\n')"
+    mailbox_kind = "agent"
+    mailbox_name = ""
+print(f"{count}|{sender}|{mailbox_kind}|{mailbox_name}")
+' "$MSG" 2>/dev/null || printf '1|unknown|agent|\n')"
 COUNT="${META%%|*}"
-SENDER="${META#*|}"
+_REST="${META#*|}"
+SENDER="${_REST%%|*}"
+_REST2="${_REST#*|}"
+MAILBOX_KIND="${_REST2%%|*}"
+MAILBOX_NAME="${_REST2#*|}"
 case "$COUNT" in
     ''|*[!0-9]*) COUNT=1 ;;
 esac
@@ -235,10 +250,20 @@ if ! command -v jq >/dev/null 2>&1; then
     exit 0
 fi
 
-if [ "$COUNT" -gt 1 ]; then
-    REASON="[FAMP listen mode] ${COUNT} new FAMP messages, latest from ${SENDER}. Call famp_inbox to read them."
+if [ "$MAILBOX_KIND" = "channel" ]; then
+    CHAN="$MAILBOX_NAME"
+    case "$CHAN" in '#'*) ;; *) CHAN="#${CHAN}" ;; esac
+    if [ "$COUNT" -gt 1 ]; then
+        REASON="[FAMP listen mode] ${COUNT} new FAMP messages in channel ${CHAN}, latest from ${SENDER}. Call famp_channel_log({channel: '${CHAN}'}) to read them."
+    else
+        REASON="[FAMP listen mode] New FAMP message in channel ${CHAN} from ${SENDER}. Call famp_channel_log({channel: '${CHAN}'}) to read it."
+    fi
 else
-    REASON="[FAMP listen mode] New FAMP message from ${SENDER}. Call famp_inbox to read it."
+    if [ "$COUNT" -gt 1 ]; then
+        REASON="[FAMP listen mode] ${COUNT} new FAMP messages, latest from ${SENDER}. Call famp_inbox to read them."
+    else
+        REASON="[FAMP listen mode] New FAMP message from ${SENDER}. Call famp_inbox to read it."
+    fi
 fi
 OUT=$(jq -n --arg r "$REASON" '{decision: "block", reason: $r}')
 log "emitting block decision (${#OUT} bytes); count=$COUNT sender=$SENDER"

@@ -5,7 +5,7 @@
 //! `causality.ref` matches the task id. Only when no existing reply is
 //! found does it park an await for future messages.
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply};
+use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName};
 
 use crate::bus_client::resolve_sock_path;
 use crate::cli::await_cmd::{connect_bound, is_reply_for_task, write_outcome, AwaitOutcome};
@@ -53,7 +53,7 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
             {
                 return Ok(AwaitOutcome {
                     envelopes: vec![envelope],
-                    mailbox: None,
+                    mailbox: Some(MailboxName::Agent(identity.clone())),
                     next_offset: None,
                     timed_out: false,
                     diagnostic: None,

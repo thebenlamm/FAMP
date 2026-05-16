@@ -33,11 +33,11 @@
 //!   (`crates/famp/src/cli/mcp/tools/await_.rs` calls this so the MCP
 //!   tool surface is identical to the CLI).
 //!
-//! ## Output shape (locked by D-02 + plan 02-06)
+//! ## Output shape (locked by D-02 + plan 02-06, updated by quick-260515-s3h)
 //!
 //! ```json
-//! {"famp":"0.5.2", "id":"...", "from":"...", ... }    // one line per AwaitOk envelope
-//! {"timeout":true}                                     // on AwaitTimeout
+//! {"mailbox": {"kind": "channel"/"agent", "name": "..."}, "envelopes": [...], "next_offset": 42}
+//! {"timeout": true}                                        // on AwaitTimeout
 //! ```
 //!
 //! Identity binding is at the connection level via `Hello.bind_as`
@@ -122,6 +122,10 @@ pub async fn run(args: AwaitArgs) -> Result<(), CliError> {
 ///
 /// Split out from [`run_at`] so callers (`run`, integration tests) can
 /// drive the write side independently of the bus round-trip.
+///
+/// Output shape (quick-260515-s3h):
+/// - On message: `{"mailbox": {"kind": "channel"/"agent", "name": "..."}, "envelopes": [...], "next_offset": N}`
+/// - On timeout: `{"timeout": true}` (optionally with `"diagnostic": "..."`)
 pub(crate) fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Result<(), CliError> {
     if outcome.timed_out {
         let mut value = serde_json::json!({"timeout": true});
@@ -133,16 +137,28 @@ pub(crate) fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Resu
             source: e,
         })?;
     } else {
-        for env in &outcome.envelopes {
-            let line = serde_json::to_string(env).map_err(|e| CliError::Io {
-                path: std::path::PathBuf::new(),
-                source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-            })?;
-            writeln!(out, "{line}").map_err(|e| CliError::Io {
-                path: std::path::PathBuf::new(),
-                source: e,
-            })?;
-        }
+        let mailbox_value = match &outcome.mailbox {
+            Some(MailboxName::Channel(name)) => {
+                serde_json::json!({"kind": "channel", "name": name})
+            }
+            Some(MailboxName::Agent(name)) => {
+                serde_json::json!({"kind": "agent", "name": name})
+            }
+            None => serde_json::Value::Null,
+        };
+        let wrapper = serde_json::json!({
+            "mailbox": mailbox_value,
+            "envelopes": outcome.envelopes,
+            "next_offset": outcome.next_offset,
+        });
+        let line = serde_json::to_string(&wrapper).map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+        })?;
+        writeln!(out, "{line}").map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: e,
+        })?;
     }
     Ok(())
 }

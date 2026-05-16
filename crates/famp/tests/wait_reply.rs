@@ -129,7 +129,8 @@ fn wait_reply_and_await_find_existing_terminal_reply() {
         "await failed: stderr={}",
         String::from_utf8_lossy(&await_out.stderr)
     );
-    let await_envelope: Value = serde_json::from_slice(&await_out.stdout).unwrap();
+    let wrapper: Value = serde_json::from_slice(&await_out.stdout).unwrap();
+    let await_envelope = &wrapper["envelopes"][0];
     assert_eq!(await_envelope["causality"]["ref"], task_id);
     assert!(
         await_envelope["body"].to_string().contains("done"),
@@ -157,7 +158,8 @@ fn wait_reply_and_await_find_existing_terminal_reply() {
         "wait-reply failed: stderr={}",
         String::from_utf8_lossy(&wait_reply_out.stderr)
     );
-    let envelope: Value = serde_json::from_slice(&wait_reply_out.stdout).unwrap();
+    let wrapper: Value = serde_json::from_slice(&wait_reply_out.stdout).unwrap();
+    let envelope = &wrapper["envelopes"][0];
     assert_eq!(envelope["causality"]["ref"], task_id);
     assert!(
         envelope["body"].to_string().contains("done"),
