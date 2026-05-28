@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 use crate::broker::state::{ClientState, ParkedAwait};
 use crate::{
     AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId,
-    Delivered, MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
+    Delivered, MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION,
+    MAX_FRAME_BYTES,
 };
 
 const AWAIT_BATCH_CAP: usize = 50;
@@ -713,10 +714,7 @@ fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String
         state.joined.remove(&channel);
     }
     // Clean up role entry to avoid leaking stale roles.
-    broker
-        .state
-        .channel_roles
-        .remove(&(channel.clone(), name));
+    broker.state.channel_roles.remove(&(channel.clone(), name));
     vec![Out::Reply(client, BusReply::LeaveOk { channel })]
 }
 

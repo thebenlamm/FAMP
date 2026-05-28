@@ -43,6 +43,5 @@ pub async fn call(_input: &Value) -> Result<Value, ToolError> {
         )
     })?;
 
-    Ok(serde_json::to_value(&reply)
-        .unwrap_or_else(|_| serde_json::json!({"rows": []})))
+    Ok(serde_json::to_value(&reply).unwrap_or_else(|_| serde_json::json!({"rows": []})))
 }
