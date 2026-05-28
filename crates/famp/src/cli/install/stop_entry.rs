@@ -194,7 +194,11 @@ mod tests {
     fn empty_command_is_preserved() {
         let entry = bare_entry("");
         let result = remove_famp_hook_from_stop_entry(&entry, &shims());
-        assert_eq!(result, Some(entry.clone()), "empty command must not be reaped");
+        assert_eq!(
+            result,
+            Some(entry.clone()),
+            "empty command must not be reaped"
+        );
     }
 
     // Test 8: empty shims slice → preserved
