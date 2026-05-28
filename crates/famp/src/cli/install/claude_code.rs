@@ -404,4 +404,52 @@ mod tests {
                 .is_none_or(|command| !command.starts_with(&shim))
         }));
     }
+
+    #[test]
+    fn install_dedupes_wrapped_bash_stop_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        let await_shim = home
+            .join(".claude")
+            .join("hooks")
+            .join("famp-await.sh")
+            .display()
+            .to_string();
+        // Pre-seed with the exact bug Ben hit: a wrapped `bash <shim>` Stop entry.
+        let seeded_json = format!(
+            concat!(
+                r#"{{"hooks":{{"Stop":[{{"matcher":"","hooks":"#,
+                r#"[{{"type":"command","command":"bash {await_shim}","timeout":86400}}]"#,
+                r#"}}]}}}}"#,
+            ),
+            await_shim = await_shim,
+        );
+        std::fs::write(home.join(".claude/settings.json"), seeded_json).unwrap();
+
+        let mut out = Vec::<u8>::new();
+        let mut err = Vec::<u8>::new();
+        run_at(home, &mut out, &mut err).unwrap();
+
+        let post: Value = serde_json::from_str(
+            &std::fs::read_to_string(home.join(".claude/settings.json")).unwrap(),
+        )
+        .unwrap();
+        let stop = post["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(
+            stop.len(),
+            2,
+            "wrapped `bash <path>` entry must be reaped, not appended-alongside; got {} entries: {:#?}",
+            stop.len(),
+            stop
+        );
+        // No surviving entry should contain the wrapped form.
+        for entry in stop {
+            let cmd_str = serde_json::to_string(entry).unwrap();
+            assert!(
+                !cmd_str.contains(&format!("bash {await_shim}")),
+                "wrapped form survived in entry: {entry:#?}"
+            );
+        }
+    }
 }
