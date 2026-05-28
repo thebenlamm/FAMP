@@ -5,7 +5,7 @@ milestone_name: Inspector & Observability
 status: Awaiting next milestone
 stopped_at: Phase 03 UAT passed — v0.10 milestone complete, ready for /gsd-complete-milestone
 last_updated: "2026-05-16T01:16:35.692Z"
-last_activity: "2026-05-15 — Completed quick task 260515-s3h: fix stop-hook blind spot — channel-aware wake messages (wrapper JSON from famp await CLI)"
+last_activity: "2026-05-28 — Completed quick task 260527-uhb: harden FAMP install Stop-hook dedup matcher to catch wrapped command forms"
 progress:
   total_phases: 13
   completed_phases: 3
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 Phase: Milestone v0.10 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-05-15 — Completed quick task 260515-s3h: fix stop-hook blind spot — channel-aware wake messages
+Last activity: 2026-05-28 — Completed quick task 260527-uhb: harden FAMP install Stop-hook dedup matcher to catch wrapped command forms
 
 ## v0.10 Phase Map
 
@@ -136,6 +136,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | 260515-iyi | Add famp_channel_log MCP tool for channel history | 2026-05-15 | cb7ee11 | [260515-iyi-add-famp-channel-log-mcp-tool-for-channe](./quick/260515-iyi-add-famp-channel-log-mcp-tool-for-channe/) |
 | 260515-kqx | Implement Option 3 batch AwaitOk delivery to fix burst message loss | 2026-05-15 | 146ca9f | [260515-kqx-implement-option-3-batch-awaitok-deliver](./quick/260515-kqx-implement-option-3-batch-awaitok-deliver/) |
 | 260515-s3h | Fix stop-hook blind spot: famp await CLI emits wrapper JSON with mailbox info so hook generates channel-aware wake messages | 2026-05-15 | ae13c43 | [260515-s3h-fix-stop-hook-blind-spot-famp-await-cli-](./quick/260515-s3h-fix-stop-hook-blind-spot-famp-await-cli-/) |
+| 260527-uhb | Harden FAMP install Stop-hook dedup matcher to catch wrapped command forms (e.g. `bash <path>`) | 2026-05-28 | 5f3673c | [260527-uhb-harden-famp-install-stop-hook-dedup-matc](./quick/260527-uhb-harden-famp-install-stop-hook-dedup-matc/) |
 
 ## Performance Metrics
 
