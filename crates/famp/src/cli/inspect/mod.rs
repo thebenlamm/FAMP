@@ -30,7 +30,7 @@ pub enum InspectSubcommand {
     Tasks(tasks::InspectTasksArgs),
     /// List envelope metadata for a mailbox.
     Messages(messages::InspectMessagesArgs),
-    /// List clients currently parked in famp_await.
+    /// List clients currently parked in `famp_await`.
     Waiters(waiters::InspectWaitersArgs),
 }
 

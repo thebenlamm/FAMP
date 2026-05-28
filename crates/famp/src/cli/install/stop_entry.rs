@@ -184,7 +184,7 @@ mod tests {
         let result = remove_famp_hook_from_stop_entry(&entry, &shims());
         assert_eq!(
             result,
-            Some(entry.clone()),
+            Some(entry),
             "non-famp wrapped command must not be reaped"
         );
     }
@@ -194,11 +194,7 @@ mod tests {
     fn empty_command_is_preserved() {
         let entry = bare_entry("");
         let result = remove_famp_hook_from_stop_entry(&entry, &shims());
-        assert_eq!(
-            result,
-            Some(entry.clone()),
-            "empty command must not be reaped"
-        );
+        assert_eq!(result, Some(entry), "empty command must not be reaped");
     }
 
     // Test 8: empty shims slice → preserved
@@ -208,7 +204,7 @@ mod tests {
         let result = remove_famp_hook_from_stop_entry(&entry, &[]);
         assert_eq!(
             result,
-            Some(entry.clone()),
+            Some(entry),
             "empty shims slice must not reap anything"
         );
     }

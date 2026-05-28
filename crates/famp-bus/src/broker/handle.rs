@@ -605,6 +605,7 @@ fn await_envelope<E: BrokerEnv>(
     }]
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn join<E: BrokerEnv>(
     broker: &mut Broker<E>,
     client: ClientId,
@@ -639,7 +640,7 @@ fn join<E: BrokerEnv>(
         broker
             .state
             .channel_roles
-            .insert((channel.clone(), name.clone()), r.clone());
+            .insert((channel.clone(), name), r.clone());
     }
 
     let mailbox = MailboxName::Channel(channel.clone());

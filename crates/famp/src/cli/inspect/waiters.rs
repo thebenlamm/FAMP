@@ -1,6 +1,6 @@
 //! `famp inspect waiters` -- clients currently parked in `famp_await`.
 //!
-//! Shows each parked await fan-out as (name, mailbox, cursor, deadline_ms).
+//! Shows each parked await fan-out as (name, mailbox, cursor, `deadline_ms`).
 //! A single awaiting client yields one row for its agent mailbox plus one
 //! row per joined channel it subscribes to.
 //!

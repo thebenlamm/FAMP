@@ -157,7 +157,7 @@ impl BrokerState {
             let deadline_ms = parked
                 .deadline
                 .checked_duration_since(now)
-                .map_or(0, |d| d.as_millis() as u64);
+                .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
             // Agent mailbox (always watched).
             let agent_mailbox = crate::MailboxName::Agent(name.clone());
@@ -211,9 +211,9 @@ pub struct BrokerStateView {
     pub waiters: Vec<WaiterStateView>,
 }
 
-/// One row in the waiters view: a single (identity, mailbox) pair for
-/// a client currently parked in `famp_await`. Fan-out: one parked
-/// await yields one row for the agent mailbox plus one per joined channel.
+/// One row in the waiters view: a single (identity, mailbox) pair for a client parked in
+/// `famp_await`. Fan-out: one parked await yields one row for the agent mailbox plus one per
+/// joined channel.
 #[derive(Debug, Clone)]
 pub struct WaiterStateView {
     /// Canonical identity name of the waiting client.
