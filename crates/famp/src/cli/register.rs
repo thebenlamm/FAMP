@@ -77,8 +77,9 @@ pub async fn run(args: RegisterArgs) -> Result<(), CliError> {
     loop {
         // Spawn the broker if the socket is absent. Best-effort —
         // `BusClient::connect` will surface the unreachable case as
-        // `BusClientError::Io` / `BrokerDidNotStart` and we map both
-        // to `CliError::BrokerUnreachable` below.
+        // `BusClientError::Io` (connect stage) or `BrokerDidNotStart`
+        // (spawn stage) and we map each to a stage-aware
+        // `CliError::BusClient { detail }` below.
         let _ = spawn::spawn_broker_if_absent(&sock);
 
         // bind_as: None — `famp register` IS the canonical holder
@@ -87,7 +88,7 @@ pub async fn run(args: RegisterArgs) -> Result<(), CliError> {
         let connect_result = BusClient::connect(&sock, None).await;
         let connection_outcome = match connect_result {
             Ok(client) => run_one_session(client, &args, &sock).await,
-            Err(e) => Err(map_bus_client_err(e)),
+            Err(e) => Err(map_bus_client_err(e, &sock)),
         };
 
         match connection_outcome {
@@ -168,7 +169,7 @@ async fn run_one_session(
             listen: args.tail,
         })
         .await
-        .map_err(map_bus_client_err)?;
+        .map_err(|e| map_bus_client_err(e, sock))?;
 
     match reply {
         BusReply::RegisterOk {
@@ -303,7 +304,7 @@ async fn tail_loop(
                         if matches!(e, BusClientError::Io(_)) {
                             return Ok(SessionOutcome::Disconnected);
                         }
-                        return Err(map_bus_client_err(e));
+                        return Err(map_bus_client_err(e, sock));
                     }
                 }
             }
@@ -363,12 +364,56 @@ fn truncate_for_tail(s: &str) -> String {
         .replace('\r', "\\r")
 }
 
-/// Map `BusClientError` to a typed `CliError`. IO + spawn failures
-/// surface as `BrokerUnreachable`; `HelloErr` surfaces as a `BusError`
-/// so the outer run loop can decide on reconnect/exit semantics.
-fn map_bus_client_err(e: BusClientError) -> CliError {
+/// Map `BusClientError` to a typed `CliError`. Transport failures route
+/// through `CliError::BusClient { detail }` with stage-aware, errno-bearing
+/// messages so operators can distinguish "no broker at socket" (connect
+/// stage) from "we forked a broker and the OS refused process creation"
+/// (spawn stage). `HelloErr` surfaces as a `BusError` so the outer run
+/// loop can decide on reconnect/exit semantics.
+///
+/// `BrokerUnreachable` is NOT used here — it is reserved for the ~30 other
+/// call sites (send/await/join/leave/sessions/whoami/inbox + mcp tools)
+/// that do not have the stage context available. The retry/backoff path in
+/// `run` is unchanged: `BusClient { .. }` falls into the same
+/// `Err(other_err)` catch-all arm that `BrokerUnreachable` used.
+fn map_bus_client_err(e: BusClientError, sock: &Path) -> CliError {
     match e {
-        BusClientError::Io(_) | BusClientError::BrokerDidNotStart(_) => CliError::BrokerUnreachable,
+        BusClientError::Io(io) => CliError::BusClient {
+            detail: format!(
+                "could not connect to existing broker at {}: {io}",
+                sock.display()
+            ),
+        },
+        BusClientError::BrokerDidNotStart(spawn_err) => match spawn_err {
+            spawn::SpawnError::Io(io) => CliError::BusClient {
+                detail: format!(
+                    "tried to spawn a broker and process creation failed (spawn io: {io}) — \
+                     if running inside a sandbox, broker process creation (fork/setsid) may be blocked; \
+                     start a broker outside the sandbox or set FAMP_BUS_SOCKET to a reachable broker"
+                ),
+            },
+            spawn::SpawnError::CurrentExe(io) => CliError::BusClient {
+                detail: format!(
+                    "tried to spawn a broker but could not locate the famp executable (current-exe: {io})"
+                ),
+            },
+            spawn::SpawnError::BrokerDidNotStart => CliError::BusClient {
+                detail: format!(
+                    "spawned a broker but it did not bind {} within 2s — check the broker log at {}",
+                    sock.display(),
+                    sock.parent()
+                        .unwrap_or_else(|| Path::new("/"))
+                        .join("broker.log")
+                        .display()
+                ),
+            },
+            spawn::SpawnError::SocketPathNotUtf8 => CliError::BusClient {
+                detail: format!(
+                    "broker socket path is not valid UTF-8: {}",
+                    sock.display()
+                ),
+            },
+        },
         BusClientError::HelloFailed { kind, message } => CliError::BusError { kind, message },
         BusClientError::Frame(err) => CliError::BusError {
             kind: BusErrorKind::Internal,
@@ -426,5 +471,80 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(observed, vec![1, 2, 4, 8, 16, 30, 30]);
+    }
+
+    /// `BusClientError::Io` maps to a connect-stage message containing the
+    /// socket path AND the os-error text. ECONNREFUSED-ish (errno 111).
+    #[test]
+    fn map_bus_client_err_io_contains_socket_and_errno() {
+        let io_err = std::io::Error::from_raw_os_error(111);
+        let sock = Path::new("/tmp/famp-test-wj6.sock");
+        let err = map_bus_client_err(BusClientError::Io(io_err), sock);
+        let CliError::BusClient { detail } = err else {
+            panic!("expected CliError::BusClient, got {err:?}");
+        };
+        assert!(
+            detail.contains("os error"),
+            "expected 'os error' in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("famp-test-wj6.sock"),
+            "expected socket path in detail, got: {detail}"
+        );
+    }
+
+    /// `BusClientError::BrokerDidNotStart(SpawnError::Io)` — fork/setsid blocked
+    /// by a sandbox — maps to a spawn-stage message containing the os-error
+    /// text, "sandbox", and "spawn".
+    #[test]
+    fn map_bus_client_err_broker_did_not_start_spawn_io_contains_errno_and_sandbox() {
+        let io_err = std::io::Error::from_raw_os_error(1); // EPERM — fork/setsid class
+        let sock = Path::new("/tmp/famp-test-wj6.sock");
+        let err = map_bus_client_err(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::Io(io_err)),
+            sock,
+        );
+        let CliError::BusClient { detail } = err else {
+            panic!("expected CliError::BusClient, got {err:?}");
+        };
+        assert!(
+            detail.contains("os error"),
+            "expected 'os error' in detail (errno must not be swallowed), got: {detail}"
+        );
+        assert!(
+            detail.contains("sandbox"),
+            "expected 'sandbox' hint in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("spawn"),
+            "expected 'spawn' in detail, got: {detail}"
+        );
+    }
+
+    /// `BusClientError::BrokerDidNotStart(SpawnError::BrokerDidNotStart)` —
+    /// genuine 2s timeout, no errno — maps to a message mentioning the timeout
+    /// and pointing at the broker log. Must NOT claim an os error.
+    #[test]
+    fn map_bus_client_err_broker_did_not_start_timeout_points_at_log() {
+        let sock = Path::new("/tmp/famp-test-wj6.sock");
+        let err = map_bus_client_err(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::BrokerDidNotStart),
+            sock,
+        );
+        let CliError::BusClient { detail } = err else {
+            panic!("expected CliError::BusClient, got {err:?}");
+        };
+        assert!(
+            detail.contains("2s") || detail.contains("2 s"),
+            "expected 2s timeout mention in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("broker.log"),
+            "expected broker log pointer in detail, got: {detail}"
+        );
+        assert!(
+            !detail.contains("os error"),
+            "genuine timeout has no os error, but detail claims one: {detail}"
+        );
     }
 }
