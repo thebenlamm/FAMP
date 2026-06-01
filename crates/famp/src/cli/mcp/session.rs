@@ -40,12 +40,13 @@
 //! and reads happen at most once per in-flight tool call (stdio is
 //! serially driven). Contention is structurally bounded.
 
+use std::path::Path;
 use std::sync::OnceLock;
 
 use famp_bus::BusErrorKind;
 use tokio::sync::Mutex;
 
-use crate::bus_client::BusClient;
+use crate::bus_client::{spawn, BusClient, BusClientError};
 
 /// Metadata about the most-recent successful `famp_send` from this session.
 ///
@@ -129,6 +130,51 @@ pub fn state() -> &'static Mutex<SessionState> {
     })
 }
 
+/// Map a [`BusClientError`] from the connect stage to a human-readable
+/// detail string, binding the inner [`std::io::Error`] so the OS error
+/// number is always included. The kind is always
+/// [`BusErrorKind::BrokerUnreachable`]; only the detail varies.
+///
+/// This is a pure function (no I/O) so unit tests can exercise every arm
+/// without a live broker.
+fn bus_err_detail(err: BusClientError, sock: &Path) -> String {
+    match err {
+        BusClientError::Io(io) => format!(
+            "could not connect to existing broker at {}: {io}",
+            sock.display()
+        ),
+        BusClientError::BrokerDidNotStart(spawn_err) => match spawn_err {
+            spawn::SpawnError::Io(io) => format!(
+                "tried to spawn a broker and process creation failed (spawn io: {io}) — \
+                 if running inside a sandbox, broker process creation (fork/setsid) may be \
+                 blocked; start a broker outside the sandbox or set FAMP_BUS_SOCKET to a \
+                 reachable broker"
+            ),
+            spawn::SpawnError::CurrentExe(io) => format!(
+                "tried to spawn a broker but could not locate the famp executable (current-exe: {io})"
+            ),
+            spawn::SpawnError::BrokerDidNotStart => format!(
+                "spawned a broker but it did not bind {} within 2s — check the broker log at {}",
+                sock.display(),
+                sock.parent()
+                    .unwrap_or_else(|| Path::new("/"))
+                    .join("broker.log")
+                    .display()
+            ),
+            spawn::SpawnError::SocketPathNotUtf8 => format!(
+                "broker socket path is not valid UTF-8: {}",
+                sock.display()
+            ),
+        },
+        BusClientError::HelloFailed { kind, message } => {
+            format!("broker refused the Hello handshake: {kind:?}: {message}")
+        }
+        BusClientError::Frame(err) => format!("frame codec error talking to broker: {err}"),
+        BusClientError::Decode(err) => format!("strict-parse of broker reply failed: {err}"),
+        BusClientError::UnexpectedReply(msg) => format!("unexpected broker reply: {msg}"),
+    }
+}
+
 /// Open the `BusClient` if not already connected. Idempotent.
 ///
 /// Per D-10, the MCP server is the registered slot for its session, NOT
@@ -141,9 +187,11 @@ pub fn state() -> &'static Mutex<SessionState> {
 /// the BUS-06 Hello handshake. On subsequent calls: returns `Ok(())`
 /// immediately (no I/O).
 ///
-/// Errors are projected onto [`BusErrorKind`] so MCP-10's
-/// exhaustive-match downstream catches them.
-pub async fn ensure_bus() -> Result<(), BusErrorKind> {
+/// Errors are projected onto a `(kind, detail)` tuple where `kind` is
+/// always [`BusErrorKind::BrokerUnreachable`] and `detail` carries a
+/// stage-aware message including the OS error number. Callers destructure
+/// via `.map_err(|(kind, detail)| ToolError::new(kind, detail))`.
+pub async fn ensure_bus() -> Result<(), (BusErrorKind, String)> {
     // WR-04: hold the lock across `BusClient::connect` so concurrent
     // callers can't both run the broker-spawn + Hello handshake and
     // then drop the loser's freshly-connected client on the floor
@@ -158,10 +206,93 @@ pub async fn ensure_bus() -> Result<(), BusErrorKind> {
     let sock = crate::bus_client::resolve_sock_path();
     let client = BusClient::connect(&sock, None)
         .await
-        .map_err(|_| BusErrorKind::BrokerUnreachable)?;
+        .map_err(|e| (BusErrorKind::BrokerUnreachable, bus_err_detail(e, &sock)))?;
     guard.bus = Some(client);
     drop(guard);
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::bus_client::spawn;
+
+    /// `BusClientError::Io` maps to a connect-stage message containing the
+    /// socket path AND the os-error text. ECONNREFUSED-ish (errno 111).
+    #[test]
+    fn bus_err_detail_io_contains_socket_and_errno() {
+        let io_err = std::io::Error::from_raw_os_error(111);
+        let sock = Path::new("/tmp/famp-test-k2p.sock");
+        let detail = bus_err_detail(BusClientError::Io(io_err), sock);
+        assert!(
+            detail.contains("os error"),
+            "expected 'os error' in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("famp-test-k2p.sock"),
+            "expected socket path in detail, got: {detail}"
+        );
+    }
+
+    /// `BusClientError::BrokerDidNotStart(SpawnError::Io)` — fork/setsid
+    /// blocked by a sandbox — maps to a spawn-stage message containing
+    /// the os-error text, "sandbox", and "spawn".
+    #[test]
+    fn bus_err_detail_broker_did_not_start_spawn_io_contains_errno_and_sandbox() {
+        let io_err = std::io::Error::from_raw_os_error(1); // EPERM — fork/setsid class
+        let sock = Path::new("/tmp/famp-test-k2p.sock");
+        let detail = bus_err_detail(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::Io(io_err)),
+            sock,
+        );
+        assert!(
+            detail.contains("os error"),
+            "expected 'os error' in detail (errno must not be swallowed), got: {detail}"
+        );
+        assert!(
+            detail.contains("sandbox"),
+            "expected 'sandbox' hint in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("spawn"),
+            "expected 'spawn' in detail, got: {detail}"
+        );
+    }
+
+    /// `BusClientError::BrokerDidNotStart(SpawnError::BrokerDidNotStart)` —
+    /// genuine 2s timeout, no errno — maps to a message mentioning the
+    /// timeout and pointing at the broker log. Must NOT claim an os error.
+    #[test]
+    fn bus_err_detail_broker_did_not_start_timeout_points_at_log() {
+        let sock = Path::new("/tmp/famp-test-k2p.sock");
+        let detail = bus_err_detail(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::BrokerDidNotStart),
+            sock,
+        );
+        assert!(
+            detail.contains("2s") || detail.contains("2 s"),
+            "expected 2s timeout mention in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("broker.log"),
+            "expected broker log pointer in detail, got: {detail}"
+        );
+        assert!(
+            !detail.contains("os error"),
+            "genuine timeout has no os error, but detail claims one: {detail}"
+        );
+    }
+
+    /// JSON-RPC code regression: `BusErrorKind::BrokerUnreachable` must
+    /// map to code -32108 (unchanged). Calls the real `const fn`.
+    #[test]
+    fn broker_unreachable_jsonrpc_code_is_minus_32108() {
+        assert_eq!(
+            crate::cli::mcp::error_kind::bus_error_to_jsonrpc(BusErrorKind::BrokerUnreachable).0,
+            -32108
+        );
+    }
 }
 
 /// Read the active identity (a clone of the inner `Option<String>`).

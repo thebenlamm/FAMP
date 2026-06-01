@@ -22,7 +22,7 @@ use crate::cli::mcp::tools::ToolError;
 pub async fn call(_input: &Value) -> Result<Value, ToolError> {
     session::ensure_bus()
         .await
-        .map_err(|kind| ToolError::new(kind, "failed to connect to local broker"))?;
+        .map_err(|(kind, detail)| ToolError::new(kind, detail))?;
 
     let mut guard = session::state().lock().await;
     let Some(bus) = guard.bus.as_mut() else {
