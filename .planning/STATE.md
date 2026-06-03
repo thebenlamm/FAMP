@@ -3,36 +3,47 @@ gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Broker Daemon & Cross-Tool Bootstrap
 status: planning
-last_updated: "2026-06-03T18:47:43.166Z"
+last_updated: "2026-06-03T00:00:00.000Z"
 last_activity: 2026-06-03
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
 ---
 
-# STATE: FAMP — v0.10 Inspector & Observability (complete)
+# STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
 
-**Last Updated:** 2026-05-11 — v0.10 milestone complete. All 3 phases passed UAT. Phase 3 UAT: 5/5 tests passed (no-starvation load test ratio 0.95, all 8 inspect_broker tests pass, MAX_CONCURRENT_INSPECT_REQUESTS=1 fast-shed visible, migration guide complete, orphan-holder incident-class label present). Phase 2 completed 2026-05-10 (INSP-TASK-01..04, INSP-MSG-01..03, INSP-RPC-03, INSP-RPC-04 all validated). Phase 1 completed 2026-05-10 (16 reqs). 26/26 v1 requirements mapped and delivered.
+**Last Updated:** 2026-06-03 — v0.11 roadmap created. 3 phases (4–6), 15/15 requirements mapped. Phase 4 begins.
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (shipped 2026-05-11). All three phases done: read-only `famp inspect` surface (broker, identities, tasks, messages) on the v0.9 broker UDS; GAP-03-01 closed; no-starvation under saturated direct-RPC pressure; operator migration guide shipped. Next milestone: v1.0 Federation Profile (trigger-gated: Gate A = Ben's sustained symmetric cross-machine use; Gate B = 2nd implementer interop).
+See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (shipped 2026-05-11). v0.11 Broker Daemon & Cross-Tool Bootstrap is now active.
 
-**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.10 makes that substrate's runtime state legible to the operator running it.
+**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.11 makes that substrate *reliably reachable* — a service-managed daemon restores broker presence so any local client, sandboxed or not, always finds a broker.
 
-**Current focus:** v0.10 archived — ready for next milestone planning
+**Current focus:** Phase 4 — Broker Lifecycle & Bootstrap Diagnostics
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 4 — Broker Lifecycle & Bootstrap Diagnostics
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-03 — Milestone v0.11 started
+Status: Not started
+Last activity: 2026-06-03 — Roadmap created
 
-## v0.10 Phase Map
+```
+[Phase 4 ░░░░░░░░░░] [Phase 5 ░░░░░░░░░░] [Phase 6 ░░░░░░░░░░]
+  0%                                                          100%
+```
+
+## v0.11 Phase Map
+
+- **Phase 4: Broker Lifecycle & Bootstrap Diagnostics** (3 reqs: BLC-01, BLC-02, BOOT-01). `famp broker --no-idle-exit` flag disabling the 300s idle self-terminate (hard prerequisite for the daemon — a service-managed broker must never self-terminate on idle); regression guard confirming default idle-exit behavior is unchanged; actionable EPERM-on-bind error in `spawn.rs:92` replacing the swallowed `let _ =` with a message that names the sandbox constraint and the remedy. Changes land in `crates/famp/src/cli/broker/mod.rs` and `crates/famp/src/bus_client/spawn.rs`. Run `just install` before closing any PR that changes the spawn-error surface.
+- **Phase 5: Daemon Service Management & Version Safety** (9 reqs: DAEMON-01..06, BOOT-02, VER-01, VER-02). `famp daemon install/uninstall/status/restart` cross-platform service lifecycle (launchd LaunchAgent on macOS, systemd `--user` unit on Linux); sandbox-detect refusal at install time; version handshake at connect so a long-lived daemon and a freshly-upgraded client fail loud on skew; `famp -V` / banner / handshake reconciled to a single source of truth. **DAEMON-02 guardian plist review gate is blocking: do not load the service until the literal plist XML has guardian sign-off.** Socket activation and spawn-lock explicitly deferred.
+- **Phase 6: Onboarding & Cross-Platform Docs** (3 reqs: DOC-01, DOC-02, DOC-03). README one-command quickstart (`famp daemon install` once → both Claude Code and Codex connect forever); zero-setup bridge line (`famp broker --no-idle-exit` in an unsandboxed terminal); explicit cross-platform support boundary section naming what the installer covers (macOS launchd, Linux systemd `--user`) and what it does not (minimal distros, containers, WSL, headless without linger). Docs land after Phase 5 so they describe commands that exist and behave as written.
+
+## v0.10 Phase Map (complete)
 
 - **Phase 1: Broker Diagnosis & Identity Inspection** (16 reqs) — INSP-BROKER-01..04, INSP-IDENT-01..03, INSP-RPC-01, INSP-RPC-02, INSP-CRATE-01..03, INSP-CLI-01..04. `famp.inspect.*` namespace on the existing UDS via new `BusMessage::Inspect` enum variant; all three inspector crates ship (`-proto` no-I/O, `-client` no-clap, `-server` version-aligned with broker); `famp inspect broker` end-to-end (connect-handshake-based dead-broker diagnosis: HEALTHY / DOWN_CLEAN / STALE_SOCKET / ORPHAN_HOLDER / PERMISSION_DENIED, no PID file because v0.9 uses bind()-exclusion); `famp inspect identities` end-to-end (in-memory BrokerState read only); `--json` + fixed-width tables on both subcommands; `just check-inspect-readonly` workspace dep-graph gate; `just check-no-io-in-inspect-proto`. Closes the orphan-listener incident class in one merge. **No budget or cancel handlers needed in Phase 1 — both Phase 1 commands are pure in-memory reads or client-side network probes; budget/cancel land in Phase 2 with the I/O-bound handlers that actually exercise them.**
 - **Phase 2: Task FSM & Message Visibility** (9 reqs) — INSP-TASK-01..04, INSP-MSG-01..03, INSP-RPC-03 (500ms budget enforces at the tokio wrapper for I/O handlers), INSP-RPC-04 (cancellable handlers, 1000-concurrent-cancel test against the real `inspect tasks` and `inspect messages` paths). The taskdir + mailbox file walks are the I/O surface; budget and cancel finally have something real to enforce against.
@@ -46,39 +57,42 @@ Last activity: 2026-06-03 — Milestone v0.11 started
 4. **No double-print counter (INSP-IDENT-03 + Out of Scope)** — broker-side counter for the wake-up-notification + inbox-fetch double-billing failure mode was rejected as wrong instrument. Right surface is per-message token attribution at the model boundary, or a static audit of the `famp_await` notification payload — both are separate investigations from the inspector.
 5. **Wire shape (INSP-RPC-01)** — `famp.inspect.*` rides the existing UDS via a new `BusMessage::Inspect { kind, ... }` enum variant in `famp-bus`. Single dispatch path in `Broker::handle()` gains one new arm. No second socket. `InspectKind` sub-enum carries the four operations (broker, identities — Phase 1; tasks, messages — Phase 2). `famp-bus` stays tokio-free; budget enforcement lives at the tokio wrapper layer (`crates/famp/src/cli/broker/`), only for I/O-bound handlers (none in Phase 1).
 
-## Carry-Forward from v0.9
+## v0.11 Architectural Invariants
 
-- v0.9 broker (`famp-bus`, `~/.famp/bus.sock`, posix_spawn+setsid lifecycle, bind()-IS-the-lock single-broker exclusion) is the substrate v0.10 mounts on. No broker-side rewrites planned.
-- 8-tool stable MCP surface (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) carried forward unchanged. v0.10 does **not** add MCP tools; the inspector consumer is a CLI subcommand, not an MCP tool. (Future MCP exposure of inspector data is gated on usage signals reaching for it.)
-- `just check-no-tokio-in-bus` permanent CI gate is the precedent for v0.10's `just check-no-io-in-inspect-proto` recipe (parallel discipline at the proto crate boundary).
-- `FAMP_SPEC_VERSION = "0.5.2"` unchanged; v0.10 does not require a spec amendment.
+1. **Primitive crates stay untouched** — `famp-bus`, `famp-canonical`, `famp-crypto`, `famp-core`, `famp-envelope`, `famp-fsm` are transport-neutral protocol primitives. All v0.11 changes are CLI-layer (`crates/famp/src/cli/`, `crates/famp/src/bus_client/spawn.rs`).
+2. **`just install` required when deployed surface changes** — the installed `~/.cargo/bin/famp` is what every agent session reads; `target/release/famp` is not the deployment target. Run `just install` before closing any PR that touches the spawn-error path (Phase 4) or the daemon subcommand (Phase 5).
+3. **Pre-commit hook stays fmt-check only** — the hook must not be expanded without explicit signoff. New CI gates (e.g. a plist-shape check) need separate signoff before going into pre-commit.
+4. **Guardian plist review is a blocking pre-load gate** — DAEMON-02 requires guardian to approve the literal plist XML before the service is first loaded. This is not an advisory review; the service must not be loaded until sign-off is received.
+5. **Socket activation + spawn-lock stay deferred** — do not create phases or plan items for launchd/systemd socket activation or for the `bind_exclusive` stale-branch spawn-lock. Both are explicitly out of v0.11 scope.
 
-## Open Items Inherited (not v0.10-blocking, just persistent)
+## Carry-Forward from v0.10
 
-- **Architect counsel parked from v0.9 Phase 03** (`famp send` audit_log wrapper at `crates/famp/src/cli/send/mod.rs::build_envelope_value`). Three options on the table; lean is option 1. Question parked for next architect session — does not block v0.10 Phase 1.
-- **8 pre-existing TLS-loopback timeouts** documented in v0.9 audit `tech_debt`. Triage as separate hygiene task. Not v0.10's surface.
-- **WR-06 env-var test races** waived under nextest. Not v0.10's surface.
+- v0.9 broker (`famp-bus`, `~/.famp/bus.sock`, posix_spawn+setsid lifecycle, bind()-IS-the-lock single-broker exclusion) is the substrate v0.11 builds on. No broker-side rewrites planned.
+- 8-tool stable MCP surface (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) carried forward unchanged. v0.11 does **not** add MCP tools.
+- `FAMP_SPEC_VERSION = "0.5.2"` unchanged; v0.11 does not require a spec amendment.
+- `just check-no-tokio-in-bus` and `just check-inspect-readonly` permanent CI gates remain intact.
+- The broker-unreachable connect/spawn-stage disambiguation (commits `4da30a3`/`ebbf1d3`) is the direct ancestor of BOOT-01's EPERM handling. Phase 4 extends, not replaces, that work.
+
+## Open Items Inherited (not v0.11-blocking, just persistent)
+
+- **Architect counsel parked from v0.9 Phase 03** (`famp send` audit_log wrapper at `crates/famp/src/cli/send/mod.rs::build_envelope_value`). Three options on the table; lean is option 1. Question parked for next architect session.
+- **8 pre-existing TLS-loopback timeouts** documented in v0.9 audit `tech_debt`. Triage as separate hygiene task.
+- **WR-06 env-var test races** waived under nextest.
 
 ## Decisions
 
-- [Roadmap]: Three-phase structure recut after matt-essentialist + zed-velocity-engineer review (2026-05-10): Phase 1 closes orphan-listener incident class end-to-end (broker + identities, RPC + CLI both); Phase 2 ships the I/O-bound enrichment (tasks + messages) and is where budget+cancel finally have something to enforce against; Phase 3 unchanged. **Rejected the original cut** (Phase 1 = RPC foundation with stub handlers; Phase 2 = all CLI) as yak-shaving — Phase 1's success criteria around budget+cancel were testing synthetic test-only handlers, not real work. The v0.10 user-visible win is closing the orphan-listener incident class; the recut ships that in one merge.
-- [Roadmap]: Phase numbering reset to Phase 1 per FAMP convention (v0.7/v0.8/v0.9 each reset; v0.10 follows). Confirmed with user at roadmap open.
-- [Roadmap]: Read-only discipline (INSP-RPC-02) and crate version alignment (INSP-CRATE-03) treated as architectural invariants, not feature requirements — locked at roadmap time so plan-phase cannot soften them.
-- [Phase ?]: Kind-tagged inspector reply enums — Locks D-02 wire shape for task/message replies before broker I/O and CLI rendering depend on it.
-- [Phase ?]: Pre-read snapshots in BrokerCtx — Keeps famp-inspect-server sync/tokio-free while allowing Plan 02 to populate TaskSnapshot and MessageSnapshot inside the broker executor.
-- [Phase ?]: Canonical fixture for A1 proof — Uses Phase 1 vector_0 canonical.hex rather than pretty envelope.json so canonicalize_roundtrip proves byte-for-byte JCS reproducibility.
-- [Phase 02 Plan 02]: Set block_on_async max_blocking_threads to 1024 for 1000 concurrent inspect calls.
-- [Phase 02 Plan 02]: Capture cursor offsets before spawn_blocking because Broker is not Send.
-- [Phase 02 Plan 02]: Return budget_exceeded as an InspectOk payload to preserve the BusReply codec.
+- [Roadmap v0.11]: Three-phase structure (Phases 4–6) derived from natural delivery boundaries: Phase 4 lands the `--no-idle-exit` prerequisite + EPERM diagnostics before any daemon work begins; Phase 5 delivers the full daemon lifecycle + version safety once the flag exists; Phase 6 lands docs after the commands exist so docs describe real behavior. VER-01/VER-02 placed in Phase 5 (not a separate phase) because they are most valuable once the daemon keeps a broker alive, and two reqs are too thin for their own phase at standard granularity.
+- [Roadmap v0.11]: Phase numbering continues from v0.10 (4/5/6) rather than resetting to 1. Reason: v0.10 phase dirs `01/02/03` are still present under `.planning/phases/`; resetting would collide. New phase dirs: `04-broker-lifecycle-bootstrap/`, `05-daemon-service-version/`, `06-onboarding-docs/`.
+- [Roadmap v0.10]: Three-phase structure recut after matt-essentialist + zed-velocity-engineer review (2026-05-10): Phase 1 closes orphan-listener incident class end-to-end (broker + identities, RPC + CLI both); Phase 2 ships the I/O-bound enrichment (tasks + messages) and is where budget+cancel finally have something to enforce against; Phase 3 unchanged. **Rejected the original cut** (Phase 1 = RPC foundation with stub handlers; Phase 2 = all CLI) as yak-shaving — Phase 1's success criteria around budget+cancel were testing synthetic test-only handlers, not real work. The v0.10 user-visible win is closing the orphan-listener incident class; the recut ships that in one merge.
+- [Roadmap v0.10]: Read-only discipline (INSP-RPC-02) and crate version alignment (INSP-CRATE-03) treated as architectural invariants, not feature requirements — locked at roadmap time so plan-phase cannot soften them.
 
 ## Issues / Blockers
 
-- **GAP-03-01: CLOSED 2026-05-11** — `03-03-PLAN.md` shipped non-blocking bounded inspect dispatch (MAX_CONCURRENT_INSPECT_REQUESTS=1, Semaphore fast-shed) and saturated direct-RPC load test; observed ratio 0.82–1.01 (≥0.80 threshold). Prior 0.17 was paced-CLI evidence; now backed by saturated direct `InspectKind::Tasks` RPC pressure.
-- v1.0-track items (Gate A: Ben symmetric cross-machine; Gate B: 2nd implementer) are independent of v0.10 — v0.10 ships on its own track regardless.
+- None at roadmap time. DAEMON-02 guardian plist review is a known external dependency, not a current blocker — it becomes blocking when Phase 5 is ready to load the service for the first time.
 
 ## Deferred Items
 
-Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-sdk query audit-open`); carried forward into v0.10 unchanged unless v0.10 work pulls one in:
+Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-sdk query audit-open`); carried forward into v0.11 unchanged unless v0.11 work pulls one in:
 
 | Category | Item | Status |
 |----------|------|--------|
@@ -153,10 +167,10 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 ## Session
 
-**Last session:** 2026-05-16T01:16:35.681Z
-**Stopped At:** Phase 03 UAT passed — v0.10 milestone complete, ready for /gsd-complete-milestone
+**Last session:** 2026-06-03T00:00:00.000Z
+**Stopped At:** Roadmap created — ready for /gsd:plan-phase 4
 **Resume File:** None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan Phase 4 with /gsd:plan-phase 4

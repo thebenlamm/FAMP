@@ -55,4 +55,20 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 
 ## Traceability
 
-Filled by the roadmap (requirement → phase mapping).
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| BLC-01 | Phase 4 | Pending |
+| BLC-02 | Phase 4 | Pending |
+| BOOT-01 | Phase 4 | Pending |
+| BOOT-02 | Phase 5 | Pending |
+| DAEMON-01 | Phase 5 | Pending |
+| DAEMON-02 | Phase 5 | Pending |
+| DAEMON-03 | Phase 5 | Pending |
+| DAEMON-04 | Phase 5 | Pending |
+| DAEMON-05 | Phase 5 | Pending |
+| DAEMON-06 | Phase 5 | Pending |
+| VER-01 | Phase 5 | Pending |
+| VER-02 | Phase 5 | Pending |
+| DOC-01 | Phase 6 | Pending |
+| DOC-02 | Phase 6 | Pending |
+| DOC-03 | Phase 6 | Pending |
