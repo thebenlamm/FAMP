@@ -40,7 +40,11 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 **v0.7 totals:** 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green, `cargo tree -i openssl` empty.
 
-### Active — v0.10 Inspector & Observability — IN PROGRESS
+### Active — v0.11 Broker Daemon & Cross-Tool Bootstrap — IN PROGRESS
+
+Restore guaranteed broker presence via a service-managed daemon so FAMP works for both Claude Code and Codex without per-user broker babysitting. Detailed requirements: see `.planning/REQUIREMENTS.md` v0.11 section.
+
+### Shipped — v0.10 Inspector & Observability — COMPLETE ✓ (shipped 2026-05-11)
 
 Read-only inspector surface on the v0.9 broker, consumed by a `famp inspect` CLI subcommand. Closes the conversation-state opacity gap that produced three recurring v0.9 incidents (orphan socket-holder vs stale PID file, task FSM invisibility, stale-mailbox relays). Independent of the v1.0 federation gate. Detailed requirements: see `.planning/REQUIREMENTS.md` v0.10 section.
 
@@ -147,7 +151,31 @@ This document evolves at phase transitions and milestone boundaries.
 3. Audit Out of Scope — reasons still valid?
 4. Update Context with current state
 
-## Current Milestone: v0.10 Inspector & Observability
+## Current Milestone: v0.11 Broker Daemon & Cross-Tool Bootstrap
+
+**Goal:** Restore the guaranteed broker-presence that commit `56b2293` (correctly) removed — the principled way, via a service-managed daemon — so a fresh clone of FAMP works for **both** Claude Code and Codex with no per-user broker babysitting.
+
+**Target features:**
+- `famp broker --no-idle-exit` — disable the 300s idle self-terminate (Arm 4, `crates/famp/src/cli/broker/mod.rs`). Hard prerequisite: without it any long-lived/daemon broker churns every 5 min, rebinds the socket, and orphans sessions.
+- EPERM-on-bind → actionable error at `crates/famp/src/bus_client/spawn.rs:92` (currently swallowed by `let _ =`): "can't create a broker inside a sandbox; run `famp daemon install` from a normal shell." Extends the broker-unreachable disambiguation in commits `4da30a3`/`ebbf1d3`.
+- `famp daemon install` — writes + loads the platform service: launchd plist (macOS) + systemd `--user` unit (Linux). Idempotent. Plist shape per guardian's APPROVE-WITH-CONDITIONS security review: `RunAtLoad=true`, `KeepAlive=true` (unconditional — gated KeepAlive fails because there is no idle-timeout flag and no socket activation), `ProcessType=Background`, `StandardOut/ErrorPath` → `~/.famp/broker.log`, **no** `EnvironmentVariables`/secrets, launches the broker with `--no-idle-exit`. Refuses to install if run inside a sandbox.
+- Daemon lifecycle: `famp daemon uninstall | status | restart`. `status` doubles as the "is the daemon up" diagnostic.
+- Version handshake on connect — the daemon is long-lived; on `cargo install`/`brew upgrade` the client updates while the running daemon stays on old wire logic. Exchange a protocol/build version at connect and **fail loud** on skew (a down-payment on v1.0 federation wire-version negotiation). Reconcile `famp -V` (reports `0.1.0`, unbumped crate version) vs the `0.5.x` banner.
+- Stale-binary-path handling — the plist hardcodes `~/.cargo/bin/famp`; a moved/replaced binary silently breaks the daemon. Provide `restart` + a README "re-run after upgrade" line + detection.
+- README quickstart: `famp daemon install` once → both Claude and Codex just connect, forever. Plus a zero-setup bridge line usable today (run `famp broker --no-idle-exit` in one unsandboxed terminal).
+- Cross-platform honesty — macOS launchd + Linux systemd `--user`. Name the gap in the README (minimal distros / containers / WSL / headless without systemd `--user` / `loginctl enable-linger`); don't ship mac-only under a "works for both" banner.
+
+**Out of scope (deferred / separate track):**
+- launchd/systemd **socket activation** — the elegant answer (service manager holds the socket, starts the broker on first connect, zero idle residency), but needs fd-inheritance the binary doesn't support yet.
+- **spawn-lock** for the cold-start unlink-race in `bind_exclusive`'s stale branch — independent cleanup; the daemon dissolves the race for daemon users. Ships on its own track.
+
+**Why now (verified regression, not speculation):** FAMP is public and advertised as working for both Claude Code and Codex. Codex *used to* work; it regressed after `56b2293` (2026-05-12, "arm idle timer at startup to prevent orphan broker leak"). Before that fix brokers leaked — a spawned broker ran forever even with no clients (the commit msg cites 82 orphans over 4 days) — so a broker was essentially always up, and Codex (which can `connect()` but never `bind()` inside its seatbelt sandbox) always found one. The fix correctly made brokers mortal, which removed the accidental safety net and unmasked Codex's structural inability to bootstrap a broker. **Do not revert `56b2293`** — the leak was real. This milestone restores broker presence the principled way: a service-managed daemon, not a leak.
+
+**Design context:** root cause verified via git archaeology (`56b2293`); guardian (security/system) gave APPROVE-WITH-CONDITIONS on the plist and wants to review the literal plist XML before it loads; scope converged by `matt-essentialist` (ownership-correction framing, version-skew + lifecycle gaps) and `zed-velocity-engineer` (smallest-shippable-cut triage, cross-platform/stale-binary risks). Slots ahead of the gated v1.0 Federation milestone.
+
+---
+
+## Shipped Milestone: v0.10 Inspector & Observability — SHIPPED 2026-05-11
 
 **Goal:** Make FAMP conversation state legible without grep-and-guess via a read-only inspector RPC on the v0.9 broker UDS, consumed by a `famp inspect` CLI subcommand.
 
@@ -288,4 +316,4 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. 8-tool MCP surface stable across v0.8 → v0.9 → v1.0.
 
 ---
-*Last updated: 2026-05-11 — v0.10 Inspector & Observability complete (3/3 phases, 10/10 plans, 26/26 requirements). `famp inspect broker/identities/tasks/messages` ships on the v0.9 broker UDS with read-only discipline, 500ms budget, cancellable handlers, and non-blocking bounded dispatch (MAX_CONCURRENT_INSPECT_REQUESTS=1). GAP-03-01 closed; saturated direct-RPC no-starvation proof delivered. Operator migration guide at `docs/MIGRATION-v0.9-to-v0.10.md`.*
+*Last updated: 2026-06-03 — v0.11 Broker Daemon & Cross-Tool Bootstrap milestone opened (service-managed broker to restore the broker-presence guarantee removed by 56b2293; fixes Codex cold-start bootstrap under sandbox). v0.10 Inspector & Observability complete (3/3 phases, 10/10 plans, 26/26 requirements). `famp inspect broker/identities/tasks/messages` ships on the v0.9 broker UDS with read-only discipline, 500ms budget, cancellable handlers, and non-blocking bounded dispatch (MAX_CONCURRENT_INSPECT_REQUESTS=1). GAP-03-01 closed; saturated direct-RPC no-starvation proof delivered. Operator migration guide at `docs/MIGRATION-v0.9-to-v0.10.md`.*
