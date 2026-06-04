@@ -125,7 +125,41 @@ pub(crate) fn preflight_bind_probe(bus_dir: &Path) -> Result<(), SpawnError> {
         {
             Err(SpawnError::SandboxEperm)
         }
+        // Fast-path fail-open: any other bind errno (e.g. EADDRINUSE from a
+        // stale probe socket) must NOT block an opportunistic spawn — the
+        // caller's own connect-retry loop is the real authority. The install
+        // GATE needs the opposite semantics; see `strict_bind_probe`.
         Err(_err) => Ok(()),
+    }
+}
+
+/// Strict variant of `preflight_bind_probe` for the daemon-install gate.
+///
+/// Identical EPERM/EACCES → `SandboxEperm` mapping, but unlike the lenient
+/// fast-path probe this does NOT fail-open on unexpected bind errnos: any
+/// other error (EADDRINUSE, ENAMETOOLONG, EROFS, …) is surfaced as
+/// `SpawnError::Io` so the install gate refuses rather than writing a service
+/// file whose socket can never bind (the silent-broken-state BOOT-02 guards
+/// against). Kept separate from `preflight_bind_probe` so Phase 4's spawn
+/// fast-path fail-open behavior is unchanged.
+pub(crate) fn strict_bind_probe(bus_dir: &Path) -> Result<(), SpawnError> {
+    let probe_path = bus_dir.join(format!(".probe-{}.sock", std::process::id()));
+    match std::os::unix::net::UnixListener::bind(&probe_path) {
+        Ok(listener) => {
+            drop(listener);
+            std::fs::remove_file(&probe_path).map_err(SpawnError::Io)?;
+            Ok(())
+        }
+        Err(err)
+            if matches!(
+                err.raw_os_error(),
+                Some(code) if code == nix::libc::EPERM || code == nix::libc::EACCES
+            ) =>
+        {
+            Err(SpawnError::SandboxEperm)
+        }
+        // Gate semantics: surface unexpected errnos instead of swallowing.
+        Err(err) => Err(SpawnError::Io(err)),
     }
 }
 

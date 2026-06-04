@@ -19,7 +19,7 @@ use std::process::Command;
 
 use clap::Args;
 
-use crate::bus_client::spawn::{preflight_bind_probe, SpawnError};
+use crate::bus_client::spawn::{strict_bind_probe, SpawnError};
 use crate::cli::error::CliError;
 
 // ─── Args ────────────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ pub(crate) fn generate_plist(home: &Path) -> Result<String, DaemonError> {
 
 /// Check that install is NOT being run from inside a sandboxed shell.
 ///
-/// BOOT-02: reuses the existing Phase 4 `preflight_bind_probe` — if the
+/// BOOT-02: uses the strict bind probe (`strict_bind_probe`) — if the
 /// shell is sandboxed (Claude Code / Codex), binding a Unix socket to
 /// `{home}/.famp/` fails with EPERM/EACCES, surfaced as `SpawnError::SandboxEperm`.
 /// A sandboxed install would write a service file that can never bind its socket
@@ -168,7 +168,9 @@ fn check_not_sandboxed(bus_dir: &Path) -> Result<(), DaemonError> {
         path: bus_dir.to_path_buf(),
         source,
     })?;
-    match preflight_bind_probe(bus_dir) {
+    // Use the STRICT probe (not the lenient spawn fast-path probe): as an
+    // install gate, an unexpected bind errno must fail loudly, not fail-open.
+    match strict_bind_probe(bus_dir) {
         Err(SpawnError::SandboxEperm) => Err(DaemonError::SandboxedShell),
         Err(e) => Err(DaemonError::Io {
             path: bus_dir.to_path_buf(),
