@@ -174,7 +174,7 @@ fn bus_err_detail(err: BusClientError, sock: &Path) -> String {
 fn spawn_io_detail(io: std::io::Error) -> String {
     let sandbox_hint = if matches!(
         io.raw_os_error(),
-        Some(code) if code == libc::EPERM || code == libc::EACCES
+        Some(code) if code == nix::libc::EPERM || code == nix::libc::EACCES
     ) {
         " — if running inside a sandbox, broker process creation (fork/setsid) may be blocked; start a broker outside the sandbox or set FAMP_BUS_SOCKET to a reachable broker"
     } else {

@@ -12,8 +12,7 @@ provides:
 affects: [phase-05-daemon-service-version, mcp-session, broker-bootstrap]
 
 tech-stack:
-  added:
-    - libc
+  added: []
   patterns:
     - parent-side pre-flight probe before process spawn
     - fixed-literal sandbox remediation message with no path interpolation
@@ -22,8 +21,6 @@ tech-stack:
 key-files:
   created: []
   modified:
-    - Cargo.lock
-    - crates/famp/Cargo.toml
     - crates/famp/src/bus_client/spawn.rs
     - crates/famp/src/cli/register.rs
     - crates/famp/src/cli/mcp/session.rs
@@ -31,6 +28,7 @@ key-files:
 key-decisions:
   - "Use a parent-side temporary UDS bind probe under the bus directory to detect EPERM/EACCES before forking."
   - "Surface sandbox bind failures as fixed literal text: `can't create a broker inside a sandbox; run `famp daemon install` from a normal shell`."
+  - "Use the existing `nix::libc` errno constants instead of adding a direct `libc` dependency."
   - "Keep non-EPERM `SpawnError::Io` messages generic while preserving the prior EPERM fork/setsid hint path."
 
 patterns-established:
@@ -70,6 +68,7 @@ Each task was committed atomically:
 2. **Task 2: Add SandboxEperm and parent-side probe** - `da83252` (feat)
 3. **Task 3: Verify CLI SandboxEperm surface** - `3cd6a20` (test, empty verification commit)
 4. **Task 4: Verify MCP SandboxEperm surface and full lib suite** - `560dce3` (test, empty verification commit)
+5. **Follow-up: Remove direct libc dependency warning** - this metadata/fix commit (fix)
 
 **Plan metadata:** pending in docs commit
 
@@ -78,8 +77,6 @@ Each task was committed atomically:
 - `crates/famp/src/bus_client/spawn.rs` - Added `SandboxEperm`, parent-side bind probe, and display regression test.
 - `crates/famp/src/cli/register.rs` - Added SandboxEperm mapping and non-EPERM spawn I/O regression coverage.
 - `crates/famp/src/cli/mcp/session.rs` - Added MCP SandboxEperm mapping and non-EPERM spawn I/O regression coverage.
-- `crates/famp/Cargo.toml` - Added direct `libc` dependency for errno constants.
-- `Cargo.lock` - Reflected the direct dependency edge.
 
 ## Decisions Made
 
@@ -98,10 +95,18 @@ Each task was committed atomically:
 - **Verification:** CLI/MCP targeted tests and `cargo test --lib -p famp` passed.
 - **Committed in:** `da83252`
 
+**2. [Rule 1 - Bug] Removed direct `libc` dependency warning**
+- **Found during:** Wave 1 validation after Task 4
+- **Issue:** Adding `libc` directly satisfied the plan's dependency check but caused an `unused_crate_dependencies` warning on the `famp` binary target.
+- **Fix:** Switched errno constants to the existing `nix::libc` path and removed the direct `libc` dependency and lockfile edge.
+- **Files modified:** `crates/famp/src/bus_client/spawn.rs`, `crates/famp/src/cli/register.rs`, `crates/famp/src/cli/mcp/session.rs`, `crates/famp/Cargo.toml`, `Cargo.lock`
+- **Verification:** Focused SandboxEperm tests and `cargo run -p famp -- broker --help | grep -q no-idle-exit && echo HELP_OK` passed without the dependency warning.
+- **Committed in:** this metadata/fix commit
+
 ---
 
-**Total deviations:** 1 auto-fixed (1 blocking).
-**Impact on plan:** No behavioral scope change. The planned CLI/MCP arms landed earlier than their verification tasks because Rust required exhaustive matches.
+**Total deviations:** 2 auto-fixed (1 blocking, 1 bug).
+**Impact on plan:** No behavioral scope change. The planned CLI/MCP arms landed earlier than their verification tasks because Rust required exhaustive matches; the direct dependency was removed to keep builds warning-clean.
 
 ## Issues Encountered
 
@@ -119,6 +124,7 @@ None beyond the compile-order deviation documented above.
 - `cargo test --lib -p famp bus_err_detail_non_eperm_spawn_io_does_not_claim_sandbox` - passed.
 - `cargo test --lib -p famp` - passed, 157 tests.
 - `cargo fmt --check -p famp` - passed.
+- `cargo run -p famp -- broker --help | grep -q no-idle-exit && echo HELP_OK` - passed after removing the direct `libc` dependency, with no unused dependency warning.
 
 ## User Setup Required
 

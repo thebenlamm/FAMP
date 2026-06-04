@@ -120,7 +120,7 @@ fn preflight_bind_probe(bus_dir: &Path) -> Result<(), SpawnError> {
         Err(err)
             if matches!(
                 err.raw_os_error(),
-                Some(code) if code == libc::EPERM || code == libc::EACCES
+                Some(code) if code == nix::libc::EPERM || code == nix::libc::EACCES
             ) =>
         {
             Err(SpawnError::SandboxEperm)
