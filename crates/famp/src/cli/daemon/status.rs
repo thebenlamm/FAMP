@@ -154,7 +154,7 @@ fn platform_service_path(home: &Path) -> PathBuf {
 /// Do NOT parse launchctl print text output — man page: "NOT API in any sense at all".
 /// exit 0 = registered; exit 113 = "Could not find service" (not registered).
 #[cfg(target_os = "macos")]
-fn launchctl_is_registered(label: &str, uid: u32) -> bool {
+pub(crate) fn launchctl_is_registered(label: &str, uid: u32) -> bool {
     Command::new("launchctl")
         .args(["print", &format!("gui/{uid}/{label}")])
         .stdout(Stdio::null())

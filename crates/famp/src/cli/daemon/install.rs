@@ -182,10 +182,20 @@ fn check_not_sandboxed(bus_dir: &Path) -> Result<(), DaemonError> {
 
 /// Load the LaunchAgent via `launchctl bootstrap gui/$UID <plist>`.
 ///
-/// Idempotent: tolerates exit code 37 ("service already registered").
-/// Any other non-zero exit is a hard error (`DaemonError::LaunchctlFailed`).
+/// Idempotent (DAEMON-01): if the service is already registered in this domain,
+/// return Ok WITHOUT re-bootstrapping — a non-destructive no-op that does not
+/// restart a running broker. We check registration first rather than tolerating
+/// a specific failure code, because real launchctl returns exit 5
+/// ("Bootstrap failed: 5: Input/output error") when a label is already
+/// bootstrapped — NOT exit 37 (an earlier, never-validated assumption). Exit 5
+/// is a generic EIO that can mean other things, so we must not blanket-tolerate
+/// it; the registration probe is the reliable idempotency signal.
 #[cfg(target_os = "macos")]
 fn load_macos(plist_path: &Path, uid: u32) -> Result<(), DaemonError> {
+    // Already registered → idempotent no-op (do not restart a running broker).
+    if super::status::launchctl_is_registered("com.famp.broker", uid) {
+        return Ok(());
+    }
     let plist_str = plist_path.to_str().unwrap_or_default();
     let status = Command::new("launchctl")
         .args(["bootstrap", &format!("gui/{uid}"), plist_str])
@@ -195,12 +205,7 @@ fn load_macos(plist_path: &Path, uid: u32) -> Result<(), DaemonError> {
             source: e,
         })?;
     if !status.success() {
-        let code = status.code().unwrap_or(-1);
-        if code == 37 {
-            // Exit 37 = "service already registered" — idempotent success.
-            return Ok(());
-        }
-        return Err(DaemonError::LaunchctlFailed(code));
+        return Err(DaemonError::LaunchctlFailed(status.code().unwrap_or(-1)));
     }
     Ok(())
 }

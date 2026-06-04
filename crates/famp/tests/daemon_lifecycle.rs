@@ -26,16 +26,43 @@ fn launchctl_tests_enabled() -> bool {
     std::env::var("FAMP_RUN_LAUNCHCTL_TESTS").is_ok()
 }
 
-/// DAEMON-01: `famp daemon install` is idempotent — calling it twice leaves
-/// exactly one launchd registration (no duplicate service).
+/// Probe (exit-code-only) whether `com.famp.broker` is registered in this
+/// user's gui domain. Mirrors the production `status::launchctl_is_registered`,
+/// duplicated here because that helper is `pub(crate)` and unreachable from an
+/// integration-test crate.
+#[cfg(target_os = "macos")]
+fn broker_registered() -> bool {
+    let uid = u32::from(nix::unistd::getuid());
+    std::process::Command::new("launchctl")
+        .args(["print", &format!("gui/{uid}/com.famp.broker")])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// DAEMON-01 + DAEMON-04: full install/uninstall lifecycle is idempotent.
 ///
-/// Implementation: call install twice, check via `launchctl print` exit code
-/// that the service is registered exactly once, then clean up via uninstall.
+/// This is ONE sequential test, not two, on purpose: both halves operate on the
+/// SAME launchd label (`com.famp.broker`) in the SAME live `gui/$UID` domain.
+/// As two separate `#[test]` functions they ran in parallel (cargo's default)
+/// and collided — one's `bootstrap`/`bootout` raced the other's, surfacing as
+/// `LaunchctlFailed(5)` ("Bootstrap failed: 5: Input/output error" = label
+/// already bootstrapped). A shared, process-global resource cannot be exercised
+/// by two parallel tests; serializing the whole lifecycle into one test is the
+/// fix.
 ///
-/// Cleanup runs BEFORE assertions to guarantee no persistent LaunchAgent is
-/// left even if assertions panic.
+/// Sequence: install → install (idempotent no-op) → uninstall → uninstall
+/// (idempotent no-op). The plist's `ProgramArguments` points at a binary that
+/// does not exist under the temp HOME, so launchd's `RunAtLoad` launch attempt
+/// fails and KeepAlive throttles — harmless for the brief window before
+/// `bootout`; we assert on registration/plist state, not on a live broker.
+///
+/// A defensive final `uninstall` runs BEFORE any assertion so a failed
+/// assertion can never leave a persistent LaunchAgent on the machine.
 #[test]
-fn daemon_install_is_idempotent() {
+fn daemon_lifecycle_is_idempotent() {
     if !launchctl_tests_enabled() {
         // Gate: not running launchctl integration tests in this environment.
         // CI stays green without launchctl dependency.
@@ -46,71 +73,42 @@ fn daemon_install_is_idempotent() {
     let home = tmp.path();
     let mut out = Vec::<u8>::new();
 
-    // Install once.
-    install::run_at(home, &mut out).expect("first install must succeed");
+    // 1. Install once — bootstraps the label.
+    let install1 = install::run_at(home, &mut out);
+    // 2. Install again — must be an idempotent no-op (DAEMON-01). Before the
+    //    fix this returned LaunchctlFailed(5) because the code tolerated only
+    //    exit 37; now load_macos checks registration first and returns Ok.
+    let install2 = install::run_at(home, &mut out);
+    let registered_after_install = broker_registered();
+    // 3. Uninstall once — boots out + removes the plist.
+    let uninstall1 = uninstall::run_at(home, &mut out);
+    // 4. Uninstall again — idempotent no-op (DAEMON-04).
+    let uninstall2 = uninstall::run_at(home, &mut out);
+    let registered_after_uninstall = broker_registered();
 
-    // Install again — must be idempotent (exit 37 tolerated).
-    let second_result = install::run_at(home, &mut out);
-
-    // Clean up BEFORE asserting so a panic does not leave a persistent LaunchAgent.
-    let cleanup_result = uninstall::run_at(home, &mut out);
-
-    // Now assert.
-    second_result.expect("second install must succeed (idempotent)");
-    cleanup_result.expect("cleanup uninstall must succeed");
-
-    // Verify the service is no longer registered after uninstall.
-    let uid = u32::from(nix::unistd::getuid());
-    let registered_after = std::process::Command::new("launchctl")
-        .args(["print", &format!("gui/{uid}/com.famp.broker")])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-
-    assert!(
-        !registered_after,
-        "service must not be registered after uninstall (DAEMON-01/04)"
-    );
-}
-
-/// DAEMON-04: `famp daemon uninstall` is idempotent — calling it twice exits
-/// Ok both times and leaves no orphan registration.
-///
-/// Cleanup runs BEFORE assertions to guarantee no persistent LaunchAgent is
-/// left even if assertions panic.
-#[test]
-fn daemon_uninstall_is_idempotent() {
-    if !launchctl_tests_enabled() {
-        // Gate: not running launchctl integration tests in this environment.
-        return;
-    }
-
-    let tmp = tempfile::TempDir::new().expect("tempdir");
-    let home = tmp.path();
-    let mut out = Vec::<u8>::new();
-
-    // Install first so there is something to uninstall.
-    install::run_at(home, &mut out).expect("install must succeed before uninstall test");
-
-    // Uninstall once — removes the service registration and plist file.
-    let first_uninstall = uninstall::run_at(home, &mut out);
-
-    // Uninstall again — must be idempotent (plist absent, service not registered).
-    let second_uninstall = uninstall::run_at(home, &mut out);
-
-    // Verify the plist file is gone.
     let plist_path = home
         .join("Library")
         .join("LaunchAgents")
         .join("com.famp.broker.plist");
     let plist_exists = plist_path.exists();
 
-    // Assert after cleanup (both uninstalls ran above — cleanup complete).
-    first_uninstall.expect("first uninstall must succeed");
-    second_uninstall.expect("second uninstall must succeed (idempotent — DAEMON-04)");
+    // Defensive cleanup BEFORE assertions: guarantees no leftover LaunchAgent
+    // even if an assertion below panics.
+    let _ = uninstall::run_at(home, &mut out);
 
+    // Assertions.
+    install1.expect("first install must succeed");
+    install2.expect("second install must succeed (idempotent — DAEMON-01)");
+    assert!(
+        registered_after_install,
+        "service must be registered after install (DAEMON-01)"
+    );
+    uninstall1.expect("first uninstall must succeed");
+    uninstall2.expect("second uninstall must succeed (idempotent — DAEMON-04)");
+    assert!(
+        !registered_after_uninstall,
+        "service must not be registered after uninstall (DAEMON-04)"
+    );
     assert!(
         !plist_exists,
         "plist must be removed after uninstall (DAEMON-04); found at {}",
