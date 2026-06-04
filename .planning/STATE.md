@@ -4,14 +4,14 @@ milestone: v0.11
 milestone_name: Broker Daemon & Cross-Tool Bootstrap
 status: executing
 stopped_at: Phase 5 context gathered
-last_updated: "2026-06-04T19:13:14.903Z"
+last_updated: "2026-06-04T19:27:48.108Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 16
   completed_phases: 4
   total_plans: 18
-  completed_plans: 14
-  percent: 78
+  completed_plans: 15
+  percent: 83
 ---
 
 # STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 ## Current Position
 
 Phase: 05 (daemon-service-management-version-safety) — EXECUTING
-Plan: 2 of 5
-Status: Plan 05-01 complete — executing Phase 05
-Last activity: 2026-06-04 — 05-01 complete: workspace 0.11.0, ProtocolMismatch enforcement, D-05 doc
+Plan: 3 of 5
+Status: Plan 05-02 complete — daemon dispatch + generate_plist + guardian fixture
+Last activity: 2026-06-04 — 05-02 complete: famp daemon scaffold, generate_plist locked shape, sample plist for guardian gate
 
 ```
 [Phase 4 ░░░░░░░░░░] [Phase 5 ░░░░░░░░░░] [Phase 6 ░░░░░░░░░░]
@@ -88,6 +88,7 @@ Last activity: 2026-06-04 — 05-01 complete: workspace 0.11.0, ProtocolMismatch
 - [Roadmap v0.10]: Read-only discipline (INSP-RPC-02) and crate version alignment (INSP-CRATE-03) treated as architectural invariants, not feature requirements — locked at roadmap time so plan-phase cannot soften them.
 - [05-01]: classify_hello_reply() extracted as pure fn from async connect() to enable unit tests without a live broker socket; BusClientError::ProtocolMismatch split from HelloFailed so bus_proto mismatch is distinctly typed and names `famp daemon restart` in its Display.
 - [05-01]: eprintln! used for HelloOk connect log (not tracing::info!) to avoid adding a new Cargo dep (plan verification constraint). Consistent with wait_for_disconnect usage in the same file.
+- [05-02]: Tasks 1+2 implemented together in a single commit: DaemonError and generate_plist both live in install.rs; splitting into separate commits would have required a partial install.rs that doesn't compile until Task 2. sample_fixture_matches_generate_plist test added for byte-exact guardian artifact invariant via include_str!.
 
 ## Issues / Blockers
 
@@ -171,7 +172,7 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 ## Session
 
-**Last session:** 2026-06-04T19:13:14.897Z
+**Last session:** 2026-06-04T19:27:48.101Z
 **Stopped At:** Phase 5 context gathered
 **Resume File:** None
 
