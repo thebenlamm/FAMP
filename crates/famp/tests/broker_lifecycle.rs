@@ -170,6 +170,49 @@ async fn test_broker_idle_exit_with_no_clients_ever_connected() {
     assert!(!sock.exists(), "broker must unlink socket on idle exit");
 }
 
+/// BLC-01: broker with no-idle-exit enabled must stay alive after the
+/// default idle timeout would have fired.
+#[tokio::test(start_paused = true)]
+async fn test_broker_no_idle_exit_stays_alive() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let bus_dir = tmp.path().to_path_buf();
+    let sock = bus_dir.join("bus.sock");
+    let listener = UnixListener::bind(&sock).unwrap();
+
+    let never_shutdown = std::future::pending::<()>();
+    let sock_clone = sock.clone();
+    let bus_dir_clone = bus_dir.clone();
+    let broker = tokio::spawn(async move {
+        famp::cli::broker::run_on_listener_with_opts(
+            &sock_clone,
+            &bus_dir_clone,
+            listener,
+            never_shutdown,
+            true,
+        )
+        .await
+    });
+
+    // Yield so the broker enters its select loop. With no-idle-exit
+    // enabled, startup must not arm the default idle timer.
+    tokio::task::yield_now().await;
+
+    // No client ever connects. Advance virtual time past the 300s threshold.
+    tokio::time::advance(Duration::from_secs(301)).await;
+    tokio::task::yield_now().await;
+
+    assert!(
+        !broker.is_finished(),
+        "broker must stay alive when no-idle-exit is enabled"
+    );
+    assert!(
+        sock.exists(),
+        "broker socket must remain present while no-idle-exit broker is alive"
+    );
+
+    broker.abort();
+}
+
 /// CLI-11: the broker MUST NOT consult `sessions.jsonl` to populate the
 /// `Sessions` reply — the file is diagnostic-only, intended for human
 /// post-mortems. Pre-write a row referencing a guaranteed-dead PID, and
