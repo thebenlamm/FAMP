@@ -16,9 +16,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "net", "process", "rt", "time", "macros"] }
-famp-inspect-proto = { path = "../famp-inspect-proto", version = "0.1.0" }
-famp-bus = { path = "../famp-bus", version = "0.1.0" }
-famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "0.11.0" }
+famp-bus = { path = "../famp-bus", version = "0.11.0" }
+famp-canonical = { path = "../famp-canonical", version = "0.11.0" }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", default-features = false, features = ["socket"] }

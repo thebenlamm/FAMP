@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "famp"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "assert_cmd",
  "axum",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "famp-bus"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-canonical",
  "famp-core",
@@ -682,7 +682,7 @@ dependencies = [
 
 [[package]]
 name = "famp-canonical"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "serde_jcs",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "famp-core"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "famp-crypto"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "famp-envelope"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-canonical",
  "famp-core",
@@ -736,7 +736,7 @@ dependencies = [
 
 [[package]]
 name = "famp-fsm"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-core",
  "proptest",
@@ -747,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inbox"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "nix 0.29.0",
  "serde_json",
@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inspect-client"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-bus",
  "famp-canonical",
@@ -773,7 +773,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inspect-proto"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-canonical",
  "serde",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inspect-server"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-bus",
  "famp-canonical",
@@ -799,7 +799,7 @@ dependencies = [
 
 [[package]]
 name = "famp-keyring"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-core",
  "famp-crypto",
@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "famp-taskdir"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "serde",
  "tempfile",
@@ -820,7 +820,7 @@ dependencies = [
 
 [[package]]
 name = "famp-transport"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "famp-core",
  "thiserror 2.0.18",
@@ -829,7 +829,7 @@ dependencies = [
 
 [[package]]
 name = "famp-transport-http"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "axum",
  "axum-server",

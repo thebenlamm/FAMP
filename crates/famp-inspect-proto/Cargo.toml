@@ -17,4 +17,4 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-famp-canonical = { path = "../famp-canonical", version = "0.1.0" }
+famp-canonical = { path = "../famp-canonical", version = "0.11.0" }
