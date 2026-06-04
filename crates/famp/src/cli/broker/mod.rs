@@ -80,10 +80,13 @@ pub struct BrokerArgs {
     /// `bus_client::resolve_sock_path`.
     #[arg(long)]
     pub socket: Option<PathBuf>,
+    #[arg(long, help = "Run the broker without the 300s idle self-terminate")]
+    pub no_idle_exit: bool,
 }
 
 /// Production entry point for `famp broker`.
 pub async fn run(args: BrokerArgs) -> Result<(), CliError> {
+    let no_idle_exit = args.no_idle_exit;
     let sock_path = args.socket.unwrap_or_else(bus_client::resolve_sock_path);
     let bus_dir = sock_path
         .parent()
@@ -115,11 +118,12 @@ pub async fn run(args: BrokerArgs) -> Result<(), CliError> {
         BindOutcome::Existing => return Ok(()),
     };
     eprintln!("broker started, socket: {}", sock_path.display());
-    run_on_listener(
+    run_on_listener_with_opts(
         &sock_path,
         &bus_dir,
         listener,
         crate::cli::util::shutdown_signal(),
+        no_idle_exit,
     )
     .await
 }
@@ -194,6 +198,17 @@ pub async fn run_on_listener(
     listener: UnixListener,
     shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<(), CliError> {
+    run_on_listener_with_opts(sock_path, bus_dir, listener, shutdown_signal, false).await
+}
+
+/// Test-facing entry point with explicit broker lifecycle options.
+pub async fn run_on_listener_with_opts(
+    sock_path: &Path,
+    bus_dir: &Path,
+    listener: UnixListener,
+    shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
+    no_idle_exit: bool,
+) -> Result<(), CliError> {
     // Build the env. One Arc → two `BrokerEnvHandle` clones: one
     // hands ownership to `Broker::new` (read path); the executor
     // keeps the other for `Out::AppendMailbox` writes.
@@ -218,8 +233,11 @@ pub async fn run_on_listener(
     // connecting self-terminates after IDLE_TIMEOUT instead of running
     // forever. A connecting client cancels the timer (idle = None); a
     // disconnecting client re-arms it.
-    let mut idle: Option<Pin<Box<tokio::time::Sleep>>> =
-        Some(Box::pin(tokio::time::sleep(IDLE_TIMEOUT)));
+    let mut idle: Option<Pin<Box<tokio::time::Sleep>>> = if no_idle_exit {
+        None
+    } else {
+        Some(Box::pin(tokio::time::sleep(IDLE_TIMEOUT)))
+    };
     let mut next_id: u64 = 0;
     let mut tick_interval = tokio::time::interval(TICK_INTERVAL);
     // Skip the immediate first tick so we don't spin Broker::handle
@@ -266,7 +284,7 @@ pub async fn run_on_listener(
                         // exits cleanly.
                         reply_senders.remove(&client);
                         client_count = client_count.saturating_sub(1);
-                        if client_count == 0 {
+                        if client_count == 0 && !no_idle_exit {
                             idle = Some(Box::pin(tokio::time::sleep(IDLE_TIMEOUT)));
                         }
                         outs
