@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Broker Daemon & Cross-Tool Bootstrap
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-06-04T19:45:23.630Z"
+stopped_at: Phase 5 Plan 04 complete (05-04-PLAN.md)
+last_updated: "2026-06-04T21:35:00Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 16
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 18
-  completed_plans: 17
-  percent: 94
+  completed_plans: 18
+  percent: 100
 ---
 
 # STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 ## Current Position
 
 Phase: 05 (daemon-service-management-version-safety) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-04
 
@@ -89,6 +89,8 @@ Last activity: 2026-06-04
 - [05-01]: classify_hello_reply() extracted as pure fn from async connect() to enable unit tests without a live broker socket; BusClientError::ProtocolMismatch split from HelloFailed so bus_proto mismatch is distinctly typed and names `famp daemon restart` in its Display.
 - [05-01]: eprintln! used for HelloOk connect log (not tracing::info!) to avoid adding a new Cargo dep (plan verification constraint). Consistent with wait_for_disconnect usage in the same file.
 - [05-02]: Tasks 1+2 implemented together in a single commit: DaemonError and generate_plist both live in install.rs; splitting into separate commits would have required a partial install.rs that doesn't compile until Task 2. sample_fixture_matches_generate_plist test added for byte-exact guardian artifact invariant via include_str!.
+- [05-04]: check_not_sandboxed creates bus_dir before probe — preflight_bind_probe returns Ok on ENOENT (not EPERM/EACCES), so a missing bus_dir would silently pass the probe even in a sandbox. create_dir_all before the probe ensures a real permission answer (BOOT-02 correctness).
+- [05-04]: integration test cleanup-before-assert — launchctl bootout/uninstall runs before any assert!/expect! call so a panic cannot leave a persistent LaunchAgent on the machine.
 
 ## Issues / Blockers
 
@@ -170,11 +172,12 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | Phase 03 P02 | 15 min | 2 tasks | 2 files |
 | Phase 05 P01 | 35 min | 2 tasks | 18 files |
 | Phase 05-daemon-service-management-version-safety P05 | 45min | 2 tasks | 4 files |
+| Phase 05-daemon-service-management-version-safety P04 | 35min | 2 tasks | 4 files |
 
 ## Session
 
-**Last session:** 2026-06-04T19:45:23.626Z
-**Stopped At:** Phase 5 context gathered
+**Last session:** 2026-06-04T21:35:00Z
+**Stopped At:** Phase 5 Plan 04 complete (05-04-PLAN.md)
 **Resume File:** None
 
 ## Operator Next Steps
