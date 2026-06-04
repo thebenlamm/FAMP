@@ -252,7 +252,7 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     //   famp broker --no-idle-exit
     let unit_content = format!(
         "[Unit]\nDescription=FAMP Local Bus Broker\nAfter=default.target\n\n\
-         [Service]\nExecStart={famp_bin}\nRestart=always\n\
+         [Service]\nExecStart={famp_bin} broker --no-idle-exit\nRestart=always\n\
          StandardOutput=append:{log}\nStandardError=append:{log}\n\n\
          [Install]\nWantedBy=default.target\n",
         famp_bin = famp_bin.display(),
