@@ -35,6 +35,13 @@ pub struct DaemonRestartArgs {
 /// locked in the plist, picking up the new binary on disk.
 #[cfg(target_os = "macos")]
 fn restart_macos(uid: u32) -> Result<(), DaemonError> {
+    // Probe registration first. `kickstart` against an unregistered label exits
+    // non-zero with a bare code, giving the user no hint that the real problem
+    // is "service not installed". Since ProtocolMismatch directs users HERE to
+    // pick up a new binary, an opaque failure undercuts the version-skew story.
+    if !super::status::launchctl_is_registered("com.famp.broker", uid) {
+        return Err(DaemonError::NotInstalled);
+    }
     let status = Command::new("launchctl")
         .args(["kickstart", "-k", &format!("gui/{uid}/com.famp.broker")])
         .status()
@@ -55,7 +62,20 @@ fn restart_linux() -> Result<(), DaemonError> {
     let status = Command::new("systemctl")
         .args(["--user", "restart", "famp-broker.service"])
         .status()
-        .map_err(|_| DaemonError::SystemctlAbsent)?;
+        .map_err(|e| {
+            // Only NotFound means systemctl is genuinely absent. Any other IO
+            // error (permission denied, fork failure, …) must preserve the real
+            // errno — mislabeling it "systemctl not found" violates the project's
+            // no-swallow / no-mislabel convention. Mirrors install_linux's shape.
+            if e.kind() == std::io::ErrorKind::NotFound {
+                DaemonError::SystemctlAbsent
+            } else {
+                DaemonError::Io {
+                    path: PathBuf::from("systemctl"),
+                    source: e,
+                }
+            }
+        })?;
     if !status.success() {
         return Err(DaemonError::SystemctlFailed(status.code().unwrap_or(-1)));
     }
