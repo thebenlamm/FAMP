@@ -521,6 +521,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn map_bus_client_err_sandbox_eperm_contains_remedy() {
+        let sock = Path::new("/tmp/famp-test-wj6.sock");
+        let err = map_bus_client_err(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::SandboxEperm),
+            sock,
+        );
+        let CliError::BusClient { detail } = err else {
+            panic!("expected CliError::BusClient, got {err:?}");
+        };
+        assert!(
+            detail.contains("sandbox"),
+            "expected 'sandbox' in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("famp daemon install"),
+            "expected install remedy in detail, got: {detail}"
+        );
+    }
+
+    #[test]
+    fn map_bus_client_err_non_eperm_spawn_io_does_not_claim_sandbox() {
+        let io_err = std::io::Error::from_raw_os_error(2); // ENOENT, not sandbox EPERM/EACCES.
+        let sock = Path::new("/tmp/famp-test-wj6.sock");
+        let err = map_bus_client_err(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::Io(io_err)),
+            sock,
+        );
+        let CliError::BusClient { detail } = err else {
+            panic!("expected CliError::BusClient, got {err:?}");
+        };
+        assert!(
+            !detail.contains("sandbox"),
+            "non-EPERM spawn io must not claim sandbox, got: {detail}"
+        );
+    }
+
     /// `BusClientError::BrokerDidNotStart(SpawnError::BrokerDidNotStart)` —
     /// genuine 2s timeout, no errno — maps to a message mentioning the timeout
     /// and pointing at the broker log. Must NOT claim an os error.

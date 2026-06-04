@@ -260,6 +260,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn bus_err_detail_sandbox_eperm_contains_remedy() {
+        let sock = Path::new("/tmp/famp-test-k2p.sock");
+        let detail = bus_err_detail(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::SandboxEperm),
+            sock,
+        );
+        assert!(
+            detail.contains("sandbox"),
+            "expected 'sandbox' in detail, got: {detail}"
+        );
+        assert!(
+            detail.contains("famp daemon install"),
+            "expected install remedy in detail, got: {detail}"
+        );
+    }
+
+    #[test]
+    fn bus_err_detail_non_eperm_spawn_io_does_not_claim_sandbox() {
+        let io_err = std::io::Error::from_raw_os_error(2); // ENOENT, not sandbox EPERM/EACCES.
+        let sock = Path::new("/tmp/famp-test-k2p.sock");
+        let detail = bus_err_detail(
+            BusClientError::BrokerDidNotStart(spawn::SpawnError::Io(io_err)),
+            sock,
+        );
+        assert!(
+            !detail.contains("sandbox"),
+            "non-EPERM spawn io must not claim sandbox, got: {detail}"
+        );
+    }
+
     /// `BusClientError::BrokerDidNotStart(SpawnError::BrokerDidNotStart)` —
     /// genuine 2s timeout, no errno — maps to a message mentioning the
     /// timeout and pointing at the broker log. Must NOT claim an os error.

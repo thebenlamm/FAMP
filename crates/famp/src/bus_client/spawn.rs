@@ -121,4 +121,17 @@ mod tests {
         let res = spawn_broker_if_absent(&sock);
         assert!(res.is_ok(), "expected Ok, got {res:?}");
     }
+
+    #[test]
+    fn sandbox_eperm_display_names_cause_and_remedy() {
+        let message = SpawnError::SandboxEperm.to_string();
+        assert!(
+            message.contains("sandbox"),
+            "expected sandbox cause, got: {message}"
+        );
+        assert!(
+            message.contains("famp daemon install"),
+            "expected install remedy, got: {message}"
+        );
+    }
 }
