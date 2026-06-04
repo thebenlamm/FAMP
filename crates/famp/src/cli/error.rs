@@ -94,6 +94,12 @@ pub enum CliError {
     #[error("taskdir error")]
     TaskDir(#[from] famp_taskdir::TaskDirError),
 
+    /// Daemon lifecycle error (install/uninstall/status/restart). Surfaces the
+    /// `DaemonError` Display verbatim so the main-binary error chain walk
+    /// shows the full context without needing a separate `eprintln!` site.
+    #[error("daemon error: {0}")]
+    Daemon(#[from] crate::cli::daemon::install::DaemonError),
+
     #[error("envelope encode/sign failed")]
     Envelope(#[source] Box<dyn std::error::Error + Send + Sync>),
 

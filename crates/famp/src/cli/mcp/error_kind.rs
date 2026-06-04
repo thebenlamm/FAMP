@@ -23,7 +23,7 @@ use famp_bus::BusErrorKind;
 use famp_fsm::TaskFsmError;
 
 use crate::cli::error::CliError::{
-    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, Disconnected,
+    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, Daemon, Disconnected,
     Envelope, Exit, FsmTransition, Generic, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute,
     HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
     InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
@@ -105,6 +105,7 @@ impl crate::cli::error::CliError {
             Exit(_) => "exit",
             Generic(_) => "generic",
             NotImplemented { .. } => "not_implemented",
+            Daemon(_) => "daemon_error",
         }
     }
 }

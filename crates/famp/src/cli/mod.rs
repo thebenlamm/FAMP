@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 pub mod await_cmd;
 pub mod broker;
 pub mod config;
+pub mod daemon;
 pub mod error;
 pub mod home;
 pub mod identity;
@@ -115,6 +116,11 @@ pub enum Commands {
     /// inspect identities` lists registered sessions with mailbox
     /// metadata. D-06: `tasks` and `messages` ship in Phase 2.
     Inspect(inspect::InspectArgs),
+    /// Manage the FAMP broker as a persistent user-level service.
+    /// `famp daemon install/uninstall/status/restart` — launchd on macOS,
+    /// systemd --user on Linux. DAEMON-02 guardian plist review gate is
+    /// blocking: the service must not be loaded until guardian signs off.
+    Daemon(daemon::DaemonArgs),
 }
 
 /// Build a multi-thread tokio runtime and block on `fut`. Shared by every
@@ -195,5 +201,6 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Sessions(args) => block_on_async(sessions::run(args)),
         Commands::Whoami(args) => block_on_async(whoami::run(args)),
         Commands::Inspect(args) => block_on_async(inspect::run(args)),
+        Commands::Daemon(args) => block_on_async(daemon::run(args)),
     }
 }
