@@ -32,8 +32,8 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 
 ### Version Safety
 
-- [ ] **VER-01**: Client and broker exchange a protocol/build version at connect; a client whose protocol version is incompatible with the running (long-lived) daemon receives a loud, actionable version-skew error and refuses to proceed silently. Acceptance: a simulated skew yields the error and a non-zero exit; matching versions connect normally.
-- [ ] **VER-02**: `famp -V` reports a version consistent with the protocol/banner — the current `0.1.0` crate-version vs `0.5.x` banner discrepancy is reconciled to a single source of truth so version reporting is trustworthy for skew diagnosis. Acceptance: `famp -V`, the help banner, and the handshake version agree.
+- [x] **VER-01**: Client and broker exchange a protocol/build version at connect; a client whose protocol version is incompatible with the running (long-lived) daemon receives a loud, actionable version-skew error and refuses to proceed silently. Acceptance: a simulated skew yields the error and a non-zero exit; matching versions connect normally.
+- [x] **VER-02**: `famp -V` reports a version consistent with the protocol/banner — the current `0.1.0` crate-version vs `0.5.x` banner discrepancy is reconciled to a single source of truth so version reporting is trustworthy for skew diagnosis. Acceptance: `famp -V`, the help banner, and the handshake version agree.
 
 ### Onboarding & Documentation
 
@@ -67,8 +67,8 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 | DAEMON-04 | Phase 5 | Pending |
 | DAEMON-05 | Phase 5 | Pending |
 | DAEMON-06 | Phase 5 | Pending |
-| VER-01 | Phase 5 | Pending |
-| VER-02 | Phase 5 | Pending |
+| VER-01 | Phase 5 | Complete |
+| VER-02 | Phase 5 | Complete |
 | DOC-01 | Phase 6 | Pending |
 | DOC-02 | Phase 6 | Pending |
 | DOC-03 | Phase 6 | Pending |

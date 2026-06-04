@@ -97,7 +97,7 @@ Plans:
   5. On connect, client and broker exchange a protocol/build version; a client whose version is incompatible with the running daemon receives a loud actionable error and exits non-zero rather than proceeding silently. Compatible versions connect normally. `famp -V`, the help banner, and the handshake version all agree on the same value — the pre-existing `0.1.0`-crate-vs-`0.5.x`-banner discrepancy is resolved to a single source of truth.
 **Plans:** 5 plans
 Plans:
-- [ ] 05-01-PLAN.md — VER-02 version unification (0.11.0) + VER-01 client proto-mismatch enforcement
+- [x] 05-01-PLAN.md — VER-02 version unification (0.11.0) + VER-01 client proto-mismatch enforcement
 - [ ] 05-02-PLAN.md — `famp daemon` scaffold + plist generation (DAEMON-02 shape) + reviewable fixture
 - [ ] 05-03-PLAN.md — guardian plist sign-off gate (BLOCKING, pre-load, autonomous: false)
 - [ ] 05-04-PLAN.md — install/uninstall load + BOOT-02 sandbox refusal + Linux systemd/linger (DAEMON-01/04/06)
@@ -262,7 +262,7 @@ Rough ordering inside v1.0+ (not committed):
 | 2. UDS wire + CLI + MV-MCP rewire + hook subcommand | v0.9 | 14/14 | Complete | 2026-04-30 |
 | 3. Claude Code integration polish | v0.9 | 6/6 | Complete | 2026-05-03 |
 | 4. Federation CLI unwire + federation-CI preservation | v0.9 | 8/8 | Complete | 2026-05-04 |
-| 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 4/4 | Complete | 2026-05-04 |
+| 5. v0.9 Milestone Close — CC-07 + HOOK-04b + verification backfill | v0.9 | 1/5 | In Progress|  |
 | 1. Broker Diagnosis & Identity Inspection | v0.10 | 4/4 | Complete | 2026-05-10 |
 | 2. Task FSM & Message Visibility | v0.10 | 3/3 | Complete | 2026-05-10 |
 | 3. Load Verification & Integration Hardening | v0.10 | 3/3 | Complete | 2026-05-11 |

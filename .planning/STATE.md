@@ -4,14 +4,14 @@ milestone: v0.11
 milestone_name: Broker Daemon & Cross-Tool Bootstrap
 status: executing
 stopped_at: Phase 5 context gathered
-last_updated: "2026-06-04T18:38:57.940Z"
-last_activity: 2026-06-04 -- Phase 05 planning complete
+last_updated: "2026-06-04T19:13:14.903Z"
+last_activity: 2026-06-04
 progress:
   total_phases: 16
   completed_phases: 4
   total_plans: 18
-  completed_plans: 13
-  percent: 72
+  completed_plans: 14
+  percent: 78
 ---
 
 # STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
@@ -24,14 +24,14 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.11 makes that substrate *reliably reachable* — a service-managed daemon restores broker presence so any local client, sandboxed or not, always finds a broker.
 
-**Current focus:** Phase 5 — Daemon Service Management & Version Safety
+**Current focus:** Phase 05 — daemon-service-management-version-safety
 
 ## Current Position
 
-Phase: 5 — Daemon Service Management & Version Safety
-Plan: —
-Status: Ready to execute
-Last activity: 2026-06-04 -- Phase 05 planning complete
+Phase: 05 (daemon-service-management-version-safety) — EXECUTING
+Plan: 2 of 5
+Status: Plan 05-01 complete — executing Phase 05
+Last activity: 2026-06-04 — 05-01 complete: workspace 0.11.0, ProtocolMismatch enforcement, D-05 doc
 
 ```
 [Phase 4 ░░░░░░░░░░] [Phase 5 ░░░░░░░░░░] [Phase 6 ░░░░░░░░░░]
@@ -86,6 +86,8 @@ Last activity: 2026-06-04 -- Phase 05 planning complete
 - [Roadmap v0.11]: Phase numbering continues from v0.10 (4/5/6) rather than resetting to 1. Reason: v0.10 phase dirs `01/02/03` are still present under `.planning/phases/`; resetting would collide. New phase dirs: `04-broker-lifecycle-bootstrap/`, `05-daemon-service-version/`, `06-onboarding-docs/`.
 - [Roadmap v0.10]: Three-phase structure recut after matt-essentialist + zed-velocity-engineer review (2026-05-10): Phase 1 closes orphan-listener incident class end-to-end (broker + identities, RPC + CLI both); Phase 2 ships the I/O-bound enrichment (tasks + messages) and is where budget+cancel finally have something to enforce against; Phase 3 unchanged. **Rejected the original cut** (Phase 1 = RPC foundation with stub handlers; Phase 2 = all CLI) as yak-shaving — Phase 1's success criteria around budget+cancel were testing synthetic test-only handlers, not real work. The v0.10 user-visible win is closing the orphan-listener incident class; the recut ships that in one merge.
 - [Roadmap v0.10]: Read-only discipline (INSP-RPC-02) and crate version alignment (INSP-CRATE-03) treated as architectural invariants, not feature requirements — locked at roadmap time so plan-phase cannot soften them.
+- [05-01]: classify_hello_reply() extracted as pure fn from async connect() to enable unit tests without a live broker socket; BusClientError::ProtocolMismatch split from HelloFailed so bus_proto mismatch is distinctly typed and names `famp daemon restart` in its Display.
+- [05-01]: eprintln! used for HelloOk connect log (not tracing::info!) to avoid adding a new Cargo dep (plan verification constraint). Consistent with wait_for_disconnect usage in the same file.
 
 ## Issues / Blockers
 
@@ -165,12 +167,13 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | Phase 02 P02 | 20min | 2 tasks | 3 files |
 | Phase 03 P01 | 30 min | 2 tasks | 2 files |
 | Phase 03 P02 | 15 min | 2 tasks | 2 files |
+| Phase 05 P01 | 35 min | 2 tasks | 18 files |
 
 ## Session
 
-**Last session:** 2026-06-04T14:50:15.782Z
+**Last session:** 2026-06-04T19:13:14.897Z
 **Stopped At:** Phase 5 context gathered
-**Resume File:** .planning/phases/05-daemon-service-management-version-safety/05-CONTEXT.md
+**Resume File:** None
 
 ## Operator Next Steps
 
