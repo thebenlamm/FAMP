@@ -25,9 +25,9 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 
 - [ ] **DAEMON-01**: `famp daemon install` writes and loads a platform service that keeps exactly one broker running — a user-level launchd LaunchAgent on macOS, a systemd `--user` unit on Linux — and is idempotent (re-running does not create duplicates or error). Acceptance: after install, `famp inspect broker` reports `HEALTHY`; re-running install leaves exactly one service and one broker.
 - [ ] **DAEMON-02**: The generated macOS plist matches the guardian-reviewed shape exactly: `RunAtLoad=true`, `KeepAlive=true` (unconditional), `ProcessType=Background`, `StandardOutPath`/`StandardErrorPath` → `~/.famp/broker.log`, **no** `EnvironmentVariables` key, and `ProgramArguments` invoking the broker with `--no-idle-exit`. Acceptance: the generated plist contains exactly these keys/values, carries no secrets, and is approved by guardian against its review checklist before first load.
-- [ ] **DAEMON-03**: `famp daemon status` reports three distinguishable states — not-installed, installed-but-broker-down, running — including the broker pid and socket path when running; exits 0 when running and non-zero otherwise. Acceptance: each of the three states produces its distinct output and exit code.
+- [x] **DAEMON-03**: `famp daemon status` reports three distinguishable states — not-installed, installed-but-broker-down, running — including the broker pid and socket path when running; exits 0 when running and non-zero otherwise. Acceptance: each of the three states produces its distinct output and exit code.
 - [ ] **DAEMON-04**: `famp daemon uninstall` unloads and removes the service file, leaving no orphaned service registration; idempotent. Acceptance: after uninstall the service is absent from `launchctl`/`systemctl --user` listings; re-running uninstall is a no-op success (exit 0).
-- [ ] **DAEMON-05**: `famp daemon restart` reloads the service so a replaced on-disk binary (e.g. after `cargo install`/`brew upgrade`) is picked up. Acceptance: after replacing the binary and running restart, the running broker is the new binary (verifiable via version handshake / `famp daemon status`).
+- [x] **DAEMON-05**: `famp daemon restart` reloads the service so a replaced on-disk binary (e.g. after `cargo install`/`brew upgrade`) is picked up. Acceptance: after replacing the binary and running restart, the running broker is the new binary (verifiable via version handshake / `famp daemon status`).
 - [ ] **DAEMON-06**: On Linux, when systemd `--user` (or `loginctl enable-linger`) is unavailable, `famp daemon install` fails with a clear message pointing to the documented manual fallback rather than producing a silent half-install. Acceptance: systemd-present path installs and enables the unit; systemd-absent path exits non-zero with actionable guidance.
 
 ### Version Safety
@@ -63,9 +63,9 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 | BOOT-02 | Phase 5 | Pending |
 | DAEMON-01 | Phase 5 | Pending |
 | DAEMON-02 | Phase 5 | Pending |
-| DAEMON-03 | Phase 5 | Pending |
+| DAEMON-03 | Phase 5 | Complete |
 | DAEMON-04 | Phase 5 | Pending |
-| DAEMON-05 | Phase 5 | Pending |
+| DAEMON-05 | Phase 5 | Complete |
 | DAEMON-06 | Phase 5 | Pending |
 | VER-01 | Phase 5 | Complete |
 | VER-02 | Phase 5 | Complete |
