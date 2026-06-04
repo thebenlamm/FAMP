@@ -426,6 +426,12 @@ fn map_bus_client_err(e: BusClientError, sock: &Path) -> CliError {
             kind: BusErrorKind::Internal,
             message: format!("unexpected reply: {msg}"),
         },
+        // VER-01: ProtocolMismatch (bus_proto integer mismatch) — the Display
+        // already names `famp daemon restart` (D-02). Surface as BusClient so
+        // the register retry loop treats it as a non-retriable hard error.
+        BusClientError::ProtocolMismatch { .. } => CliError::BusClient {
+            detail: format!("{e}"),
+        },
     }
 }
 

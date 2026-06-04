@@ -168,6 +168,9 @@ fn bus_err_detail(err: BusClientError, sock: &Path) -> String {
         BusClientError::Frame(err) => format!("frame codec error talking to broker: {err}"),
         BusClientError::Decode(err) => format!("strict-parse of broker reply failed: {err}"),
         BusClientError::UnexpectedReply(msg) => format!("unexpected broker reply: {msg}"),
+        // VER-01: ProtocolMismatch (bus_proto integer mismatch) — the Display
+        // already names `famp daemon restart` (D-02).
+        BusClientError::ProtocolMismatch { .. } => format!("{err}"),
     }
 }
 

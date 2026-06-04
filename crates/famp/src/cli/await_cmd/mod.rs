@@ -296,6 +296,11 @@ pub(crate) async fn connect_bound(sock: &Path, identity: &str) -> Result<BusClie
             // funnel through BusClient { detail } which preserves the
             // Debug chain (BrokerDidNotStart wraps SpawnError, Io wraps
             // io::Error with kind).
+            // VER-01: ProtocolMismatch (bus_proto integer mismatch) — surface
+            // the Display string which already names `famp daemon restart`.
+            BusClientError::ProtocolMismatch { .. } => CliError::BusClient {
+                detail: format!("{e}"),
+            },
             BusClientError::Io(_)
             | BusClientError::BrokerDidNotStart(_)
             | BusClientError::UnexpectedReply(_) => CliError::BusClient {

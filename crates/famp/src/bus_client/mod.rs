@@ -48,10 +48,54 @@ pub enum BusClientError {
     Decode(#[source] famp_canonical::CanonicalError),
     #[error("Hello handshake refused: {kind:?}: {message}")]
     HelloFailed { kind: BusErrorKind, message: String },
+    /// Bus protocol version mismatch. The daemon is running an old protocol
+    /// version. D-02: error MUST name `famp daemon restart`.
+    #[error(
+        "bus protocol mismatch ({broker_message}); \
+         run `famp daemon restart` to pick up the new binary"
+    )]
+    ProtocolMismatch { broker_message: String },
     #[error("unexpected broker reply: {0}")]
     UnexpectedReply(String),
     #[error("broker did not start")]
     BrokerDidNotStart(#[source] spawn::SpawnError),
+}
+
+/// Classify a Hello reply into a `BusClient` result.
+///
+/// Extracted as a pure free function so tests can exercise the match-arm
+/// logic without a live broker socket. Called by `BusClient::connect`.
+///
+/// - `HelloOk` → logs the CLIENT build version (D-03 Decision B: daemon build
+///   surfaced separately via `famp daemon status`/`InspectBrokerReply.build_version`)
+///   and returns `Ok(())`.
+/// - `HelloErr { BrokerProtoMismatch }` → returns `ProtocolMismatch` naming
+///   `famp daemon restart` (D-01/D-02).
+/// - Any other `HelloErr` or `Err` → returns `HelloFailed`.
+/// - Anything else → returns `UnexpectedReply`.
+fn classify_hello_reply(reply: BusReply) -> Result<(), BusClientError> {
+    match reply {
+        BusReply::HelloOk { .. } => {
+            // D-03 Decision B: log the CLIENT build only. Daemon build is
+            // surfaced via `famp daemon status` (InspectBrokerReply.build_version).
+            // No connect-time Inspect round-trip; no HelloOk wire field added.
+            eprintln!(
+                "famp: connected to broker (client_build={}, bus_proto={BUS_PROTO_VERSION})",
+                env!("CARGO_PKG_VERSION")
+            );
+            Ok(())
+        }
+        BusReply::HelloErr {
+            kind: BusErrorKind::BrokerProtoMismatch,
+            message,
+        } => Err(BusClientError::ProtocolMismatch {
+            broker_message: message,
+        }),
+        BusReply::HelloErr { kind, message } | BusReply::Err { kind, message } => {
+            Err(BusClientError::HelloFailed { kind, message })
+        }
+        other => Err(BusClientError::UnexpectedReply(format!("{other:?}"))),
+    }
 }
 
 impl BusClient {
@@ -105,13 +149,8 @@ impl BusClient {
             client: format!("famp-cli/{}", env!("CARGO_PKG_VERSION")),
             bind_as: client.bind_as.clone(),
         };
-        match client.send_recv(hello).await? {
-            BusReply::HelloOk { .. } => Ok(client),
-            BusReply::HelloErr { kind, message } | BusReply::Err { kind, message } => {
-                Err(BusClientError::HelloFailed { kind, message })
-            }
-            other => Err(BusClientError::UnexpectedReply(format!("{other:?}"))),
-        }
+        let reply = client.send_recv(hello).await?;
+        classify_hello_reply(reply).map(|()| client)
     }
 
     /// The optional D-10 proxy identity supplied at `connect` time.
@@ -210,6 +249,46 @@ pub fn bus_dir(sock_path: &Path) -> &Path {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use famp_bus::BusReply;
+
+    /// VER-01: A `HelloErr { BrokerProtoMismatch }` reply must produce
+    /// `BusClientError::ProtocolMismatch` whose Display contains both
+    /// "famp daemon restart" (D-02) and the broker's original message body.
+    #[test]
+    fn proto_mismatch_names_restart() {
+        let broker_msg =
+            "client bus_proto=2 is not supported by this broker; expected bus_proto=1".to_owned();
+        let reply = BusReply::HelloErr {
+            kind: famp_bus::BusErrorKind::BrokerProtoMismatch,
+            message: broker_msg.clone(),
+        };
+        let err = classify_hello_reply(reply).unwrap_err();
+        let display = err.to_string();
+        assert!(
+            display.contains("famp daemon restart"),
+            "error must name `famp daemon restart`; got: {display}"
+        );
+        assert!(
+            display.contains(&broker_msg),
+            "error must relay broker message; got: {display}"
+        );
+        // Confirm it is the ProtocolMismatch variant, not HelloFailed.
+        assert!(
+            matches!(err, BusClientError::ProtocolMismatch { .. }),
+            "must be ProtocolMismatch variant; got: {err:?}"
+        );
+    }
+
+    /// VER-01: A `HelloOk` reply must produce `Ok(())` — matching proto
+    /// connects normally without error.
+    #[test]
+    fn matching_proto_connects() {
+        let reply = BusReply::HelloOk {
+            bus_proto: famp_bus::BUS_PROTO_VERSION,
+        };
+        let result = classify_hello_reply(reply);
+        assert!(result.is_ok(), "HelloOk must yield Ok(()); got: {result:?}");
+    }
 
     #[test]
     fn resolve_sock_path_honours_env_override() {

@@ -11,6 +11,11 @@ use serde::{
 use crate::{BusErrorKind, MailboxName};
 
 /// Current local bus protocol version.
+///
+/// **Bump this ONLY when the wire frame changes** (new message field,
+/// removed field, changed semantics). Never bump automatically. Never
+/// wire this to `CARGO_PKG_VERSION` — these are separate axes.
+/// Stays at 1 through Phase 5.
 pub const BUS_PROTO_VERSION: u32 = 1;
 
 const CHANNEL_PATTERN: &str = "^#[a-z0-9][a-z0-9_-]{0,31}$";
