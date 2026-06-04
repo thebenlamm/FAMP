@@ -144,12 +144,8 @@ fn bus_err_detail(err: BusClientError, sock: &Path) -> String {
             sock.display()
         ),
         BusClientError::BrokerDidNotStart(spawn_err) => match spawn_err {
-            spawn::SpawnError::Io(io) => format!(
-                "tried to spawn a broker and process creation failed (spawn io: {io}) — \
-                 if running inside a sandbox, broker process creation (fork/setsid) may be \
-                 blocked; start a broker outside the sandbox or set FAMP_BUS_SOCKET to a \
-                 reachable broker"
-            ),
+            spawn::SpawnError::Io(io) => spawn_io_detail(io),
+            spawn::SpawnError::SandboxEperm => spawn::SpawnError::SandboxEperm.to_string(),
             spawn::SpawnError::CurrentExe(io) => format!(
                 "tried to spawn a broker but could not locate the famp executable (current-exe: {io})"
             ),
@@ -173,6 +169,18 @@ fn bus_err_detail(err: BusClientError, sock: &Path) -> String {
         BusClientError::Decode(err) => format!("strict-parse of broker reply failed: {err}"),
         BusClientError::UnexpectedReply(msg) => format!("unexpected broker reply: {msg}"),
     }
+}
+
+fn spawn_io_detail(io: std::io::Error) -> String {
+    let sandbox_hint = if matches!(
+        io.raw_os_error(),
+        Some(code) if code == libc::EPERM || code == libc::EACCES
+    ) {
+        " — if running inside a sandbox, broker process creation (fork/setsid) may be blocked; start a broker outside the sandbox or set FAMP_BUS_SOCKET to a reachable broker"
+    } else {
+        ""
+    };
+    format!("tried to spawn a broker and process creation failed (spawn io: {io}){sandbox_hint}")
 }
 
 /// Open the `BusClient` if not already connected. Idempotent.

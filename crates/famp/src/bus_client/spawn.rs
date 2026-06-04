@@ -24,6 +24,10 @@ use std::process::{Command, Stdio};
 pub enum SpawnError {
     #[error("io error spawning broker")]
     Io(#[source] std::io::Error),
+    #[error(
+        "can't create a broker inside a sandbox; run `famp daemon install` from a normal shell"
+    )]
+    SandboxEperm,
     #[error("failed to locate current executable")]
     CurrentExe(#[source] std::io::Error),
     #[error("broker did not start within 2s")]
@@ -56,6 +60,7 @@ pub fn spawn_broker_if_absent(sock_path: &Path) -> Result<(), SpawnError> {
         ))
     })?;
     std::fs::create_dir_all(bus_dir).map_err(SpawnError::Io)?;
+    preflight_bind_probe(bus_dir)?;
 
     let log_path = bus_dir.join("broker.log");
     let log = std::fs::OpenOptions::new()
@@ -102,6 +107,26 @@ pub fn spawn_broker_if_absent(sock_path: &Path) -> Result<(), SpawnError> {
         }
     }
     Err(SpawnError::BrokerDidNotStart)
+}
+
+fn preflight_bind_probe(bus_dir: &Path) -> Result<(), SpawnError> {
+    let probe_path = bus_dir.join(format!(".probe-{}.sock", std::process::id()));
+    match std::os::unix::net::UnixListener::bind(&probe_path) {
+        Ok(listener) => {
+            drop(listener);
+            std::fs::remove_file(&probe_path).map_err(SpawnError::Io)?;
+            Ok(())
+        }
+        Err(err)
+            if matches!(
+                err.raw_os_error(),
+                Some(code) if code == libc::EPERM || code == libc::EACCES
+            ) =>
+        {
+            Err(SpawnError::SandboxEperm)
+        }
+        Err(_err) => Ok(()),
+    }
 }
 
 #[cfg(test)]

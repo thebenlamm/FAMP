@@ -386,11 +386,10 @@ fn map_bus_client_err(e: BusClientError, sock: &Path) -> CliError {
         },
         BusClientError::BrokerDidNotStart(spawn_err) => match spawn_err {
             spawn::SpawnError::Io(io) => CliError::BusClient {
-                detail: format!(
-                    "tried to spawn a broker and process creation failed (spawn io: {io}) — \
-                     if running inside a sandbox, broker process creation (fork/setsid) may be blocked; \
-                     start a broker outside the sandbox or set FAMP_BUS_SOCKET to a reachable broker"
-                ),
+                detail: spawn_io_detail(io),
+            },
+            spawn::SpawnError::SandboxEperm => CliError::BusClient {
+                detail: spawn::SpawnError::SandboxEperm.to_string(),
             },
             spawn::SpawnError::CurrentExe(io) => CliError::BusClient {
                 detail: format!(
@@ -428,6 +427,18 @@ fn map_bus_client_err(e: BusClientError, sock: &Path) -> CliError {
             message: format!("unexpected reply: {msg}"),
         },
     }
+}
+
+fn spawn_io_detail(io: std::io::Error) -> String {
+    let sandbox_hint = if matches!(
+        io.raw_os_error(),
+        Some(code) if code == libc::EPERM || code == libc::EACCES
+    ) {
+        " — if running inside a sandbox, broker process creation (fork/setsid) may be blocked; start a broker outside the sandbox or set FAMP_BUS_SOCKET to a reachable broker"
+    } else {
+        ""
+    };
+    format!("tried to spawn a broker and process creation failed (spawn io: {io}){sandbox_hint}")
 }
 
 #[cfg(test)]
