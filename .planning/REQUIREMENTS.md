@@ -18,7 +18,7 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 
 ### Bootstrap & Sandbox Diagnostics
 
-- [ ] **BOOT-01**: When broker spawn fails because `bind()` returns EPERM (sandboxed shell), the client surfaces an actionable error naming the cause and the remedy — e.g. "can't create a broker inside a sandbox; run `famp daemon install` from a normal shell" — instead of the generic "broker unreachable". `spawn.rs:92` no longer swallows the EPERM. Acceptance: a test injecting/simulating EPERM-on-bind yields the actionable message and distinguishes EPERM from other spawn failures; extends the connect/spawn-stage disambiguation in commits `4da30a3`/`ebbf1d3`.
+- [x] **BOOT-01**: When broker spawn fails because `bind()` returns EPERM (sandboxed shell), the client surfaces an actionable error naming the cause and the remedy — e.g. "can't create a broker inside a sandbox; run `famp daemon install` from a normal shell" — instead of the generic "broker unreachable". `spawn.rs:92` no longer swallows the EPERM. Acceptance: a test injecting/simulating EPERM-on-bind yields the actionable message and distinguishes EPERM from other spawn failures; extends the connect/spawn-stage disambiguation in commits `4da30a3`/`ebbf1d3`.
 - [ ] **BOOT-02**: `famp daemon install` refuses to run when invoked inside a sandbox (the same condition that would make the broker's `bind()` fail), exiting non-zero with guidance, rather than writing a service that can never bind. Acceptance: the sandbox-detected path exits 1 with an explanation; the non-sandboxed path proceeds.
 
 ### Daemon Service Management — `famp daemon …`
@@ -59,7 +59,7 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 |-------------|-------|--------|
 | BLC-01 | Phase 4 | Complete |
 | BLC-02 | Phase 4 | Complete |
-| BOOT-01 | Phase 4 | Pending |
+| BOOT-01 | Phase 4 | Complete |
 | BOOT-02 | Phase 5 | Pending |
 | DAEMON-01 | Phase 5 | Pending |
 | DAEMON-02 | Phase 5 | Pending |
