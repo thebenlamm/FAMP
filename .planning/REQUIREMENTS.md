@@ -13,8 +13,8 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 
 ### Broker Lifecycle — `famp broker --no-idle-exit`
 
-- [ ] **BLC-01**: `famp broker --no-idle-exit` runs the broker with the 300s idle self-terminate (Arm 4, `crates/famp/src/cli/broker/mod.rs`) disabled — a broker started with the flag and zero connected clients is still alive after the idle window elapses. Acceptance: a test (tokio time-pause or equivalent) advances past `IDLE_TIMEOUT` with the flag set and the broker has not exited.
-- [ ] **BLC-02**: `famp broker` *without* the flag retains the current 300s idle-exit behavior unchanged (regression guard for the `56b2293` orphan-leak fix). Acceptance: existing BROKER-04/04b idle-exit tests still pass; default-path behavior is byte-for-byte the prior behavior.
+- [x] **BLC-01**: `famp broker --no-idle-exit` runs the broker with the 300s idle self-terminate (Arm 4, `crates/famp/src/cli/broker/mod.rs`) disabled — a broker started with the flag and zero connected clients is still alive after the idle window elapses. Acceptance: a test (tokio time-pause or equivalent) advances past `IDLE_TIMEOUT` with the flag set and the broker has not exited.
+- [x] **BLC-02**: `famp broker` *without* the flag retains the current 300s idle-exit behavior unchanged (regression guard for the `56b2293` orphan-leak fix). Acceptance: existing BROKER-04/04b idle-exit tests still pass; default-path behavior is byte-for-byte the prior behavior.
 
 ### Bootstrap & Sandbox Diagnostics
 
@@ -57,8 +57,8 @@ Requirements for the v0.11 release. Each maps to a roadmap phase below.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BLC-01 | Phase 4 | Pending |
-| BLC-02 | Phase 4 | Pending |
+| BLC-01 | Phase 4 | Complete |
+| BLC-02 | Phase 4 | Complete |
 | BOOT-01 | Phase 4 | Pending |
 | BOOT-02 | Phase 5 | Pending |
 | DAEMON-01 | Phase 5 | Pending |
