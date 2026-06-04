@@ -109,7 +109,7 @@ pub fn spawn_broker_if_absent(sock_path: &Path) -> Result<(), SpawnError> {
     Err(SpawnError::BrokerDidNotStart)
 }
 
-fn preflight_bind_probe(bus_dir: &Path) -> Result<(), SpawnError> {
+pub(crate) fn preflight_bind_probe(bus_dir: &Path) -> Result<(), SpawnError> {
     let probe_path = bus_dir.join(format!(".probe-{}.sock", std::process::id()));
     match std::os::unix::net::UnixListener::bind(&probe_path) {
         Ok(listener) => {
