@@ -10,7 +10,7 @@
 //! the machine.
 //!
 //! To run these tests locally:
-//!   FAMP_RUN_LAUNCHCTL_TESTS=1 cargo test -p famp --test daemon_lifecycle
+//!   FAMP_RUN_LAUNCHCTL_TESTS=1 cargo test -p famp --test daemon_lifecycle -- --ignored
 //!
 //! Pre-condition: no `com.famp.broker` LaunchAgent currently registered
 //! (verified in RESEARCH.md Runtime State Inventory).
@@ -61,11 +61,24 @@ fn broker_registered() -> bool {
 ///
 /// A defensive final `uninstall` runs BEFORE any assertion so a failed
 /// assertion can never leave a persistent LaunchAgent on the machine.
+///
+/// `#[ignore]`: this test mutates the live `gui/$UID` launchd domain, so it is
+/// not run by a default `cargo test`. Crucially, `#[ignore]` makes the harness
+/// report it as **ignored**, not **passed** — the previous early-`return` gate
+/// made a zero-assertion body report PASS, falsely implying DAEMON-01/04 were
+/// verified in CI (WR-01). Run explicitly with:
+///   FAMP_RUN_LAUNCHCTL_TESTS=1 cargo test -p famp --test daemon_lifecycle -- --ignored
 #[test]
+#[ignore = "mutates the live launchd gui/$UID domain; run with -- --ignored and FAMP_RUN_LAUNCHCTL_TESTS=1"]
 fn daemon_lifecycle_is_idempotent() {
     if !launchctl_tests_enabled() {
-        // Gate: not running launchctl integration tests in this environment.
-        // CI stays green without launchctl dependency.
+        // Belt-and-suspenders: even under `--ignored`, refuse to run against a
+        // live session unless explicitly opted in. Emit an explicit SKIP so a
+        // green run is never mistaken for a verified one.
+        eprintln!(
+            "SKIP daemon_lifecycle_is_idempotent: FAMP_RUN_LAUNCHCTL_TESTS unset \
+             (set it to exercise the live launchctl bootstrap/bootout path)"
+        );
         return;
     }
 

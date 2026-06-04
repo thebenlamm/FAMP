@@ -3,8 +3,9 @@
 //! This test verifies that `famp daemon restart` picks up a freshly installed
 //! on-disk binary via `launchctl kickstart -k`.
 //!
-//! Gate: `FAMP_RUN_LAUNCHCTL_TESTS` must be set in the environment. Without
-//! it, the test body returns immediately (CI green, no launchctl dependency).
+//! Gate: this test is `#[ignore]`d (so a default `cargo test` reports it as
+//! IGNORED, not PASSED) AND requires `FAMP_RUN_LAUNCHCTL_TESTS` set. Run with:
+//!   FAMP_RUN_LAUNCHCTL_TESTS=1 cargo test -p famp --test daemon_restart_binary_pickup -- --ignored
 //!
 //! Full manual validation (VALIDATION.md):
 //!   1. Note current `famp -V` (e.g. "famp 0.11.0")
@@ -29,12 +30,21 @@ fn launchctl_tests_enabled() -> bool {
 /// in `famp daemon status`) is the VALIDATION.md manual step — it requires a
 /// live registered service and a real binary replacement.
 ///
-/// When `FAMP_RUN_LAUNCHCTL_TESTS` is unset, this test returns immediately
-/// (CI green, no launchctl dependency).
+/// `#[ignore]`: requires a live registered service, so it is not run by a
+/// default `cargo test` — and is reported as **ignored**, not **passed**, so a
+/// zero-assertion CI run is never mistaken for verified coverage (WR-01). Run
+/// explicitly with:
+///   FAMP_RUN_LAUNCHCTL_TESTS=1 cargo test -p famp --test daemon_restart_binary_pickup -- --ignored
 #[test]
+#[ignore = "requires a live registered launchd service; run with -- --ignored and FAMP_RUN_LAUNCHCTL_TESTS=1"]
 fn restart_picks_up_new_binary() {
     if !launchctl_tests_enabled() {
-        // Gate: not running launchctl integration tests in this environment.
+        // Belt-and-suspenders even under `--ignored`: emit an explicit SKIP so a
+        // green run is never mistaken for a verified one.
+        eprintln!(
+            "SKIP restart_picks_up_new_binary: FAMP_RUN_LAUNCHCTL_TESTS unset \
+             (set it to exercise the live `famp daemon restart` path)"
+        );
         return;
     }
 
