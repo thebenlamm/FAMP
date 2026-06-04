@@ -18,7 +18,7 @@
 - [x] **Phase 1: Broker Diagnosis & Identity Inspection** — completed 2026-05-10 — `famp.inspect.*` namespace mounted on broker UDS, all three crates (`-proto`, `-client`, `-server`) shipped, `famp inspect broker` and `famp inspect identities` end-to-end (RPC + CLI). Closes the orphan-listener incident class in one merge.
 - [x] **Phase 2: Task FSM & Message Visibility** — completed 2026-05-10 — `famp inspect tasks` and `famp inspect messages` end-to-end (RPC + CLI). I/O-bound handlers (taskdir + mailbox file walks) with 500 ms latency budget (INSP-RPC-03) and cancellable-handler discipline (INSP-RPC-04, 1000-concurrent-cancel test passing).
 - [x] **Phase 3: Load Verification & Integration Hardening** — load test proving inspect-call traffic cannot starve bus message throughput (INSP-RPC-05); end-to-end orphan-listener scenario re-exercises Phase 1's `inspect broker` under integration conditions; doc + migration notes. **Complete 2026-05-11** (GAP-03-01 resolved; saturated direct-RPC ratio 0.82-1.01 vs prior 0.17).
-- [ ] **Phase 4: Broker Lifecycle & Bootstrap Diagnostics** — `famp broker --no-idle-exit` flag (hard prerequisite for daemon — a daemon-managed broker must not self-terminate), its regression guard, and actionable EPERM-on-bind error surfacing the sandbox-constraint explanation.
+- [x] **Phase 4: Broker Lifecycle & Bootstrap Diagnostics** — completed 2026-06-04 — `famp broker --no-idle-exit` flag (hard prerequisite for daemon — a daemon-managed broker must not self-terminate), its regression guard, and actionable EPERM-on-bind error surfacing the sandbox-constraint explanation.
 - [ ] **Phase 5: Daemon Service Management & Version Safety** — `famp daemon install/uninstall/status/restart` cross-platform service lifecycle (launchd macOS, systemd `--user` Linux) plus version handshake at connect and `famp -V` banner reconciliation.
 - [ ] **Phase 6: Onboarding & Cross-Platform Docs** — README quickstart (`famp daemon install` once → both Claude Code and Codex connect forever), zero-setup bridge line (`famp broker --no-idle-exit`), and explicit cross-platform support boundary noting unsupported configurations.
 
@@ -78,7 +78,11 @@ Plans:
   1. A broker started with `famp broker --no-idle-exit` and zero connected clients is still alive — verified by a test using tokio time-pause or equivalent — after the 300-second idle window elapses. The flag appears in `--help` output with a one-line description.
   2. A broker started without the flag (the existing default) still self-terminates after 300 seconds of idle; the existing BROKER-04/04b idle-exit tests pass byte-for-byte with no behavior change, confirming the `56b2293` orphan-leak fix is intact.
   3. When `spawn.rs:92`'s `bind()` call returns EPERM (sandboxed shell, as in Codex's seatbelt), the client surfaces a message distinguishing the sandbox cause from other spawn failures — naming the cause ("can't create a broker inside a sandbox") and the remedy ("run `famp daemon install` from a normal shell") — instead of swallowing the errno via `let _ =`. A test injecting or simulating EPERM-on-bind asserts the actionable message and confirms EPERM is distinguished from non-EPERM spawn failures. This directly extends the connect/spawn-stage disambiguation shipped in commits `4da30a3`/`ebbf1d3`.
-**Plans:** TBD
+**Plans:** 3/3 complete
+Plans:
+- [x] 04-01-PLAN.md — `famp broker --no-idle-exit` flag + no-idle-exit regression coverage
+- [x] 04-02-PLAN.md — SandboxEperm parent-side bind probe + CLI/MCP actionable diagnostics
+- [x] 04-03-PLAN.md — Deployed binary refresh + full suite/deployed help verification
 **Constraint notes:** Changes land in `crates/famp/src/cli/broker/mod.rs` (BLC-01/02) and `crates/famp/src/bus_client/spawn.rs` (BOOT-01); protocol-primitive crates (`famp-bus`, `famp-canonical`, `famp-crypto`) stay untouched. Run `just install` before closing a PR that changes the spawn-error surface (the installed `~/.cargo/bin/famp` is what agent sessions read). Pre-commit hook remains fmt-check only.
 
 ### Phase 5: Daemon Service Management & Version Safety
@@ -256,7 +260,7 @@ Rough ordering inside v1.0+ (not committed):
 | 1. Broker Diagnosis & Identity Inspection | v0.10 | 4/4 | Complete | 2026-05-10 |
 | 2. Task FSM & Message Visibility | v0.10 | 3/3 | Complete | 2026-05-10 |
 | 3. Load Verification & Integration Hardening | v0.10 | 3/3 | Complete | 2026-05-11 |
-| 4. Broker Lifecycle & Bootstrap Diagnostics | v0.11 | 0/TBD | Not started | - |
+| 4. Broker Lifecycle & Bootstrap Diagnostics | v0.11 | 3/3 | Complete | 2026-06-04 |
 | 5. Daemon Service Management & Version Safety | v0.11 | 0/TBD | Not started | - |
 | 6. Onboarding & Cross-Platform Docs | v0.11 | 0/TBD | Not started | - |
 

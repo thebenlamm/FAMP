@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: Broker Daemon & Cross-Tool Bootstrap
-status: executing
-stopped_at: "Completed 04-02-PLAN.md"
-last_updated: "2026-06-04T14:07:53.944Z"
+status: ready_to_plan
+stopped_at: "Completed Phase 04 — ready for /gsd:plan-phase 5"
+last_updated: "2026-06-04T14:21:08Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 16
-  completed_phases: 3
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 12
-  percent: 92
+  completed_plans: 13
+  percent: 31
 ---
 
 # STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
@@ -24,13 +24,13 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.11 makes that substrate *reliably reachable* — a service-managed daemon restores broker presence so any local client, sandboxed or not, always finds a broker.
 
-**Current focus:** Phase 04 — broker-lifecycle-bootstrap-diagnostics
+**Current focus:** Phase 5 — Daemon Service Management & Version Safety
 
 ## Current Position
 
-Phase: 04 (broker-lifecycle-bootstrap-diagnostics) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Phase: 5 — Daemon Service Management & Version Safety
+Plan: —
+Status: Ready to plan
 Last activity: 2026-06-04
 
 ```
@@ -168,8 +168,8 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 ## Session
 
-**Last session:** 2026-06-04T14:07:53.939Z
-**Stopped At:** Completed 04-02-PLAN.md
+**Last session:** 2026-06-04T14:16:46.830Z
+**Stopped At:** Completed Phase 04 — ready for /gsd:plan-phase 5
 **Resume File:** None
 
 ## Operator Next Steps
