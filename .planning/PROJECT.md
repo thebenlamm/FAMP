@@ -44,6 +44,9 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 Restore guaranteed broker presence via a service-managed daemon so FAMP works for both Claude Code and Codex without per-user broker babysitting. Detailed requirements: see `.planning/REQUIREMENTS.md` v0.11 section.
 
+- [x] Phase 4: Broker Lifecycle & Bootstrap Diagnostics — *Validated 2026-06-04. `famp broker --no-idle-exit` ships with paused-time regression coverage; default 300s idle-exit behavior remains intact; SandboxEperm diagnostics surface the sandbox cause plus `famp daemon install` remedy through both CLI and MCP; deployed `~/.cargo/bin/famp` refreshed via `just install`; full Phase 04 gate passed outside the sandbox (lib 157/157, broker_lifecycle 6/6, broker_spawn_race 1/1).*
+- [ ] Phase 5: Daemon Service Management & Version Safety — next phase to plan.
+
 ### Shipped — v0.10 Inspector & Observability — COMPLETE ✓ (shipped 2026-05-11)
 
 Read-only inspector surface on the v0.9 broker, consumed by a `famp inspect` CLI subcommand. Closes the conversation-state opacity gap that produced three recurring v0.9 incidents (orphan socket-holder vs stale PID file, task FSM invisibility, stale-mailbox relays). Independent of the v1.0 federation gate. Detailed requirements: see `.planning/REQUIREMENTS.md` v0.10 section.
@@ -316,4 +319,4 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. 8-tool MCP surface stable across v0.8 → v0.9 → v1.0.
 
 ---
-*Last updated: 2026-06-03 — v0.11 Broker Daemon & Cross-Tool Bootstrap milestone opened (service-managed broker to restore the broker-presence guarantee removed by 56b2293; fixes Codex cold-start bootstrap under sandbox). v0.10 Inspector & Observability complete (3/3 phases, 10/10 plans, 26/26 requirements). `famp inspect broker/identities/tasks/messages` ships on the v0.9 broker UDS with read-only discipline, 500ms budget, cancellable handlers, and non-blocking bounded dispatch (MAX_CONCURRENT_INSPECT_REQUESTS=1). GAP-03-01 closed; saturated direct-RPC no-starvation proof delivered. Operator migration guide at `docs/MIGRATION-v0.9-to-v0.10.md`.*
+*Last updated: 2026-06-04 — v0.11 Phase 4 complete. Long-lived broker prerequisite landed (`famp broker --no-idle-exit`), default idle-exit behavior remains covered, SandboxEperm diagnostics now name the sandbox cause and `famp daemon install` remedy on CLI and MCP surfaces, and the deployed `~/.cargo/bin/famp` has been refreshed. Next: plan Phase 5 daemon service management and version safety.*
