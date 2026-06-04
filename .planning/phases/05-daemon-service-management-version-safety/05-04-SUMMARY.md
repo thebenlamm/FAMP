@@ -105,6 +105,7 @@ The GUARDIAN-SIGNOFF.md condition ("loaded plist must interpolate the REAL home 
 
 1. **Task 1: BOOT-02 sandbox guard + macOS bootstrap + Linux systemd path** - `d644b2b` (feat)
 2. **Task 2: Idempotent uninstall + DAEMON-01/04 lifecycle tests** - `a4db878` (feat)
+3. **Post-task fix: Linux ExecStart bug (broker --no-idle-exit missing)** - `a9fd49a` (fix)
 
 ## Files Created/Modified
 
@@ -138,6 +139,13 @@ The GUARDIAN-SIGNOFF.md condition ("loaded plist must interpolate the REAL home 
 - **Files modified:** `crates/famp/tests/daemon_lifecycle.rs`
 - **Commit:** `a4db878`
 
+**3. [Rule 1 - Bug] Linux systemd ExecStart missing subcommand and flag**
+- **Found during:** Post-completion advisor review
+- **Issue:** `unit_content` had `ExecStart={famp_bin}` (just the binary path) — missing ` broker --no-idle-exit`. systemd would restart-loop famp with no args (clap prints help, exits non-zero). RESEARCH Pattern 5 and the plan's interface note both specify the full invocation.
+- **Fix:** `ExecStart={famp_bin} broker --no-idle-exit` in the unit template string.
+- **Files modified:** `crates/famp/src/cli/daemon/install.rs`
+- **Commit:** `a9fd49a`
+
 ## TDD Gate Compliance
 
 Both tasks are `tdd="true"`. `refuses_in_sandbox` was written alongside `check_not_sandboxed` in one commit — the function must exist for the test to compile (same precedent as Plans 02 and 05). No standalone RED commit is possible for this module shape.
@@ -168,3 +176,4 @@ No new threat surface beyond what the plan's threat model documented:
 - FOUND: `crates/famp/tests/daemon_lifecycle.rs`
 - FOUND: commit `d644b2b` (Task 1: install wiring)
 - FOUND: commit `a4db878` (Task 2: uninstall + tests)
+- FOUND: commit `a9fd49a` (fix: Linux ExecStart bug)
