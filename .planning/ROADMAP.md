@@ -95,7 +95,13 @@ Plans:
   3. `famp daemon uninstall` unloads and removes the service file; `launchctl`/`systemctl --user` listings show no orphaned registration afterward; running `uninstall` again exits 0 with no error (idempotent). `famp daemon restart` picks up a replaced on-disk binary — verifiable by running the new binary's version after restart and confirming it differs from the binary version before restart.
   4. `famp daemon install` refuses to run when invoked inside a sandbox (the same EPERM-on-bind condition detected in Phase 4), exiting non-zero with guidance rather than writing a service that can never bind. On Linux, when systemd `--user` or `loginctl enable-linger` is unavailable, install exits non-zero with a message pointing to the documented manual fallback (`famp broker --no-idle-exit`) rather than producing a silent half-install.
   5. On connect, client and broker exchange a protocol/build version; a client whose version is incompatible with the running daemon receives a loud actionable error and exits non-zero rather than proceeding silently. Compatible versions connect normally. `famp -V`, the help banner, and the handshake version all agree on the same value — the pre-existing `0.1.0`-crate-vs-`0.5.x`-banner discrepancy is resolved to a single source of truth.
-**Plans:** TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 05-01-PLAN.md — VER-02 version unification (0.11.0) + VER-01 client proto-mismatch enforcement
+- [ ] 05-02-PLAN.md — `famp daemon` scaffold + plist generation (DAEMON-02 shape) + reviewable fixture
+- [ ] 05-03-PLAN.md — guardian plist sign-off gate (BLOCKING, pre-load, autonomous: false)
+- [ ] 05-04-PLAN.md — install/uninstall load + BOOT-02 sandbox refusal + Linux systemd/linger (DAEMON-01/04/06)
+- [ ] 05-05-PLAN.md — three-state status (DAEMON-03, D-09 linger) + restart binary-pickup (DAEMON-05)
 **Constraint notes:** `famp daemon` subcommand lands in `crates/famp/src/cli/`; it is CLI-layer and does not touch protocol-primitive crates. Run `just install` after any plist-shape or daemon-subcommand change (installed binary is the deployment target, not `target/release/famp`). Socket activation (launchd/systemd holds the socket and starts broker on first connect) is explicitly deferred — deferred because fd-inheritance is not implemented; the unconditional-KeepAlive plist is the correct interim shape. Spawn-lock for the `bind_exclusive` stale-branch unlink-race is also deferred to its own track (the daemon dissolves the race for daemon users).
 
 ### Phase 6: Onboarding & Cross-Platform Docs
