@@ -80,9 +80,39 @@ pub enum DaemonError {
          `famp broker --no-idle-exit`"
     )]
     UnsupportedPlatform,
+
+    /// A lifecycle command (e.g. `famp daemon restart`) was run against a
+    /// service that is not registered with the platform service manager.
+    /// Names the install command so the user has an actionable next step.
+    #[error("daemon service is not installed; run `famp daemon install` first")]
+    NotInstalled,
+
+    /// A path interpolated into the systemd unit's `ExecStart` contains
+    /// whitespace. systemd tokenizes `ExecStart` on whitespace, so such a path
+    /// would split into separate argv tokens and the unit would fail to start.
+    /// We refuse loudly rather than write an unactivatable unit.
+    #[error(
+        "cannot install daemon service: path contains whitespace which systemd \
+         ExecStart cannot represent: {0}; start broker manually with \
+         `famp broker --no-idle-exit`"
+    )]
+    UnitPathHasWhitespace(String),
 }
 
 // ─── Plist generation ────────────────────────────────────────────────────────
+
+/// Escape the XML metacharacters that are illegal inside an XML `<string>`
+/// text node (`&`, `<`, `>`). `&` is replaced first so the ampersands
+/// introduced by `&lt;`/`&gt;` are not themselves re-escaped.
+///
+/// A home directory containing one of these characters is legal on
+/// macOS/Linux; without escaping it yields a malformed plist that launchd
+/// silently refuses to parse, leaving the service permanently unloaded.
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
 
 /// Generate the macOS LaunchAgent plist XML for the FAMP broker service.
 ///
@@ -102,8 +132,13 @@ pub(crate) fn generate_plist(home: &Path) -> Result<String, DaemonError> {
     let famp_bin = home.join(".cargo").join("bin").join("famp");
     let log_path = home.join(".famp").join("broker.log");
 
-    let famp_bin_str = famp_bin.display().to_string();
-    let log_path_str = log_path.display().to_string();
+    // XML-escape home-derived paths before interpolating into <string> elements.
+    // A home dir containing `&`, `<`, or `>` (legal on macOS/Linux) would
+    // otherwise produce a malformed plist that launchd silently refuses to load.
+    // `&` MUST be escaped first, or the `&` introduced by `&lt;`/`&gt;` would be
+    // double-escaped.
+    let famp_bin_str = xml_escape(&famp_bin.display().to_string());
+    let log_path_str = xml_escape(&log_path.display().to_string());
 
     // Verify the generated paths are absolute (no tilde) — defense-in-depth.
     // Path::join always produces an absolute path when `home` is absolute.
@@ -246,6 +281,20 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     let log_path = home.join(".famp").join("broker.log");
     let unit_dir = home.join(".config").join("systemd").join("user");
     let unit_path = unit_dir.join("famp-broker.service");
+
+    // systemd tokenizes ExecStart on whitespace; a home path containing a
+    // space would split the binary path into separate argv tokens and the
+    // unit would silently fail to start. Validate and fail loudly rather than
+    // write an unactivatable unit. (StandardOutput/StandardError append: paths
+    // are validated too — a whitespace log path would likewise break parsing.)
+    let famp_bin_str = famp_bin.display().to_string();
+    let log_path_str = log_path.display().to_string();
+    if famp_bin_str.chars().any(char::is_whitespace) {
+        return Err(DaemonError::UnitPathHasWhitespace(famp_bin_str));
+    }
+    if log_path_str.chars().any(char::is_whitespace) {
+        return Err(DaemonError::UnitPathHasWhitespace(log_path_str));
+    }
 
     std::fs::create_dir_all(&unit_dir).map_err(|source| DaemonError::Io {
         path: unit_dir.clone(),
