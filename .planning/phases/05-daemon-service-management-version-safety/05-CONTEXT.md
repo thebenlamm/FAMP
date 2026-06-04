@@ -37,8 +37,14 @@ request. Both agents converged with **no disagreement** on all three areas.
 - **D-02:** The refusal error **MUST name the fix the user actually runs:
   `famp daemon restart`** — not "upgrade"/"reinstall". A "version mismatch"
   message that omits `daemon restart` is as useless as no handshake.
-- **D-03:** The handshake logs both versions (daemon build / client build) at
-  connect so a non-fatal skew is visible without being a wall.
+- **D-03:** Client build logged at connect; daemon build surfaced via
+  `famp daemon status` (intent-preserving — skew stays visible/diagnosable
+  when a suspicious user investigates, never a wall).
+  *Relaxed 2026-06-04 (plan-check): 'both at connect' would require a
+  famp-bus/proto.rs edit (primitive crate, out of phase scope) or a per-connect
+  Inspect round-trip (hot-path tax). Intent (skew visible/diagnosable, never a
+  wall) preserved via `famp daemon status` using the existing
+  `InspectBrokerReply.build_version`. Decision B, matt-essentialist counsel.*
 - **Rationale / highest-regret guard:** exact-build-match was named the single
   highest-regret mistake. Because `KeepAlive=true` keeps the daemon long-lived,
   a NEW client meets the OLD daemon on **every** connect after `cargo install`
@@ -138,6 +144,12 @@ FAMP-v0.5.x spec govern federation, not this local-daemon phase.
   VER-01 = add the **enforcement** (mismatch → loud refuse); `HelloErr { kind, .. }`
   reply variant already exists to carry it. VER-02's "separate protocol constant"
   is therefore already the de-facto architecture, not new machinery.
+- `crates/famp-inspect-proto/src/lib.rs:41` — `InspectBrokerReply.build_version`
+  (`pub build_version: String`, doc: "CARGO_PKG_VERSION of the answering broker
+  process") already carries the **daemon build** on the wire. `famp daemon
+  status` performs the `Inspect{Broker}` round-trip and surfaces it — this is the
+  D-03 daemon-build surface (Decision B). `famp-inspect-proto` is NOT a forbidden
+  primitive crate, so no primitive-crate edit is needed.
 - `crates/famp/src/bus_client/spawn.rs` — `SandboxEperm` EPERM-on-bind probe
   from Phase 4; BOOT-02 (`daemon install` sandbox refusal) reuses it.
 - `crates/famp/src/bus_client/mod.rs:104` — client sends `bus_proto:

@@ -2,8 +2,8 @@
 phase: 5
 slug: daemon-service-management-version-safety
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-04
 ---
 
@@ -41,7 +41,7 @@ created: 2026-06-04
 |-------------|----------|-----------|-------------------|-------------|--------|
 | DAEMON-01 | install idempotent — single service + single broker after 2× install | integration (subprocess, macOS-gated) | `cargo test -p famp --test daemon_lifecycle` | ❌ W0 | ⬜ pending |
 | DAEMON-02 | generated plist XML matches locked shape exactly | unit (string assertion) | `cargo test -p famp --lib -- daemon::install::tests::plist_shape_matches_locked` | ❌ W0 | ⬜ pending |
-| DAEMON-03 | three-state status: not-installed / installed-down / running (distinct output + exit codes) | unit (mock states) | `cargo test -p famp --lib -- daemon::status::tests` | ❌ W0 | ⬜ pending |
+| DAEMON-03 | three-state status: not-installed / installed-but-down / running (distinct output + exit codes) | unit (mock states) | `cargo test -p famp --lib -- daemon::status::tests` | ❌ W0 | ⬜ pending |
 | DAEMON-04 | uninstall idempotent — 2× uninstall exits 0, no orphan registration | integration (subprocess, macOS-gated) | `cargo test -p famp --test daemon_lifecycle` | ❌ W0 | ⬜ pending |
 | DAEMON-05 | restart picks up replaced on-disk binary | manual / platform-gated | `cargo test -p famp --test daemon_restart_binary_pickup` | ❌ W0 | ⬜ pending |
 | DAEMON-06 | Linux: systemd-absent exits non-zero; linger detect-and-instruct (no auto-escalate) | unit (linger-string parse) + Linux-CI integration | `cargo test -p famp --lib -- daemon::linux::tests` | ❌ W0 | ⬜ pending |
@@ -78,11 +78,11 @@ created: 2026-06-04
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-06-04

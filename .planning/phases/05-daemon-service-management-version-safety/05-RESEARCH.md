@@ -14,7 +14,7 @@
 **A. Version compatibility policy (VER-01)**
 - D-01: Refuse the connection **only** on a `bus_proto` integer mismatch. Build-version difference with equal `bus_proto` is **logged once at handshake, never refused.**
 - D-02: The refusal error **MUST name `famp daemon restart`** — not "upgrade"/"reinstall".
-- D-03: The handshake logs both versions (daemon build / client build) at connect so a non-fatal skew is visible.
+- D-03 (relaxed 2026-06-04, Decision B): Client build logged at connect; daemon build surfaced via `famp daemon status` (intent-preserving — skew stays visible/diagnosable, never a wall). No connect-time round-trip, no proto.rs edit.
 
 **B. Version source of truth (VER-02)**
 - D-04: `BUS_PROTO_VERSION: u32 = 1` in `crates/famp-bus/src/proto.rs:14` is the handshake authority.
@@ -66,7 +66,7 @@ Phase 5 delivers `famp daemon install/uninstall/status/restart` as a cross-platf
 
 The macOS path is straightforward: a single plist file at `~/Library/LaunchAgents/com.famp.broker.plist`, loaded via `launchctl bootstrap gui/$UID`, restarted via `launchctl kickstart -k gui/$UID/com.famp.broker`. The Linux path is identical in shape (`~/.config/systemd/user/famp-broker.service`, `systemctl --user enable --now`) with an additional detect-and-instruct layer for `loginctl enable-linger`.
 
-The version handshake is more surgical than it appears: **the broker already rejects `bus_proto` mismatches** (verified in `crates/famp-bus/src/broker/handle.rs:185`) via `HelloErr { BrokerProtoMismatch }`. The client today lumps all `HelloErr` variants together into `HelloFailed` (verified in `crates/famp/src/bus_client/mod.rs:110`). VER-01 requires only distinguishing `BrokerProtoMismatch` from other `HelloErr` kinds and returning a new error whose Display names `famp daemon restart` — no broker change, no new wire frame, no primitive-crate edit. D-03's build-skew log is achievable using the broker's existing `BrokerCtx.build_version` returned by `famp inspect broker` — no `HelloOk` wire extension needed.
+The version handshake is more surgical than it appears: **the broker already rejects `bus_proto` mismatches** (verified in `crates/famp-bus/src/broker/handle.rs:185`) via `HelloErr { BrokerProtoMismatch }`. The client today lumps all `HelloErr` variants together into `HelloFailed` (verified in `crates/famp/src/bus_client/mod.rs:110`). VER-01 requires only distinguishing `BrokerProtoMismatch` from other `HelloErr` kinds and returning a new error whose Display names `famp daemon restart` — no broker change, no new wire frame, no primitive-crate edit. D-03's build-skew log is achieved using the broker's existing `BrokerCtx.build_version` returned by `famp inspect broker` (`InspectBrokerReply.build_version`) — no `HelloOk` wire extension needed, no connect-time round-trip; the client logs its OWN build at connect and the daemon build surfaces via `famp daemon status` (Decision B, 2026-06-04).
 
 **Primary recommendation:** Implement as four waves: (1) version bump + banner fix, (2) macOS plist + launchctl subcommands, (3) VER-01 client-side enforcement + D-03 log, (4) Linux systemd path + BOOT-02 sandbox refusal.
 
@@ -129,7 +129,7 @@ famp daemon status
         │
         ├── platform check: plist/unit file exists? → "not-installed" if absent (exit 1)
         ├── OS liveness: launchctl print gui/$UID/com.famp.broker → registered? (exit code)
-        ├── broker liveness: famp inspect broker logic (connect-handshake) → running + pid
+        ├── broker liveness: famp inspect broker logic (connect-handshake) → running + pid + build_version
         └── [Linux] loginctl show-user $USER --property=Linger → linger state in output
 
 famp daemon restart
@@ -149,7 +149,8 @@ BusClient::connect (VER-01 enforcement)
         Hello { bus_proto: BUS_PROTO_VERSION, client: "famp-cli/0.11.0", .. }
         │
         ├── HelloOk { bus_proto } ──► protos match (broker only emits HelloOk on match)
-        │       → connected. D-03: log "client=0.11.0; daemon proto=1" at INFO level.
+        │       → connected. D-03: log "client=0.11.0; bus_proto=1" at INFO level
+        │         (CLIENT build only; daemon build via `famp daemon status`).
         │
         └── HelloErr { BrokerProtoMismatch, .. }
                 → THIS is the real skew path (old long-lived daemon, new client)
@@ -217,7 +218,7 @@ Do NOT parse `launchctl print` free-text — its man page says "NOT API in any s
 Use two independent probes:
 1. Plist file existence → "not installed"
 2. `launchctl print gui/$UID/<label>` exit code (0 = registered, 113 = not found) → "installed but broker not running" vs "registered"
-3. Reuse `famp inspect broker` connect-handshake logic for actual liveness + PID + socket
+3. Reuse `famp inspect broker` connect-handshake logic for actual liveness + PID + socket + build_version
 
 ```rust
 // Source: verified exit codes on macOS Sequoia (launchctl 7.0.0)
@@ -237,7 +238,7 @@ fn launchctl_is_registered(label: &str, uid: u32) -> bool {
 The three states map as:
 - `plist_path.exists() == false` → **not-installed** (exit 1)
 - `launchctl_is_registered() == true` but `inspect_broker()` → not HEALTHY → **installed-but-down** (exit 2)
-- `launchctl_is_registered() == true` AND `inspect_broker()` → HEALTHY → **running** (print pid + socket, exit 0)
+- `launchctl_is_registered() == true` AND `inspect_broker()` → HEALTHY → **running** (print pid + socket + build_version, exit 0)
 
 ### Pattern 3: Binary-Pickup Restart (DAEMON-05)
 
@@ -300,13 +301,14 @@ ProtocolMismatch { broker_message: String },
 
 The `proto_mismatch_names_restart` test MUST drive the `HelloErr { BrokerProtoMismatch }` path — not a mismatched HelloOk — to cover the real failure mode.
 
-**D-03 build-skew log:** The daemon's build version is available from `famp inspect broker` (`BrokerCtx.build_version`, already in `InspectBrokerReply.build_version`). No `HelloOk` wire extension needed — no primitive-crate edit. The skew log at connect can emit the client build; daemon build surfaces via `famp daemon status` (which calls inspect broker). [ASSUMED A3 — D-03 says "logs both versions at connect"; if strictly at-connect, an extra Inspect round-trip after HelloOk would be needed]
+**D-03 build-skew log:** The daemon's build version is available from `famp inspect broker` (`BrokerCtx.build_version`, already in `InspectBrokerReply.build_version`). No `HelloOk` wire extension needed — no primitive-crate edit. The skew log at connect emits the CLIENT build; the DAEMON build surfaces via `famp daemon status` (which calls inspect broker). [RESOLVED A3 — Decision B, 2026-06-04: no inline at-connect daemon build, no Inspect round-trip on the hot path]
 
 ### Pattern 5: Linux systemd --user Unit
 
 ```ini
 # ~/.config/systemd/user/famp-broker.service
 # Source: ArchWiki systemd/User, Ubuntu loginctl man page
+# NOTE: StandardOutput=append: requires systemd >= 240 (committed floor, Open Q3 RESOLVED)
 [Unit]
 Description=FAMP Local Bus Broker
 After=default.target
@@ -567,20 +569,29 @@ Required change — see Pattern 4 above for the full code. Summary:
 
 The broker's error message already contains "expected bus_proto=Y" — relay it verbatim plus the D-02 instruction.
 
-### D-03 Build-Skew Log: Recommended Approach
+### D-03 Build-Skew Log: Resolved Approach (Decision B, 2026-06-04)
 
-Rather than adding `build_version` to `HelloOk` (which would edit `famp-bus` — a primitive crate, against invariant #1 of STATE.md), the D-03 log should surface via `famp daemon status` output and a one-time `tracing::info!` in the connect path:
+Rather than adding `build_version` to `HelloOk` (which would edit `famp-bus` — a primitive crate, against invariant #1 of STATE.md), the D-03 log surfaces via `famp daemon status` output and a one-time `tracing::info!` in the connect path that logs the CLIENT build only:
 
 ```rust
 // In daemon status output: call famp inspect broker to get daemon build_version
-// In connect path: log client build vs "use famp daemon status to see daemon build"
+//   (InspectBrokerReply.build_version — crates/famp-inspect-proto/src/lib.rs:41,
+//    NOT a forbidden primitive crate; already on the wire)
+// In connect path: log client build only
 tracing::info!(
     client_build = env!("CARGO_PKG_VERSION"),
-    "connected to broker; use `famp daemon status` to verify daemon build version"
+    bus_proto = BUS_PROTO_VERSION,
+    "connected to broker"
 );
 ```
 
-If D-03 strictly requires both versions at connect time, an additional `BusMessage::Inspect { kind: InspectKind::Broker }` round-trip immediately after `Hello`/`HelloOk` would fetch daemon build version — but this doubles connect latency and adds complexity. Recommended: surface skew in status, log client-side build at connect. Flag as `[ASSUMED]` A3 below.
+**Decision B (matt-essentialist counsel, 2026-06-04):** No connect-time
+`Inspect { Broker }` round-trip is added — it would tax the hot path forever for
+a log line nobody reads on a healthy upgrade. The daemon build is recoverable
+on demand via `famp daemon status` (Plan 05-05), which already performs the
+`Inspect{Broker}` round-trip and reads `InspectBrokerReply.build_version`. Intent
+(skew visible/diagnosable when a suspicious user investigates, never a wall) is
+preserved. This supersedes the earlier [ASSUMED A3] flag.
 
 ---
 
@@ -604,27 +615,18 @@ This phase is not a rename/refactor, so a full runtime state inventory is not re
 |---|-------|---------|---------------|
 | A1 | `preflight_bind_probe` in `spawn.rs` is extractable to `pub(crate)` without touching primitive crates | BOOT-02 / Code Examples | May need to be re-implemented in daemon/install.rs if the function can't be shared — low risk, same logic |
 | A2 | `loginctl show-user $USER --property=Linger` outputs `Linger=yes` or `Linger=no` on all systemd-enabled Linux distros | Linux path | Could vary; test on Ubuntu 22.04+ and Fedora 38+ before shipping Linux path |
-| A3 | D-03 build-skew log is satisfied by `famp daemon status` output rather than requiring an inline log at every `connect()` | VER-01 / D-03 | If user requirement is "log at connect," an extra inspect round-trip is needed — adds ~1ms latency but is architecturally clean |
+| A3 | RESOLVED (Decision B, 2026-06-04): D-03 build-skew log is satisfied by `famp daemon status` output (InspectBrokerReply.build_version) + a CLIENT-build-only log at connect; no inline at-connect daemon build, no Inspect round-trip | VER-01 / D-03 | Resolved — risk retired |
 | A4 | `launchctl bootout` exit code behavior (tolerate failure on uninstall) is stable across macOS versions | Uninstall pattern | Tested on macOS 15 (Sequoia); behavior may differ on macOS 12–14 |
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **D-03 at-connect vs in-status**
-   - What we know: D-03 says "logs both versions (daemon build / client build) at connect"
-   - What's unclear: "at connect" could mean inline log during connect() or available in status output
-   - Recommendation: Implement as inline `tracing::info!` at connect with client build only; add daemon build to `famp daemon status` output. If insufficient, escalate to user before adding inspect round-trip.
+1. **D-03 at-connect vs in-status** — **RESOLVED: Decision B** — daemon build via `famp daemon status` (`InspectBrokerReply.build_version`, already on the wire). No connect round-trip, no proto.rs edit. The connect path logs the CLIENT build only; the daemon build surfaces via `famp daemon status` (Plan 05-05). matt-essentialist counsel, 2026-06-04. Carried in Plan 05-01 (VER-01 connect log) and Plan 05-05 (status daemon-build surface).
 
-2. **`preflight_bind_probe` visibility for BOOT-02**
-   - What we know: Function is `fn preflight_bind_probe` (private) in `spawn.rs`
-   - What's unclear: Whether the install path calls it directly or gets its own copy
-   - Recommendation: Change to `pub(crate)` and call from `daemon/install.rs`.
+2. **`preflight_bind_probe` visibility for BOOT-02** — **RESOLVED:** make `pub(crate)` in `spawn.rs`; Plan 05-04 (BOOT-02, Task 1) handles the visibility change (acceptance: `grep -c 'pub(crate) fn preflight_bind_probe' spawn.rs` returns 1) and calls it from `daemon/install.rs::check_not_sandboxed`.
 
-3. **Linux unit `StandardOutput=append:` availability**
-   - What we know: `append:` prefix requires systemd ≥ 240 (released 2018)
-   - What's unclear: Whether very old distros (RHEL 7) need `>> file` wrapper instead
-   - Recommendation: Use `append:` and document systemd ≥ 240 as minimum. Flag in DOC-03 (Phase 6).
+3. **Linux unit `StandardOutput=append:` / systemd version** — **RESOLVED:** commit to a systemd ≥ 240 version floor (the `append:` directive's minimum, released 2018); documented in the Pattern 5 unit-template comment and in Plan 05-04's DAEMON-06 Linux task (code comment at the unit template + the Linux fallback/guidance message; acceptance: `grep -ci '240' daemon/install.rs` returns >= 1). No runtime systemd-version probe — documenting the floor is sufficient for this phase.
 
 ---
 
@@ -728,6 +730,7 @@ This phase is not a rename/refactor, so a full runtime state inventory is not re
 ### Primary (HIGH confidence)
 - `crates/famp-bus/src/broker/handle.rs:185` — verified broker hello() rejects on bus_proto mismatch; returns `BUS_PROTO_VERSION` in HelloOk
 - `crates/famp/src/bus_client/mod.rs:109` — verified client discards HelloOk.bus_proto (current state)
+- `crates/famp-inspect-proto/src/lib.rs:41` — verified `InspectBrokerReply.build_version` (`pub build_version: String`, "CARGO_PKG_VERSION of the answering broker process") already on the wire; the D-03 daemon-build carrier
 - `crates/famp/src/bus_client/spawn.rs:112` — verified `preflight_bind_probe` EPERM detection shape
 - `launchctl(1)` man page — verified `bootstrap`, `bootout`, `kickstart -k`, `print` exit codes; "NOT API" warning on print output
 - `launchd.plist(5)` man page — verified all plist keys: `RunAtLoad`, `KeepAlive`, `ProcessType Background`, `StandardOutPath`, `StandardErrorPath`, `ProgramArguments`; tilde-not-expanded behavior confirmed from real plist examples on this machine
@@ -738,7 +741,7 @@ This phase is not a rename/refactor, so a full runtime state inventory is not re
 - [Ubuntu loginctl(1) man page](https://manpages.ubuntu.com/manpages/jammy/man1/loginctl.1.html) — `loginctl show-user $USER --property=Linger` syntax
 
 ### Tertiary (LOW confidence)
-- Training knowledge: systemd `append:` prefix requires ≥ 240 (not verified against a live Linux system in this session)
+- Training knowledge: systemd `append:` prefix requires ≥ 240 (not verified against a live Linux system in this session; committed as the floor per Open Q3)
 
 ---
 
