@@ -4,8 +4,8 @@ milestone: v0.11
 milestone_name: Broker Daemon & Cross-Tool Bootstrap
 status: executing
 stopped_at: Phase 6 context gathered
-last_updated: "2026-06-05T00:12:40.591Z"
-last_activity: 2026-06-05 -- Phase 06 planning complete
+last_updated: "2026-06-05T00:15:23.250Z"
+last_activity: 2026-06-05 -- Phase 06 execution started
 progress:
   total_phases: 16
   completed_phases: 5
@@ -24,14 +24,14 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.11 makes that substrate *reliably reachable* — a service-managed daemon restores broker presence so any local client, sandboxed or not, always finds a broker.
 
-**Current focus:** Phase 05 — daemon-service-management-version-safety
+**Current focus:** Phase 06 — onboarding-cross-platform-docs
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-05 -- Phase 06 planning complete
+Phase: 06 (onboarding-cross-platform-docs) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 06
+Last activity: 2026-06-05 -- Phase 06 execution started
 
 ```
 [Phase 4 ░░░░░░░░░░] [Phase 5 ░░░░░░░░░░] [Phase 6 ░░░░░░░░░░]

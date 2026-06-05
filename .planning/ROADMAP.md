@@ -115,7 +115,7 @@ Plans:
 **Plans:** 3 plans
 Plans:
 **Wave 1**
-- [ ] 06-01-PLAN.md — Wave 1: three-tier getting-started block (daemon-first quickstart + no-install bridge + `## Platform support` boundary) [DOC-01/02/03]
+- [x] 06-01-PLAN.md — Wave 1: three-tier getting-started block (daemon-first quickstart + no-install bridge + `## Platform support` boundary) [DOC-01/02/03]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 06-02-PLAN.md — Wave 2 (depends_on 01): five D-04 reconciliation edits (CLI table, Onboarding path, When-NOT-to-Use reword, Upgrading, Troubleshooting) + v0.9→v0.11 version refresh
