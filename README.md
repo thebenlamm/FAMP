@@ -216,7 +216,7 @@ Full CLI:
 | `famp sessions` | Show registered broker sessions |
 | `famp whoami` | Show the resolved local identity |
 | `famp daemon install` | Install the broker as a persistent user-level service (launchd / systemd `--user`); idempotent |
-| `famp daemon status` | Report daemon state (not-installed / installed-down / running); exits 0 / 2 / 1 |
+| `famp daemon status` | Report daemon state — exits 0 running / 1 not-installed / 2 installed-but-down |
 | `famp daemon restart` | Restart the daemon, picking up a new on-disk binary after `cargo install` |
 | `famp daemon uninstall` | Stop and remove the service; idempotent |
 | `famp broker --no-idle-exit` | Run the broker in the foreground with no 300s idle exit (no-install bridge) |
