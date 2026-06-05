@@ -4,11 +4,12 @@
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](rust-toolchain.toml)
 
-**Status:** `v0.9 Local-First Bus`
+**Status:** `v0.11 Broker Daemon`
 
 > **On the version numbers:** FAMP v0.5.1 is the protocol spec; v0.6 / v0.7 / v0.8 are
-> implementation milestones (all shipped); v0.9 is the local-first bus; v1.0
-> is the federation gateway. The library version in `Cargo.toml` is `0.1.0` pre-release.
+> implementation milestones (all shipped); v0.9 is the local-first bus and v0.11 adds
+> the persistent broker daemon; v1.0 is the federation gateway. The workspace version
+> is unified to `0.11.0` (`famp -V` → `famp 0.11.0`).
 
 FAMP today is local-first: a UDS-backed broker for same-host agent messaging
 with zero crypto on the local path. FAMP at v1.0 is federated: cross-host
@@ -22,10 +23,10 @@ below; no cert wrangling, no peer-card piping.
 
 Under the hood it's a v0.5.1-spec-conformant stack: canonical JSON
 (RFC 8785), Ed25519 signatures with domain separation, typed identity
-and envelope types, and a 5-state task FSM. The local bus is the v0.9
+and envelope types, and a 5-state task FSM. The local bus is the v0.11
 runtime path; federation transport internals remain preserved for v1.0.
 
-- **Local (v0.9)** — same-host agents through a socket-activated broker.
+- **Local (v0.11)** — same-host agents through a local UDS broker (persistent daemon, or auto-spawn for unsandboxed clients).
 - **Federation Profile (v1.0)** — cross-host protocol, Agent Cards,
   delegation, provenance, and remote routing via `famp-gateway`.
   See the [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
@@ -202,7 +203,7 @@ Full CLI:
 
 | Command | What it does |
 |---|---|
-| `famp register <name>` | Bind a local identity and start the broker if needed |
+| `famp register <name>` | Bind a local identity (auto-spawns a broker for unsandboxed clients if none is running; sandboxed clients need a daemon or the bridge) |
 | `famp send --to <name> --new-task "<text>"` | Send a new task over the local bus |
 | `famp send --to <name> --task <id> --body "<text>"` | Reply to an existing task |
 | `famp await [--task <id>]` | Block until a message arrives |
@@ -210,6 +211,11 @@ Full CLI:
 | `famp join <channel>` / `famp leave <channel>` | Manage local bus channel membership |
 | `famp sessions` | Show registered broker sessions |
 | `famp whoami` | Show the resolved local identity |
+| `famp daemon install` | Install the broker as a persistent user-level service (launchd / systemd `--user`); idempotent |
+| `famp daemon status` | Report daemon state (not-installed / installed-down / running); exits 0 / 2 / 1 |
+| `famp daemon restart` | Restart the daemon, picking up a new on-disk binary after `cargo install` |
+| `famp daemon uninstall` | Stop and remove the service; idempotent |
+| `famp broker --no-idle-exit` | Run the broker in the foreground with no 300s idle exit (no-install bridge) |
 | `famp install-claude-code` / `famp uninstall-claude-code` | Install or remove Claude Code MCP/slash-command integration |
 | `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP integration |
 
@@ -285,8 +291,9 @@ per client; the window picks an identity at runtime via `famp_register`.**
 
 ### Onboarding (recommended path)
 
-1. **Install the user-scope MCP integration once:**
+1. **Install the broker service once, then wire the MCP integration:**
    ```sh
+   famp daemon install      # persistent broker — see Quick Start (skip if already installed)
    famp install-claude-code
    ```
    This writes the user-scope Claude Code MCP config, slash commands
