@@ -124,10 +124,14 @@ If you installed FAMP previously and want the latest:
 # In your local FAMP clone
 git pull
 cargo install --path crates/famp
+
+# If you installed the broker as a service, pick up the new binary:
+famp daemon restart
+
 famp --version
 ```
 
-Then restart any open Claude Code windows — they pick up the new binary on next launch.
+Then restart any open Claude Code windows — they pick up the new binary on next launch. A client that hits a not-yet-restarted long-lived daemon gets a version-skew (ProtocolMismatch) error telling it to run `famp daemon restart` (VER-01).
 
 ## When NOT to Use FAMP
 
@@ -137,7 +141,7 @@ The misuse case that comes up first: pointing it at customer-facing workflows. T
 
 > *"Could I use FAMP to sync between two of my production sites — when a customer takes an action on one, automatically update state on the other?"*
 
-**No.** FAMP delivery requires an open Claude Code (or Codex) window actively reading the inbox. Close the window, the inbox stalls. There is no autonomous daemon servicing scheduled work; there's just a Rust process signing envelopes on behalf of whichever agent is currently using it.
+**No.** FAMP delivery requires an open Claude Code (or Codex) window actively reading the inbox. Close the window, the inbox stalls. The daemon keeps the message broker running; it does not service work autonomously — delivery still requires an open agent window reading its inbox. The broker is just a Rust process relaying signed envelopes on behalf of whichever agents are currently connected: the daemon restores broker *presence*, not agent *attendance*.
 
 What FAMP is good at:
 - Two windows on the same Mac asking each other questions across loaded repo contexts
@@ -720,8 +724,12 @@ for milestone history.
 - **Listen-mode window doesn't wake on a message.** Verify the Stop hook is
   installed (`famp install-claude-code` writes it). Check `~/.famp/broker.log`
   for `await` activity around the send time.
-- **Stuck after a binary upgrade.** Restart all Claude Code windows — they
-  cache the binary path at launch.
+- **Stuck after a binary upgrade.** Restart all Claude Code windows (they cache
+  the binary path at launch) AND, if you run the broker as a service, run
+  `famp daemon restart` so the daemon picks up the new binary — otherwise a
+  version-skew (ProtocolMismatch) error fires.
+- **Not sure if the broker is up.** Run `famp daemon status` (RUNNING /
+  INSTALLED_DOWN / NOT_INSTALLED).
 
 ## License
 
