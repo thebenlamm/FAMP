@@ -112,7 +112,11 @@ Plans:
   1. The README contains a quickstart section where `famp daemon install` is the one command, and a fresh-clone walkthrough on macOS — install the daemon, register from a Claude Code window, register from a Codex window — completes without broker-babysitting. The quickstart is accurate against actual `famp daemon install` behavior shipped in Phase 5.
   2. The README documents the zero-setup bridge: run `famp broker --no-idle-exit` in one unsandboxed terminal; any sandboxed or normal client then connects to that broker. The instructions are accurate against the `--no-idle-exit` behavior shipped in Phase 4.
   3. The README contains an explicit cross-platform support section naming what the installer covers (macOS launchd, Linux systemd `--user`) and what it does not (minimal distros without systemd, containers, WSL, headless without `loginctl enable-linger`), pointing unsupported configurations to the `famp broker --no-idle-exit` manual fallback. No "works for both Claude and Codex" claim overruns what the Phase 5 installer actually delivers.
-**Plans:** TBD
+**Plans:** 3 plans
+Plans:
+- [ ] 06-01-PLAN.md — Wave 1: three-tier getting-started block (daemon-first quickstart + no-install bridge + `## Platform support` boundary) [DOC-01/02/03]
+- [ ] 06-02-PLAN.md — Wave 2 (depends_on 01): five D-04 reconciliation edits (CLI table, Onboarding path, When-NOT-to-Use reword, Upgrading, Troubleshooting) + v0.9→v0.11 version refresh
+- [ ] 06-03-PLAN.md — Wave 3 (depends_on 01,02): D-07 accuracy-against-binary gate — auto grep verify + BLOCKING human-verify (live launchctl lifecycle + fresh-clone Claude+Codex E2E)
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
@@ -268,7 +272,7 @@ Rough ordering inside v1.0+ (not committed):
 | 3. Load Verification & Integration Hardening | v0.10 | 3/3 | Complete | 2026-05-11 |
 | 4. Broker Lifecycle & Bootstrap Diagnostics | v0.11 | 3/3 | Complete | 2026-06-04 |
 | 5. Daemon Service Management & Version Safety | v0.11 | 0/TBD | Not started | - |
-| 6. Onboarding & Cross-Platform Docs | v0.11 | 0/TBD | Not started | - |
+| 6. Onboarding & Cross-Platform Docs | v0.11 | 0/3 | Not started | - |
 
 ## Backlog
 
