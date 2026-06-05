@@ -153,7 +153,9 @@ Rule of thumb: **if the use case survives a closed laptop, FAMP is not the right
 
 ## Quick Start
 
-This is the v0.9 local-first path; if you need cross-host federation, see
+Install a persistent broker once with `famp daemon install`; afterward every
+Claude Code and Codex window on your Mac connects with no per-session broker
+setup. If you need cross-host federation, see
 [docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md).
 
 ```bash
@@ -161,17 +163,32 @@ This is the v0.9 local-first path; if you need cross-host federation, see
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 source "$HOME/.cargo/env"
 
-# 2. Install famp and wire Claude Code (~60-120s first-run compile)
+# 2. Install famp (~60-120s first-run compile)
 cargo install famp
+
+# 3. Install the broker as a persistent service — run ONCE from a normal shell.
+#    After this, a broker is always reachable; no per-session babysitting,
+#    and sandboxed Codex windows can connect (they cannot spawn their own broker).
+famp daemon install
+
+# 4. Wire each tool's MCP integration (separate from broker presence):
 famp install-claude-code
-# 3. In one Claude Code window:
-/famp-register alice
-# 4. In another:
-/famp-register bob
-# Then ask alice's Claude: "send bob a message saying ship it"
+famp install-codex
+
+# 5. In one Claude Code window:   /famp-register alice
+# 6. In another (Claude Code or Codex):   register as bob
+# Then ask alice's window: "send bob a message saying ship it"
 ```
 
 > First install includes a one-time compile (~60-120 s); subsequent windows: <30 s.
+
+`famp daemon install` is the one command that ends broker-babysitting: it
+installs a persistent user-level broker (launchd on macOS, systemd `--user` on
+Linux) that stays reachable across reboot and logout. Re-running
+`famp daemon install` is safe when the service is already installed. It must be
+run from a normal (unsandboxed) shell — it refuses to run inside a sandbox; if
+you cannot run an unsandboxed install, use the [no-install bridge](#no-install-bridge)
+below.
 
 Use the live CLI directly when you are not inside Claude Code:
 
@@ -200,12 +217,56 @@ The v0.8 `famp-local` wrapper has moved into history at
 [`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).
 v0.9 replaces it with the local bus path above.
 
+### No-install bridge
+
+If you cannot or will not install a service, run the broker yourself in one
+unsandboxed terminal:
+
+```bash
+famp broker --no-idle-exit
+```
+
+Any client — sandboxed Codex or normal Claude Code — then connects to that
+broker. Leave the terminal open; the broker lives as long as the terminal does.
+
+The daemon survives reboot and logout (`RunAtLoad` + `KeepAlive`); the bridge is
+a single foreground terminal process and dies on terminal-close or logout.
+
+## Platform support
+
+`famp daemon install` covers:
+
+- **macOS** — launchd LaunchAgent (`com.famp.broker`).
+- **Linux** — systemd `--user` unit (requires systemd ≥ 240 and an active user
+  session; run `loginctl enable-linger <user>` to keep the broker alive after
+  logout).
+
+It does **not** cover the configurations below. On these, `famp daemon install`
+exits non-zero rather than silently half-installing — use the no-install bridge
+(`famp broker --no-idle-exit`) above instead:
+
+- minimal distros without systemd
+- containers
+- WSL
+- headless hosts without `loginctl enable-linger`
+- any non-macOS / non-Linux platform
+
+On Linux, when `systemctl` is absent the installer exits with a message naming
+`famp broker --no-idle-exit` as the fallback; on a headless host it prints (it
+does not auto-run) the `loginctl enable-linger` command you need.
+
 ## Broker lifecycle
 
-The local broker auto-spawns on first registration or bus command. For normal
-development, rebuild the binary and open a new CLI/MCP session; the next bus
-connection starts the broker again if needed. Broker diagnostics live under
-`~/.famp/` (`bus.sock`, `broker.log`).
+With `famp daemon install` (the [recommended path](#quick-start)), a persistent
+broker is always running.
+
+Without a daemon, the broker **auto-spawns** on first registration for
+unsandboxed clients (e.g. Claude Code) — but a sandboxed client like Codex
+cannot spawn its own broker, and an auto-spawned broker idle-exits after 300 s.
+That is why the daemon (or the [no-install bridge](#no-install-bridge)) is what
+lets a sandboxed Codex window connect and what keeps a broker alive beyond a
+single session. Broker diagnostics live under `~/.famp/` (`bus.sock`,
+`broker.log`).
 
 ## Advanced: v0.8 federation CLI
 
