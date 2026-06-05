@@ -114,8 +114,13 @@ Plans:
   3. The README contains an explicit cross-platform support section naming what the installer covers (macOS launchd, Linux systemd `--user`) and what it does not (minimal distros without systemd, containers, WSL, headless without `loginctl enable-linger`), pointing unsupported configurations to the `famp broker --no-idle-exit` manual fallback. No "works for both Claude and Codex" claim overruns what the Phase 5 installer actually delivers.
 **Plans:** 3 plans
 Plans:
+**Wave 1**
 - [ ] 06-01-PLAN.md — Wave 1: three-tier getting-started block (daemon-first quickstart + no-install bridge + `## Platform support` boundary) [DOC-01/02/03]
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 06-02-PLAN.md — Wave 2 (depends_on 01): five D-04 reconciliation edits (CLI table, Onboarding path, When-NOT-to-Use reword, Upgrading, Troubleshooting) + v0.9→v0.11 version refresh
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 06-03-PLAN.md — Wave 3 (depends_on 01,02): D-07 accuracy-against-binary gate — auto grep verify + BLOCKING human-verify (live launchctl lifecycle + fresh-clone Claude+Codex E2E)
 
 <details>
