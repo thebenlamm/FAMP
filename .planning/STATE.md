@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v0.11
-milestone_name: Broker Daemon & Cross-Tool Bootstrap
-status: executing
+milestone_name: refresh. DOC-01/02/03 verified live against the installed binary
+status: completed
 stopped_at: Phase 6 context gathered
-last_updated: "2026-06-05T00:15:23.250Z"
-last_activity: 2026-06-05 -- Phase 06 execution started
+last_updated: "2026-06-06T21:00:40.952Z"
+last_activity: 2026-06-06 -- Phase 06 marked complete
 progress:
   total_phases: 16
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 21
+  percent: 38
 ---
 
 # STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (s
 
 ## Current Position
 
-Phase: 06 (onboarding-cross-platform-docs) — EXECUTING
+Phase: 06 — COMPLETE
 Plan: 1 of 3
-Status: Executing Phase 06
-Last activity: 2026-06-05 -- Phase 06 execution started
+Status: Phase 06 complete
+Last activity: 2026-06-06 -- Phase 06 marked complete
 
 ```
 [Phase 4 ░░░░░░░░░░] [Phase 5 ░░░░░░░░░░] [Phase 6 ░░░░░░░░░░]
