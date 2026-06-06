@@ -2,6 +2,7 @@
 //! infallible, synchronous, and stages every side effect as an ordered intent.
 
 pub mod handle;
+mod identity;
 mod state;
 
 use std::time::Instant;
