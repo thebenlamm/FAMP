@@ -1,6 +1,7 @@
 //! Pure broker actor. `Broker::handle(input, now) -> Vec<Out>` is total,
 //! infallible, synchronous, and stages every side effect as an ordered intent.
 
+mod awaiting;
 pub mod handle;
 mod identity;
 mod state;
