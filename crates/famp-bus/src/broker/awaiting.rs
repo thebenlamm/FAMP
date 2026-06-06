@@ -68,7 +68,6 @@ pub(super) fn await_envelope<E: BrokerEnv>(
     broker.state.pending_awaits.insert(
         client,
         ParkedAwait {
-            client,
             filter: filter.clone(),
             deadline,
         },
@@ -217,9 +216,9 @@ pub(super) fn waiting_clients_for_name<E: BrokerEnv>(
     broker
         .state
         .pending_awaits
-        .values()
-        .filter_map(|parked| {
-            let state = broker.state.clients.get(&parked.client)?;
+        .iter()
+        .filter_map(|(client, parked)| {
+            let state = broker.state.clients.get(client)?;
             if !state.connected {
                 return None;
             }
@@ -232,7 +231,7 @@ pub(super) fn waiting_clients_for_name<E: BrokerEnv>(
                 _ => false,
             };
             if matches_name && filter_matches(&parked.filter, envelope) {
-                Some(parked.client)
+                Some(*client)
             } else {
                 None
             }

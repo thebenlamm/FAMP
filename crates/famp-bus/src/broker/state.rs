@@ -53,7 +53,6 @@ pub(super) struct ClientState {
 
 #[derive(Debug, Clone)]
 pub(super) struct ParkedAwait {
-    pub(super) client: ClientId,
     pub(super) filter: AwaitFilter,
     pub(super) deadline: Instant,
 }
