@@ -29,6 +29,7 @@ use famp_bus::BusErrorKind;
 use serde_json::Value;
 
 use crate::bus_client::resolve_sock_path;
+use crate::cli::error::CliError;
 use crate::cli::mcp::session::{self, LastSend};
 use crate::cli::mcp::tools::ToolError;
 use crate::cli::send::{run_at_structured, SendArgs};
@@ -83,6 +84,16 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
                 "delivered_rows": out.delivered_rows,
                 "woken": woken_any,
             }))
+        }
+        // `famp_send` keeps its own `SendArgsInvalid` arm: the CLI send path
+        // rejects malformed args (bad mode/peer/channel) with this variant and
+        // the v0.8 MCP contract surfaces it as `EnvelopeInvalid` + the bare
+        // `reason`. The shared `From<CliError>` impl deliberately omits this
+        // arm (see tools/mod.rs) so join/leave channel validation keeps its
+        // historical `Internal` mapping; send handles it locally before
+        // delegating the remaining errors via `e.into()`.
+        Err(CliError::SendArgsInvalid { reason }) => {
+            Err(ToolError::new(BusErrorKind::EnvelopeInvalid, reason))
         }
         Err(e) => Err(e.into()),
     }

@@ -76,12 +76,16 @@ impl ToolError {
 ///   [`ToolError::not_registered`] shape (the holder `name` is intentionally
 ///   dropped; the MCP surface uses the fixed "call `famp_register` first" hint).
 /// - [`CliError::BrokerUnreachable`] → `BrokerUnreachable` + `"broker unreachable"`.
-/// - [`CliError::SendArgsInvalid`] → `EnvelopeInvalid` + the `reason`. Only
-///   `famp_send` can actually produce this variant; folding it in here is
-///   invisible to the other tools (their entry points never return it) and
-///   keeps the mapping table in one place.
 /// - everything else → `Internal` + the error's `Display` string (identical to
 ///   the previous per-tool `Err(e) => ToolError::new(Internal, e.to_string())`).
+///
+/// Intentionally **not** handled here: [`CliError::SendArgsInvalid`]. `famp_send`
+/// maps it to `EnvelopeInvalid` + `reason` *before* delegating to this impl
+/// (its own explicit arm), but `famp_join` / `famp_leave` can also surface it
+/// via `normalize_channel` and historically funneled it through the wildcard to
+/// `Internal`. Folding a `SendArgsInvalid` arm in here would silently change the
+/// join/leave channel-validation error from `Internal` to `EnvelopeInvalid`, so
+/// it deliberately falls through to the `other` arm to preserve behavior.
 impl From<CliError> for ToolError {
     fn from(err: CliError) -> Self {
         match err {
@@ -89,9 +93,6 @@ impl From<CliError> for ToolError {
             CliError::NotRegisteredHint { .. } => Self::not_registered(),
             CliError::BrokerUnreachable => {
                 Self::new(BusErrorKind::BrokerUnreachable, "broker unreachable")
-            }
-            CliError::SendArgsInvalid { reason } => {
-                Self::new(BusErrorKind::EnvelopeInvalid, reason)
             }
             other => Self::new(BusErrorKind::Internal, other.to_string()),
         }
