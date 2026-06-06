@@ -13,21 +13,23 @@
 //! on `crates/famp` (Pitfall 3 in 04-RESEARCH.md).
 
 use crate::error::EnvelopeDecodeError;
-use famp_canonical::from_slice_strict;
+use crate::view::OwnedEnvelopeView;
 use famp_core::Principal;
-use std::str::FromStr;
 
 /// Strictly parse wire bytes (duplicate-key-rejecting) and extract the `from`
 /// field as a [`Principal`]. Performs NO signature verification.
+///
+/// Thin wrapper over [`crate::EnvelopeView::from`]: the structural view is the
+/// single source of truth for the field name and parse rule. Behaviour is
+/// preserved exactly — a malformed-JSON / duplicate-key body surfaces
+/// [`EnvelopeDecodeError::MalformedJson`] (from the strict parse), and an
+/// absent, non-string, or unparseable `from` surfaces
+/// [`EnvelopeDecodeError::MissingField`].
 pub fn peek_sender(bytes: &[u8]) -> Result<Principal, EnvelopeDecodeError> {
-    // from_slice_strict returns famp_canonical::CanonicalError on failure;
-    // EnvelopeDecodeError::MalformedJson wraps that via #[from].
-    let value: serde_json::Value = from_slice_strict(bytes)?;
-    let from_str = value
-        .get("from")
-        .and_then(serde_json::Value::as_str)
-        .ok_or(EnvelopeDecodeError::MissingField { field: "from" })?;
-    Principal::from_str(from_str).map_err(|_| EnvelopeDecodeError::MissingField { field: "from" })
+    OwnedEnvelopeView::parse(bytes)?
+        .view()
+        .from()
+        .ok_or(EnvelopeDecodeError::MissingField { field: "from" })
 }
 
 #[cfg(test)]
