@@ -25,7 +25,6 @@ use famp_bus::BusErrorKind;
 use serde_json::Value;
 
 use crate::bus_client::resolve_sock_path;
-use crate::cli::error::CliError;
 use crate::cli::join::{run_at_structured, JoinArgs};
 use crate::cli::mcp::session;
 use crate::cli::mcp::tools::ToolError;
@@ -63,12 +62,6 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             "members": out.members,
             "drained": out.drained.len(),
         })),
-        Err(CliError::BusError { kind, message }) => Err(ToolError::new(kind, message)),
-        Err(CliError::NotRegisteredHint { .. }) => Err(ToolError::not_registered()),
-        Err(CliError::BrokerUnreachable) => Err(ToolError::new(
-            BusErrorKind::BrokerUnreachable,
-            "broker unreachable",
-        )),
-        Err(e) => Err(ToolError::new(BusErrorKind::Internal, e.to_string())),
+        Err(e) => Err(e.into()),
     }
 }

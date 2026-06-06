@@ -9,6 +9,8 @@
 
 use famp_bus::BusErrorKind;
 
+use crate::cli::error::CliError;
+
 pub mod await_;
 pub mod channel_log;
 pub mod inbox;
@@ -58,5 +60,40 @@ impl ToolError {
     #[must_use]
     pub fn into_parts(self) -> (BusErrorKind, String) {
         (self.kind, self.message)
+    }
+}
+
+/// Centralized `CliError -> ToolError` mapping — the single source of truth
+/// for how the MCP tool layer projects a CLI entry-point error onto a typed
+/// tool error.
+///
+/// Every tool that delegates to a `cli::*::run_at_structured` entry point
+/// funnels its `Err` arm through this impl (`Err(e) => Err(e.into())`)
+/// instead of re-spelling the identical 5-arm match. Mapping rules:
+///
+/// - [`CliError::BusError`] → preserve the broker's `kind` + `message`.
+/// - [`CliError::NotRegisteredHint`] → the canonical
+///   [`ToolError::not_registered`] shape (the holder `name` is intentionally
+///   dropped; the MCP surface uses the fixed "call `famp_register` first" hint).
+/// - [`CliError::BrokerUnreachable`] → `BrokerUnreachable` + `"broker unreachable"`.
+/// - [`CliError::SendArgsInvalid`] → `EnvelopeInvalid` + the `reason`. Only
+///   `famp_send` can actually produce this variant; folding it in here is
+///   invisible to the other tools (their entry points never return it) and
+///   keeps the mapping table in one place.
+/// - everything else → `Internal` + the error's `Display` string (identical to
+///   the previous per-tool `Err(e) => ToolError::new(Internal, e.to_string())`).
+impl From<CliError> for ToolError {
+    fn from(err: CliError) -> Self {
+        match err {
+            CliError::BusError { kind, message } => Self::new(kind, message),
+            CliError::NotRegisteredHint { .. } => Self::not_registered(),
+            CliError::BrokerUnreachable => {
+                Self::new(BusErrorKind::BrokerUnreachable, "broker unreachable")
+            }
+            CliError::SendArgsInvalid { reason } => {
+                Self::new(BusErrorKind::EnvelopeInvalid, reason)
+            }
+            other => Self::new(BusErrorKind::Internal, other.to_string()),
+        }
     }
 }
