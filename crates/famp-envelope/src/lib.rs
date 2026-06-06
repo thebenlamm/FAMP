@@ -26,6 +26,7 @@ pub mod peek;
 pub mod scope;
 pub mod timestamp;
 pub mod version;
+pub mod view;
 pub(crate) mod wire;
 
 pub use body::BodySchema;
@@ -39,3 +40,4 @@ pub use peek::peek_sender;
 pub use scope::EnvelopeScope;
 pub use timestamp::Timestamp;
 pub use version::FAMP_SPEC_VERSION;
+pub use view::{EnvelopeView, OwnedEnvelopeView};
