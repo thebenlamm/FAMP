@@ -20,16 +20,17 @@ use famp_canonical as _;
 use famp_envelope as _;
 use famp_fsm as _;
 use famp_inspect_proto::{
-    is_orphan_task_id, IdentityRow, InspectIdentitiesReply, InspectKind, InspectMessagesReply,
-    InspectTasksReply, InspectWaitersReply, MessageListReply, MessageRow, TaskDetailFullReply,
-    TaskDetailReply, TaskEnvelopeFull, TaskEnvelopeSummary, TaskListReply, TaskRow, WaiterRow,
+    is_orphan_task_id, InspectKind, InspectMessagesReply, InspectTasksReply, InspectWaitersReply,
+    MessageListReply, MessageRow, TaskDetailFullReply, TaskDetailReply, TaskEnvelopeFull,
+    TaskEnvelopeSummary, TaskListReply, TaskRow, WaiterRow,
 };
 use serde as _;
 use sha2::{Digest, Sha256};
 
 mod broker;
+mod identities;
 mod parse;
-use parse::{derive_fsm_state, envelope_task_id, parse_rfc3339_to_epoch, to_epoch_seconds};
+use parse::{derive_fsm_state, envelope_task_id, parse_rfc3339_to_epoch};
 
 /// Per-mailbox metadata pre-read by the broker executor before
 /// calling `dispatch`. Keyed by canonical agent name.
@@ -99,7 +100,8 @@ pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) ->
         InspectKind::Broker(_) => serde_json::to_value(broker::inspect_broker(state, ctx))
             .unwrap_or(serde_json::Value::Null),
         InspectKind::Identities(_) => {
-            serde_json::to_value(inspect_identities(state, ctx)).unwrap_or(serde_json::Value::Null)
+            serde_json::to_value(identities::inspect_identities(state, ctx))
+                .unwrap_or(serde_json::Value::Null)
         }
         InspectKind::Tasks(req) => {
             serde_json::to_value(inspect_tasks(state, ctx, req)).unwrap_or(serde_json::Value::Null)
@@ -110,33 +112,6 @@ pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) ->
             serde_json::to_value(inspect_waiters(state)).unwrap_or(serde_json::Value::Null)
         }
     }
-}
-
-/// INSP-IDENT-01 / INSP-IDENT-02: one row per registered identity.
-fn inspect_identities(state: &BrokerStateView, ctx: &BrokerCtx) -> InspectIdentitiesReply {
-    let rows = state
-        .clients
-        .iter()
-        .map(|c| {
-            let meta = ctx
-                .mailbox_metadata
-                .get(&c.name)
-                .cloned()
-                .unwrap_or_default();
-            IdentityRow {
-                name: c.name.clone(),
-                listen_mode: c.listen_mode,
-                cwd: c.cwd.clone(),
-                registered_at_unix_seconds: to_epoch_seconds(c.registered_at),
-                last_activity_unix_seconds: to_epoch_seconds(c.last_activity),
-                mailbox_unread: meta.unread,
-                mailbox_total: meta.total,
-                last_sender: meta.last_sender.unwrap_or_else(|| "(none)".to_string()),
-                last_received_at_unix_seconds: meta.last_received_at_unix_seconds,
-            }
-        })
-        .collect();
-    InspectIdentitiesReply { rows }
 }
 
 /// INSP-WAIT-01: one row per (parked await × subscribed mailbox).
