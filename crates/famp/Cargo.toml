@@ -35,7 +35,6 @@ famp-canonical = { path = "../famp-canonical", version = "0.11.0" }
 famp-crypto = { path = "../famp-crypto", version = "0.11.0" }
 famp-envelope = { path = "../famp-envelope", version = "0.11.0" }
 famp-fsm = { path = "../famp-fsm", version = "0.11.0" }
-famp-transport = { path = "../famp-transport", version = "0.11.0" }
 famp-inbox = { path = "../famp-inbox", version = "0.11.0" }
 famp-taskdir = { path = "../famp-taskdir", version = "0.11.0" }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "process", "io-util", "io-std", "signal", "net"] }

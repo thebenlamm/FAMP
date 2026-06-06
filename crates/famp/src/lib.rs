@@ -32,6 +32,7 @@ use famp_inspect_proto as _;
 use famp_inspect_server as _;
 #[cfg(test)]
 use famp_keyring as _;
+#[cfg(test)]
 use famp_transport as _;
 #[cfg(test)]
 use famp_transport_http as _;
