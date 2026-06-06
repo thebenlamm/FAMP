@@ -28,6 +28,9 @@ use famp_inspect_proto::{
 use serde as _;
 use sha2::{Digest, Sha256};
 
+mod parse;
+use parse::{derive_fsm_state, envelope_task_id, parse_rfc3339_to_epoch, to_epoch_seconds};
+
 /// Per-mailbox metadata pre-read by the broker executor before
 /// calling `dispatch`. Keyed by canonical agent name.
 #[derive(Debug, Clone, Default)]
@@ -438,94 +441,11 @@ pub fn message_row(env: &serde_json::Value) -> MessageRow {
     }
 }
 
-/// Extract `task_id` from a parsed envelope JSON object.
-/// Order: `causality.ref` -> `body.details.task` -> new-task envelope `id` -> `None`.
-fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
-    if let Some(task_id) = env
-        .get("causality")
-        .and_then(|c| c.get("ref"))
-        .and_then(serde_json::Value::as_str)
-    {
-        return Some(task_id.to_string());
-    }
-    if let Some(task_id) = env
-        .get("body")
-        .and_then(|b| b.get("details"))
-        .and_then(|d| d.get("task"))
-        .and_then(serde_json::Value::as_str)
-    {
-        return Some(task_id.to_string());
-    }
-
-    if env
-        .get("body")
-        .and_then(|body| body.get("event"))
-        .and_then(serde_json::Value::as_str)
-        == Some("famp.send.new_task")
-    {
-        return env
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_string);
-    }
-
-    None
-}
-
-/// Derive FSM state from envelope fields using canonical class strings
-/// and `famp_core::TerminalStatus` `snake_case` mode strings.
-fn derive_fsm_state(env: &serde_json::Value) -> String {
-    let class = env
-        .get("class")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    let details = env.get("body").and_then(|b| b.get("details"));
-    let mode = details
-        .and_then(|d| d.get("mode"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    let terminal = details
-        .and_then(|d| d.get("terminal"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let action = details
-        .and_then(|d| d.get("action"))
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-
-    // FSM truth table — keep each (class, mode, terminal, action) arm explicit
-    // so protocol extensions see the full decision surface.
-    #[allow(clippy::match_same_arms)]
-    match (class, mode, terminal, action) {
-        ("request", _, _, _) => "REQUESTED".into(),
-        ("commit", _, _, _) => "COMMITTED".into(),
-        ("deliver", "completed", true, _) => "COMPLETED".into(),
-        ("deliver", "failed", true, _) => "FAILED".into(),
-        ("deliver", "cancelled", true, _) => "CANCELLED".into(),
-        ("deliver", _, true, _) => "COMPLETED".into(),
-        ("deliver", _, false, _) => "COMMITTED".into(),
-        ("control", "cancelled", _, _) => "CANCELLED".into(),
-        ("control", _, _, "cancel") => "CANCELLED".into(),
-        ("control", _, _, _) => "CANCELLED".into(),
-        _ => "UNKNOWN".into(),
-    }
-}
-
-/// Best-effort RFC3339 -> epoch seconds.
-fn parse_rfc3339_to_epoch(s: &str) -> Option<u64> {
-    time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339)
-        .ok()
-        .and_then(|dt| u64::try_from(dt.unix_timestamp()).ok())
-}
-
-fn to_epoch_seconds(t: SystemTime) -> u64 {
-    t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::parse::{derive_fsm_state, to_epoch_seconds};
     use famp_bus::ClientStateView;
 
     fn empty_state() -> BrokerStateView {
