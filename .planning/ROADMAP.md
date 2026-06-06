@@ -121,7 +121,7 @@ Plans:
 - [x] 06-02-PLAN.md — Wave 2 (depends_on 01): five D-04 reconciliation edits (CLI table, Onboarding path, When-NOT-to-Use reword, Upgrading, Troubleshooting) + v0.9→v0.11 version refresh
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 06-03-PLAN.md — Wave 3 (depends_on 01,02): D-07 accuracy-against-binary gate — auto grep verify + BLOCKING human-verify (live launchctl lifecycle + fresh-clone Claude+Codex E2E)
+- [x] 06-03-PLAN.md — Wave 3 (depends_on 01,02): D-07 accuracy-against-binary gate — auto grep verify + BLOCKING human-verify (live launchctl lifecycle + fresh-clone Claude+Codex E2E)
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
