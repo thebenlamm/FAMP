@@ -20,14 +20,14 @@ use famp_canonical as _;
 use famp_envelope as _;
 use famp_fsm as _;
 use famp_inspect_proto::{
-    is_orphan_task_id, IdentityRow, InspectBrokerReply, InspectIdentitiesReply, InspectKind,
-    InspectMessagesReply, InspectTasksReply, InspectWaitersReply, MessageListReply, MessageRow,
-    TaskDetailFullReply, TaskDetailReply, TaskEnvelopeFull, TaskEnvelopeSummary, TaskListReply,
-    TaskRow, WaiterRow,
+    is_orphan_task_id, IdentityRow, InspectIdentitiesReply, InspectKind, InspectMessagesReply,
+    InspectTasksReply, InspectWaitersReply, MessageListReply, MessageRow, TaskDetailFullReply,
+    TaskDetailReply, TaskEnvelopeFull, TaskEnvelopeSummary, TaskListReply, TaskRow, WaiterRow,
 };
 use serde as _;
 use sha2::{Digest, Sha256};
 
+mod broker;
 mod parse;
 use parse::{derive_fsm_state, envelope_task_id, parse_rfc3339_to_epoch, to_epoch_seconds};
 
@@ -96,9 +96,8 @@ pub struct BrokerCtx {
 /// `BusReply::InspectOk { payload }`.
 pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) -> serde_json::Value {
     match kind {
-        InspectKind::Broker(_) => {
-            serde_json::to_value(inspect_broker(state, ctx)).unwrap_or(serde_json::Value::Null)
-        }
+        InspectKind::Broker(_) => serde_json::to_value(broker::inspect_broker(state, ctx))
+            .unwrap_or(serde_json::Value::Null),
         InspectKind::Identities(_) => {
             serde_json::to_value(inspect_identities(state, ctx)).unwrap_or(serde_json::Value::Null)
         }
@@ -110,16 +109,6 @@ pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) ->
         InspectKind::Waiters(_) => {
             serde_json::to_value(inspect_waiters(state)).unwrap_or(serde_json::Value::Null)
         }
-    }
-}
-
-/// INSP-BROKER-01: HEALTHY reply. PID, socket path, `started_at`, build version.
-fn inspect_broker(state: &BrokerStateView, ctx: &BrokerCtx) -> InspectBrokerReply {
-    InspectBrokerReply {
-        pid: ctx.pid,
-        socket_path: ctx.socket_path.clone(),
-        started_at_unix_seconds: to_epoch_seconds(state.started_at),
-        build_version: ctx.build_version.clone(),
     }
 }
 
