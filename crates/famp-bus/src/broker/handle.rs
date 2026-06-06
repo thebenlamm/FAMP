@@ -212,7 +212,6 @@ fn hello<E: BrokerEnv>(
             client,
             ClientState {
                 handshaked: true,
-                bus_proto,
                 name: None,
                 pid: None,
                 joined: BTreeSet::new(),
@@ -236,7 +235,6 @@ fn hello<E: BrokerEnv>(
         client,
         ClientState {
             handshaked: true,
-            bus_proto,
             name: None,
             pid: None,
             joined: BTreeSet::new(),

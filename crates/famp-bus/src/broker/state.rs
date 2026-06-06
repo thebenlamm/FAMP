@@ -6,8 +6,6 @@ use crate::{AwaitFilter, ClientId, MailboxName};
 #[derive(Debug, Clone)]
 pub(super) struct ClientState {
     pub(super) handshaked: bool,
-    #[allow(dead_code)]
-    pub(super) bus_proto: u32,
     pub(super) name: Option<String>,
     pub(super) pid: Option<u32>,
     pub(super) joined: BTreeSet<String>,
