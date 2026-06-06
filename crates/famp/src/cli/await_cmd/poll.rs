@@ -20,6 +20,7 @@
 //! The shaped output JSON uses `task_id` as the key so callers get a
 //! uniform field regardless of which class they received.
 
+use famp_envelope::EnvelopeView;
 use serde_json::{json, Value};
 
 /// Extract the task ID from a raw envelope JSON value.
@@ -70,7 +71,8 @@ fn extract_task_id(value: &Value) -> Option<&str> {
 /// consume-and-discard logic in `mod.rs` handles advancing past them.
 pub fn find_match(entries: &[(Value, u64)], task_filter: &Option<String>) -> Option<(Value, u64)> {
     for (value, end_offset) in entries {
-        let class = value.get("class").and_then(Value::as_str).unwrap_or("");
+        let view = EnvelopeView::new(value);
+        let class = view.class().unwrap_or("");
         let task_id = extract_task_id(value);
         if let Some(filter) = task_filter {
             // Skip request-class entries when filtering by task: the originator
@@ -82,8 +84,8 @@ pub fn find_match(entries: &[(Value, u64)], task_filter: &Option<String>) -> Opt
                 continue;
             }
         }
-        let from = value.get("from").and_then(Value::as_str).unwrap_or("");
-        let body = value.get("body").cloned().unwrap_or(Value::Null);
+        let from = view.from_str().unwrap_or("");
+        let body = view.body().cloned().unwrap_or(Value::Null);
         let out = json!({
             "offset": end_offset,
             "task_id": task_id.unwrap_or(""),

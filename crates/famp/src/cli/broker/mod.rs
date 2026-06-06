@@ -29,6 +29,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use famp_bus::{Broker, BrokerInput, BusReply, ClientId, MailboxName, Out, SessionRow};
+use famp_envelope::EnvelopeView;
 use famp_inspect_server::{BrokerCtx, MailboxMeta};
 use tokio::net::UnixListener;
 use tokio::sync::{mpsc, Semaphore};
@@ -603,11 +604,9 @@ fn read_mailbox_meta_for(bus_dir: &Path, name: &str) -> MailboxMeta {
     let total = entries.len() as u64;
     let unread = famp_inbox::read::read_from(&path, cursor_offset)
         .map_or(0, |entries| entries.len().try_into().unwrap_or(u64::MAX));
-    let last_sender = entries.last().and_then(|value| {
-        value
-            .get("from")
-            .and_then(|from| from.as_str().map(String::from))
-    });
+    let last_sender = entries
+        .last()
+        .and_then(|value| EnvelopeView::new(value).from_str().map(String::from));
     let last_received_at_unix_seconds = entries
         .last()
         .and_then(|value| value.get("ts").and_then(serde_json::Value::as_str))

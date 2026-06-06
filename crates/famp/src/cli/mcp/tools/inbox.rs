@@ -28,6 +28,7 @@
 //! envelope's `causality.ref` projection (test fixture-driven).
 
 use famp_bus::BusErrorKind;
+use famp_envelope::EnvelopeView;
 use serde_json::Value;
 
 use crate::bus_client::resolve_sock_path;
@@ -92,8 +93,8 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
                         .map(str::to_string);
                     // Infer thread state from event type so agents know
                     // whether to reply or treat the thread as closed.
-                    let thread_state = env
-                        .get("body")
+                    let thread_state = EnvelopeView::new(env)
+                        .body()
                         .and_then(|b| b.get("event"))
                         .and_then(Value::as_str)
                         .map_or("OPEN", |e| {

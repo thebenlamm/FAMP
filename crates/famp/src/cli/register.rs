@@ -28,6 +28,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use famp_bus::{BusErrorKind, BusMessage, BusReply};
+use famp_envelope::EnvelopeView;
 
 use crate::bus_client::{spawn, BusClient, BusClientError};
 use crate::cli::error::CliError;
@@ -325,14 +326,13 @@ fn emit_tail_line(envelope: &serde_json::Value) {
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
 
-    let from = envelope
-        .get("from")
-        .and_then(|v| v.as_str())
-        .unwrap_or("?")
-        .to_string();
+    let view = EnvelopeView::new(envelope);
+    let from = view.from_str().unwrap_or("?").to_string();
     // `to` may be a string (channel "#chan") or a structured target.
     // Canonical envelope uses string at top level for inbox tail
-    // purposes; fall back to debug-quote if not a string.
+    // purposes; fall back to debug-quote if not a string. Kept raw because
+    // EnvelopeView::to_str() drops the present-but-non-string Value needed
+    // for that debug fallback.
     let to = envelope.get("to").map_or_else(
         || "?".to_string(),
         |t| t.as_str().map_or_else(|| t.to_string(), str::to_string),
@@ -344,7 +344,7 @@ fn emit_tail_line(envelope: &serde_json::Value) {
         .to_string();
 
     // Body: prefer string body field, fall back to compact debug.
-    let body_raw = envelope.get("body").map_or_else(String::new, |b| {
+    let body_raw = view.body().map_or_else(String::new, |b| {
         b.as_str().map_or_else(|| b.to_string(), str::to_string)
     });
 
