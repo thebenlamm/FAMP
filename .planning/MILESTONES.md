@@ -1,5 +1,27 @@
 # Milestones
 
+## v0.11 Broker Daemon & Cross-Tool Bootstrap (Shipped: 2026-06-06)
+
+**Phases completed:** 3 phases (4, 5, 6), 11 plans
+**Timeline:** 2026-06-03 → 2026-06-06
+**Requirements:** 15/15 satisfied (BLC-01/02, BOOT-01/02, DAEMON-01..06, VER-01/02, DOC-01/02/03)
+
+**Delivered:** Restored guaranteed broker presence the principled way — a user-level service-managed daemon (`famp daemon install`) so a fresh clone of FAMP works for **both** Claude Code and Codex with no per-user broker babysitting. Replaces the accidental safety net that commit `56b2293` (correctly) removed when it made idle brokers mortal.
+
+**Key accomplishments:**
+
+- **`famp broker --no-idle-exit`** disables the 300 s idle self-terminate (the hard daemon prerequisite) with paused-time regression coverage proving the default idle-exit path — the `56b2293` orphan-leak fix — is unchanged (BLC-01/02).
+- **Sandbox bootstrap diagnostics** — parent-side EPERM-on-bind detection replaces the swallowed `let _ =` at `spawn.rs:92` with actionable text naming the sandbox cause and the `famp daemon install` remedy, surfaced on both CLI and MCP; install refuses to run inside a sandbox rather than writing a service that can never bind (BOOT-01/02).
+- **`famp daemon install/uninstall/status/restart`** cross-platform service lifecycle — launchd LaunchAgent (macOS) + systemd `--user` unit (Linux), idempotent, on the guardian-approved plist shape (`KeepAlive=true`, `ProcessType=Background`, no `EnvironmentVariables`); three-state `status` with 0/2/1 exit codes; `restart` picks up a replaced binary via `kickstart -k` (DAEMON-01..06).
+- **Version-skew safety** — workspace unified to `0.11.0` with reconciled `-V`/banner/handshake, and a connect-time `BusClientError::ProtocolMismatch` that fails loud (naming `famp daemon restart`) when a long-lived daemon and an upgraded client disagree on `bus_proto` (VER-01/02).
+- **Daemon-first onboarding docs** — README rewritten with a one-command quickstart, a no-install `famp broker --no-idle-exit` bridge, an explicit `## Platform support` boundary, and five reconciled downstream sections; verified live against the installed binary (DOC-01/02/03).
+
+**Verification:** Phase 6 ran a human-verify E2E (fresh-clone Claude + Codex delivery + full daemon lifecycle); the accuracy gate caught and fixed a stale-binary idempotency failure (`just install`) and a `status` exit-code drift before close. DAEMON-06 Linux behavioral acceptance deferred to a Linux host (`05-HUMAN-UAT.md`, 1 open scenario).
+
+**Known deferred items at close:** 48 acknowledged, none v0.11-blocking — 45 inherited orphan quick_task slugs (v0.6–v0.10 era), 2 dormant seeds (SEED-001 serde_jcs gate, SEED-002 push-notification adapter), and the 1 DAEMON-06 Linux UAT scenario above. See STATE.md → Deferred Items.
+
+---
+
 ## v0.10 Inspector & Observability (Shipped: 2026-05-11)
 
 **Phases completed:** 3 phases, 10 plans, 23 tasks

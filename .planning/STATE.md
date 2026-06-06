@@ -2,41 +2,36 @@
 gsd_state_version: 1.0
 milestone: v0.11
 milestone_name: refresh. DOC-01/02/03 verified live against the installed binary
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 6 context gathered
-last_updated: "2026-06-06T21:00:40.952Z"
-last_activity: 2026-06-06 -- Phase 06 marked complete
+last_updated: "2026-06-06T21:16:38.779Z"
+last_activity: 2026-06-06 — Milestone v0.11 completed and archived
 progress:
   total_phases: 16
   completed_phases: 6
   total_plans: 21
   completed_plans: 21
-  percent: 38
+  percent: 100
 ---
 
 # STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
 
-**Last Updated:** 2026-06-03 — v0.11 roadmap created. 3 phases (4–6), 15/15 requirements mapped. Phase 4 begins.
+**Last Updated:** 2026-06-06 — v0.11 milestone shipped and archived. 3 phases (4–6), 11 plans, 15/15 requirements. Awaiting next milestone.
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v0.10 Inspector & Observability is **COMPLETE** (shipped 2026-05-11). v0.11 Broker Daemon & Cross-Tool Bootstrap is now active.
+See: .planning/PROJECT.md — v0.11 Broker Daemon & Cross-Tool Bootstrap is **COMPLETE** (shipped 2026-06-06). v1.0 Federation Profile is the next milestone (trigger-gated, two independent ship gates).
 
-**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.11 makes that substrate *reliably reachable* — a service-managed daemon restores broker presence so any local client, sandboxed or not, always finds a broker.
+**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.11 made that substrate *reliably reachable* — a service-managed daemon restores broker presence so any local client, sandboxed or not, always finds a broker.
 
-**Current focus:** Phase 06 — onboarding-cross-platform-docs
+**Current focus:** Planning next milestone (`/gsd-new-milestone`).
 
 ## Current Position
 
-Phase: 06 — COMPLETE
-Plan: 1 of 3
-Status: Phase 06 complete
-Last activity: 2026-06-06 -- Phase 06 marked complete
-
-```
-[Phase 4 ░░░░░░░░░░] [Phase 5 ░░░░░░░░░░] [Phase 6 ░░░░░░░░░░]
-  0%                                                          100%
-```
+Phase: Milestone v0.11 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-06 — Milestone v0.11 completed and archived
 
 ## v0.11 Phase Map
 
@@ -98,7 +93,7 @@ Last activity: 2026-06-06 -- Phase 06 marked complete
 
 ## Deferred Items
 
-Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-sdk query audit-open`); carried forward into v0.11 unchanged unless v0.11 work pulls one in:
+Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd-sdk query audit-open`): 48 total, none v0.11-blocking — 45 orphan quick_task slugs (v0.6–v0.10 era; representative sample below, all `missing` completion artifacts with no active obligation), 2 dormant seeds, and 1 DAEMON-06 Linux UAT scenario. Carried forward from prior closes unchanged unless newer work pulls one in:
 
 | Category | Item | Status |
 |----------|------|--------|
@@ -134,9 +129,9 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 | quick_task | 260427-lb8-fix-adversarial-review-findings-doctor-i | missing |
 | seed | SEED-001-serde-jcs-conformance-gate | dormant (Gate B) |
 | seed | SEED-002-harness-adapter-push-notifications | dormant (gate assignment deferred — re-read seed when surfaced) |
-| uat_gap | 02 (02-HUMAN-UAT.md, 0 pending scenarios) | unknown |
+| uat_gap | 05 (05-HUMAN-UAT.md, 1 pending scenario) | DAEMON-06 Linux behavioral — deferred to a Linux host |
 
-**Notes:** All 30 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint work; no completion artifacts but no active obligations). SEED-001 (vector-pack interop) is unambiguously **Gate B** (2nd implementer commits to interop). SEED-002 (push-notification harness) is gate-assignment-deferred. UAT gap header status drift only — 0 pending scenarios.
+**Notes:** The 45 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint + v0.10 work; no completion artifacts but no active obligations); the rows above are a representative sample, not the full set (full count is recorded in MILESTONES.md v0.11 entry). SEED-001 (vector-pack interop) is unambiguously **Gate B** (2nd implementer commits to interop). SEED-002 (push-notification harness) is gate-assignment-deferred. The Phase-05 UAT gap is the DAEMON-06 systemd `--user` behavioral acceptance, intentionally deferred to a real Linux host.
 
 ## Quick Tasks Completed
 
@@ -182,4 +177,4 @@ Items acknowledged and deferred at v0.9 milestone close on 2026-05-04 (per `gsd-
 
 ## Operator Next Steps
 
-- Plan Phase 4 with /gsd:plan-phase 4
+- Start the next milestone with /gsd-new-milestone

@@ -227,6 +227,37 @@ If context resets, durable trail: `.planning/milestones/v0.9-ROADMAP.md` (full a
 
 ---
 
+## Milestone: v0.11 — Broker Daemon & Cross-Tool Bootstrap
+
+**Shipped:** 2026-06-06
+**Phases:** 3 (4–6) | **Plans:** 11 | **Requirements:** 15/15
+**Timeline:** 2026-06-03 → 2026-06-06
+
+> Note: v0.10 (Inspector & Observability, shipped 2026-05-11) was not captured here at its close; its durable record lives in `.planning/milestones/v0.10-*`. This section resumes the living retrospective at v0.11.
+
+### What Was Built
+A user-level service-managed daemon (`famp daemon install/uninstall/status/restart`; launchd LaunchAgent on macOS, systemd `--user` unit on Linux) that keeps exactly one broker alive, restoring the broker-presence guarantee that `56b2293` correctly removed when it made idle brokers mortal. Plus the `famp broker --no-idle-exit` prerequisite flag (and no-install bridge), actionable EPERM-on-bind sandbox diagnostics on both CLI and MCP, connect-time protocol-version-skew detection, a workspace version unified to `0.11.0`, and a daemon-first README verified live against the installed binary.
+
+### What Worked
+- **Root-caused by git archaeology before scoping.** The regression was traced to a specific commit (`56b2293`) and the precise swallowed errno (`spawn.rs:92` `let _ =`) before any requirements were written — so the milestone restored presence the principled way (a daemon) instead of reverting a correct fix. The "do NOT revert `56b2293`" guard was locked at roadmap time.
+- **Guardian plist review as a blocking pre-load gate.** DAEMON-02 made guardian sign-off on the literal plist XML a hard gate before the service could ever be loaded; a byte-exact fixture test (`sample_fixture_matches_generate_plist`) keeps the approved shape from drifting.
+- **Phase 4 prerequisite-first sequencing.** Landing `--no-idle-exit` + EPERM diagnostics before any daemon code meant Phase 5's daemon always had a non-self-terminating broker to manage — no rework.
+- **Accuracy gate against the live binary (Phase 6).** Verifying README claims against the *installed* `~/.cargo/bin/famp` (not source, not `--help`) caught a stale-binary idempotency failure and a `status` exit-code drift that doc-only review would have shipped.
+
+### What Was Inefficient
+- **`milestone.complete` accomplishment-scraping is phase-dir-scoped, not milestone-scoped.** Because v0.10's phase dirs (01–03) still live in `.planning/phases/`, the CLI counted 11 phases / 21 plans / 44 tasks and pulled v0.10 inspector accomplishments into the v0.11 entry; it also emitted `null`/garbage lines for the three Phase-6 summaries whose `one_liner` field was empty. The MILESTONES entry had to be hand-rewritten. Two fixable upstream causes: (a) prior milestone phase dirs were never archived (the "Skip" choice at v0.10 close), and (b) Phase-6 SUMMARYs lacked a parseable one-liner field.
+- **Doc artifacts (PROJECT.md "Next Milestone", STATE deferred items, retrospective) drifted across milestones.** The v1.0 trigger still described a retired 4-week clock; the Shipped list omitted v0.10; the retrospective skipped v0.10 entirely. Milestone close became partly a reconciliation pass for lag that accrued during execution.
+
+### Patterns Established
+- **Long-lived-process version safety:** any process that outlives client upgrades must exchange a version at connect and fail loud on skew — and the binary must have a single trustworthy version source. (VER-01/VER-02; down-payment on v1.0 federation wire-version negotiation.)
+- **Verify docs against the deployed binary, never source/`--help`** — promoted to an auto-memory (`feedback_binary_freshness_before_docs_verify`); `just install` before any docs-accuracy gate.
+
+### Key Lessons
+- A correct fix can unmask a latent structural failure (Codex never could `bind()` inside its sandbox; the orphan-leak had been hiding it). Restoring the lost *behavior* without reintroducing the *defect* is its own design problem worth a milestone.
+- Archive prior-milestone phase dirs at close (or run `/gsd-cleanup`) so the next `milestone.complete` scrape stays milestone-scoped; ensure every SUMMARY carries a one-liner so the auto-generated entry isn't gappy.
+
+---
+
 ## Cross-Milestone Trends
 
 ### Patterns that have held across ≥3 milestones
