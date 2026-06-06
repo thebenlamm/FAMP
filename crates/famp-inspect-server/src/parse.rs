@@ -7,48 +7,14 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Extract `task_id` from a parsed envelope JSON object.
-/// Order: `causality.ref` -> `body.details.task` -> new-task envelope `id` -> `None`.
-pub fn envelope_task_id(env: &serde_json::Value) -> Option<String> {
-    if let Some(task_id) = env
-        .get("causality")
-        .and_then(|c| c.get("ref"))
-        .and_then(serde_json::Value::as_str)
-    {
-        return Some(task_id.to_string());
-    }
-    if let Some(task_id) = env
-        .get("body")
-        .and_then(|b| b.get("details"))
-        .and_then(|d| d.get("task"))
-        .and_then(serde_json::Value::as_str)
-    {
-        return Some(task_id.to_string());
-    }
-
-    if env
-        .get("body")
-        .and_then(|body| body.get("event"))
-        .and_then(serde_json::Value::as_str)
-        == Some("famp.send.new_task")
-    {
-        return env
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_string);
-    }
-
-    None
-}
+use famp_envelope::EnvelopeView;
 
 /// Derive FSM state from envelope fields using canonical class strings
 /// and `famp_core::TerminalStatus` `snake_case` mode strings.
 pub fn derive_fsm_state(env: &serde_json::Value) -> String {
-    let class = env
-        .get("class")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    let details = env.get("body").and_then(|b| b.get("details"));
+    let view = EnvelopeView::new(env);
+    let class = view.class().unwrap_or("");
+    let details = view.body().and_then(|b| b.get("details"));
     let mode = details
         .and_then(|d| d.get("mode"))
         .and_then(serde_json::Value::as_str)

@@ -10,7 +10,9 @@ use famp_inspect_proto::{
     TaskEnvelopeSummary, TaskListReply, TaskRow,
 };
 
-use crate::parse::{derive_fsm_state, envelope_task_id, parse_rfc3339_to_epoch};
+use famp_envelope::EnvelopeView;
+
+use crate::parse::{derive_fsm_state, parse_rfc3339_to_epoch};
 use crate::BrokerCtx;
 
 fn inspect_tasks_by_id(
@@ -21,7 +23,7 @@ fn inspect_tasks_by_id(
     let envelopes_for_task: Vec<&serde_json::Value> = all_envs
         .iter()
         .copied()
-        .filter(|env| envelope_task_id(env).as_deref() == Some(id_str.as_str()))
+        .filter(|env| EnvelopeView::new(env).task_id().as_deref() == Some(id_str.as_str()))
         .collect();
 
     if full {
@@ -53,16 +55,8 @@ fn inspect_tasks_by_id(
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("")
                 .to_string(),
-            sender: env
-                .get("from")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            recipient: env
-                .get("to")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .to_string(),
+            sender: EnvelopeView::new(env).from_str().unwrap_or("").to_string(),
+            recipient: EnvelopeView::new(env).to_str().unwrap_or("").to_string(),
             fsm_transition: derive_fsm_state(env),
             timestamp: env
                 .get("ts")
@@ -101,7 +95,7 @@ pub fn inspect_tasks(
 
     let mut by_task: BTreeMap<String, Vec<&serde_json::Value>> = BTreeMap::new();
     for env in &all_envs {
-        if let Some(task_id) = envelope_task_id(env) {
+        if let Some(task_id) = EnvelopeView::new(env).task_id() {
             by_task.entry(task_id).or_default().push(env);
         }
     }
@@ -174,6 +168,9 @@ pub fn inspect_tasks(
                 .last()
                 .copied()
                 .map_or_else(|| "REQUESTED".to_string(), derive_fsm_state),
+            // Value-level fallback (to-field present-but-non-string falls
+            // through to from), which EnvelopeView's str-level to_str()/from_str()
+            // do not replicate — kept raw to preserve exact semantics.
             peer: first
                 .get("to")
                 .or_else(|| first.get("from"))

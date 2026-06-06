@@ -15,7 +15,6 @@
 use std::collections::BTreeMap;
 
 use famp_bus::BrokerStateView;
-use famp_envelope as _;
 use famp_fsm as _;
 use famp_inspect_proto::InspectKind;
 use serde as _;

@@ -1,10 +1,11 @@
 //! `InspectKind::Messages` handler and the shared [`message_row`] projection.
 
 use famp_bus::BrokerStateView;
+use famp_envelope::EnvelopeView;
 use famp_inspect_proto::{InspectMessagesReply, MessageListReply, MessageRow};
 use sha2::{Digest, Sha256};
 
-use crate::parse::{derive_fsm_state, envelope_task_id, parse_rfc3339_to_epoch};
+use crate::parse::{derive_fsm_state, parse_rfc3339_to_epoch};
 use crate::BrokerCtx;
 
 /// INSP-MSG-01..03 dispatch. Body bytes never traverse the wire - only
@@ -61,27 +62,16 @@ pub fn inspect_messages(
 /// construction so the output shape stays identical.
 #[must_use]
 pub fn message_row(env: &serde_json::Value) -> MessageRow {
-    let body_value = env.get("body").cloned().unwrap_or(serde_json::Value::Null);
+    let view = EnvelopeView::new(env);
+    let body_value = view.body().cloned().unwrap_or(serde_json::Value::Null);
     let body_bytes_vec = famp_canonical::canonicalize(&body_value).unwrap_or_default();
     let digest = Sha256::digest(&body_bytes_vec);
 
     MessageRow {
-        sender: env
-            .get("from")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_string(),
-        recipient: env
-            .get("to")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_string(),
-        task_id: envelope_task_id(env).unwrap_or_default(),
-        class: env
-            .get("class")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_string(),
+        sender: view.from_str().unwrap_or("").to_string(),
+        recipient: view.to_str().unwrap_or("").to_string(),
+        task_id: view.task_id().unwrap_or_default(),
+        class: view.class().unwrap_or("").to_string(),
         state: derive_fsm_state(env),
         timestamp: env
             .get("ts")
