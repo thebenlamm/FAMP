@@ -20,9 +20,9 @@ use famp_canonical as _;
 use famp_envelope as _;
 use famp_fsm as _;
 use famp_inspect_proto::{
-    is_orphan_task_id, InspectKind, InspectMessagesReply, InspectTasksReply, InspectWaitersReply,
-    MessageListReply, MessageRow, TaskDetailFullReply, TaskDetailReply, TaskEnvelopeFull,
-    TaskEnvelopeSummary, TaskListReply, TaskRow, WaiterRow,
+    is_orphan_task_id, InspectKind, InspectMessagesReply, InspectTasksReply, MessageListReply,
+    MessageRow, TaskDetailFullReply, TaskDetailReply, TaskEnvelopeFull, TaskEnvelopeSummary,
+    TaskListReply, TaskRow,
 };
 use serde as _;
 use sha2::{Digest, Sha256};
@@ -30,6 +30,7 @@ use sha2::{Digest, Sha256};
 mod broker;
 mod identities;
 mod parse;
+mod waiters;
 use parse::{derive_fsm_state, envelope_task_id, parse_rfc3339_to_epoch};
 
 /// Per-mailbox metadata pre-read by the broker executor before
@@ -109,27 +110,9 @@ pub fn dispatch(state: &BrokerStateView, ctx: &BrokerCtx, kind: &InspectKind) ->
         InspectKind::Messages(req) => serde_json::to_value(inspect_messages(state, ctx, req))
             .unwrap_or(serde_json::Value::Null),
         InspectKind::Waiters(_) => {
-            serde_json::to_value(inspect_waiters(state)).unwrap_or(serde_json::Value::Null)
+            serde_json::to_value(waiters::inspect_waiters(state)).unwrap_or(serde_json::Value::Null)
         }
     }
-}
-
-/// INSP-WAIT-01: one row per (parked await × subscribed mailbox).
-///
-/// The view already fans out rows in `BrokerStateView.waiters`, so this
-/// handler is just a projection of the pre-computed view into the reply type.
-fn inspect_waiters(state: &BrokerStateView) -> InspectWaitersReply {
-    let rows = state
-        .waiters
-        .iter()
-        .map(|w| WaiterRow {
-            name: w.name.clone(),
-            mailbox: w.mailbox.clone(),
-            cursor: w.cursor,
-            deadline_ms: w.deadline_ms,
-        })
-        .collect();
-    InspectWaitersReply { rows }
 }
 
 fn inspect_tasks_by_id(
