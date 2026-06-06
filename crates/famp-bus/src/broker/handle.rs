@@ -194,19 +194,12 @@ fn hello<E: BrokerEnv>(
     }
 
     if let Some(name) = bind_as {
-        // D-10: locate the canonical live registered holder for `name`.
-        // Cache the holder PID for the per-op liveness re-check; if the
-        // holder process has died between Register and our Hello, treat
-        // the bind_as as unregistered.
-        let holder_pid = broker.state.clients.values().find_map(|state| {
-            if state.connected && state.name.as_deref() == Some(name.as_str()) {
-                state.pid
-            } else {
-                None
-            }
-        });
-        let alive = holder_pid.is_some_and(|pid| broker.env.is_alive(pid));
-        if !alive {
+        // D-10: a proxy bind_as is valid only if the named canonical
+        // holder is currently registered AND its process is still live.
+        // If the holder died between its Register and our Hello, treat
+        // the bind_as as unregistered. This is the Hello-time gate; the
+        // same check re-runs per-op via `identity::proxy_holder_alive`.
+        if !proxy_holder_alive(broker, &name) {
             return vec![Out::Reply(
                 client,
                 BusReply::HelloErr {
