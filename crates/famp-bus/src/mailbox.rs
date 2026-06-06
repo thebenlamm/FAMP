@@ -16,6 +16,14 @@ mod private {
     impl<T> Sealed for T {}
 }
 
+/// Bytes a JSONL record occupies beyond its payload: the single trailing `\n`.
+///
+/// The in-memory mailbox mirrors `famp-inbox`'s on-disk framing (see
+/// `famp-inbox/src/read.rs`) so cursor offsets match the durable layer
+/// byte-for-byte. Kept as a named constant so the two offset computations in
+/// `drain_from` can't silently disagree on the terminator width.
+const JSONL_RECORD_TERMINATOR_LEN: u64 = 1;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MailboxName {
     Agent(String),
@@ -167,7 +175,10 @@ impl MailboxRead for InMemoryMailbox {
             entries.clone()
         };
 
-        let total: u64 = entries.iter().map(|line| (line.len() + 1) as u64).sum();
+        let total: u64 = entries
+            .iter()
+            .map(|line| line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN)
+            .sum();
         if since_bytes > total {
             return Err(MailboxErr::CursorOutOfRange {
                 requested: since_bytes,
@@ -178,9 +189,9 @@ impl MailboxRead for InMemoryMailbox {
         let mut cursor = 0_u64;
         let mut lines = Vec::new();
         for line in entries {
-            // Each line's size is `line.len() + 1` (line + `\n`) to mirror
-            // the disk JSONL format from `famp-inbox/src/read.rs` lines 38-82.
-            let next = cursor + (line.len() + 1) as u64;
+            // Each line's size is payload + `\n`, mirroring the disk JSONL
+            // framing in `famp-inbox/src/read.rs`.
+            let next = cursor + line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
             if cursor >= since_bytes {
                 lines.push(line.clone());
             }
