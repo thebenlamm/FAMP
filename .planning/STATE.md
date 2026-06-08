@@ -136,6 +136,7 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260608-k8l | v1.0 federation spike scaffolding: `just spike-tunnel` (socat broker→tailnet) + docs/SPIKE-friend-chat.md runbook with listen:false security gate; zero FAMP code, gateway parked | 2026-06-08 | 93bf457 | [260608-k8l-spike-friend-chat-scaffolding](./quick/260608-k8l-spike-friend-chat-scaffolding/) |
 | 260504-ubf | Cleanup late-join debug findings: delete stale v0.8 cursor artifacts, add RegisterOk.peers snapshot doc note | 2026-05-05 | a55be0d | [260504-ubf-clean-up-late-join-debug-findings-delete](./quick/260504-ubf-clean-up-late-join-debug-findings-delete/) |
 | 260506-c65 | Wire famp-await.sh into famp install-claude-code / uninstall-claude-code distribution | 2026-05-06 | 54fcb47 | [260506-c65-wire-famp-await-into-install-claude-code](./quick/260506-c65-wire-famp-await-into-install-claude-code/) |
 | 260506-s1t | Add smoke-test for Quick Start install path (just smoke-test + CI job) | 2026-05-06 | 53eec99 | [260506-s1t-add-smoke-test-quick-start-install](./quick/260506-s1t-add-smoke-test-quick-start-install/) |
