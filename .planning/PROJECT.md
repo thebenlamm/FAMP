@@ -214,17 +214,25 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 
 **Design context:** Brainstorm + adversarial review by `matt-essentialist` (reframe: "the inspector RPC is the product, the dashboard is a demo of it") and `hamming-research-scientist` (rejected the double-print counter as wrong-instrument; flagged the dead-broker-diagnosis command as load-bearing). Decisions locked in conversation prior to milestone open.
 
-## Next Milestone: v1.0 Federation Profile (trigger-gated)
+## Current Milestone: v1.0 Federation Profile — Gate A (Gateway)
 
-**Two independent ship gates** (4-week clock retired 2026-05-09; both gates now event-driven — see `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`):
-- **Gate A (Gateway):** Ben's sustained symmetric cross-machine FAMP use (~2 weeks) → unlocks `famp-gateway`, reactivates `crates/famp/tests/_deferred_v1/`, tags `v1.0.0`.
-- **Gate B (Conformance):** a 2nd implementer commits to interop → unlocks the conformance vector pack (drafted as `WRAP-V0-5-1-PLAN.md`, deferred 2026-04-26; SEED-001 is its serde_jcs conformance gate) at whatever release tag is current.
+**Goal:** Ben's Claude Code on one host exchanges signed FAMP envelopes with another host's Claude Code, over a mesh VPN, via a new `famp-gateway` (Layer 2) wrapping the preserved `famp-transport-http` + `famp-keyring`.
 
-**Why gates and not a date:** Without a named second-host human, "FAMP = Federated" is aspirational. A concrete forcing function with a real candidate is the only honest exit from the local-case satisfaction loop. Sofer is the natural Gate-B candidate — proven willing, already running a 5-agent mesh on his medical platforms (see `.planning/RETROSPECTIVE.md` "v0.9 Prep Sprint and the Sofer Field Report"). Architect's "local-case black hole" warning is the named risk these gates address.
+**Gate A fired 2026-06-08** by the friend-to-friend ask (Ben's Claude Code ↔ his friend's Claude Code) — the activation signal the design named; the ~2-week dogfood was proof-of-need, not a technical prereq (see `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`).
 
-**Scope (when triggered):** `famp-gateway` bridging the local bus to remote FAMP-over-HTTPS; Agent Cards + federation credentials; `.well-known` card distribution; negotiation / counter-proposal; delegation forms; provenance graph; extensions registry; replay defense; full conformance test-vector pack (the pack drafted as `WRAP-V0-5-1-PLAN.md` 2026-04-26 and deferred at that time — vectors prove interop, ship when a real second implementer commits).
+**Target features (thin vertical slice):**
+- `famp-gateway` crate (Layer 2) — bridges the local UDS bus to remote FAMP-over-HTTPS using the preserved transport; re-introduces the signed-envelope path (Ed25519/INV-10, already built) on the cross-host hop.
+- **Reachability = mesh VPN** (Tailscale/WireGuard): the gateway HTTPS listener binds to a tailnet IP, TOFU-pinned peer. FAMP does **not** build NAT traversal / relay / STUN / TURN (decision 2026-06-08; auto-memory `project_v10_reachability_meshvpn`).
+- **Two-host trust bootstrap:** `peer_export` → out-of-band channel (e.g. Signal) → `peer_import` + TOFU pin. Ship rough; bootstrap-UX polish defers to v1.1.
+- Reactivate the ~27 deferred federation tests in `crates/famp/tests/_deferred_v1/`.
 
-**References:** auto-memory `project_v10_trigger`; Brain decision `topic=v1.0-trigger` (project=famp); `.planning/WRAP-V0-5-1-PLAN.md` DEFERRED banner.
+**Sequence (hard ordering):** prove gateway on Ben's **own laptop ↔ home machine first** (full network control, keys copied directly, tight debug loop), *then* add the friend. Don't debug gateway + NAT + cross-person trust simultaneously across two people's schedules.
+
+**Precise scope delta vs the planned Gate A** (own two machines): internet/NAT reachability + two-human out-of-band key exchange. NOT reachability/trust in general — Gate A already scoped bidirectional reachability + mutual trust.
+
+**Deferred out of this milestone:** Agent Cards + federation credentials, `.well-known` card distribution, negotiation/counter-proposal, delegation forms, provenance graph, extensions registry. SEED-002 (push-notification harness adapter) deferred — orthogonal to the federation transport. **Gate B (Conformance)** stays event-driven: a 2nd implementer commits to interop → conformance vector pack (`WRAP-V0-5-1-PLAN.md`; SEED-001 is its serde_jcs gate) ships at whatever tag is current. Sofer is the natural Gate-B candidate.
+
+**References:** `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`; auto-memories `project_v10_trigger`, `project_v10_reachability_meshvpn`; escape-hatch tag `v0.8.1-federation-preserved`.
 
 ## Last Milestone: v0.9 Local-First Bus — SHIPPED 2026-05-04
 
@@ -330,4 +338,4 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. 8-tool MCP surface stable across v0.8 → v0.9 → v1.0.
 
 ---
-*Last updated: 2026-06-06 after v0.11 milestone. Broker Daemon & Cross-Tool Bootstrap shipped — `famp daemon install` (launchd + systemd `--user`) restores guaranteed broker presence for both Claude Code and Codex; `--no-idle-exit` flag + no-install bridge; EPERM sandbox diagnostics; connect-time version-skew detection; version unified to 0.11.0; daemon-first README verified live. 3 phases (4–6), 11 plans, 15/15 requirements. Next: v1.0 Federation Profile (trigger-gated, two event-driven gates).*
+*Last updated: 2026-06-08 — v1.0 Federation Profile (Gate A / Gateway) started. Fired by the friend-to-friend ask; reachability decided as mesh VPN (not self-built NAT traversal) to keep it a thin vertical slice over the preserved transport. Build `famp-gateway`, prove laptop↔home-machine first, then add friend. Gate B (conformance pack) stays event-driven. Prior: v0.11 Broker Daemon & Cross-Tool Bootstrap shipped 2026-06-06 (3 phases, 11 plans, 15/15 reqs).*

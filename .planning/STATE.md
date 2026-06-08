@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.11
-milestone_name: refresh. DOC-01/02/03 verified live against the installed binary
-status: Awaiting next milestone
-stopped_at: Phase 6 context gathered
-last_updated: "2026-06-06T21:16:38.779Z"
-last_activity: 2026-06-06 — Milestone v0.11 completed and archived
+milestone: v1.0
+milestone_name: Federation Profile — Gate A
+status: planning
+last_updated: "2026-06-08T17:55:14.698Z"
+last_activity: 2026-06-08
 progress:
-  total_phases: 16
-  completed_phases: 6
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
@@ -28,10 +27,10 @@ See: .planning/PROJECT.md — v0.11 Broker Daemon & Cross-Tool Bootstrap is **CO
 
 ## Current Position
 
-Phase: Milestone v0.11 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-06-06 — Milestone v0.11 completed and archived
+Status: Defining requirements
+Last activity: 2026-06-08 — Milestone v1.0 started
 
 ## v0.11 Phase Map
 
