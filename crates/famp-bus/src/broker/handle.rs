@@ -310,10 +310,7 @@ fn register<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = match decode_lines(drained.lines) {
-        Ok(values) => values,
-        Err(message) => return vec![err(client, BusErrorKind::EnvelopeInvalid, message)],
-    };
+    let decoded = decode_lines(&mailbox, since, drained.lines);
 
     let peers = connected_names(&broker.state.clients);
     let Some(state) = broker.state.clients.get_mut(&client) else {
@@ -517,10 +514,7 @@ fn inbox<E: BrokerEnv>(broker: &Broker<E>, client: ClientId, since: Option<u64>)
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let envelopes = match decode_lines(drained.lines) {
-        Ok(values) => values,
-        Err(message) => return vec![err(client, BusErrorKind::EnvelopeInvalid, message)],
-    };
+    let envelopes = decode_lines(&mailbox, since.unwrap_or(0), drained.lines);
 
     vec![Out::Reply(
         client,
@@ -578,10 +572,7 @@ fn join<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = match decode_lines(drained.lines) {
-        Ok(values) => values,
-        Err(message) => return vec![err(client, BusErrorKind::EnvelopeInvalid, message)],
-    };
+    let decoded = decode_lines(&mailbox, since, drained.lines);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state
             .await_offsets
@@ -808,8 +799,42 @@ fn encode_envelope(envelope: &serde_json::Value, client: ClientId) -> Result<Vec
     Ok(line)
 }
 
-fn decode_lines(lines: Vec<Vec<u8>>) -> Result<Vec<serde_json::Value>, String> {
-    lines.into_iter().map(|line| decode_line(&line)).collect()
+/// Decode every drained line into a typed envelope `Value`, SKIPPING any
+/// line that fails decode rather than aborting the whole batch.
+///
+/// Head-of-line resilience (fix 260611): a single malformed/non-conformant
+/// envelope (e.g. a foreign implementation that wrote a bad `causality.ref`
+/// or omitted a required field) must NOT wedge a receiver's entire mailbox.
+/// Each undecodable line is dropped from the delivered batch and logged
+/// LOUDLY (`WARN` with mailbox + byte offset + decode error) so a
+/// misbehaving peer stays visible — silent skipping would hide
+/// cross-implementation data loss, the worst interop failure mode. The
+/// raw line is retained in the append-only mailbox file, which is itself
+/// the recovery store (no quarantine sidecar needed).
+///
+/// `start_offset` is the byte offset the drain began at; offsets reported
+/// in the warning are absolute file offsets so the bad line can be located.
+fn decode_lines(
+    mailbox: &MailboxName,
+    start_offset: u64,
+    lines: Vec<Vec<u8>>,
+) -> Vec<serde_json::Value> {
+    let mut out = Vec::with_capacity(lines.len());
+    let mut offset = start_offset;
+    for line in lines {
+        let line_next_offset = offset + (line.len() + 1) as u64;
+        match decode_line(&line) {
+            Ok(value) => out.push(value),
+            Err(error) => tracing::warn!(
+                mailbox = %mailbox,
+                byte_offset = offset,
+                error = %error,
+                "skipping undecodable mailbox line (head-of-line resilience)"
+            ),
+        }
+        offset = line_next_offset;
+    }
+    out
 }
 
 pub(super) fn decode_line(line: &[u8]) -> Result<serde_json::Value, String> {

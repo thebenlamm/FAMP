@@ -138,11 +138,44 @@ proptest! {
     }
 }
 
+/// Canonical wire bytes for one mailbox line (no trailing newline; the
+/// in-memory mailbox stores one line per entry).
+fn line(value: &serde_json::Value) -> Vec<u8> {
+    famp_canonical::canonicalize(value).unwrap()
+}
+
+/// A Grok-style malformed envelope: valid JSON, but `causality.ref` is a
+/// free-text narration where a UUID `MessageId` is required — exactly the
+/// envelope that wedged scs-opus in the wild (fix 260611). `decode_line`
+/// rejects it; the drain must SKIP it rather than abort.
+fn malformed_envelope() -> serde_json::Value {
+    json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": "01890000-0000-7000-8000-0000000000ff",
+        "from": "agent:example.test/grok",
+        "to": "agent:example.test/alice",
+        "authority": "advisory",
+        "ts": "2026-04-27T12:00:00Z",
+        "causality": { "ref": "019eb something from opus refinement", "rel": "delivers" },
+        "body": { "details": { "body": "Thanks for the refinements" } }
+    })
+}
+
+/// Head-of-line resilience (register/inbox path): a single undecodable line
+/// sandwiched between two good envelopes must be SKIPPED, both good
+/// envelopes delivered, and the cursor advanced to EOF — NOT a hard error
+/// that wedges the entire mailbox. (Pre-fix contract: this returned
+/// `EnvelopeInvalid` and refused to advance the cursor. Inverted by fix
+/// 260611.)
 #[test]
-fn malformed_drain_line_returns_error_and_does_not_advance_cursor() {
+fn malformed_drain_line_is_skipped_and_cursor_advances_on_register() {
     let env = TestEnv::new();
-    env.mailbox()
-        .append(&MailboxName::Agent("alice".into()), b"{not json".to_vec());
+    let alice = MailboxName::Agent("alice".into());
+    env.mailbox().append(&alice, line(&audit_log_envelope(0)));
+    env.mailbox().append(&alice, line(&malformed_envelope()));
+    env.mailbox().append(&alice, line(&audit_log_envelope(1)));
     let mut broker = Broker::new(env);
     let now = Instant::now();
     let _ = broker.handle(
@@ -168,17 +201,65 @@ fn malformed_drain_line_returns_error_and_does_not_advance_cursor() {
         },
         now,
     );
-    assert!(matches!(
-        out.as_slice(),
-        [Out::Reply(
-            ClientId(1),
-            BusReply::Err {
-                kind: BusErrorKind::EnvelopeInvalid,
-                ..
-            }
-        )]
-    ));
-    assert!(!out
+    let drained = match out.as_slice() {
+        [Out::Reply(ClientId(1), BusReply::RegisterOk { drained, .. }), Out::AdvanceCursor { .. }] => {
+            drained
+        }
+        other => panic!("expected RegisterOk + AdvanceCursor (skip-and-advance), got {other:?}"),
+    };
+    // Both good envelopes delivered; the malformed one dropped from the batch.
+    let seqs: Vec<u64> = drained
         .iter()
-        .any(|item| matches!(item, Out::AdvanceCursor { .. })));
+        .map(|v| v["body"]["details"]["offline_seq"].as_u64().unwrap())
+        .collect();
+    assert_eq!(seqs, vec![0, 1], "good envelopes survive, malformed skipped");
+}
+
+/// Head-of-line resilience (await path — the live-wedged site). A listen-mode
+/// agent draining its mailbox via `Await` must skip an undecodable line and
+/// advance past it, delivering the good envelopes behind it. Pre-fix, the
+/// `?` in `drain_await_batch` returned before advancing the offset, so the
+/// cursor never moved past the bad line and the inbox stayed jammed forever
+/// (this is exactly what happened to scs-opus). Seed AFTER register so the
+/// await drains over the poison from offset 0.
+#[test]
+fn malformed_drain_line_is_skipped_and_cursor_advances_on_await() {
+    let env = TestEnv::new();
+    let mailbox = env.mailbox().clone();
+    let alice = MailboxName::Agent("alice".into());
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_register(&mut broker, 1, "alice", now);
+    mailbox.append(&alice, line(&audit_log_envelope(0)));
+    mailbox.append(&alice, line(&malformed_envelope()));
+    mailbox.append(&alice, line(&audit_log_envelope(1)));
+
+    let out = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1),
+            msg: BusMessage::Await {
+                timeout_ms: 30_000,
+                task: None,
+            },
+        },
+        now,
+    );
+    let envelopes = match out
+        .iter()
+        .find_map(|o| match o {
+            Out::Reply(ClientId(1), BusReply::AwaitOk { envelopes, .. }) => Some(envelopes),
+            _ => None,
+        }) {
+        Some(envelopes) => envelopes,
+        None => panic!("expected AwaitOk (skip-and-advance over poison), got {out:?}"),
+    };
+    let seqs: Vec<u64> = envelopes
+        .iter()
+        .map(|v| v["body"]["details"]["offline_seq"].as_u64().unwrap())
+        .collect();
+    assert_eq!(
+        seqs,
+        vec![0, 1],
+        "await drain delivers good envelopes, skips the poison line"
+    );
 }

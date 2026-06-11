@@ -177,17 +177,31 @@ fn drain_await_batch<E: BrokerEnv>(
     let mut envelopes = Vec::new();
     for line in drained.lines {
         let line_next_offset = next_offset + (line.len() + 1) as u64;
-        let value =
-            decode_line(&line).map_err(|message| (BusErrorKind::EnvelopeInvalid, message))?;
-        if filter_matches(filter, &value) {
-            envelopes.push(value);
-            if envelopes.len() == AWAIT_BATCH_CAP {
-                return Ok(AwaitBatch {
-                    mailbox: mailbox.clone(),
-                    envelopes,
-                    next_offset: line_next_offset,
-                });
+        // Head-of-line resilience (fix 260611): a single undecodable line
+        // must NOT wedge the await drain. The pre-fix `?` returned BEFORE
+        // `next_offset` advanced, so the cursor never moved past a bad line
+        // and a listen-mode agent's inbox stayed jammed forever. Skip the
+        // line, advance past it, and log LOUDLY so the misbehaving peer
+        // stays visible. (Mirrors `decode_lines` on the inbox/register path.)
+        match decode_line(&line) {
+            Ok(value) => {
+                if filter_matches(filter, &value) {
+                    envelopes.push(value);
+                    if envelopes.len() == AWAIT_BATCH_CAP {
+                        return Ok(AwaitBatch {
+                            mailbox: mailbox.clone(),
+                            envelopes,
+                            next_offset: line_next_offset,
+                        });
+                    }
+                }
             }
+            Err(error) => tracing::warn!(
+                mailbox = %mailbox,
+                byte_offset = next_offset,
+                error = %error,
+                "skipping undecodable mailbox line (head-of-line resilience)"
+            ),
         }
         next_offset = line_next_offset;
     }
