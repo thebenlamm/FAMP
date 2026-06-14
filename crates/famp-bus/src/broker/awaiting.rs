@@ -10,7 +10,9 @@
 use std::time::{Duration, Instant};
 
 use crate::broker::handle::{decode_line, err};
-use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
+use crate::broker::identity::{
+    canonical_holder_id, effective_identity, proxy_holder_alive, resolve_op_identity,
+};
 use crate::broker::state::ParkedAwait;
 use crate::{AwaitFilter, Broker, BrokerEnv, BusErrorKind, BusReply, ClientId, MailboxName, Out};
 
@@ -173,6 +175,22 @@ fn drain_await_batch<E: BrokerEnv>(
         .drain_from(mailbox, since)
         .map_err(|error| (BusErrorKind::Internal, error.to_string()))?;
 
+    // Self-filter: standard pub/sub semantics — a publisher does not receive
+    // its own posts. When draining a channel mailbox, resolve the awaiter's
+    // identity once here and skip any envelope whose `from` matches. The
+    // offset still advances past skipped lines so the cursor never re-sees
+    // them (same invariant as the head-of-line skip below). `None` on
+    // non-channel mailboxes so the check is a no-op on the agent-inbox path.
+    let awaiter_identity: Option<String> = if matches!(mailbox, MailboxName::Channel(_)) {
+        broker
+            .state
+            .clients
+            .get(&owner)
+            .and_then(|s| effective_identity(s).ok())
+    } else {
+        None
+    };
+
     let mut next_offset = since;
     let mut envelopes = Vec::new();
     for line in drained.lines {
@@ -185,6 +203,11 @@ fn drain_await_batch<E: BrokerEnv>(
         // stays visible. (Mirrors `decode_lines` on the inbox/register path.)
         match decode_line(&line) {
             Ok(value) => {
+                if is_self_authored(&value, awaiter_identity.as_deref()) {
+                    // Advance past self-post; do not push to envelopes.
+                    next_offset = line_next_offset;
+                    continue;
+                }
                 if filter_matches(filter, &value) {
                     envelopes.push(value);
                     if envelopes.len() == AWAIT_BATCH_CAP {
@@ -209,7 +232,9 @@ fn drain_await_batch<E: BrokerEnv>(
 
     if let Some((trigger_envelope, trigger_line_len)) = trigger {
         let trigger_next_offset = next_offset + (trigger_line_len + 1) as u64;
-        if filter_matches(filter, trigger_envelope) {
+        if !is_self_authored(trigger_envelope, awaiter_identity.as_deref())
+            && filter_matches(filter, trigger_envelope)
+        {
             envelopes.push(trigger_envelope.clone());
         }
         next_offset = trigger_next_offset;
@@ -220,6 +245,23 @@ fn drain_await_batch<E: BrokerEnv>(
         envelopes,
         next_offset,
     })
+}
+
+/// Returns `true` when the envelope's `from` field ends in `/<awaiter>`,
+/// indicating the awaiter authored the message.
+///
+/// Envelope `from` format: `agent:<host>/<name>`. Splitting on `/` and
+/// comparing the last segment is host-agnostic and avoids URI parsing.
+/// Returns `false` when `awaiter_identity` is `None` (non-channel path),
+/// when `from` is absent/malformed, or when the names do not match.
+fn is_self_authored(envelope: &serde_json::Value, awaiter_identity: Option<&str>) -> bool {
+    let Some(awaiter) = awaiter_identity else {
+        return false;
+    };
+    let Some(from) = envelope.get("from").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    from.rsplit('/').next().is_some_and(|sender| sender == awaiter)
 }
 
 pub(super) fn waiting_clients_for_name<E: BrokerEnv>(

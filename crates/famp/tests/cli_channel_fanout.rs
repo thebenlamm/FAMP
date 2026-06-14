@@ -198,3 +198,83 @@ fn test_channel_fanout() {
     kill_and_wait(&mut bob);
     kill_and_wait(&mut charlie);
 }
+
+/// Regression: a sender must NOT receive its own channel post via `famp await`.
+///
+/// alice joins #c and parks `famp await --as alice --timeout 3s` BEFORE
+/// sending. alice then sends to #c. Bob (also joined and parked) must
+/// receive the post. Alice's await must NOT wake on her own envelope —
+/// it should time out and print `{"timeout":true}` with no "broadcast".
+///
+/// Before the fix this test fails: alice's await wakes immediately because
+/// `drain_await_batch` has no self-filter and delivers alice's own post back
+/// to her parked await.
+#[test]
+fn test_channel_no_self_delivery() {
+    let bus = Bus::new();
+
+    let mut alice_reg = bus.famp_spawn_silent(&["register", "alice"]);
+    let mut bob_reg = bus.famp_spawn_silent(&["register", "bob"]);
+    bus.wait_for_register("alice");
+    bus.wait_for_register("bob");
+
+    for who in ["alice", "bob"] {
+        let out = bus.famp_cmd(&["join", "#c", "--as", who]);
+        assert!(
+            out.status.success(),
+            "{who} join #c failed: stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // Park alice's await BEFORE sending — short timeout so the test completes quickly.
+    let alice_await =
+        bus.famp_spawn_capture(&["await", "--as", "alice", "--timeout", "3s"]);
+    // Park bob's await with a longer timeout so alice's send is guaranteed to arrive.
+    let bob_await =
+        bus.famp_spawn_capture(&["await", "--as", "bob", "--timeout", "10s"]);
+    // Give both awaits time to register their parked entries on the broker.
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Alice sends — this triggers the self-delivery bug before the fix.
+    let send = bus.famp_cmd(&[
+        "send",
+        "--as",
+        "alice",
+        "--channel",
+        "#c",
+        "--new-task",
+        "broadcast",
+    ]);
+    assert!(
+        send.status.success(),
+        "channel send failed: stderr={}",
+        String::from_utf8_lossy(&send.stderr)
+    );
+
+    // Bob must receive alice's post (fan-out must still work).
+    let bob_out = bob_await.wait_with_output().unwrap();
+    assert!(
+        bob_out.status.success(),
+        "bob await failed: stderr={}",
+        String::from_utf8_lossy(&bob_out.stderr)
+    );
+    let bob_stdout = String::from_utf8_lossy(&bob_out.stdout);
+    assert!(
+        bob_stdout.contains("broadcast"),
+        "bob must receive alice's broadcast; got: {bob_stdout}"
+    );
+
+    // Alice must NOT receive her own post.
+    // Fixed path: await times out → stdout = {"timeout":true}, no "broadcast".
+    // Bug path:   await returns immediately with the envelope → "broadcast" present.
+    let alice_out = alice_await.wait_with_output().unwrap();
+    let alice_stdout = String::from_utf8_lossy(&alice_out.stdout);
+    assert!(
+        !alice_stdout.contains("broadcast"),
+        "alice's await must NOT receive her own channel post; got: {alice_stdout}"
+    );
+
+    kill_and_wait(&mut alice_reg);
+    kill_and_wait(&mut bob_reg);
+}
