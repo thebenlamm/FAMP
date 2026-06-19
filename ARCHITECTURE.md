@@ -24,10 +24,16 @@ start to bind an identity by name; the name resolves to
 `$FAMP_LOCAL_ROOT/agents/<name>/` (default `~/.famp-local/agents/<name>/`).
 Pre-registration calls to `famp_send`, `famp_inbox`, `famp_await`, and
 `famp_peers` return a typed `not_registered` error. `famp_whoami` reports
-the current binding and never errors. `famp_inbox` action=list hides
-entries for tasks that reached a terminal FSM state (opt back in with
-`include_terminal: true`); `famp_await` stays unfiltered and is the
-canonical real-time signal for task completion.
+the current binding and never errors. `famp_inbox` action=list merges
+the agent mailbox with any joined-channel mailboxes (Scope B, 2026-06-19,
+commits `70b0d43` + `ad77c56`); per-channel cursors are tracked
+independently from the `famp_await` channel cursor, so a post may
+surface on either surface (or both) for a given holder. `famp_await`
+stays unfiltered and is the canonical real-time signal for task
+completion. The `include_terminal` flag on `famp_inbox` is accepted on
+the wire but currently a no-op — broker-side terminal-FSM filtering is
+deferred to v1 (would require the famp-bus actor to read famp-taskdir,
+which crosses the transport-vs-cli boundary).
 
 Note: the federation transport side (`famp listen`, `famp setup`,
 `famp send`, `famp peer import`) still reads `FAMP_HOME` per identity —

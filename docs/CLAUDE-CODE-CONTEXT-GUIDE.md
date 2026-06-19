@@ -161,7 +161,8 @@ tightly scoped to remaining open questions.
 | Context at 40%+ after one message | Double-print from famp_await + famp_inbox | Use task_id from famp_await result directly; skip famp_inbox |
 | Thread never closes, peer keeps waiting | Using mode="reply" with expect_reply:true when not asking a question | Omit expect_reply (or set false) to close the thread |
 | Long sessions hit context limit mid-discussion | Briefing bodies too long, all retained in context | Pass large context by file reference; shorten per-round bodies |
-| famp_inbox returns nothing after famp_await | famp_await already drained the message | Expected; don't call famp_inbox after manual famp_await |
+| famp_inbox returns nothing after famp_await (agent mailbox) | famp_await already drained the message | Expected; don't call famp_inbox after manual famp_await |
+| famp_inbox surfaces a channel post you already saw via famp_await | Channel inbox + await cursors are independent (Scope B HIGH-fix, commit ad77c56) | Expected; both surfaces deliver channel posts independently. Treat them as parallel consumers, not a shared queue. |
 
 ---
 

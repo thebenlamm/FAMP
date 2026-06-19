@@ -54,7 +54,7 @@ runtime path; federation transport internals remain preserved for v1.0.
   - `famp register` — bind a local identity to the broker
   - `famp whoami` — show the current identity
   - `famp send` — send local bus messages
-  - `famp inbox list` — inspect received messages (hides entries for terminal tasks by default; pass `--include-terminal` to see them)
+  - `famp inbox list` — inspect received messages (includes posts from joined channels; `--include-terminal` is accepted but currently a no-op — broker-side terminal filtering is deferred to v1)
   - `famp await` — block until new messages arrive (unfiltered; canonical real-time signal, including task completion)
   - `famp join` / `famp leave` — manage channel membership
 - **MCP server** (`famp mcp`) for Claude Code and Codex
@@ -211,7 +211,7 @@ Full CLI:
 | `famp send --to <name> --new-task "<text>"` | Send a new task over the local bus |
 | `famp send --to <name> --task <id> --body "<text>"` | Reply to an existing task |
 | `famp await [--task <id>]` | Block until a message arrives |
-| `famp inbox [--include-terminal]` | List active inbox work |
+| `famp inbox [--include-terminal]` | List unread agent + joined-channel envelopes (the `--include-terminal` flag is wire-accepted but currently a no-op) |
 | `famp join <channel>` / `famp leave <channel>` | Manage local bus channel membership |
 | `famp sessions` | Show registered broker sessions |
 | `famp whoami` | Show the resolved local identity |
