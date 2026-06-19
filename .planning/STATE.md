@@ -30,7 +30,7 @@ See: .planning/PROJECT.md — v0.11 Broker Daemon & Cross-Tool Bootstrap is **CO
 Phase: Not started (defining requirements)
 Plan: —
 Status: Defining requirements
-Last activity: 2026-06-08 — Milestone v1.0 started
+Last activity: 2026-06-19 — Scope B shipped (commit 70b0d43): broker `Inbox` merges joined channels so `register --tail` and `inbox list --as` surface channel posts; pairs with Scope C (29b7495) on the inspector path
 
 ## v0.11 Phase Map
 
@@ -136,6 +136,8 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260619-k26b | Scope B: broker `BusMessage::Inbox` handler now merges the canonical holder's joined-channel mailboxes into the response, so `famp register --tail <id>` and `famp inbox list --as <id>` surface channel posts via the existing UDS poll path. Per-channel cursors via `await_offsets[Channel(c)]`, 256-row drain cap for hot-channel backpressure, `Leave` drops the cursor for clean rejoin, `include_terminal` flag now propagates end-to-end through the handler (broker-side terminal-FSM filter parked for v1 — crosses famp-bus ↔ famp-cli boundary), `resolve_identity` rejects `#`-prefixed `--as` values with `CliError::ChannelNotIdentity` instead of bottoming out at `NotRegistered`. TDD: 3 integration + 3 unit tests added (cli_channel_fanout, cli_inbox, broker/handle/tests). Session file: `.planning/debug/resolved/scope-b-channel-merge.md`. | 2026-06-19 | 70b0d43 | (debug session, no quick/ directory) |
+| 260619-k26 | Scope C: fix `inspect messages --to '#channel'` returning empty when channel mailbox file exists (read_message_snapshot now scans `mailboxes/#*.jsonl`) + wait-reply help text clarifying task-reply vs new-task channel semantics. Followed up by Scope B (260619-k26b) which shipped the corresponding read-side merge in the broker handler. | 2026-06-19 | 29b7495 | [260619-k26-inspect-messages-read-channel-mailbox-fi](./quick/260619-k26-inspect-messages-read-channel-mailbox-fi/) |
 | 260608-k8l | v1.0 federation spike scaffolding: `just spike-tunnel` (socat broker→tailnet) + docs/SPIKE-friend-chat.md runbook with listen:false security gate; zero FAMP code, gateway parked | 2026-06-08 | 93bf457 | [260608-k8l-spike-friend-chat-scaffolding](./quick/260608-k8l-spike-friend-chat-scaffolding/) |
 | 260504-ubf | Cleanup late-join debug findings: delete stale v0.8 cursor artifacts, add RegisterOk.peers snapshot doc note | 2026-05-05 | a55be0d | [260504-ubf-clean-up-late-join-debug-findings-delete](./quick/260504-ubf-clean-up-late-join-debug-findings-delete/) |
 | 260506-c65 | Wire famp-await.sh into famp install-claude-code / uninstall-claude-code distribution | 2026-05-06 | 54fcb47 | [260506-c65-wire-famp-await-into-install-claude-code](./quick/260506-c65-wire-famp-await-into-install-claude-code/) |
