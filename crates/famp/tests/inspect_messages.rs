@@ -179,6 +179,83 @@ fn metadata_only_no_body() {
     kill_and_wait(&mut receiver);
 }
 
+/// Regression for beta UX bug (2026-06-19): `famp inspect messages
+/// --to '#channel'` returned an empty list even when the channel
+/// mailbox file `~/.famp/mailboxes/#channel.jsonl` contained
+/// envelopes. Root cause: `read_message_snapshot` iterated registered
+/// identities only and never enumerated channel mailbox files. Fix:
+/// scan `mailboxes/#*.jsonl` from disk.
+#[test]
+fn channel_messages_are_visible_via_inspect() {
+    let bus = Bus::new();
+    let mut broker = bus.famp_spawn_broker();
+    let sender_cwd = cwd_from(&bus, "sender");
+    let receiver_cwd = cwd_from(&bus, "receiver");
+    let mut sender = bus.famp_spawn_in(&sender_cwd, &["register", "sender"]);
+    let mut receiver = bus.famp_spawn_in(&receiver_cwd, &["register", "receiver"]);
+    bus.wait_for_register("sender");
+    bus.wait_for_register("receiver");
+
+    // Both join the channel so the broker has known members; sender
+    // joins to mirror Ben's repro (a participant lead-posting), receiver
+    // joins to validate the post-join "I'm a member but can't see msgs"
+    // failure mode.
+    for who in ["sender", "receiver"] {
+        let out = bus.famp_cmd(&["join", "#brain-test", "--as", who]);
+        assert!(
+            out.status.success(),
+            "{who} join failed: stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let send = bus.famp_cmd_in(
+        &sender_cwd,
+        &[
+            "send",
+            "--as",
+            "sender",
+            "--channel",
+            "#brain-test",
+            "--new-task",
+            "channel-close",
+            "--body",
+            "yield",
+        ],
+    );
+    assert!(
+        send.status.success(),
+        "channel send failed: stderr={}",
+        String::from_utf8_lossy(&send.stderr)
+    );
+
+    // Ground-truth: the channel mailbox file is on disk before we
+    // poll the inspector. Without the fix, the file is there but the
+    // inspector returns []; with the fix, the inspector matches the
+    // file's row count. bus_dir is the parent of bus.sock, so
+    // mailboxes live at {tmp}/mailboxes/, not {tmp}/.famp/mailboxes/.
+    let mailbox_path = bus.tmp.path().join("mailboxes").join("#brain-test.jsonl");
+    let start = Instant::now();
+    while !mailbox_path.exists() && start.elapsed() < Duration::from_secs(3) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        mailbox_path.exists(),
+        "channel mailbox file never written: {mailbox_path:?}"
+    );
+
+    let observed = poll_for_message_count(&bus, "#brain-test", 1, Duration::from_secs(3));
+    assert_eq!(
+        observed, 1,
+        "channel envelope present on disk but invisible to inspect messages --to '#brain-test' \
+         (regression: read_message_snapshot must scan #*.jsonl from disk)"
+    );
+
+    kill_and_wait(&mut sender);
+    kill_and_wait(&mut receiver);
+    kill_and_wait(&mut broker);
+}
+
 #[test]
 fn tail_default_is_50() {
     let bus = Bus::new();

@@ -565,19 +565,46 @@ fn walk_taskdir(bus_dir: &Path) -> Option<famp_inspect_server::TaskSnapshot> {
     })
 }
 
-/// Reads each registered identity's mailbox JSONL into a `MessageSnapshot`.
-/// Missing or unreadable mailboxes contribute an empty `Vec` for that identity.
+/// Reads each registered identity's mailbox JSONL plus every channel
+/// mailbox file (`#*.jsonl`) into a `MessageSnapshot`. Missing or
+/// unreadable mailboxes contribute an empty `Vec` for that recipient.
+///
+/// Channels are never registered as canonical holders (they live in
+/// `BrokerState.channels` as membership rosters), so the `view.clients`
+/// loop alone misses them. Enumerating `#*.jsonl` from disk lets
+/// `famp inspect messages --to '#channel'` see what's on disk —
+/// matching the direct-read posture taken by `famp_verify` (see
+/// `famp-inspect-server/src/messages.rs` doc-comment for the same bug
+/// class).
 fn read_message_snapshot(
     bus_dir: &Path,
     view: &famp_bus::BrokerStateView,
 ) -> famp_inspect_server::MessageSnapshot {
     let mut by_recipient = BTreeMap::new();
+    let mailboxes_dir = bus_dir.join("mailboxes");
     for client in &view.clients {
-        let path = bus_dir
-            .join("mailboxes")
-            .join(format!("{}.jsonl", client.name));
+        let path = mailboxes_dir.join(format!("{}.jsonl", client.name));
         let entries = famp_inbox::read::read_all(&path).unwrap_or_default();
         by_recipient.insert(client.name.clone(), entries);
+    }
+    if let Ok(dir_entries) = std::fs::read_dir(&mailboxes_dir) {
+        for entry in dir_entries.flatten() {
+            let file_name = entry.file_name();
+            let Some(file_name) = file_name.to_str() else {
+                continue;
+            };
+            let Some(channel) = file_name.strip_suffix(".jsonl") else {
+                continue;
+            };
+            if !channel.starts_with('#') {
+                continue;
+            }
+            if by_recipient.contains_key(channel) {
+                continue;
+            }
+            let rows = famp_inbox::read::read_all(entry.path()).unwrap_or_default();
+            by_recipient.insert(channel.to_owned(), rows);
+        }
     }
     famp_inspect_server::MessageSnapshot { by_recipient }
 }
@@ -769,6 +796,51 @@ mod tests {
             let view = view_with_clients(&["alice"]);
             let snap = read_message_snapshot(tmp.path(), &view);
             assert_eq!(snap.by_recipient["alice"].len(), 2);
+        }
+
+        #[test]
+        fn message_snapshot_includes_channel_mailbox_files() {
+            // Regression for beta UX bug: `famp inspect messages --to '#x'`
+            // returned empty when the channel mailbox file existed on disk.
+            // Channels are never registered as canonical holders, so the
+            // `view.clients` loop alone missed them. The fix scans
+            // `mailboxes/#*.jsonl` from disk.
+            let tmp = tempfile::TempDir::new().unwrap();
+            let mailboxes = tmp.path().join("mailboxes");
+            std::fs::create_dir_all(&mailboxes).unwrap();
+            std::fs::write(
+                mailboxes.join("#brain-619.jsonl"),
+                b"{\"from\":\"claude\",\"to\":\"#brain-619\",\"body\":{\"n\":1}}\n{\"from\":\"codex\",\"to\":\"#brain-619\",\"body\":{\"n\":2}}\n",
+            )
+            .unwrap();
+
+            // View has no registered clients — channel must still surface.
+            let view = view_with_clients(&[]);
+            let snap = read_message_snapshot(tmp.path(), &view);
+            assert_eq!(
+                snap.by_recipient.get("#brain-619").map(Vec::len),
+                Some(2),
+                "channel mailbox should contribute its envelopes; got {snap:?}",
+            );
+        }
+
+        #[test]
+        fn message_snapshot_ignores_non_channel_dotfiles_and_cursor_files() {
+            // Cursor files (e.g. `.alice.cursor`) live next to mailboxes
+            // and must NOT be treated as channel mailboxes. Likewise,
+            // files without a leading `#` are not channels.
+            let tmp = tempfile::TempDir::new().unwrap();
+            let mailboxes = tmp.path().join("mailboxes");
+            std::fs::create_dir_all(&mailboxes).unwrap();
+            std::fs::write(mailboxes.join(".alice.cursor"), b"42\n").unwrap();
+            std::fs::write(mailboxes.join("notchannel.jsonl"), b"{}\n").unwrap();
+
+            let view = view_with_clients(&[]);
+            let snap = read_message_snapshot(tmp.path(), &view);
+            assert!(
+                snap.by_recipient.is_empty(),
+                "cursor files and non-#-prefixed jsonl must not enter the snapshot; got {snap:?}",
+            );
         }
 
         #[test]
