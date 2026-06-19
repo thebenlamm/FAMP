@@ -14,9 +14,15 @@
 //!   4. Confirm `famp daemon status` shows the new daemon build version and a
 //!      changed PID — proving the service picked up the replaced binary.
 
-#![cfg(all(unix, target_os = "macos"))]
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+// macOS-only — wrapped in a cfg'd module so the crate-root
+// `#![allow(unused_crate_dependencies)]` survives on Linux (a file-level
+// `#![cfg(false)]` would strip sibling inner attrs along with the body,
+// re-firing the `unused_crate_dependencies` lint against the empty crate).
+#[cfg(all(unix, target_os = "macos"))]
+mod macos_only {
 
 /// Returns true iff `FAMP_RUN_LAUNCHCTL_TESTS` is set in the environment.
 fn launchctl_tests_enabled() -> bool {
@@ -64,3 +70,5 @@ fn restart_picks_up_new_binary() {
         status.code()
     );
 }
+
+} // mod macos_only

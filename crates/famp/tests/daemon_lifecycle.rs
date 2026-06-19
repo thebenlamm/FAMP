@@ -15,9 +15,15 @@
 //! Pre-condition: no `com.famp.broker` LaunchAgent currently registered
 //! (verified in RESEARCH.md Runtime State Inventory).
 
-#![cfg(all(unix, target_os = "macos"))]
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+// macOS-only — wrapped in a cfg'd module so the crate-root
+// `#![allow(unused_crate_dependencies)]` survives on Linux (a file-level
+// `#![cfg(false)]` would strip sibling inner attrs along with the body,
+// re-firing the `unused_crate_dependencies` lint against the empty crate).
+#[cfg(all(unix, target_os = "macos"))]
+mod macos_only {
 
 use famp::cli::daemon::{install, uninstall};
 
@@ -128,3 +134,5 @@ fn daemon_lifecycle_is_idempotent() {
         plist_path.display()
     );
 }
+
+} // mod macos_only

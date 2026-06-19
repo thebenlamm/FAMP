@@ -367,8 +367,7 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     let linger_enabled = linger_output
         .as_ref()
         .and_then(|o| std::str::from_utf8(&o.stdout).ok())
-        .map(crate::cli::daemon::linux::parse_linger)
-        .unwrap_or(false);
+        .is_some_and(crate::cli::daemon::linux::parse_linger);
 
     if !linger_enabled {
         writeln!(err, "\nNote: linger is not enabled for user '{user}'.").ok();
