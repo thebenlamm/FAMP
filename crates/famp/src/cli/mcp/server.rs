@@ -65,14 +65,14 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_inbox",
-            "description": "List received messages (active work only) or advance the read cursor. Each list entry has a 'task_id' — use that with famp_send (mode=deliver or terminal) to reply. IMPORTANT: by default, list hides entries for tasks that have reached a terminal FSM state (COMPLETED, FAILED, CANCELLED) — it is the 'what's still on my plate' view. To observe task completion in real time, use famp_await instead. To see the full unfiltered log (e.g. for debugging), pass include_terminal=true.",
+            "description": "List received messages from your agent mailbox AND any channels you've joined, or advance the read cursor. Each list entry has a 'task_id' — use that with famp_send (mode=deliver or terminal) to reply. To observe task completion in real time, use famp_await. Note: include_terminal is accepted on the wire but currently a no-op — broker-side terminal-FSM filtering is deferred to v1; today every list returns all unread envelopes.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "action":           { "type": "string",  "enum": ["list", "ack"], "description": "list=show messages, ack=mark as processed" },
                     "since":            { "type": "integer", "description": "Byte offset to start from (default 0)" },
                     "offset":           { "type": "integer", "description": "Byte offset to ack up to (required for action=ack)" },
-                    "include_terminal": { "type": "boolean", "description": "When action=list, include entries for tasks in a terminal FSM state. Default false. Use famp_await, not this flag, to observe completion in real time — this override is for full-history inspection." }
+                    "include_terminal": { "type": "boolean", "description": "Accepted for wire compatibility but currently a no-op: broker-side terminal-FSM filtering (hide COMPLETED/FAILED/CANCELLED) is deferred to v1. Today, list returns every unread envelope regardless of this flag." }
                 },
                 "required": ["action"]
             }

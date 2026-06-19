@@ -1283,6 +1283,124 @@ fn inbox_channel_cursor_advances_per_holder() {
     );
 }
 
+/// Adversarial-review regression (2026-06-19, HIGH): a task-filtered
+/// `Await` on a joined channel must NOT advance the inbox cursor past
+/// envelopes whose task didn't match. Pre-fix, `Inbox` shared the same
+/// `await_offsets[Channel(c)]` cursor that `await_envelope` writes
+/// unconditionally (even when filter mismatch yields an empty batch),
+/// so unrelated channel posts were silently dropped from later Inbox
+/// polls.
+#[test]
+fn inbox_preserves_channel_envelopes_after_unmatched_task_filtered_await() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+
+    handshake_register_join(&mut broker, &env, 1, "alice", 100, "#planning", now);
+    handshake_register_join(&mut broker, &env, 2, "bob", 200, "#planning", now);
+
+    // Bob posts an envelope to the channel. The audit_log envelope has
+    // no causality.ref, so an AwaitFilter::Task(_) will not match it.
+    let send_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#planning".into(),
+                },
+                envelope: audit_log_envelope(9, "bob"),
+            },
+        },
+        now,
+    );
+    apply_mailbox(&env, &send_outs);
+
+    // Alice does a task-filtered Await for an unrelated task. The
+    // channel batch will be empty (no match) but pre-fix the cursor
+    // advanced anyway, robbing Inbox of bob's post.
+    let other_task =
+        uuid::Uuid::parse_str("01890000-0000-7000-8000-deadbeefcafe").unwrap();
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Await {
+                timeout_ms: 0,
+                task: Some(other_task),
+            },
+        },
+        now,
+    );
+
+    // Alice's Inbox poll MUST still surface bob's post.
+    let inbox_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Inbox {
+                since: Some(0),
+                include_terminal: None,
+            },
+        },
+        now,
+    );
+    let (envs, _) = inbox_reply(&inbox_outs, 1).expect("alice should get InboxOk");
+    assert_eq!(
+        envs.len(),
+        1,
+        "task-filtered Await must not eat unrelated channel envelopes from Inbox; got {envs:?}"
+    );
+    assert_eq!(
+        envs[0]["body"]["details"]["seq"].as_u64().unwrap(),
+        9,
+        "envelope must be bob's seq=9 post"
+    );
+}
+
+/// Adversarial-review regression (2026-06-19, MEDIUM): channel Inbox
+/// must NOT deliver the holder's OWN channel posts. The Await path
+/// already applies `is_self_authored` filtering (pub/sub: a publisher
+/// never receives its own posts); Inbox was inconsistent and would
+/// hand the sender their own envelope back.
+#[test]
+fn inbox_does_not_deliver_self_authored_channel_posts() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+
+    handshake_register_join(&mut broker, &env, 1, "alice", 100, "#planning", now);
+
+    // Alice posts to the channel.
+    let send_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#planning".into(),
+                },
+                envelope: audit_log_envelope(7, "alice"),
+            },
+        },
+        now,
+    );
+    apply_mailbox(&env, &send_outs);
+
+    // Alice polls Inbox — should NOT see her own envelope.
+    let inbox_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Inbox {
+                since: Some(0),
+                include_terminal: None,
+            },
+        },
+        now,
+    );
+    let (envs, _) = inbox_reply(&inbox_outs, 1).expect("alice should get InboxOk");
+    assert!(
+        envs.is_empty(),
+        "alice's Inbox must not deliver her own channel posts; got {envs:?}"
+    );
+}
+
 #[test]
 fn leave_drops_channel_cursor() {
     // After alice leaves the channel, the channel cursor in
@@ -1322,16 +1440,19 @@ fn leave_drops_channel_cursor() {
         now,
     );
 
-    // Confirm alice's per-channel cursor is set post-drain.
+    // Confirm alice's per-channel Inbox cursor is set post-drain.
+    // (HIGH-fix 2026-06-19: Inbox now uses inbox_offsets, not
+    // await_offsets — the two were split so a task-filtered Await
+    // cannot eat envelopes out of Inbox's view.)
     let mailbox = MailboxName::Channel("#planning".into());
     let before_leave = broker
         .state
         .clients
         .get(&ClientId::from(1_u64))
-        .and_then(|state| state.await_offsets.get(&mailbox).copied());
+        .and_then(|state| state.inbox_offsets.get(&mailbox).copied());
     assert!(
         before_leave.is_some_and(|cursor| cursor > 0),
-        "alice should have a per-channel cursor after Inbox drain; got {before_leave:?}"
+        "alice should have a per-channel Inbox cursor after drain; got {before_leave:?}"
     );
 
     // Alice leaves.
@@ -1345,6 +1466,16 @@ fn leave_drops_channel_cursor() {
         now,
     );
 
+    // Both cursors must drop on leave (await_offsets and inbox_offsets).
+    let after_leave_inbox = broker
+        .state
+        .clients
+        .get(&ClientId::from(1_u64))
+        .and_then(|state| state.inbox_offsets.get(&mailbox).copied());
+    assert!(
+        after_leave_inbox.is_none(),
+        "leave() must drop the inbox cursor; got {after_leave_inbox:?}"
+    );
     let after_leave = broker
         .state
         .clients
@@ -1352,6 +1483,6 @@ fn leave_drops_channel_cursor() {
         .and_then(|state| state.await_offsets.get(&mailbox).copied());
     assert!(
         after_leave.is_none(),
-        "leave() must drop the channel cursor; got {after_leave:?}"
+        "leave() must drop the await cursor; got {after_leave:?}"
     );
 }

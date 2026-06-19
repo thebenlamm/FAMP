@@ -254,7 +254,7 @@ fn drain_await_batch<E: BrokerEnv>(
 /// comparing the last segment is host-agnostic and avoids URI parsing.
 /// Returns `false` when `awaiter_identity` is `None` (non-channel path),
 /// when `from` is absent/malformed, or when the names do not match.
-fn is_self_authored(envelope: &serde_json::Value, awaiter_identity: Option<&str>) -> bool {
+pub(super) fn is_self_authored(envelope: &serde_json::Value, awaiter_identity: Option<&str>) -> bool {
     let Some(awaiter) = awaiter_identity else {
         return false;
     };

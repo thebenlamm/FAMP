@@ -49,6 +49,18 @@ pub(super) struct ClientState {
     /// disappear, so the offset must live on the canonical holder if
     /// repeated awaits are to drain without replaying old messages.
     pub(super) await_offsets: BTreeMap<MailboxName, u64>,
+    /// Scope B (260619, HIGH-fix): broker-owned delivery offsets for
+    /// `Inbox` on channel mailboxes. Distinct from `await_offsets` so
+    /// a task-filtered `Await` that skips over unrelated channel posts
+    /// does not silently advance the `Inbox` cursor past them — pre-fix
+    /// the two surfaces shared one cursor and `Await`'s unconditional
+    /// `set_await_offset` call ate envelopes Inbox should have seen
+    /// next. Per-holder per-channel, initialized at `Join` time to the
+    /// channel's join-time end-offset (so first poll surfaces "posts
+    /// after I joined"), dropped on `Leave` and `Disconnect`. Only
+    /// populated for `MailboxName::Channel(_)` keys; the agent-mailbox
+    /// `Inbox` cursor stays client-tracked via the `since` parameter.
+    pub(super) inbox_offsets: BTreeMap<MailboxName, u64>,
 }
 
 #[derive(Debug, Clone)]

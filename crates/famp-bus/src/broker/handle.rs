@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use crate::broker::awaiting::{await_envelope, await_reply_for_mailbox, waiting_clients_for_name};
+use crate::broker::awaiting::{
+    await_envelope, await_reply_for_mailbox, is_self_authored, waiting_clients_for_name,
+};
 use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
 use crate::broker::state::ClientState;
 use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
@@ -223,6 +225,7 @@ fn hello<E: BrokerEnv>(
                 registered_at: std::time::SystemTime::now(),
                 last_activity: std::time::SystemTime::now(),
                 await_offsets: BTreeMap::default(),
+                inbox_offsets: BTreeMap::default(),
             },
         );
         return vec![Out::Reply(
@@ -246,6 +249,7 @@ fn hello<E: BrokerEnv>(
             registered_at: std::time::SystemTime::now(),
             last_activity: std::time::SystemTime::now(),
             await_offsets: BTreeMap::default(),
+            inbox_offsets: BTreeMap::default(),
         },
     );
     vec![Out::Reply(
@@ -572,11 +576,17 @@ fn inbox<E: BrokerEnv>(
     let mut cursor_advances: Vec<(MailboxName, u64)> = Vec::new();
     for channel in &joined_channels {
         let mailbox = MailboxName::Channel(channel.clone());
+        // Scope B HIGH-fix (260619): read from `inbox_offsets`, NOT
+        // `await_offsets`. The two cursors are intentionally
+        // independent — a task-filtered `Await` that scans past
+        // unrelated channel posts must not eat Inbox's view of those
+        // same posts. Initialized at `Join` time alongside
+        // `await_offsets` (see `join()` above).
         let cursor = broker
             .state
             .clients
             .get(&canonical)
-            .and_then(|state| state.await_offsets.get(&mailbox).copied())
+            .and_then(|state| state.inbox_offsets.get(&mailbox).copied())
             .unwrap_or(0);
         let drained = match broker.env.drain_from(&mailbox, cursor) {
             Ok(drained) => drained,
@@ -590,17 +600,6 @@ fn inbox<E: BrokerEnv>(
             continue;
         }
 
-        // Apply the per-channel backpressure cap. Walk drained.lines
-        // and compute the cumulative byte cost so the cursor advance
-        // matches exactly the envelopes returned. Lines past the cap
-        // stay on disk; the next poll reads them from the advanced
-        // cursor.
-        let mut capped_lines = Vec::with_capacity(drained.lines.len().min(CHANNEL_DRAIN_CAP));
-        let mut capped_offset = cursor;
-        for line in drained.lines.iter().take(CHANNEL_DRAIN_CAP) {
-            capped_offset += line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
-            capped_lines.push(line.clone());
-        }
         let truncated = drained.lines.len() > CHANNEL_DRAIN_CAP;
         if truncated {
             tracing::debug!(
@@ -610,14 +609,42 @@ fn inbox<E: BrokerEnv>(
                 "inbox_channel_drain_capped"
             );
         }
+
+        // Scope B MEDIUM-fix (260619): walk lines per-record so the
+        // self-authored filter can skip-and-advance cleanly. Mirrors
+        // `awaiting::drain_await_batch` semantics: pub/sub default —
+        // a publisher does not receive its own channel posts. The
+        // cursor advances past both delivered envelopes AND skipped
+        // (self-authored / undecodable) lines so they never replay on
+        // the next poll. Capped at CHANNEL_DRAIN_CAP scanned lines for
+        // hot-channel backpressure; lines past the cap stay on disk
+        // and surface on the next poll.
+        let mut line_offset = cursor;
+        for line in drained.lines.iter().take(CHANNEL_DRAIN_CAP) {
+            let line_next_offset = line_offset + line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
+            match decode_line(line) {
+                Ok(value) => {
+                    if !is_self_authored(&value, Some(&name)) {
+                        envelopes.push(value);
+                    }
+                }
+                Err(error) => tracing::warn!(
+                    mailbox = %mailbox,
+                    byte_offset = line_offset,
+                    error = %error,
+                    "skipping undecodable mailbox line (head-of-line resilience)"
+                ),
+            }
+            line_offset = line_next_offset;
+        }
+        // When un-truncated, line_offset equals drained.next_offset by
+        // construction (we walked every line); the explicit branch
+        // keeps intent local to the cap path.
         let effective_next_offset = if truncated {
-            capped_offset
+            line_offset
         } else {
             drained.next_offset
         };
-
-        let mut decoded = decode_lines(&mailbox, cursor, capped_lines);
-        envelopes.append(&mut decoded);
         cursor_advances.push((mailbox, effective_next_offset));
     }
 
@@ -625,7 +652,7 @@ fn inbox<E: BrokerEnv>(
     // borrow checker stays happy (drain_from borrows broker immutably).
     for (mailbox, offset) in cursor_advances {
         if let Some(state) = broker.state.clients.get_mut(&canonical) {
-            state.await_offsets.insert(mailbox, offset);
+            state.inbox_offsets.insert(mailbox, offset);
         }
     }
 
@@ -690,6 +717,13 @@ fn join<E: BrokerEnv>(
         state
             .await_offsets
             .insert(mailbox.clone(), drained.next_offset);
+        // Scope B HIGH-fix (260619): seed the per-holder Inbox cursor
+        // to the same join-time end-offset, decoupled from await_offsets
+        // so a task-filtered Await on this channel cannot eat envelopes
+        // out of Inbox's view.
+        state
+            .inbox_offsets
+            .insert(mailbox.clone(), drained.next_offset);
     }
     // Build MemberInfo list: look up each member's role from channel_roles.
     let members: Vec<MemberInfo> = broker
@@ -743,18 +777,16 @@ fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String
     let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.remove(&channel);
-        // Scope B (260619): drop the per-channel inbox/await cursor so
-        // a subsequent Join replays from the channel's join-time
-        // end-offset (set inside `join()`). Without this, a leave →
-        // rejoin would carry the stale post-leave cursor, silently
-        // skipping any envelopes posted while the holder was a member
-        // before AND any new posts that fall between the old cursor
-        // and the rejoin point. Per-mailbox cursors are shared between
-        // `inbox()` (Scope B merge) and `await_envelope()`, so this
-        // drop covers both surfaces.
-        state
-            .await_offsets
-            .remove(&MailboxName::Channel(channel.clone()));
+        // Scope B (260619): drop the per-channel cursors so a subsequent
+        // Join replays from the channel's join-time end-offset (set
+        // inside `join()`). Without this, a leave → rejoin would carry
+        // a stale post-leave cursor, silently skipping envelopes
+        // posted while the holder was a member. Both `await_offsets`
+        // (used by `await_envelope`) and `inbox_offsets` (HIGH-fix,
+        // used by `fn inbox`'s channel branch) are dropped.
+        let channel_mailbox = MailboxName::Channel(channel.clone());
+        state.await_offsets.remove(&channel_mailbox);
+        state.inbox_offsets.remove(&channel_mailbox);
     }
     // Clean up role entry to avoid leaking stale roles.
     broker.state.channel_roles.remove(&(channel.clone(), name));
