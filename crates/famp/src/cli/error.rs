@@ -201,6 +201,14 @@ pub enum CliError {
     #[error("{reason}")]
     NoIdentityBound { reason: String },
 
+    /// Scope B (260619): an identity-required CLI got a channel name
+    /// (leading `#`) where a member identity was expected. The previous
+    /// path bottomed out in `Hello { bind_as = "#channel" }` which
+    /// returned the misleading `NotRegistered` error. Catch it at
+    /// resolve time and direct the user to the right command shape.
+    #[error("'{name}' is a channel name, not an identity. To list channel posts on your inbox, run `inbox list --as <member-identity>` (the identity that joined '{name}'). To inspect the channel mailbox directly, run `famp inspect messages --to '{name}'`.")]
+    ChannelNotIdentity { name: String },
+
     /// `famp register <name>` got `BusReply::Err { kind: NameTaken }` from
     /// the broker — another live process already holds this identity slot.
     /// Plan 02-03 (CLI-01): the message is the locked stderr text the user

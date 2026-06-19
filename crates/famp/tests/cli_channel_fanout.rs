@@ -278,3 +278,70 @@ fn test_channel_no_self_delivery() {
     kill_and_wait(&mut alice_reg);
     kill_and_wait(&mut bob_reg);
 }
+
+/// Scope B (260619): `famp register --tail <name>` must surface channel
+/// posts to channels the identity has joined, not just direct-DM envelopes.
+///
+/// Before B: `BusMessage::Inbox` resolves only `MailboxName::Agent(name)`
+/// so the tail loop's 1s poll is blind to `MailboxName::Channel(*)` posts
+/// even when `state.joined` contains them. Bob posts to `#planning`, the
+/// envelope lands on disk in `mailboxes/#planning.jsonl`, but Alice's
+/// `--tail` stdout never references it.
+///
+/// After B: the broker's inbox handler merges joined-channel mailboxes
+/// into the response, so the tail loop wakes naturally on channel posts
+/// within the existing poll cadence.
+#[test]
+fn tail_picks_up_channel_post() {
+    let bus = Bus::new();
+
+    let mut alice_tail =
+        bus.famp_spawn_capture(&["register", "alice", "--tail"]);
+    let mut bob_reg = bus.famp_spawn_silent(&["register", "bob"]);
+    bus.wait_for_register("alice");
+    bus.wait_for_register("bob");
+
+    for who in ["alice", "bob"] {
+        let out = bus.famp_cmd(&["join", "#planning", "--as", who]);
+        assert!(
+            out.status.success(),
+            "{who} join #planning failed: stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // Give alice's tail loop a moment to settle after the join (the
+    // post-join cursor is initialized to the join-time channel end so
+    // bob's subsequent post is unambiguously "new").
+    std::thread::sleep(Duration::from_millis(300));
+
+    let send = bus.famp_cmd(&[
+        "send",
+        "--as",
+        "bob",
+        "--channel",
+        "#planning",
+        "--new-task",
+        "channel-tail-marker",
+    ]);
+    assert!(
+        send.status.success(),
+        "bob channel send failed: stderr={}",
+        String::from_utf8_lossy(&send.stderr)
+    );
+
+    // Tail polls at ~1Hz; allow ≥2 polls to flush the channel envelope
+    // through the merged inbox path before tearing alice down.
+    std::thread::sleep(Duration::from_millis(2500));
+
+    let _ = alice_tail.kill();
+    let alice_out = alice_tail.wait_with_output().unwrap();
+    // tail prints tail lines to stderr per RESEARCH §2 item 5.
+    let alice_stderr = String::from_utf8_lossy(&alice_out.stderr);
+    assert!(
+        alice_stderr.contains("channel-tail-marker"),
+        "alice's --tail must surface bob's channel post; got stderr: {alice_stderr}"
+    );
+
+    kill_and_wait(&mut bob_reg);
+}

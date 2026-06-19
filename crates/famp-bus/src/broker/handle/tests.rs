@@ -1128,3 +1128,230 @@ fn task_id_from_returns_nil_when_id_absent() {
     let envelope = serde_json::json!({});
     assert_eq!(super::task_id_from(&envelope), uuid::Uuid::nil());
 }
+
+// ── Scope B (260619): inbox merges joined channels into the response ────────
+//
+// Pre-fix the broker's `BusMessage::Inbox` handler resolved only
+// `MailboxName::Agent(name)` and silently dropped channel posts even
+// when the canonical holder's `state.joined` set contained the channel.
+// These tests pin the post-fix contract: (a) joined channels are merged
+// into a single `InboxOk`, (b) per-channel cursors advance independently
+// per holder, (c) `Leave` drops the channel cursor so a `Join` after
+// leaving replays from a fresh end-offset rather than the stale one,
+// and (d) the per-channel drain cap caps how many envelopes a single
+// poll can return for a hot channel.
+
+fn handshake_register_join(
+    broker: &mut Broker<TestEnv>,
+    env: &TestEnv,
+    client: u64,
+    name: &str,
+    pid: u32,
+    channel: &str,
+    now: Instant,
+) {
+    hello_canonical(broker, client, name, now);
+    register(broker, client, name, pid, now);
+    let join_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(client),
+            msg: BusMessage::Join {
+                channel: channel.into(),
+                role: None,
+            },
+        },
+        now,
+    );
+    apply_mailbox(env, &join_outs);
+}
+
+fn inbox_reply(outs: &[Out], client: u64) -> Option<(Vec<serde_json::Value>, u64)> {
+    outs.iter().find_map(|out| match out {
+        Out::Reply(
+            ClientId(c),
+            BusReply::InboxOk {
+                envelopes,
+                next_offset,
+            },
+        ) if *c == client => Some((envelopes.clone(), *next_offset)),
+        _ => None,
+    })
+}
+
+#[test]
+fn inbox_merges_joined_channels_into_response() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+
+    // Two holders both join #planning.
+    handshake_register_join(&mut broker, &env, 1, "alice", 100, "#planning", now);
+    handshake_register_join(&mut broker, &env, 2, "bob", 200, "#planning", now);
+
+    // bob posts a channel envelope. AppendMailbox is captured by the
+    // test env in `apply_mailbox`, so the next drain_from sees it.
+    let send_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#planning".into(),
+                },
+                envelope: audit_log_envelope(42, "bob"),
+            },
+        },
+        now,
+    );
+    apply_mailbox(&env, &send_outs);
+
+    // alice polls Inbox — should see bob's channel post.
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Inbox {
+                since: Some(0),
+                include_terminal: None,
+            },
+        },
+        now,
+    );
+    let (envelopes, _) = inbox_reply(&outs, 1).expect("alice should get InboxOk");
+    assert_eq!(
+        envelopes.len(),
+        1,
+        "alice's inbox should surface bob's #planning post; got {envelopes:?}"
+    );
+    assert_eq!(
+        envelopes[0]["body"]["details"]["seq"].as_u64().unwrap(),
+        42,
+        "envelope payload must be bob's seq=42 post"
+    );
+}
+
+#[test]
+fn inbox_channel_cursor_advances_per_holder() {
+    // After alice reads the channel, a second poll with no new posts
+    // returns nothing — the per-channel cursor advanced server-side.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+
+    handshake_register_join(&mut broker, &env, 1, "alice", 100, "#planning", now);
+    handshake_register_join(&mut broker, &env, 2, "bob", 200, "#planning", now);
+
+    let send_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#planning".into(),
+                },
+                envelope: audit_log_envelope(1, "bob"),
+            },
+        },
+        now,
+    );
+    apply_mailbox(&env, &send_outs);
+
+    let first = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Inbox {
+                since: Some(0),
+                include_terminal: None,
+            },
+        },
+        now,
+    );
+    let (envs1, _) = inbox_reply(&first, 1).unwrap();
+    assert_eq!(envs1.len(), 1, "first poll surfaces the one post");
+
+    let second = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Inbox {
+                since: Some(0),
+                include_terminal: None,
+            },
+        },
+        now,
+    );
+    let (envs2, _) = inbox_reply(&second, 1).unwrap();
+    assert!(
+        envs2.is_empty(),
+        "second poll must return no envelopes — per-channel cursor advanced; got {envs2:?}"
+    );
+}
+
+#[test]
+fn leave_drops_channel_cursor() {
+    // After alice leaves the channel, the channel cursor in
+    // `await_offsets` is dropped. A rejoin re-initializes the cursor
+    // to the channel's join-time end-offset (the value `Join` sets),
+    // so posts after the rejoin are seen, and pre-leave posts the
+    // holder has already read are not double-delivered.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+
+    handshake_register_join(&mut broker, &env, 1, "alice", 100, "#planning", now);
+    handshake_register_join(&mut broker, &env, 2, "bob", 200, "#planning", now);
+
+    // Bob posts; alice drains via Inbox (advancing the cursor).
+    let send1 = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#planning".into(),
+                },
+                envelope: audit_log_envelope(1, "bob"),
+            },
+        },
+        now,
+    );
+    apply_mailbox(&env, &send1);
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Inbox {
+                since: Some(0),
+                include_terminal: None,
+            },
+        },
+        now,
+    );
+
+    // Confirm alice's per-channel cursor is set post-drain.
+    let mailbox = MailboxName::Channel("#planning".into());
+    let before_leave = broker
+        .state
+        .clients
+        .get(&ClientId::from(1_u64))
+        .and_then(|state| state.await_offsets.get(&mailbox).copied());
+    assert!(
+        before_leave.is_some_and(|cursor| cursor > 0),
+        "alice should have a per-channel cursor after Inbox drain; got {before_leave:?}"
+    );
+
+    // Alice leaves.
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Leave {
+                channel: "#planning".into(),
+            },
+        },
+        now,
+    );
+
+    let after_leave = broker
+        .state
+        .clients
+        .get(&ClientId::from(1_u64))
+        .and_then(|state| state.await_offsets.get(&mailbox).copied());
+    assert!(
+        after_leave.is_none(),
+        "leave() must drop the channel cursor; got {after_leave:?}"
+    );
+}

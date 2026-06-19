@@ -4,6 +4,7 @@ use std::time::Instant;
 use crate::broker::awaiting::{await_envelope, await_reply_for_mailbox, waiting_clients_for_name};
 use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
 use crate::broker::state::ClientState;
+use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
 use crate::{
     Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId, Delivered,
     MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
@@ -80,8 +81,8 @@ fn handle_wire<E: BrokerEnv>(
         BusMessage::Send { to, envelope } => send(broker, client, to, &envelope),
         BusMessage::Inbox {
             since,
-            include_terminal: _,
-        } => inbox(broker, client, since),
+            include_terminal,
+        } => inbox(broker, client, since, include_terminal),
         BusMessage::Await { timeout_ms, task } => {
             await_envelope(broker, client, timeout_ms, task, now)
         }
@@ -499,7 +500,27 @@ fn send_channel<E: BrokerEnv>(
     out
 }
 
-fn inbox<E: BrokerEnv>(broker: &Broker<E>, client: ClientId, since: Option<u64>) -> Vec<Out> {
+/// Scope B (260619): per-channel drain cap. A hot channel with thousands
+/// of envelopes must not bloat a single `Inbox` response from a slow
+/// reader. The cap is per channel per poll — across N joined channels
+/// the worst-case response is N * CHANNEL_DRAIN_CAP envelopes. Picked
+/// to match Await's batching posture (see `awaiting::drain_await_batch`).
+const CHANNEL_DRAIN_CAP: usize = 256;
+
+fn inbox<E: BrokerEnv>(
+    broker: &mut Broker<E>,
+    client: ClientId,
+    since: Option<u64>,
+    // Scope B (260619): the flag is propagated end-to-end through the
+    // handler signature so the destructure no longer drops it. Broker-
+    // side terminal filtering against the task FSM is v1 scope — it
+    // requires the bus actor (a pure transport crate) to read
+    // `famp-taskdir` for per-task FSM state, which crosses the
+    // famp-bus / famp-cli architecture boundary. The wire shape is
+    // already correct, so the v1 filter slot bolts in without changing
+    // `BusMessage::Inbox`.
+    _include_terminal: Option<bool>,
+) -> Vec<Out> {
     // D-10: a proxy connection's `Inbox` reads the canonical holder's
     // mailbox via effective_identity.
     let Ok(name) = resolve_op_identity(broker, client) else {
@@ -509,18 +530,100 @@ fn inbox<E: BrokerEnv>(broker: &Broker<E>, client: ClientId, since: Option<u64>)
             "client is not registered",
         )];
     };
-    let mailbox = MailboxName::Agent(name);
-    let drained = match broker.env.drain_from(&mailbox, since.unwrap_or(0)) {
+
+    // Read the agent mailbox using the client-supplied cursor. This
+    // preserves the pre-Scope-B `next_offset` contract — clients and
+    // `famp inbox ack` still drive the agent-mailbox cursor.
+    let agent_mailbox = MailboxName::Agent(name.clone());
+    let agent_since = since.unwrap_or(0);
+    let agent_drained = match broker.env.drain_from(&agent_mailbox, agent_since) {
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let envelopes = decode_lines(&mailbox, since.unwrap_or(0), drained.lines);
+    let mut envelopes = decode_lines(&agent_mailbox, agent_since, agent_drained.lines);
+    let agent_next_offset = agent_drained.next_offset;
+
+    // Scope B (260619): merge each joined channel's new envelopes into
+    // the response. Cursors are per-canonical-holder-per-channel and
+    // live in `await_offsets[MailboxName::Channel(c)]`. Initialized to
+    // the channel's join-time end-offset by `join()`, so first-poll
+    // semantics are "everything posted AFTER I joined". Per-channel
+    // drain is capped at `CHANNEL_DRAIN_CAP` envelopes per poll so a
+    // hot channel cannot block other members or bloat one response —
+    // the leftover lines are picked up by the next poll.
+    let canonical = canonical_holder_id(broker, &name).unwrap_or(client);
+    let joined_channels: Vec<String> = broker
+        .state
+        .clients
+        .get(&canonical)
+        .map(|state| state.joined.iter().cloned().collect())
+        .unwrap_or_default();
+
+    let mut cursor_advances: Vec<(MailboxName, u64)> = Vec::new();
+    for channel in &joined_channels {
+        let mailbox = MailboxName::Channel(channel.clone());
+        let cursor = broker
+            .state
+            .clients
+            .get(&canonical)
+            .and_then(|state| state.await_offsets.get(&mailbox).copied())
+            .unwrap_or(0);
+        let drained = match broker.env.drain_from(&mailbox, cursor) {
+            Ok(drained) => drained,
+            // A channel with no on-disk mailbox yet (no sends since
+            // broker boot) is not an error — the drain returns empty,
+            // not NotFound. Other errors (CorruptLine etc.) abort the
+            // poll so the operator sees the breakage.
+            Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
+        };
+        if drained.lines.is_empty() {
+            continue;
+        }
+
+        // Apply the per-channel backpressure cap. Walk drained.lines
+        // and compute the cumulative byte cost so the cursor advance
+        // matches exactly the envelopes returned. Lines past the cap
+        // stay on disk; the next poll reads them from the advanced
+        // cursor.
+        let mut capped_lines = Vec::with_capacity(drained.lines.len().min(CHANNEL_DRAIN_CAP));
+        let mut capped_offset = cursor;
+        for line in drained.lines.iter().take(CHANNEL_DRAIN_CAP) {
+            capped_offset += line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
+            capped_lines.push(line.clone());
+        }
+        let truncated = drained.lines.len() > CHANNEL_DRAIN_CAP;
+        if truncated {
+            tracing::debug!(
+                channel = %channel,
+                cap = CHANNEL_DRAIN_CAP,
+                total = drained.lines.len(),
+                "inbox_channel_drain_capped"
+            );
+        }
+        let effective_next_offset = if truncated {
+            capped_offset
+        } else {
+            drained.next_offset
+        };
+
+        let mut decoded = decode_lines(&mailbox, cursor, capped_lines);
+        envelopes.append(&mut decoded);
+        cursor_advances.push((mailbox, effective_next_offset));
+    }
+
+    // Stage all per-channel cursor advances after the read loop so the
+    // borrow checker stays happy (drain_from borrows broker immutably).
+    for (mailbox, offset) in cursor_advances {
+        if let Some(state) = broker.state.clients.get_mut(&canonical) {
+            state.await_offsets.insert(mailbox, offset);
+        }
+    }
 
     vec![Out::Reply(
         client,
         BusReply::InboxOk {
             envelopes,
-            next_offset: drained.next_offset,
+            next_offset: agent_next_offset,
         },
     )]
 }
@@ -630,6 +733,18 @@ fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String
     let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.remove(&channel);
+        // Scope B (260619): drop the per-channel inbox/await cursor so
+        // a subsequent Join replays from the channel's join-time
+        // end-offset (set inside `join()`). Without this, a leave →
+        // rejoin would carry the stale post-leave cursor, silently
+        // skipping any envelopes posted while the holder was a member
+        // before AND any new posts that fall between the old cursor
+        // and the rejoin point. Per-mailbox cursors are shared between
+        // `inbox()` (Scope B merge) and `await_envelope()`, so this
+        // drop covers both surfaces.
+        state
+            .await_offsets
+            .remove(&MailboxName::Channel(channel.clone()));
     }
     // Clean up role entry to avoid leaking stale roles.
     broker.state.channel_roles.remove(&(channel.clone(), name));

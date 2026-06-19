@@ -22,7 +22,7 @@ mod private {
 /// `famp-inbox/src/read.rs`) so cursor offsets match the durable layer
 /// byte-for-byte. Kept as a named constant so the two offset computations in
 /// `drain_from` can't silently disagree on the terminator width.
-const JSONL_RECORD_TERMINATOR_LEN: u64 = 1;
+pub(crate) const JSONL_RECORD_TERMINATOR_LEN: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MailboxName {

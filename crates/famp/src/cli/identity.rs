@@ -34,23 +34,37 @@ pub fn resolve_identity(as_flag: Option<&str>) -> Result<String, CliError> {
     // Tier 1: explicit flag.
     if let Some(name) = as_flag {
         if !name.is_empty() {
-            return Ok(name.to_string());
+            return reject_channel_name(name).map(str::to_string);
         }
     }
     // Tier 2: environment variable.
     if let Ok(name) = std::env::var("FAMP_LOCAL_IDENTITY") {
         if !name.is_empty() {
-            return Ok(name);
+            return reject_channel_name(&name).map(str::to_string);
         }
     }
     // Tier 3: cwd → wires.tsv exact match.
     if let Some(name) = lookup_wires_tsv()? {
-        return Ok(name);
+        return reject_channel_name(&name).map(str::to_string);
     }
     // Tier 4: hard error.
     Err(CliError::NoIdentityBound {
         reason: NO_IDENTITY_HINT.to_string(),
     })
+}
+
+/// Scope B (260619): a leading `#` marks a channel name, not an identity.
+/// Reject up front with `ChannelNotIdentity` so the user gets a typed,
+/// actionable error instead of bottoming out at the broker's misleading
+/// `NotRegistered` for `Hello { bind_as = "#channel" }`. Returns the
+/// borrowed `name` unchanged on success so the caller can chain `.to_string()`.
+fn reject_channel_name(name: &str) -> Result<&str, CliError> {
+    if name.starts_with('#') {
+        return Err(CliError::ChannelNotIdentity {
+            name: name.to_string(),
+        });
+    }
+    Ok(name)
 }
 
 fn wires_tsv_path() -> Option<PathBuf> {
@@ -112,6 +126,32 @@ mod tests {
     fn tier_1_as_flag_wins() {
         let got = resolve_identity(Some("alice")).unwrap();
         assert_eq!(got, "alice");
+    }
+
+    /// Scope B (260619): a `#`-prefixed `--as` value is rejected before
+    /// it can reach the broker. The error must reference the channel
+    /// name and point at the correct command shapes.
+    #[test]
+    fn channel_name_rejected_with_typed_error() {
+        let err = resolve_identity(Some("#planning"))
+            .expect_err("channel-name --as must error at resolve time");
+        let CliError::ChannelNotIdentity { name } = &err else {
+            panic!("expected ChannelNotIdentity, got {err:?}");
+        };
+        assert_eq!(name, "#planning");
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("#planning"),
+            "error must reference the channel name; got: {rendered}"
+        );
+        assert!(
+            rendered.contains("inspect messages"),
+            "error must direct user to inspect messages; got: {rendered}"
+        );
+        assert!(
+            rendered.contains("member-identity"),
+            "error must direct user to a member identity; got: {rendered}"
+        );
     }
 
     /// Tier 2: `$FAMP_LOCAL_IDENTITY` env var when no flag is passed.

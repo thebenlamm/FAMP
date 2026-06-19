@@ -23,14 +23,15 @@ use famp_bus::BusErrorKind;
 use famp_fsm::TaskFsmError;
 
 use crate::cli::error::CliError::{
-    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, Daemon, Disconnected,
-    Envelope, Exit, FsmTransition, Generic, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute,
-    HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
-    InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
-    JsonMergeRead, KeygenFailed, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented,
-    NotRegistered, NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid,
-    PeerNotFound, PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed,
-    TaskDir, TaskNotFound, TaskTerminal, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse,
+    AlreadyInitialized, AwaitTimeout, BrokerUnreachable, BusClient, BusError, ChannelNotIdentity,
+    Daemon, Disconnected, Envelope, Exit, FsmTransition, Generic, HomeCreateFailed,
+    HomeHasNoParent, HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName,
+    InvalidDuration, InvalidIdentityName, InvalidTaskState, Io, JsonMergeBackup,
+    JsonMergeNotObject, JsonMergeParse, JsonMergePersist, JsonMergeRead, KeygenFailed,
+    KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented, NotRegistered,
+    NotRegisteredHint, PeerCardInvalid, PeerDuplicate, PeerEndpointInvalid, PeerNotFound,
+    PeerPubkeyInvalid, PortInUse, PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir,
+    TaskNotFound, TaskTerminal, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse,
     TomlSerialize, TomlTableExpected, UnknownIdentity,
 };
 
@@ -91,6 +92,7 @@ impl crate::cli::error::CliError {
             UnknownIdentity { .. } => "unknown_identity",
             InvalidIdentityName { .. } => "invalid_identity_name",
             NoIdentityBound { .. } => "no_identity_bound",
+            ChannelNotIdentity { .. } => "channel_not_identity",
             NameTaken { .. } => "name_taken",
             BrokerUnreachable => "broker_unreachable",
             Disconnected => "disconnected",
