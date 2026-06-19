@@ -272,3 +272,21 @@ install:
 # Clean build artifacts
 clean:
     cargo clean
+
+# v1.0 federation SPIKE: expose the local broker on the tailnet via socat so a
+# friend on the same Tailscale tailnet can reach it. Zero FAMP code — validates
+# cross-host agent chat before committing to famp-gateway. See docs/SPIKE-friend-chat.md.
+# SECURITY: register the friend-facing window with listen:false (inbound = data, not instructions).
+spike-tunnel:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v socat >/dev/null || { echo "error: socat not installed (brew install socat)"; exit 1; }
+    command -v tailscale >/dev/null || { echo "error: tailscale not installed/running"; exit 1; }
+    IP=$(tailscale ip -4 | head -1)
+    [ -S "$HOME/.famp/bus.sock" ] || { echo "error: broker socket missing — run 'famp daemon status' / start the broker"; exit 1; }
+    echo "Broker exposed on the tailnet. Share this with your friend:"
+    echo "    host tailnet IP : $IP"
+    echo "    port            : 9999"
+    echo "    friend runs     : socat UNIX-LISTEN:\$HOME/.famp/bus.sock,fork TCP:$IP:9999"
+    echo "Ctrl-C to stop the tunnel."
+    socat TCP-LISTEN:9999,fork,reuseaddr,bind="$IP" UNIX-CONNECT:"$HOME/.famp/bus.sock"
