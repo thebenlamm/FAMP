@@ -212,7 +212,11 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_register() {
         .iter()
         .map(|v| v["body"]["details"]["offline_seq"].as_u64().unwrap())
         .collect();
-    assert_eq!(seqs, vec![0, 1], "good envelopes survive, malformed skipped");
+    assert_eq!(
+        seqs,
+        vec![0, 1],
+        "good envelopes survive, malformed skipped"
+    );
 }
 
 /// Head-of-line resilience (await path — the live-wedged site). A listen-mode
@@ -244,14 +248,11 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_await() {
         },
         now,
     );
-    let envelopes = match out
-        .iter()
-        .find_map(|o| match o {
-            Out::Reply(ClientId(1), BusReply::AwaitOk { envelopes, .. }) => Some(envelopes),
-            _ => None,
-        }) {
-        Some(envelopes) => envelopes,
-        None => panic!("expected AwaitOk (skip-and-advance over poison), got {out:?}"),
+    let Some(envelopes) = out.iter().find_map(|o| match o {
+        Out::Reply(ClientId(1), BusReply::AwaitOk { envelopes, .. }) => Some(envelopes),
+        _ => None,
+    }) else {
+        panic!("expected AwaitOk (skip-and-advance over poison), got {out:?}")
     };
     let seqs: Vec<u64> = envelopes
         .iter()

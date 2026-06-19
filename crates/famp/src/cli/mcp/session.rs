@@ -144,7 +144,7 @@ fn bus_err_detail(err: BusClientError, sock: &Path) -> String {
             sock.display()
         ),
         BusClientError::BrokerDidNotStart(spawn_err) => match spawn_err {
-            spawn::SpawnError::Io(io) => spawn_io_detail(io),
+            spawn::SpawnError::Io(io) => spawn_io_detail(&io),
             spawn::SpawnError::SandboxEperm => spawn::SpawnError::SandboxEperm.to_string(),
             spawn::SpawnError::CurrentExe(io) => format!(
                 "tried to spawn a broker but could not locate the famp executable (current-exe: {io})"
@@ -174,7 +174,7 @@ fn bus_err_detail(err: BusClientError, sock: &Path) -> String {
     }
 }
 
-fn spawn_io_detail(io: std::io::Error) -> String {
+fn spawn_io_detail(io: &std::io::Error) -> String {
     let sandbox_hint = if matches!(
         io.raw_os_error(),
         Some(code) if code == nix::libc::EPERM || code == nix::libc::EACCES
@@ -224,7 +224,11 @@ pub async fn ensure_bus() -> Result<(), (BusErrorKind, String)> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::items_after_test_module
+)]
 mod tests {
     use super::*;
     use crate::bus_client::spawn;

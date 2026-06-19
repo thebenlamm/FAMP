@@ -228,11 +228,9 @@ fn test_channel_no_self_delivery() {
     }
 
     // Park alice's await BEFORE sending — short timeout so the test completes quickly.
-    let alice_await =
-        bus.famp_spawn_capture(&["await", "--as", "alice", "--timeout", "3s"]);
+    let alice_await = bus.famp_spawn_capture(&["await", "--as", "alice", "--timeout", "3s"]);
     // Park bob's await with a longer timeout so alice's send is guaranteed to arrive.
-    let bob_await =
-        bus.famp_spawn_capture(&["await", "--as", "bob", "--timeout", "10s"]);
+    let bob_await = bus.famp_spawn_capture(&["await", "--as", "bob", "--timeout", "10s"]);
     // Give both awaits time to register their parked entries on the broker.
     std::thread::sleep(Duration::from_millis(500));
 
@@ -295,8 +293,7 @@ fn test_channel_no_self_delivery() {
 fn tail_picks_up_channel_post() {
     let bus = Bus::new();
 
-    let mut alice_tail =
-        bus.famp_spawn_capture(&["register", "alice", "--tail"]);
+    let mut alice_tail = bus.famp_spawn_capture(&["register", "alice", "--tail"]);
     let mut bob_reg = bus.famp_spawn_silent(&["register", "bob"]);
     bus.wait_for_register("alice");
     bus.wait_for_register("bob");

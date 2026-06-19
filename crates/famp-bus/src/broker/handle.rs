@@ -564,6 +564,7 @@ fn inbox<E: BrokerEnv>(
     // on a broken invariant — a wrong-slot write, not a crash. Panic
     // instead so any future refactor of `resolve_op_identity` that
     // weakens this guarantee fails loud.
+    #[allow(clippy::expect_used)]
     let canonical = canonical_holder_id(broker, &name)
         .expect("resolve_op_identity succeeded above; canonical holder must exist for `name`");
     let joined_channels: Vec<String> = broker

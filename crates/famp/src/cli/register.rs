@@ -386,7 +386,7 @@ fn map_bus_client_err(e: BusClientError, sock: &Path) -> CliError {
         },
         BusClientError::BrokerDidNotStart(spawn_err) => match spawn_err {
             spawn::SpawnError::Io(io) => CliError::BusClient {
-                detail: spawn_io_detail(io),
+                detail: spawn_io_detail(&io),
             },
             spawn::SpawnError::SandboxEperm => CliError::BusClient {
                 detail: spawn::SpawnError::SandboxEperm.to_string(),
@@ -435,7 +435,7 @@ fn map_bus_client_err(e: BusClientError, sock: &Path) -> CliError {
     }
 }
 
-fn spawn_io_detail(io: std::io::Error) -> String {
+fn spawn_io_detail(io: &std::io::Error) -> String {
     let sandbox_hint = if matches!(
         io.raw_os_error(),
         Some(code) if code == nix::libc::EPERM || code == nix::libc::EACCES

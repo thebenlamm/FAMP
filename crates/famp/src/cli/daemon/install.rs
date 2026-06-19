@@ -108,6 +108,7 @@ pub enum DaemonError {
 /// A home directory containing one of these characters is legal on
 /// macOS/Linux; without escaping it yields a malformed plist that launchd
 /// silently refuses to parse, leaving the service permanently unloaded.
+#[cfg(any(target_os = "macos", test))]
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -128,6 +129,8 @@ fn xml_escape(s: &str) -> String {
 ///
 /// All paths are resolved from `home` using `Path::join` — no tilde expansion,
 /// no string concatenation. Guardian requirement: launchd does NOT expand `~`.
+#[cfg(any(target_os = "macos", test))]
+#[allow(clippy::unnecessary_wraps)] // preserves the `?`-using call site in `run_at`
 pub(crate) fn generate_plist(home: &Path) -> Result<String, DaemonError> {
     let famp_bin = home.join(".cargo").join("bin").join("famp");
     let log_path = home.join(".famp").join("broker.log");
@@ -160,7 +163,7 @@ pub(crate) fn generate_plist(home: &Path) -> Result<String, DaemonError> {
     <string>com.famp.broker</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{famp_bin}</string>
+        <string>{famp_bin_str}</string>
         <string>broker</string>
         <string>--no-idle-exit</string>
     </array>
@@ -171,14 +174,12 @@ pub(crate) fn generate_plist(home: &Path) -> Result<String, DaemonError> {
     <key>ProcessType</key>
     <string>Background</string>
     <key>StandardOutPath</key>
-    <string>{log}</string>
+    <string>{log_path_str}</string>
     <key>StandardErrorPath</key>
-    <string>{log}</string>
+    <string>{log_path_str}</string>
 </dict>
 </plist>
 "#,
-        famp_bin = famp_bin_str,
-        log = log_path_str,
     );
 
     Ok(xml)
@@ -407,6 +408,7 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
 /// Guardian authorization (DAEMON-02): the loaded plist matches the shape
 /// reviewed and approved in Plan 03 (GUARDIAN-SIGNOFF.md). The real home
 /// directory is interpolated by `generate_plist(home)` — no literal placeholder.
+#[allow(clippy::needless_return)] // explicit `return` per cfg branch; only one compiles per platform
 pub fn run_at(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     writeln!(err, "Installing FAMP broker service...").ok();
 
@@ -591,7 +593,7 @@ mod tests {
     fn sample_fixture_matches_generate_plist() {
         let fixture = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../.planning/phases/05-daemon-service-management-version-safety/sample-com.famp.broker.plist"
+            "/tests/fixtures/sample-com.famp.broker.plist"
         ));
         let generated = generate_plist(std::path::Path::new("/Users/USERNAME")).unwrap();
         assert_eq!(

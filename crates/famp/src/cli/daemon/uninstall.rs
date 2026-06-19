@@ -2,9 +2,9 @@
 //!
 //! Plan 04 replaces the Plan 02 stub with the idempotent implementation:
 //!   - macOS: `launchctl bootout gui/$UID <plist>` (tolerate failure — not loaded)
-//!            then remove the plist file if it exists
+//!     then remove the plist file if it exists
 //!   - Linux: `systemctl --user disable --now famp-broker.service` (tolerate failure)
-//!            then remove the unit file if it exists + daemon-reload (tolerate)
+//!     then remove the unit file if it exists + daemon-reload (tolerate)
 //!   - Both platforms: return Ok on a clean (already-uninstalled) system
 //!
 //! DAEMON-04: idempotent — calling uninstall twice exits 0 both times with no
@@ -32,6 +32,7 @@ pub struct DaemonUninstallArgs {
 /// Idempotent: tolerates the service not being registered (bootout/disable
 /// failure is ignored) and the plist/unit file not existing. Returns Ok
 /// on a clean system (DAEMON-04).
+#[allow(clippy::needless_return)] // explicit `return` per cfg branch; only one compiles per platform
 pub fn run_at(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     writeln!(err, "Uninstalling FAMP broker service...").ok();
 

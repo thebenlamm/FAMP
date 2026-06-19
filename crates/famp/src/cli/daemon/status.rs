@@ -72,7 +72,7 @@ enum DaemonStateRender {
 /// - `Running` → 0 (success)
 /// - `InstalledDown` → 2 (installed but not running)
 /// - `NotInstalled` → 1 (not installed)
-fn exit_code(r: &DaemonStateRender) -> i32 {
+const fn exit_code(r: &DaemonStateRender) -> i32 {
     match r {
         DaemonStateRender::Running { .. } => 0,
         DaemonStateRender::InstalledDown { .. } => 2,
@@ -196,6 +196,7 @@ fn query_linger() -> Option<bool> {
 
 // ─── Async run ───────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_lines)]
 pub async fn run(args: DaemonStatusArgs) -> Result<(), CliError> {
     use famp_inspect_client::{raw_connect_probe, ProbeOutcome};
     use famp_inspect_proto::{InspectBrokerReply, InspectBrokerRequest, InspectKind};
@@ -219,7 +220,7 @@ pub async fn run(args: DaemonStatusArgs) -> Result<(), CliError> {
         let render = DaemonStateRender::NotInstalled {
             platform_path: service_path_str,
         };
-        return emit_and_exit(render, args.json);
+        return emit_and_exit(&render, args.json);
     }
 
     // Step 2: Is the service registered with the OS service manager?
@@ -244,7 +245,7 @@ pub async fn run(args: DaemonStatusArgs) -> Result<(), CliError> {
             evidence: "not_registered_with_service_manager".to_string(),
             linger,
         };
-        return emit_and_exit(render, args.json);
+        return emit_and_exit(&render, args.json);
     }
 
     // Step 3: Is the broker actually healthy? Use the same probe as `inspect broker`.
@@ -344,19 +345,19 @@ pub async fn run(args: DaemonStatusArgs) -> Result<(), CliError> {
         }
     };
 
-    emit_and_exit(render, args.json)
+    emit_and_exit(&render, args.json)
 }
 
-fn emit_and_exit(render: DaemonStateRender, json: bool) -> Result<(), CliError> {
+fn emit_and_exit(render: &DaemonStateRender, json: bool) -> Result<(), CliError> {
     if json {
-        let s = serde_json::to_string_pretty(&render)
+        let s = serde_json::to_string_pretty(render)
             .map_err(|e| CliError::Generic(format!("json serialize: {e}")))?;
         println!("{s}");
     } else {
-        println!("{}", render_human(&render));
+        println!("{}", render_human(render));
     }
 
-    match exit_code(&render) {
+    match exit_code(render) {
         0 => Ok(()),
         code => Err(CliError::Exit(code)),
     }

@@ -28,6 +28,11 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+# Mirror the workspace allow-list (Cargo lint tables don't merge — see
+# workspace Cargo.toml for rationale). Keep in sync with [workspace.lints.clippy].
+doc_markdown = "allow"
+similar_names = "allow"
+option_if_let_else = "allow"
 
 [dependencies]
 famp-core = { path = "../famp-core", version = "0.11.0" }

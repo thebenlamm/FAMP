@@ -1318,8 +1318,7 @@ fn inbox_preserves_channel_envelopes_after_unmatched_task_filtered_await() {
     // Alice does a task-filtered Await for an unrelated task. The
     // channel batch will be empty (no match) but pre-fix the cursor
     // advanced anyway, robbing Inbox of bob's post.
-    let other_task =
-        uuid::Uuid::parse_str("01890000-0000-7000-8000-deadbeefcafe").unwrap();
+    let other_task = uuid::Uuid::parse_str("01890000-0000-7000-8000-deadbeefcafe").unwrap();
     let _ = broker.handle(
         BrokerInput::Wire {
             client: ClientId::from(1_u64),
