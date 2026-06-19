@@ -551,7 +551,17 @@ fn inbox<E: BrokerEnv>(
     // drain is capped at `CHANNEL_DRAIN_CAP` envelopes per poll so a
     // hot channel cannot block other members or bloat one response —
     // the leftover lines are picked up by the next poll.
-    let canonical = canonical_holder_id(broker, &name).unwrap_or(client);
+    // `resolve_op_identity` (line 526) succeeded for this `name`, which
+    // means either (a) `client` is itself the canonical holder of `name`,
+    // or (b) `client` is a proxy whose canonical holder passed
+    // `proxy_holder_alive`. Both paths guarantee a canonical holder for
+    // `name` exists in `broker.state.clients`. A silent `unwrap_or(client)`
+    // fallback would route per-channel cursor writes to the proxy's slot
+    // on a broken invariant — a wrong-slot write, not a crash. Panic
+    // instead so any future refactor of `resolve_op_identity` that
+    // weakens this guarantee fails loud.
+    let canonical = canonical_holder_id(broker, &name)
+        .expect("resolve_op_identity succeeded above; canonical holder must exist for `name`");
     let joined_channels: Vec<String> = broker
         .state
         .clients
