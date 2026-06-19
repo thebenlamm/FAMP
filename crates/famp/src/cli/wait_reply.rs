@@ -14,7 +14,10 @@ use crate::cli::identity::resolve_identity;
 
 #[derive(clap::Args, Debug)]
 pub struct WaitReplyArgs {
-    /// Task id to wait for.
+    /// Task id of the task whose reply you're waiting for. Matches
+    /// envelopes via `causality.ref`; does NOT match envelopes whose
+    /// own task id equals this value, and does NOT match unrelated
+    /// new-task posts (e.g. fresh channel tasks while you're parked).
     #[arg(long)]
     pub task: uuid::Uuid,
     /// Block timeout after the inbox-first check. Accepts `30s`, `5m`, `250ms`, etc.

@@ -72,6 +72,15 @@ pub enum Commands {
     #[command(name = "await")]
     Await(await_cmd::AwaitArgs),
     /// Wait for a task reply: check existing inbox entries first, then block.
+    ///
+    /// Surfaces ONLY replies (deliver / audit_log) whose `causality.ref`
+    /// matches `--task <id>`. Does NOT surface new-task posts (including
+    /// channel posts via `--channel '#x' --new-task`) — those carry a
+    /// fresh task id and never reference the one you're waiting on, so
+    /// timing out on `wait-reply` does NOT mean nothing arrived for you.
+    ///
+    /// To discover new channel tasks instead, use:
+    ///   famp inspect messages --to '#channel' --tail N
     #[command(name = "wait-reply")]
     WaitReply(wait_reply::WaitReplyArgs),
     /// Inspect the inbox (list + cursor ack).
