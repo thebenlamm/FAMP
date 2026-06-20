@@ -223,12 +223,48 @@ pub async fn ensure_bus() -> Result<(), (BusErrorKind, String)> {
     Ok(())
 }
 
+/// Read the active identity (a clone of the inner `Option<String>`).
+/// `None` until `tools::register::call` has set it after a successful
+/// `RegisterOk` from the broker.
+pub async fn active_identity() -> Option<String> {
+    state().lock().await.active_identity.clone()
+}
+
+/// Set the active identity. Called by `tools::register::call` after the
+/// broker confirms `RegisterOk { name }`.
+pub async fn set_active_identity(name: String) {
+    state().lock().await.active_identity = Some(name);
+}
+
+/// Record metadata for the most-recent successful `famp_send`.
+///
+/// Called by `tools::send::call` on the `Ok` arm. Surfaced by `tools::whoami::call`
+/// as a recovery hint for the Claude Code `[Tool result missing due to
+/// internal error]` failure mode (the broker delivered the message but
+/// the JSON-RPC result never reached the model).
+pub async fn set_last_send(record: LastSend) {
+    state().lock().await.last_send = Some(record);
+}
+
+/// Read the most-recent `LastSend` record (cloned). `None` until the
+/// session has performed at least one successful `famp_send`.
+pub async fn last_send() -> Option<LastSend> {
+    state().lock().await.last_send.clone()
+}
+
+/// Clear all session state. Intentionally only available under `cfg(test)`
+/// — production code never resets a session within a single process
+/// lifetime.
 #[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::items_after_test_module
-)]
+pub async fn clear() {
+    let mut guard = state().lock().await;
+    guard.bus = None;
+    guard.active_identity = None;
+    guard.last_send = None;
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::bus_client::spawn;
@@ -339,44 +375,4 @@ mod tests {
             -32108
         );
     }
-}
-
-/// Read the active identity (a clone of the inner `Option<String>`).
-/// `None` until `tools::register::call` has set it after a successful
-/// `RegisterOk` from the broker.
-pub async fn active_identity() -> Option<String> {
-    state().lock().await.active_identity.clone()
-}
-
-/// Set the active identity. Called by `tools::register::call` after the
-/// broker confirms `RegisterOk { name }`.
-pub async fn set_active_identity(name: String) {
-    state().lock().await.active_identity = Some(name);
-}
-
-/// Record metadata for the most-recent successful `famp_send`.
-///
-/// Called by `tools::send::call` on the `Ok` arm. Surfaced by `tools::whoami::call`
-/// as a recovery hint for the Claude Code `[Tool result missing due to
-/// internal error]` failure mode (the broker delivered the message but
-/// the JSON-RPC result never reached the model).
-pub async fn set_last_send(record: LastSend) {
-    state().lock().await.last_send = Some(record);
-}
-
-/// Read the most-recent `LastSend` record (cloned). `None` until the
-/// session has performed at least one successful `famp_send`.
-pub async fn last_send() -> Option<LastSend> {
-    state().lock().await.last_send.clone()
-}
-
-/// Clear all session state. Intentionally only available under `cfg(test)`
-/// — production code never resets a session within a single process
-/// lifetime.
-#[cfg(test)]
-pub async fn clear() {
-    let mut guard = state().lock().await;
-    guard.bus = None;
-    guard.active_identity = None;
-    guard.last_send = None;
 }
