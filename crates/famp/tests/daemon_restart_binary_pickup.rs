@@ -24,51 +24,50 @@
 #[cfg(all(unix, target_os = "macos"))]
 mod macos_only {
 
-/// Returns true iff `FAMP_RUN_LAUNCHCTL_TESTS` is set in the environment.
-fn launchctl_tests_enabled() -> bool {
-    std::env::var("FAMP_RUN_LAUNCHCTL_TESTS").is_ok()
-}
-
-/// DAEMON-05: verify that `famp daemon restart` returns Ok against a live
-/// registered service, proving the kickstart -k path executes.
-///
-/// The full version-swap verification (pid changes, new build_version visible
-/// in `famp daemon status`) is the VALIDATION.md manual step — it requires a
-/// live registered service and a real binary replacement.
-///
-/// `#[ignore]`: requires a live registered service, so it is not run by a
-/// default `cargo test` — and is reported as **ignored**, not **passed**, so a
-/// zero-assertion CI run is never mistaken for verified coverage (WR-01). Run
-/// explicitly with:
-///   FAMP_RUN_LAUNCHCTL_TESTS=1 cargo test -p famp --test daemon_restart_binary_pickup -- --ignored
-#[test]
-#[ignore = "requires a live registered launchd service; run with -- --ignored and FAMP_RUN_LAUNCHCTL_TESTS=1"]
-fn restart_picks_up_new_binary() {
-    if !launchctl_tests_enabled() {
-        // Belt-and-suspenders even under `--ignored`: emit an explicit SKIP so a
-        // green run is never mistaken for a verified one.
-        eprintln!(
-            "SKIP restart_picks_up_new_binary: FAMP_RUN_LAUNCHCTL_TESTS unset \
-             (set it to exercise the live `famp daemon restart` path)"
-        );
-        return;
+    /// Returns true iff `FAMP_RUN_LAUNCHCTL_TESTS` is set in the environment.
+    fn launchctl_tests_enabled() -> bool {
+        std::env::var("FAMP_RUN_LAUNCHCTL_TESTS").is_ok()
     }
 
-    // Run `famp daemon restart` against the live service. This calls
-    // `launchctl kickstart -k gui/$UID/com.famp.broker` on macOS.
-    // Requires: service must be installed and registered (run `famp daemon
-    // install` first).
-    let status = std::process::Command::new("famp")
-        .args(["daemon", "restart"])
-        .status()
-        .expect("famp daemon restart must be runnable (is `famp` in PATH?)");
+    /// DAEMON-05: verify that `famp daemon restart` returns Ok against a live
+    /// registered service, proving the kickstart -k path executes.
+    ///
+    /// The full version-swap verification (pid changes, new build_version visible
+    /// in `famp daemon status`) is the VALIDATION.md manual step — it requires a
+    /// live registered service and a real binary replacement.
+    ///
+    /// `#[ignore]`: requires a live registered service, so it is not run by a
+    /// default `cargo test` — and is reported as **ignored**, not **passed**, so a
+    /// zero-assertion CI run is never mistaken for verified coverage (WR-01). Run
+    /// explicitly with:
+    ///   FAMP_RUN_LAUNCHCTL_TESTS=1 cargo test -p famp --test daemon_restart_binary_pickup -- --ignored
+    #[test]
+    #[ignore = "requires a live registered launchd service; run with -- --ignored and FAMP_RUN_LAUNCHCTL_TESTS=1"]
+    fn restart_picks_up_new_binary() {
+        if !launchctl_tests_enabled() {
+            // Belt-and-suspenders even under `--ignored`: emit an explicit SKIP so a
+            // green run is never mistaken for a verified one.
+            eprintln!(
+                "SKIP restart_picks_up_new_binary: FAMP_RUN_LAUNCHCTL_TESTS unset \
+             (set it to exercise the live `famp daemon restart` path)"
+            );
+            return;
+        }
 
-    assert!(
-        status.success(),
-        "famp daemon restart must exit 0 against a live registered service; \
+        // Run `famp daemon restart` against the live service. This calls
+        // `launchctl kickstart -k gui/$UID/com.famp.broker` on macOS.
+        // Requires: service must be installed and registered (run `famp daemon
+        // install` first).
+        let status = std::process::Command::new("famp")
+            .args(["daemon", "restart"])
+            .status()
+            .expect("famp daemon restart must be runnable (is `famp` in PATH?)");
+
+        assert!(
+            status.success(),
+            "famp daemon restart must exit 0 against a live registered service; \
          got {:?}. Is the service installed? Run `famp daemon install` first.",
-        status.code()
-    );
-}
-
+            status.code()
+        );
+    }
 } // mod macos_only

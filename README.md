@@ -167,22 +167,15 @@ setup. If you need cross-host federation, see
 # 1. Install Rust (skip if already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 source "$HOME/.cargo/env"
-
 # 2. Install famp (~60-120s first-run compile)
 cargo install famp
-
-# 3. Install the broker as a persistent service — run ONCE from a normal shell.
-#    After this, a broker is always reachable; no per-session babysitting,
-#    and sandboxed Codex windows can connect (they cannot spawn their own broker).
+# 3. Install the persistent broker — run ONCE from a normal (unsandboxed) shell.
 famp daemon install
-
-# 4. Wire each tool's MCP integration (separate from broker presence):
+# 4. Wire each tool's MCP integration:
 famp install-claude-code
 famp install-codex
-
 # 5. In one Claude Code window:   /famp-register alice
-# 6. In another (Claude Code or Codex):   register as bob
-# Then ask alice's window: "send bob a message saying ship it"
+# In another (Claude Code or Codex): register as bob — then ask alice to message bob.
 ```
 
 > First install includes a one-time compile (~60-120 s); subsequent windows: <30 s.
