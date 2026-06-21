@@ -257,16 +257,28 @@ pub async fn run(args: DaemonStatusArgs) -> Result<(), CliError> {
             let kind = InspectKind::Broker(InspectBrokerRequest::default());
             match famp_inspect_client::call(&mut stream, kind).await {
                 Ok(payload) => match serde_json::from_value::<InspectBrokerReply>(payload) {
-                    Ok(reply) => {
+                    Ok(InspectBrokerReply::Info(info)) => {
                         #[cfg(target_os = "linux")]
                         let linger = query_linger();
                         #[cfg(not(target_os = "linux"))]
                         let linger: Option<bool> = None;
 
                         DaemonStateRender::Running {
-                            pid: reply.pid,
-                            socket_path: reply.socket_path,
-                            build_version: reply.build_version,
+                            pid: info.pid,
+                            socket_path: info.socket_path,
+                            build_version: info.build_version,
+                            linger,
+                        }
+                    }
+                    Ok(InspectBrokerReply::BudgetExceeded { elapsed_ms }) => {
+                        #[cfg(target_os = "linux")]
+                        let linger = query_linger();
+                        #[cfg(not(target_os = "linux"))]
+                        let linger: Option<bool> = None;
+
+                        DaemonStateRender::InstalledDown {
+                            platform_path: service_path_str,
+                            evidence: format!("budget_exceeded: {elapsed_ms}ms"),
                             linger,
                         }
                     }

@@ -61,12 +61,16 @@ pub async fn run(args: InspectBrokerArgs) -> Result<(), CliError> {
             let kind = InspectKind::Broker(InspectBrokerRequest::default());
             match famp_inspect_client::call(&mut stream, kind).await {
                 Ok(payload) => match serde_json::from_value::<InspectBrokerReply>(payload) {
-                    Ok(reply) => BrokerStateRender::Healthy {
-                        pid: reply.pid,
-                        socket_path: reply.socket_path,
-                        started_at_unix_seconds: reply.started_at_unix_seconds,
-                        build_version: reply.build_version,
+                    Ok(InspectBrokerReply::Info(info)) => BrokerStateRender::Healthy {
+                        pid: info.pid,
+                        socket_path: info.socket_path,
+                        started_at_unix_seconds: info.started_at_unix_seconds,
+                        build_version: info.build_version,
                     },
+                    Ok(InspectBrokerReply::BudgetExceeded { elapsed_ms }) => {
+                        orphan_holder(&sock, &sock_str, format!("budget_exceeded: {elapsed_ms}ms"))
+                            .await
+                    }
                     Err(e) => {
                         orphan_holder(&sock, &sock_str, format!("schema_mismatch: {e}")).await
                     }

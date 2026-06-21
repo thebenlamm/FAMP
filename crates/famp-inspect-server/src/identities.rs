@@ -1,7 +1,7 @@
 //! `InspectKind::Identities` handler.
 
 use famp_bus::BrokerStateView;
-use famp_inspect_proto::{IdentityRow, InspectIdentitiesReply};
+use famp_inspect_proto::{IdentityListReply, IdentityRow, InspectIdentitiesReply};
 
 use crate::parse::to_epoch_seconds;
 use crate::BrokerCtx;
@@ -30,5 +30,5 @@ pub fn inspect_identities(state: &BrokerStateView, ctx: &BrokerCtx) -> InspectId
             }
         })
         .collect();
-    InspectIdentitiesReply { rows }
+    InspectIdentitiesReply::List(IdentityListReply { rows })
 }

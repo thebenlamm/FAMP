@@ -39,14 +39,22 @@ pub async fn run(args: InspectWaitersArgs) -> Result<(), CliError> {
     let reply: InspectWaitersReply = serde_json::from_value(payload)
         .map_err(|e| CliError::Generic(format!("waiters reply schema mismatch: {e}")))?;
 
-    if args.json {
-        let s = serde_json::to_string_pretty(&reply)
-            .map_err(|e| CliError::Generic(format!("json serialize: {e}")))?;
-        println!("{s}");
-    } else {
-        print_table(&reply.rows);
+    match reply {
+        InspectWaitersReply::List(list) => {
+            if args.json {
+                let s = serde_json::to_string_pretty(&list)
+                    .map_err(|e| CliError::Generic(format!("json serialize: {e}")))?;
+                println!("{s}");
+            } else {
+                print_table(&list.rows);
+            }
+            Ok(())
+        }
+        InspectWaitersReply::BudgetExceeded { elapsed_ms } => {
+            eprintln!("error: inspect budget exceeded ({elapsed_ms}ms) — broker busy, retry");
+            Err(CliError::Exit(1))
+        }
     }
-    Ok(())
 }
 
 fn print_table(rows: &[WaiterRow]) {

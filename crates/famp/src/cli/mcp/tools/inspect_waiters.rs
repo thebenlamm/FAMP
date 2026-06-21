@@ -43,5 +43,13 @@ pub async fn call(_input: &Value) -> Result<Value, ToolError> {
         )
     })?;
 
-    Ok(serde_json::to_value(&reply).unwrap_or_else(|_| serde_json::json!({"rows": []})))
+    match reply {
+        InspectWaitersReply::List(list) => {
+            Ok(serde_json::to_value(&list).unwrap_or_else(|_| serde_json::json!({"rows": []})))
+        }
+        InspectWaitersReply::BudgetExceeded { elapsed_ms } => Err(ToolError::new(
+            BusErrorKind::Internal,
+            format!("inspect budget exceeded ({elapsed_ms}ms) — broker busy, retry"),
+        )),
+    }
 }

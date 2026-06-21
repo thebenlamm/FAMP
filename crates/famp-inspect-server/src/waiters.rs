@@ -1,7 +1,7 @@
 //! `InspectKind::Waiters` handler.
 
 use famp_bus::BrokerStateView;
-use famp_inspect_proto::{InspectWaitersReply, WaiterRow};
+use famp_inspect_proto::{InspectWaitersReply, WaiterListReply, WaiterRow};
 
 /// INSP-WAIT-01: one row per (parked await × subscribed mailbox).
 ///
@@ -18,5 +18,5 @@ pub fn inspect_waiters(state: &BrokerStateView) -> InspectWaitersReply {
             deadline_ms: w.deadline_ms,
         })
         .collect();
-    InspectWaitersReply { rows }
+    InspectWaitersReply::List(WaiterListReply { rows })
 }

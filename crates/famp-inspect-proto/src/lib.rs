@@ -30,7 +30,7 @@ pub enum InspectKind {
 #[serde(deny_unknown_fields)]
 pub struct InspectBrokerRequest {}
 
-/// Reply to `InspectKind::Broker`.
+/// Inner payload for the `InspectBrokerReply::Info` variant.
 ///
 /// The client renders this for `famp inspect broker` against a
 /// *running* broker. Dead-broker states are produced entirely
@@ -38,7 +38,7 @@ pub struct InspectBrokerRequest {}
 /// `famp-inspect-client::peer_pid` and `BrokerDownState`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct InspectBrokerReply {
+pub struct BrokerInfoReply {
     pub pid: u32,
     pub socket_path: String,
     /// Wall-clock startup time (Unix epoch seconds, u64).
@@ -47,6 +47,20 @@ pub struct InspectBrokerReply {
     pub started_at_unix_seconds: u64,
     /// `CARGO_PKG_VERSION` of the answering broker process.
     pub build_version: String,
+}
+
+/// Reply to `InspectKind::Broker`.
+///
+/// **Wire commitment (D-02):** the serde tag form `tag = "kind",
+/// rename_all = "snake_case"` is locked as v0.10-era protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InspectBrokerReply {
+    Info(BrokerInfoReply),
+    /// INSP-RPC-03: 500ms budget exceeded before dispatch completed.
+    BudgetExceeded {
+        elapsed_ms: u64,
+    },
 }
 
 // ===== Identities =====
@@ -80,10 +94,23 @@ pub struct IdentityRow {
     pub last_received_at_unix_seconds: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct InspectIdentitiesReply {
+pub struct IdentityListReply {
     pub rows: Vec<IdentityRow>,
+}
+
+/// Reply to `InspectKind::Identities`.
+///
+/// **Wire commitment (D-02):** tag form locked as v0.10-era protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InspectIdentitiesReply {
+    List(IdentityListReply),
+    /// INSP-RPC-03: 500ms budget exceeded before dispatch completed.
+    BudgetExceeded {
+        elapsed_ms: u64,
+    },
 }
 
 // ===== Tasks reply (Phase 2 - D-01/D-02 wire commitment) =====
@@ -267,10 +294,23 @@ pub struct WaiterRow {
     pub deadline_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct InspectWaitersReply {
+pub struct WaiterListReply {
     pub rows: Vec<WaiterRow>,
+}
+
+/// Reply to `InspectKind::Waiters`.
+///
+/// **Wire commitment (D-02):** tag form locked as v0.10-era protocol.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InspectWaitersReply {
+    List(WaiterListReply),
+    /// INSP-RPC-03: 500ms budget exceeded before dispatch completed.
+    BudgetExceeded {
+        elapsed_ms: u64,
+    },
 }
 
 // ===== INSP-IDENT-03: schema-level rejection of forbidden field names =====
@@ -433,17 +473,76 @@ mod codec_roundtrip {
 
     #[test]
     fn inspectwaitersreply_roundtrips() {
-        let v = InspectWaitersReply {
+        let v = InspectWaitersReply::List(WaiterListReply {
             rows: vec![WaiterRow {
                 name: "alice".into(),
                 mailbox: "#planning".into(),
                 cursor: 1024,
                 deadline_ms: 82000,
             }],
-        };
+        });
         let bytes = canonicalize(&v).unwrap();
         let decoded: InspectWaitersReply = famp_canonical::from_slice_strict(&bytes).unwrap();
         assert_eq!(v, decoded);
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["kind"], "list");
+    }
+
+    // ── Fix #4 regression: budget_exceeded payload round-trips for all 3 reply enums ──
+
+    #[test]
+    fn inspectidentitiesreply_list_roundtrips() {
+        let v = InspectIdentitiesReply::List(IdentityListReply { rows: vec![] });
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectIdentitiesReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["kind"], "list");
+    }
+
+    #[test]
+    fn inspectidentitiesreply_budget_exceeded_deserializes() {
+        let json = serde_json::json!({"kind": "budget_exceeded", "elapsed_ms": 501_u64});
+        let decoded: InspectIdentitiesReply = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            decoded,
+            InspectIdentitiesReply::BudgetExceeded { elapsed_ms: 501 }
+        );
+    }
+
+    #[test]
+    fn inspectbrokerreply_info_roundtrips() {
+        let v = InspectBrokerReply::Info(BrokerInfoReply {
+            pid: 42,
+            socket_path: "/tmp/bus.sock".into(),
+            started_at_unix_seconds: 1_700_000_000,
+            build_version: "0.11.0".into(),
+        });
+        let bytes = canonicalize(&v).unwrap();
+        let decoded: InspectBrokerReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["kind"], "info");
+    }
+
+    #[test]
+    fn inspectbrokerreply_budget_exceeded_deserializes() {
+        let json = serde_json::json!({"kind": "budget_exceeded", "elapsed_ms": 501_u64});
+        let decoded: InspectBrokerReply = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            decoded,
+            InspectBrokerReply::BudgetExceeded { elapsed_ms: 501 }
+        );
+    }
+
+    #[test]
+    fn inspectwaitersreply_budget_exceeded_deserializes() {
+        let json = serde_json::json!({"kind": "budget_exceeded", "elapsed_ms": 501_u64});
+        let decoded: InspectWaitersReply = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            decoded,
+            InspectWaitersReply::BudgetExceeded { elapsed_ms: 501 }
+        );
     }
 
     #[test]
