@@ -29,13 +29,18 @@
 //!
 //! ## Output (JSON-Line on stdout)
 //!
-//! `{"task_id":"<uuid>","delivered":"<debug-of-Vec<Delivered>>"}`
+//! New-task send: `{"task_id":"<uuid>","delivered":"<debug>"}`
+//! Reply send:    `{"task_id":"<envelope-uuid>","thread_task_id":"<replied-to-uuid>","delivered":"<debug>"}`
 //!
-//! Mirrors the v0.8 send shape so MCP-tool output stays compatible. The
-//! `delivered` field is a debug-format of the broker's `Vec<Delivered>`
-//! reply because the `Delivered` struct lives in `famp-bus` and exposing
-//! its full shape on stdout would couple the CLI surface to a wire-layer
-//! crate; debug-stringify keeps the surface ergonomic for shell pipes.
+//! `task_id` is the fresh envelope/message id returned by the broker for
+//! THIS send. For replies (`--task`), `thread_task_id` is the originating
+//! task id (== `causality.ref` in the wire envelope) and is omitted on
+//! new-task sends. Mirrors the v0.8 send shape (additive — existing
+//! `task_id` consumers are unaffected). The `delivered` field is a
+//! debug-format of the broker's `Vec<Delivered>` reply because the
+//! `Delivered` struct lives in `famp-bus` and exposing its full shape on
+//! stdout would couple the CLI surface to a wire-layer crate;
+//! debug-stringify keeps the surface ergonomic for shell pipes.
 //!
 // v0.8 federation HTTPS path was deleted in Phase 4; see
 // `docs/MIGRATION-v0.8-to-v0.9.md`.
@@ -91,15 +96,22 @@ pub struct SendArgs {
 
 /// Outcome returned by [`run_at_structured`].
 ///
-/// Carries the broker's `task_id` (`UUIDv7` string) and a debug-format of
-/// the per-target delivery slice. `delivered_rows` is the structured
+/// Carries the broker's envelope id (`task_id`), the optional replied-to
+/// task id (`thread_task_id`, set only for reply sends), and a debug-format
+/// of the per-target delivery slice. `delivered_rows` is the structured
 /// equivalent used by the MCP tool. JSON-Line shape on stdout:
-/// `{"task_id":"<uuid>","delivered":"<debug>"}` — preserved from v0.8 for
-/// MCP-tool output compatibility.
+/// `{"task_id":"<uuid>","delivered":"<debug>"}` (new-task) or
+/// `{"task_id":"<env-uuid>","thread_task_id":"<thread-uuid>","delivered":"<debug>"}` (reply).
 #[derive(Debug, Clone)]
 pub struct SendOutcome {
-    /// The `UUIDv7` task id assigned by the broker.
+    /// The fresh `UUIDv7` envelope/message id of THIS send, as returned by
+    /// the broker in `SendOk`. For replies, the replied-to task is in
+    /// `thread_task_id`; `task_id` here is the new reply envelope's own id.
     pub task_id: String,
+    /// For a reply (`--task`), the replied-to task id (== `causality.ref`
+    /// in the wire envelope). `None` for a new-task send (where it would
+    /// be redundant with `task_id`).
+    pub thread_task_id: Option<String>,
     /// Debug-format of the broker's `Vec<Delivered>` reply slice. The
     /// `Delivered` struct from `famp_bus` is intentionally NOT exposed on
     /// the CLI's structured-result surface; debug-stringify keeps the
@@ -125,11 +137,7 @@ pub struct DeliveredRow {
 pub async fn run(args: SendArgs) -> Result<(), CliError> {
     let sock = crate::bus_client::resolve_sock_path();
     let outcome = run_at_structured(&sock, args).await?;
-    let line = serde_json::json!({
-        "task_id":   outcome.task_id,
-        "delivered": outcome.delivered,
-    });
-    println!("{line}");
+    println!("{}", outcome_to_json_line(&outcome));
     Ok(())
 }
 
@@ -138,12 +146,32 @@ pub async fn run(args: SendArgs) -> Result<(), CliError> {
 /// Prints the same JSON-Line as [`run`].
 pub async fn run_at(sock: &Path, args: SendArgs) -> Result<(), CliError> {
     let outcome = run_at_structured(sock, args).await?;
-    let line = serde_json::json!({
-        "task_id":   outcome.task_id,
-        "delivered": outcome.delivered,
-    });
-    println!("{line}");
+    println!("{}", outcome_to_json_line(&outcome));
     Ok(())
+}
+
+/// Serialize a [`SendOutcome`] to a JSON-Line string for stdout.
+///
+/// `thread_task_id` is included only when `Some` (reply sends). New-task
+/// sends omit the key entirely, preserving byte-exact backward-compat with
+/// consumers that parse only `task_id` and `delivered`.
+fn outcome_to_json_line(outcome: &SendOutcome) -> String {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "task_id".to_string(),
+        serde_json::Value::String(outcome.task_id.clone()),
+    );
+    if let Some(tid) = &outcome.thread_task_id {
+        map.insert(
+            "thread_task_id".to_string(),
+            serde_json::Value::String(tid.clone()),
+        );
+    }
+    map.insert(
+        "delivered".to_string(),
+        serde_json::Value::String(outcome.delivered.clone()),
+    );
+    serde_json::Value::Object(map).to_string()
 }
 
 /// Structured entry — returns a [`SendOutcome`] without printing. Used by
@@ -163,6 +191,13 @@ pub async fn run_at(sock: &Path, args: SendArgs) -> Result<(), CliError> {
 ///    operator hint.
 #[allow(clippy::too_many_lines)]
 pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcome, CliError> {
+    // Capture the replied-to task id BEFORE any field is moved out of `args`.
+    // This is `Some` only for reply sends (`--task <uuid>`); `None` for new-task
+    // sends. The broker's `SendOk.task_id` is the REPLY envelope's own id;
+    // `thread_task_id` is the originating thread — surfaced as `causality.ref`
+    // in the wire envelope and used by `famp_verify` to find the row.
+    let thread_task_id: Option<String> = args.task.clone();
+
     // 1. Resolve identity (D-01) for the Hello.bind_as proxy.
     let identity = resolve_identity(args.act_as.as_deref())?;
 
@@ -287,6 +322,7 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
                 .collect();
             Ok(SendOutcome {
                 task_id: task_id.to_string(),
+                thread_task_id,
                 delivered: format!("{delivered:?}"),
                 delivered_rows,
             })

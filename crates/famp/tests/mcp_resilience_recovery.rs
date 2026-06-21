@@ -357,6 +357,11 @@ fn whoami_last_send_captures_thread_task_id_on_reply_mode() {
     );
     let ob = Harness::ok_content(&open);
     let thread_id = ob["task_id"].as_str().unwrap().to_string();
+    // New-task send: famp_send result must NOT include thread_task_id.
+    assert!(
+        ob.get("thread_task_id").is_none(),
+        "famp_send open-mode result must omit thread_task_id: {ob}"
+    );
 
     // Open-mode whoami: thread_task_id is absent (None serializes as
     // omitted via skip_serializing_if).
@@ -384,6 +389,12 @@ fn whoami_last_send_captures_thread_task_id_on_reply_mode() {
     assert_ne!(
         reply_envelope_id, thread_id,
         "reply's SendOk.task_id is the new envelope id, distinct from the thread id"
+    );
+    // Reply send: famp_send result MUST include thread_task_id == the originating thread id.
+    assert_eq!(
+        rb["thread_task_id"].as_str().unwrap_or(""),
+        thread_id,
+        "famp_send reply-mode result must include thread_task_id == the thread id: {rb}"
     );
 
     // Reply-mode whoami: BOTH task_id and thread_task_id are present.

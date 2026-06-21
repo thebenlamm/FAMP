@@ -78,12 +78,16 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
                 ts,
             })
             .await;
-            Ok(serde_json::json!({
+            let mut result = serde_json::json!({
                 "task_id": out.task_id,
                 "delivered": out.delivered,
                 "delivered_rows": out.delivered_rows,
                 "woken": woken_any,
-            }))
+            });
+            if let Some(tid) = &out.thread_task_id {
+                result["thread_task_id"] = serde_json::Value::String(tid.clone());
+            }
+            Ok(result)
         }
         // `famp_send` keeps its own `SendArgsInvalid` arm: the CLI send path
         // rejects malformed args (bad mode/peer/channel) with this variant and
