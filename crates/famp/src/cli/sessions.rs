@@ -38,11 +38,16 @@ use crate::cli::identity::resolve_identity;
 /// CLI args for `famp sessions`.
 #[derive(clap::Args, Debug)]
 pub struct SessionsArgs {
-    /// Filter to the caller's resolved identity only. Mutually exclusive
-    /// with `--as` semantics (sessions has no `--as`); resolves identity
+    /// Filter to the caller's resolved identity only; resolves identity
     /// through D-01 and uses `Hello.bind_as` proxy validation.
     #[arg(long)]
     pub me: bool,
+
+    /// Override resolved identity for the `--me` filter (per-subcommand,
+    /// like inbox/send). Takes precedence over `$FAMP_LOCAL_IDENTITY` and
+    /// `wires.tsv` when `--me` is set.
+    #[arg(long = "as")]
+    pub act_as: Option<String>,
 }
 
 /// Structured outcome — the broker's full session table (or filtered
@@ -63,7 +68,7 @@ pub async fn run_at_structured(
     // broker validates liveness. Without --me, connect with bind_as: None
     // — the connection becomes an unbound observer for the read-only op.
     let bind_as = if args.me {
-        Some(resolve_identity(None)?)
+        Some(resolve_identity(args.act_as.as_deref())?)
     } else {
         None
     };
@@ -141,4 +146,37 @@ pub async fn run(args: SessionsArgs) -> Result<(), CliError> {
     let sock = resolve_sock_path();
     let mut stdout = std::io::stdout();
     run_at(&sock, args, &mut stdout).await
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use clap::Parser as _;
+
+    /// Fix #3: `--me --as <id>` parses and binds `act_as` correctly.
+    #[test]
+    fn sessions_as_flag_parses() {
+        #[derive(clap::Parser)]
+        struct W {
+            #[command(flatten)]
+            s: SessionsArgs,
+        }
+        let w = W::try_parse_from(["x", "--me", "--as", "alice"]).unwrap();
+        assert!(w.s.me, "--me must be true");
+        assert_eq!(w.s.act_as.as_deref(), Some("alice"), "--as must bind alice");
+    }
+
+    /// Without `--me`, `act_as` defaults to None.
+    #[test]
+    fn sessions_as_flag_absent_is_none() {
+        #[derive(clap::Parser)]
+        struct W {
+            #[command(flatten)]
+            s: SessionsArgs,
+        }
+        let w = W::try_parse_from(["x"]).unwrap();
+        assert!(!w.s.me);
+        assert!(w.s.act_as.is_none());
+    }
 }

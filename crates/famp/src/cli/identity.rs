@@ -9,9 +9,9 @@
 //! 4. Hard error — no identity bound.
 //!
 //! Tiers 1-3 succeed fast; tier-4 returns the literal hint message
-//! `"no identity bound — pass --as, set $FAMP_LOCAL_IDENTITY, or run
-//! `famp-local wire <dir>` first"` so users get a single-line nudge to
-//! one of the three resolution paths.
+//! `"no identity bound — pass --as after the subcommand (e.g. \`famp inbox list --as <id>\`),
+//! set $FAMP_LOCAL_IDENTITY, or run \`famp-local wire <dir>\` first"` so users get a
+//! single-line nudge to one of the three resolution paths.
 //!
 //! The wires.tsv lookup canonicalizes both sides (cwd and the row's
 //! directory column) before comparing, matching the bash script's
@@ -23,7 +23,8 @@ use std::path::{Path, PathBuf};
 use crate::cli::error::CliError;
 
 const NO_IDENTITY_HINT: &str =
-    "no identity bound — pass --as, set $FAMP_LOCAL_IDENTITY, or run `famp-local wire <dir>` first";
+    "no identity bound — pass --as after the subcommand (e.g. `famp inbox list --as <id>`), \
+set $FAMP_LOCAL_IDENTITY, or run `famp-local wire <dir>` first";
 
 /// Resolve the active identity per the D-01 four-tier stack.
 ///
