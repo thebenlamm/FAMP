@@ -75,7 +75,11 @@ pub struct SendArgs {
     /// Continue an existing task (`UUIDv7` from a prior `--new-task`).
     #[arg(long, conflicts_with = "new_task")]
     pub task: Option<String>,
-    /// Mark the deliver envelope terminal (requires `--task`).
+    /// Mark the deliver envelope terminal — the FINAL reply that closes the
+    /// task (requires `--task`). Put your real, complete answer in this send;
+    /// do not fire a placeholder terminal (e.g. `--body ack-minimal`) and then
+    /// the real reply. If you are still testing the send path, omit `--terminal`
+    /// so the task stays open until the real close is ready.
     #[arg(long, requires = "task")]
     pub terminal: bool,
     /// Optional freeform body text (used as `natural_language_summary`).
