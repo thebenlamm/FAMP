@@ -65,7 +65,7 @@ impl Bus {
         )
     }
 
-    fn famp_spawn_broker(&self) -> Child {
+    fn famp_spawn_broker(&self) -> ChildGuard {
         let mut child = Command::cargo_bin("famp")
             .unwrap()
             .env("FAMP_BUS_SOCKET", self.sock())
@@ -81,7 +81,7 @@ impl Bus {
                 panic!("broker exited before becoming ready: {status}");
             }
             if self.sock.exists() {
-                return child;
+                return ChildGuard::new(child);
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -259,7 +259,7 @@ fn channel_messages_are_visible_via_inspect() {
 
     kill_and_wait(sender.as_mut().unwrap());
     kill_and_wait(receiver.as_mut().unwrap());
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 }
 
 #[test]
@@ -272,7 +272,7 @@ fn tail_default_is_50() {
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(value["kind"], "list");
     assert!(value["rows"].is_array());
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 }
 
 #[test]
@@ -327,5 +327,5 @@ fn tail_3_returns_only_three_rows() {
 
     kill_and_wait(sender.as_mut().unwrap());
     kill_and_wait(receiver.as_mut().unwrap());
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 }

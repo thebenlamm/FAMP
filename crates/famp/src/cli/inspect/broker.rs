@@ -194,6 +194,19 @@ fn render_human(r: &BrokerStateRender) -> String {
     }
 }
 
+fn format_unix(secs: u64) -> String {
+    let Ok(secs_i64) = i64::try_from(secs) else {
+        return secs.to_string();
+    };
+    time::OffsetDateTime::from_unix_timestamp(secs_i64).map_or_else(
+        |_| secs.to_string(),
+        |t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| secs.to_string())
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,17 +225,4 @@ mod tests {
             "must not contain ORPHAN_HOLDER: {output}"
         );
     }
-}
-
-fn format_unix(secs: u64) -> String {
-    let Ok(secs_i64) = i64::try_from(secs) else {
-        return secs.to_string();
-    };
-    time::OffsetDateTime::from_unix_timestamp(secs_i64).map_or_else(
-        |_| secs.to_string(),
-        |t| {
-            t.format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_else(|_| secs.to_string())
-        },
-    )
 }

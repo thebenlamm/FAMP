@@ -65,7 +65,7 @@ impl Bus {
         )
     }
 
-    fn famp_spawn_broker(&self) -> Child {
+    fn famp_spawn_broker(&self) -> ChildGuard {
         let mut child = Command::cargo_bin("famp")
             .unwrap()
             .env("FAMP_BUS_SOCKET", self.sock())
@@ -81,7 +81,7 @@ impl Bus {
                 panic!("broker exited before becoming ready: {status}");
             }
             if self.sock.exists() {
-                return child;
+                return ChildGuard::new(child);
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -217,7 +217,7 @@ fn json_emits_kind_list_for_no_id_request() {
         serde_json::from_str(&stdout).expect("valid JSON in --json output");
     assert_eq!(value["kind"], "list");
     assert!(value["rows"].is_array(), "rows must be array: {stdout}");
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 }
 
 #[test]

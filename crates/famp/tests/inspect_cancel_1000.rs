@@ -10,6 +10,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 struct Bus {
     tmp: tempfile::TempDir,
     sock: std::path::PathBuf,
@@ -36,7 +40,7 @@ impl Bus {
             .unwrap()
     }
 
-    fn famp_spawn_broker(&self) -> Child {
+    fn famp_spawn_broker(&self) -> ChildGuard {
         let mut child = Command::cargo_bin("famp")
             .unwrap()
             .env("FAMP_BUS_SOCKET", self.sock())
@@ -48,7 +52,7 @@ impl Bus {
             .spawn()
             .unwrap();
         self.wait_for_broker(&mut child);
-        child
+        ChildGuard::new(child)
     }
 
     fn wait_for_broker(&self, child: &mut Child) {
@@ -138,5 +142,5 @@ fn one_thousand_cancel_no_leak() {
         "FD leak detected: baseline={baseline_fds}, after={after_fds}, delta={delta}"
     );
     assert_eq!(completed.load(Ordering::SeqCst), 1000);
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 }

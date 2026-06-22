@@ -15,6 +15,10 @@ use std::sync::{
 };
 use std::time::Duration;
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 struct Bus {
     tmp: tempfile::TempDir,
     sock: std::path::PathBuf,
@@ -41,7 +45,7 @@ impl Bus {
             .unwrap()
     }
 
-    fn famp_spawn_broker(&self) -> Child {
+    fn famp_spawn_broker(&self) -> ChildGuard {
         let mut child = Command::cargo_bin("famp")
             .unwrap()
             .env("FAMP_BUS_SOCKET", self.sock())
@@ -53,7 +57,7 @@ impl Bus {
             .spawn()
             .unwrap();
         self.wait_for_broker(&mut child);
-        child
+        ChildGuard::new(child)
     }
 
     fn wait_for_broker(&self, child: &mut Child) {
@@ -145,7 +149,7 @@ fn inspect_broker_healthy_exit_0() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 }
 
 #[test]
@@ -246,7 +250,7 @@ fn inspect_broker_json_healthy_emits_documented_schema() {
     );
     assert!(value["build_version"].as_str().is_some(), "{value}");
 
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 }
 
 #[test]

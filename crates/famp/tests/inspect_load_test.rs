@@ -74,7 +74,7 @@ impl Bus {
         )
     }
 
-    fn famp_spawn_broker(&self) -> Child {
+    fn famp_spawn_broker(&self) -> ChildGuard {
         let mut child = Command::cargo_bin("famp")
             .unwrap()
             .env("FAMP_BUS_SOCKET", self.sock())
@@ -86,7 +86,7 @@ impl Bus {
             .spawn()
             .unwrap();
         self.wait_for_broker(&mut child);
-        child
+        ChildGuard::new(child)
     }
 
     fn wait_for_broker(&self, child: &mut Child) {
@@ -349,7 +349,7 @@ fn measure_scenario(inspector_threads: usize) -> Measurement {
 
     kill_and_wait(sender.as_mut().unwrap());
     kill_and_wait(receiver.as_mut().unwrap());
-    kill_and_wait(&mut broker);
+    kill_and_wait(broker.as_mut().unwrap());
 
     delivered
 }
