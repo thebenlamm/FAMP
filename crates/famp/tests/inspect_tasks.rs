@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 struct Bus {
     tmp: tempfile::TempDir,
     sock: std::path::PathBuf,
@@ -45,18 +49,20 @@ impl Bus {
             .unwrap()
     }
 
-    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> Child {
-        Command::cargo_bin("famp")
-            .unwrap()
-            .env("FAMP_BUS_SOCKET", self.sock())
-            .env("HOME", self.tmp.path())
-            .current_dir(cwd)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap()
+    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> ChildGuard {
+        ChildGuard::new(
+            Command::cargo_bin("famp")
+                .unwrap()
+                .env("FAMP_BUS_SOCKET", self.sock())
+                .env("HOME", self.tmp.path())
+                .current_dir(cwd)
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
     }
 
     fn famp_spawn_broker(&self) -> Child {
@@ -192,8 +198,8 @@ fn list_groups_by_task_id_with_state_and_envelope_count() {
         "expected header plus at least one data row: {stdout}"
     );
 
-    kill_and_wait(&mut sender);
-    kill_and_wait(&mut receiver);
+    kill_and_wait(sender.as_mut().unwrap());
+    kill_and_wait(receiver.as_mut().unwrap());
 }
 
 #[test]
@@ -253,8 +259,8 @@ fn id_full_jcs_pipes_through_jq() {
     assert_eq!(value["task_id"], task_id);
     assert!(value["envelopes"].is_array(), "envelopes must be array");
 
-    kill_and_wait(&mut sender);
-    kill_and_wait(&mut receiver);
+    kill_and_wait(sender.as_mut().unwrap());
+    kill_and_wait(receiver.as_mut().unwrap());
 }
 
 #[test]

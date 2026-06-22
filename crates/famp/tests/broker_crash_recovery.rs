@@ -23,6 +23,10 @@ use std::time::Duration;
 
 use assert_cmd::cargo::CommandCargoExt;
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 /// Build a minimal valid `audit_log` envelope JSON value. The shape
 /// matches `famp_envelope::bus::tests::audit_log_value` so it survives
 /// `AnyBusEnvelope::decode` at drain time.
@@ -54,24 +58,28 @@ fn test_kill9_recovery() {
         // 1. Start alice and bob register holders. Each one shells out via
         //    Command::cargo_bin("famp"); the first to reach bind() wins
         //    the broker race per BROKER-03.
-        let mut alice = Command::cargo_bin("famp")
-            .unwrap()
-            .env(env_key, &sock)
-            .args(["register", "alice"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let mut bob = Command::cargo_bin("famp")
-            .unwrap()
-            .env(env_key, &sock)
-            .args(["register", "bob"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+        let mut alice = ChildGuard::new(
+            Command::cargo_bin("famp")
+                .unwrap()
+                .env(env_key, &sock)
+                .args(["register", "alice"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        let mut bob = ChildGuard::new(
+            Command::cargo_bin("famp")
+                .unwrap()
+                .env(env_key, &sock)
+                .args(["register", "bob"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
         // Allow both holders to register and the broker to settle.
         tokio::time::sleep(Duration::from_secs(2)).await;
 
@@ -157,9 +165,13 @@ fn test_kill9_recovery() {
 
         // Tear down. The register reconnect loop is still active; killing
         // the alice/bob processes terminates them cleanly.
-        let _ = alice.kill();
-        let _ = bob.kill();
-        let _ = alice.wait();
-        let _ = bob.wait();
+        if let Some(c) = alice.as_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+        if let Some(c) = bob.as_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
     });
 }

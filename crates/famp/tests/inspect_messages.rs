@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 struct Bus {
     tmp: tempfile::TempDir,
     sock: std::path::PathBuf,
@@ -45,18 +49,20 @@ impl Bus {
             .unwrap()
     }
 
-    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> Child {
-        Command::cargo_bin("famp")
-            .unwrap()
-            .env("FAMP_BUS_SOCKET", self.sock())
-            .env("HOME", self.tmp.path())
-            .current_dir(cwd)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap()
+    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> ChildGuard {
+        ChildGuard::new(
+            Command::cargo_bin("famp")
+                .unwrap()
+                .env("FAMP_BUS_SOCKET", self.sock())
+                .env("HOME", self.tmp.path())
+                .current_dir(cwd)
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
     }
 
     fn famp_spawn_broker(&self) -> Child {
@@ -175,8 +181,8 @@ fn metadata_only_no_body() {
         "body content leaked into messages output: {stdout}"
     );
 
-    kill_and_wait(&mut sender);
-    kill_and_wait(&mut receiver);
+    kill_and_wait(sender.as_mut().unwrap());
+    kill_and_wait(receiver.as_mut().unwrap());
 }
 
 /// Regression for beta UX bug (2026-06-19): `famp inspect messages
@@ -251,8 +257,8 @@ fn channel_messages_are_visible_via_inspect() {
          (regression: read_message_snapshot must scan #*.jsonl from disk)"
     );
 
-    kill_and_wait(&mut sender);
-    kill_and_wait(&mut receiver);
+    kill_and_wait(sender.as_mut().unwrap());
+    kill_and_wait(receiver.as_mut().unwrap());
     kill_and_wait(&mut broker);
 }
 
@@ -319,7 +325,7 @@ fn tail_3_returns_only_three_rows() {
         rows.len()
     );
 
-    kill_and_wait(&mut sender);
-    kill_and_wait(&mut receiver);
+    kill_and_wait(sender.as_mut().unwrap());
+    kill_and_wait(receiver.as_mut().unwrap());
     kill_and_wait(&mut broker);
 }

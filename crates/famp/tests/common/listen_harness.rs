@@ -50,34 +50,9 @@ use famp_envelope::{
     SignedEnvelope, Timestamp, UnsignedEnvelope,
 };
 
-/// RAII guard that kills + waits the child on drop. Tests should hold this
-/// for the duration of the test body and `mem::drop` it (or let scope end)
-/// to clean up even on panic unwind.
-pub struct ChildGuard(pub Option<Child>);
-
-impl ChildGuard {
-    #[must_use]
-    pub fn new(child: Child) -> Self {
-        Self(Some(child))
-    }
-
-    pub fn as_mut(&mut self) -> Option<&mut Child> {
-        self.0.as_mut()
-    }
-
-    pub fn take(&mut self) -> Option<Child> {
-        self.0.take()
-    }
-}
-
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        if let Some(mut c) = self.0.take() {
-            let _ = c.kill();
-            let _ = c.wait();
-        }
-    }
-}
+#[path = "child_guard.rs"]
+mod child_guard;
+pub use child_guard::ChildGuard;
 
 /// Initialize a FAMP home in-process by calling `famp::cli::init::run_at`
 /// directly. Faster than a subprocess and avoids inheriting env vars.

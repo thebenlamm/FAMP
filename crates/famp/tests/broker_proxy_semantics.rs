@@ -41,19 +41,25 @@ use assert_cmd::cargo::CommandCargoExt;
 use famp::bus_client::{BusClient, BusClientError};
 use famp_bus::{BusErrorKind, BusMessage, BusReply, Target};
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 /// Helper: ensure a `famp register <name>` foreground process is
 /// running and registered with the broker. Returns the spawned child
-/// so the caller can kill/wait it.
-fn spawn_register(sock: &std::path::Path, name: &str) -> std::process::Child {
-    Command::cargo_bin("famp")
-        .unwrap()
-        .env("FAMP_BUS_SOCKET", sock)
-        .args(["register", name])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap()
+/// wrapped in a ChildGuard so it is reaped on drop (panic-safe).
+fn spawn_register(sock: &std::path::Path, name: &str) -> ChildGuard {
+    ChildGuard::new(
+        Command::cargo_bin("famp")
+            .unwrap()
+            .env("FAMP_BUS_SOCKET", sock)
+            .args(["register", name])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    )
 }
 
 /// Helper: spawn a `famp broker --socket <path>` daemon directly (not
@@ -162,8 +168,7 @@ fn test_proxy_join_persists_after_disconnect() {
             other => panic!("expected WhoamiOk, got {other:?}"),
         }
 
-        let _ = alice.kill();
-        let _ = alice.wait();
+        if let Some(c) = alice.as_mut() { let _ = c.kill(); let _ = c.wait(); }
     });
 }
 
@@ -240,13 +245,15 @@ fn test_proxy_send_after_holder_dies() {
         //    its periodic Tick → is_alive(pid) check.
         // PID is positive; cast is safe on every supported target.
         #[allow(clippy::cast_possible_wrap)]
-        let alice_pid = alice.id() as i32;
+        let alice_pid = alice.as_mut().unwrap().id() as i32;
         nix::sys::signal::kill(
             nix::unistd::Pid::from_raw(alice_pid),
             nix::sys::signal::Signal::SIGKILL,
         )
         .unwrap();
-        let _ = alice.wait();
+        if let Some(c) = alice.as_mut() {
+            let _ = c.wait();
+        }
 
         // 3. Wait for the broker to run at least one or two Tick
         //    iterations (1s interval). 3s is generous.
@@ -289,7 +296,9 @@ fn test_proxy_send_after_holder_dies() {
             }
         }
 
-        let _ = bob.kill();
-        let _ = bob.wait();
+        if let Some(c) = bob.as_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
     });
 }

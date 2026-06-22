@@ -12,6 +12,10 @@ use std::time::Duration;
 
 use assert_cmd::cargo::CommandCargoExt;
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 #[test]
 fn test_broker_spawn_race() {
     let tmp = tempfile::TempDir::new().unwrap();
@@ -23,24 +27,28 @@ fn test_broker_spawn_race() {
     // bind_as: None and Register. Exactly one of them wins the bind
     // race; the other defers (probe succeeds → process::exit(0) on
     // the broker side) and connects to the winner.
-    let mut c1 = Command::cargo_bin("famp")
-        .unwrap()
-        .env(env_key, &sock)
-        .args(["register", "alice"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let mut c2 = Command::cargo_bin("famp")
-        .unwrap()
-        .env(env_key, &sock)
-        .args(["register", "bob"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut c1 = ChildGuard::new(
+        Command::cargo_bin("famp")
+            .unwrap()
+            .env(env_key, &sock)
+            .args(["register", "alice"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let mut c2 = ChildGuard::new(
+        Command::cargo_bin("famp")
+            .unwrap()
+            .env(env_key, &sock)
+            .args(["register", "bob"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
 
     // Allow time for both to spawn the broker (whichever wins) and
     // complete Register. 2s is generous for cold-start CI.
@@ -62,8 +70,12 @@ fn test_broker_spawn_race() {
     // Tear down. Killing the register processes also signals the broker
     // to enter idle-exit (the 5-min timer arms when client_count → 0),
     // but we don't wait for it — the tempdir cleanup unlinks the socket.
-    let _ = c1.kill();
-    let _ = c2.kill();
-    let _ = c1.wait();
-    let _ = c2.wait();
+    if let Some(c) = c1.as_mut() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    if let Some(c) = c2.as_mut() {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
 }

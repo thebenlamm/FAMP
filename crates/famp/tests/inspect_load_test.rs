@@ -28,6 +28,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::time::{Duration, Instant};
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 struct Bus {
     tmp: tempfile::TempDir,
     sock: std::path::PathBuf,
@@ -54,18 +58,20 @@ impl Bus {
             .unwrap()
     }
 
-    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> Child {
-        Command::cargo_bin("famp")
-            .unwrap()
-            .env("FAMP_BUS_SOCKET", self.sock())
-            .env("HOME", self.tmp.path())
-            .current_dir(cwd)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap()
+    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> ChildGuard {
+        ChildGuard::new(
+            Command::cargo_bin("famp")
+                .unwrap()
+                .env("FAMP_BUS_SOCKET", self.sock())
+                .env("HOME", self.tmp.path())
+                .current_dir(cwd)
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
     }
 
     fn famp_spawn_broker(&self) -> Child {
@@ -341,8 +347,8 @@ fn measure_scenario(inspector_threads: usize) -> Measurement {
 
     let delivered = measure_send_throughput(&bus, inspector_threads);
 
-    kill_and_wait(&mut sender);
-    kill_and_wait(&mut receiver);
+    kill_and_wait(sender.as_mut().unwrap());
+    kill_and_wait(receiver.as_mut().unwrap());
     kill_and_wait(&mut broker);
 
     delivered

@@ -8,6 +8,10 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+#[path = "common/child_guard.rs"]
+mod child_guard;
+use child_guard::ChildGuard;
+
 struct Bus {
     tmp: tempfile::TempDir,
     sock: std::path::PathBuf,
@@ -45,18 +49,20 @@ impl Bus {
             .unwrap()
     }
 
-    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> Child {
-        Command::cargo_bin("famp")
-            .unwrap()
-            .env("FAMP_BUS_SOCKET", self.sock())
-            .env("HOME", self.tmp.path())
-            .current_dir(cwd)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap()
+    fn famp_spawn_in(&self, cwd: &Path, args: &[&str]) -> ChildGuard {
+        ChildGuard::new(
+            Command::cargo_bin("famp")
+                .unwrap()
+                .env("FAMP_BUS_SOCKET", self.sock())
+                .env("HOME", self.tmp.path())
+                .current_dir(cwd)
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        )
     }
 
     fn wait_for_register(&self, name: &str) {
@@ -162,8 +168,8 @@ fn inspect_identities_two_registered_renders_two_data_rows() {
         "missing bob cwd: {stdout}"
     );
 
-    kill_and_wait(&mut alice);
-    kill_and_wait(&mut bob);
+    kill_and_wait(alice.as_mut().unwrap());
+    kill_and_wait(bob.as_mut().unwrap());
 }
 
 #[test]
@@ -253,7 +259,7 @@ fn inspect_identities_json_emits_documented_schema() {
         "activity should advance after authenticated operation: {value}"
     );
 
-    kill_and_wait(&mut alice);
+    kill_and_wait(alice.as_mut().unwrap());
 }
 
 #[test]
@@ -276,7 +282,7 @@ fn inspect_identities_no_debug_format_in_default_output() {
     assert!(!stdout.contains('['), "debug vec marker found: {stdout}");
     assert!(!stdout.contains(']'), "debug vec marker found: {stdout}");
 
-    kill_and_wait(&mut alice);
+    kill_and_wait(alice.as_mut().unwrap());
 }
 
 #[test]
@@ -356,8 +362,8 @@ fn inspect_identities_mailbox_metadata_unread_total() {
         "last_received_at_unix_seconds should be populated after messages: {value}"
     );
 
-    kill_and_wait(&mut receiver);
-    kill_and_wait(&mut sender);
+    kill_and_wait(receiver.as_mut().unwrap());
+    kill_and_wait(sender.as_mut().unwrap());
 }
 
 /// Regression test for fix 260512-jdv:
@@ -482,6 +488,6 @@ fn inspect_identities_unread_decreases_after_ack() {
         "post-ack: unread must drop below total. got unread={post_unread}, val={post_val}"
     );
 
-    kill_and_wait(&mut receiver);
-    kill_and_wait(&mut sender);
+    kill_and_wait(receiver.as_mut().unwrap());
+    kill_and_wait(sender.as_mut().unwrap());
 }
