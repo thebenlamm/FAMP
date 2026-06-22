@@ -49,6 +49,10 @@ enum BrokerStateRender {
         socket_path: String,
         evidence: &'static str,
     },
+    Busy {
+        socket_path: String,
+        elapsed_ms: u64,
+    },
 }
 
 pub async fn run(args: InspectBrokerArgs) -> Result<(), CliError> {
@@ -68,8 +72,10 @@ pub async fn run(args: InspectBrokerArgs) -> Result<(), CliError> {
                         build_version: info.build_version,
                     },
                     Ok(InspectBrokerReply::BudgetExceeded { elapsed_ms }) => {
-                        orphan_holder(&sock, &sock_str, format!("budget_exceeded: {elapsed_ms}ms"))
-                            .await
+                        BrokerStateRender::Busy {
+                            socket_path: sock_str.clone(),
+                            elapsed_ms,
+                        }
                     }
                     Err(e) => {
                         orphan_holder(&sock, &sock_str, format!("schema_mismatch: {e}")).await
@@ -181,6 +187,30 @@ fn render_human(r: &BrokerStateRender) -> String {
             socket_path,
             evidence,
         } => format!("state: PERMISSION_DENIED socket={socket_path} evidence={evidence}"),
+        BrokerStateRender::Busy {
+            socket_path,
+            elapsed_ms,
+        } => format!("state: BUSY socket={socket_path} evidence=budget_exceeded: {elapsed_ms}ms"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn busy_render_contains_busy_and_elapsed() {
+        let r = BrokerStateRender::Busy {
+            socket_path: "/tmp/bus.sock".to_string(),
+            elapsed_ms: 612,
+        };
+        let output = render_human(&r);
+        assert!(output.contains("BUSY"), "expected BUSY in: {output}");
+        assert!(output.contains("612"), "expected elapsed_ms in: {output}");
+        assert!(
+            !output.contains("ORPHAN_HOLDER"),
+            "must not contain ORPHAN_HOLDER: {output}"
+        );
     }
 }
 

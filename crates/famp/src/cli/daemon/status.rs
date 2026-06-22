@@ -63,6 +63,12 @@ enum DaemonStateRender {
         /// Linger state: None on macOS (not applicable), Some on Linux.
         linger: Option<bool>,
     },
+    Busy {
+        platform_path: String,
+        elapsed_ms: u64,
+        /// Linger state: None on macOS (not applicable), Some on Linux.
+        linger: Option<bool>,
+    },
 }
 
 // ─── Pure helper functions (unit-testable without launchctl/inspect) ─────────
@@ -75,7 +81,7 @@ enum DaemonStateRender {
 const fn exit_code(r: &DaemonStateRender) -> i32 {
     match r {
         DaemonStateRender::Running { .. } => 0,
-        DaemonStateRender::InstalledDown { .. } => 2,
+        DaemonStateRender::InstalledDown { .. } | DaemonStateRender::Busy { .. } => 2,
         DaemonStateRender::NotInstalled { .. } => 1,
     }
 }
@@ -116,6 +122,20 @@ fn render_human(r: &DaemonStateRender) -> String {
             };
             format!(
                 "state: RUNNING  pid={pid}  socket={socket_path}  broker build: {build_version}{linger_suffix}"
+            )
+        }
+        DaemonStateRender::Busy {
+            platform_path,
+            elapsed_ms,
+            linger,
+        } => {
+            let linger_suffix = match linger {
+                Some(true) => "  linger=yes",
+                Some(false) => "  linger=no",
+                None => "",
+            };
+            format!(
+                "state: BUSY  service={platform_path}  evidence=budget_exceeded: {elapsed_ms}ms{linger_suffix}"
             )
         }
     }
@@ -276,9 +296,9 @@ pub async fn run(args: DaemonStatusArgs) -> Result<(), CliError> {
                         #[cfg(not(target_os = "linux"))]
                         let linger: Option<bool> = None;
 
-                        DaemonStateRender::InstalledDown {
+                        DaemonStateRender::Busy {
                             platform_path: service_path_str,
-                            evidence: format!("budget_exceeded: {elapsed_ms}ms"),
+                            elapsed_ms,
                             linger,
                         }
                     }
@@ -469,6 +489,25 @@ mod tests {
         assert!(
             output.contains("0.11.0"),
             "Running render must include daemon build_version '0.11.0', got: {output}"
+        );
+    }
+
+    /// INSP-BROKER-02 (Busy path): BudgetExceeded renders as BUSY (alive-but-degraded),
+    /// never INSTALLED_DOWN. Exit code preserved at 2.
+    #[test]
+    fn status_busy_render_and_exit_code() {
+        let busy = DaemonStateRender::Busy {
+            platform_path: "/tmp/x.plist".to_string(),
+            elapsed_ms: 612,
+            linger: None,
+        };
+        assert_eq!(exit_code(&busy), 2, "Busy must exit 2");
+        let output = render_human(&busy);
+        assert!(output.contains("BUSY"), "expected BUSY in: {output}");
+        assert!(output.contains("612"), "expected elapsed_ms in: {output}");
+        assert!(
+            !output.contains("INSTALLED_DOWN"),
+            "must not contain INSTALLED_DOWN: {output}"
         );
     }
 
