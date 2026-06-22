@@ -62,6 +62,12 @@ famp_await manually (Flow B) already has the body and must NOT call famp_inbox a
 new_task messages it comes from `envelope.id`; for reply messages it comes from
 `causality.ref`. Either way, it is always a non-null UUID string — use it directly.
 
+When you send a reply, `famp_send` echoes both ids back: `task_id` is the fresh
+envelope id of *this* send (a new UUID), and `thread_task_id` is the task you
+replied to (the `causality.ref`, present only for replies). Thread follow-ups and
+`famp_verify` to the originating task — use `thread_task_id`, not the reply's
+`task_id`. (`famp_whoami`'s `last_send` exposes the same pair.)
+
 **From famp_await result:**
 
 ```json

@@ -1,7 +1,11 @@
-//! `famp daemon status` — three-state daemon status with distinct exit codes.
+//! `famp daemon status` — daemon status with distinct exit codes.
 //!
 //! DAEMON-03: reports not-installed / installed-down / running with distinct
 //! output and distinct exit codes (1 / 2 / 0).
+//!
+//! BUSY: a budget-exceeded inspect probe renders a distinct `BUSY` state — the
+//! daemon IS running but the inspect call hit its time budget, so a definitive
+//! Running render is unavailable. Shares the installed-down exit code (2).
 //!
 //! D-03 (Decision B): the Running render prints the daemon build_version from
 //! `InspectBrokerReply.build_version` so a user can diagnose version skew

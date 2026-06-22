@@ -3,6 +3,8 @@
 //! INSP-BROKER-01: HEALTHY single-line render; exit 0.
 //! INSP-BROKER-02: `DOWN_CLEAN` / `STALE_SOCKET` / `ORPHAN_HOLDER` /
 //! `PERMISSION_DENIED` down-states; exit 1.
+//! INSP-BROKER-02b: `BUSY` — broker is ALIVE but the inspect probe exceeded its
+//! time budget (`evidence=budget_exceeded: <ms>ms`); exit 1, NOT a down-state.
 //! INSP-BROKER-03: `ORPHAN_HOLDER` includes `holder_pid` + `pid_source`.
 //! INSP-BROKER-04: HEALTHY=0; down-states=1; diagnosis on stdout.
 //! INSP-CLI-02: --json on every state.
