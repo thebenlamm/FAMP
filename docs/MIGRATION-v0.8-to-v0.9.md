@@ -87,9 +87,12 @@ for the freeze explainer and reactivation criteria.
 
 `famp-transport-http` remains in the workspace as a v1.0 federation internal.
 `famp-keyring` remains in the workspace as a v1.0 federation internal.
-They compile and stay tested in `just ci` via the refactored
-[`crates/famp/tests/e2e_two_daemons.rs`](../crates/famp/tests/e2e_two_daemons.rs)
-integration test. No top-level CLI subcommand reaches them in v0.9.
+They compile as part of the workspace build in `just ci`. Their two-daemon
+integration test has been deferred (frozen under
+[`crates/famp/tests/_deferred_v1/e2e_two_daemons.rs.deferred`](../crates/famp/tests/_deferred_v1/e2e_two_daemons.rs.deferred))
+until the v1.0 federation gateway revives it, so these crates are build-checked
+but not exercised by an active test in v0.9. No top-level CLI subcommand reaches
+them in v0.9.
 
 ## Archived prep-sprint scaffolding
 

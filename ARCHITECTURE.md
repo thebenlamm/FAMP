@@ -107,3 +107,64 @@ broker ships; when the broker lands, the script becomes redundant.
 - **The MCP tool surface is the stable contract** across v0.8, v0.9, and
   v1.0. If you find yourself changing tool signatures, stop — that's a
   cross-version UX decision.
+
+## Crate responsibilities
+
+All 15 workspace crates at v0.11.0. Dependencies listed are intra-workspace
+FAMP crates only (external deps omitted for brevity).
+
+| Crate | Layer | One-line purpose | Depends on |
+|---|---|---|---|
+| `famp-canonical` | 0 | RFC 8785 JCS canonicalization; the byte-exact foundation for all signatures | — |
+| `famp-core` | 0 | Core primitives: `Principal`, `Instance`, `ArtifactId`, `MessageClass`, `ProtocolErrorKind`, `AuthorityScope` | — |
+| `famp-crypto` | 0 | Ed25519 sign/verify with `FAMP-sig-v1\0` domain-separation prefix (INV-10) | `famp-canonical` |
+| `famp-fsm` | 0 | Task FSM: REQUESTED → COMMITTED → {COMPLETED\|FAILED\|CANCELLED}, all terminals absorbing | `famp-core` |
+| `famp-envelope` | 0 | Wire envelope construction and Ed25519 signing; `BusEnvelope` (unsigned) for bus path | `famp-canonical`, `famp-crypto`, `famp-core` |
+| `famp-inbox` | 0 | Durable JSONL inbox: append-with-fsync write, tail-tolerant read, per-name cursor file | — |
+| `famp-taskdir` | 0 | Per-task TOML storage: atomic replace + fsync, single construction site per task record | — |
+| `famp-transport` | 0 | `Transport` trait abstraction; `MemoryTransport` for in-process tests | `famp-core` |
+| `famp-bus` | 1 | Pure-actor local bus broker: length-prefixed canonical-JSON frame codec, in-memory mailbox routing, durable mailbox delegation; no tokio (BUS-01), no signatures on bus path (BUS-11) | `famp-canonical`, `famp-inspect-proto`, `famp-core`, `famp-envelope` |
+| `famp-inspect-proto` | 1 | Inspector RPC wire types (`broker`, `identities`, `sessions`, `tasks`, `waiters`, `messages`); no I/O deps | `famp-canonical` |
+| `famp-inspect-server` | 1 | Inspector RPC handler implementations; tokio-free; mounted inside the running broker process | `famp-inspect-proto`, `famp-bus`, `famp-canonical`, `famp-envelope`, `famp-fsm` |
+| `famp-inspect-client` | 1 | Inspector RPC async UDS client; issues dead-broker probes so `famp inspect` works even when broker is down | `famp-inspect-proto`, `famp-bus`, `famp-canonical` |
+| `famp-keyring` | 2 (v1.0) | TOFU keyring for federation peers: stores and verifies leaf-cert SHA-256 pins | `famp-core`, `famp-crypto` |
+| `famp-transport-http` | 2 (v1.0) | HTTPS transport binding for federation gateway; wraps `famp-keyring` for peer auth | `famp-core`, `famp-envelope`, `famp-crypto`, `famp-keyring`, `famp-transport`, `famp-canonical` |
+| `famp` (binary) | CLI | `famp` CLI binary and MCP stdio server; single construction site for `BusEnvelope` (`cli::send::build_envelope_value`) | all active Layer 0–1 crates |
+
+## Message flow (v0.9 send path)
+
+How a message travels from an MCP `famp_send` call to delivery in the
+recipient's mailbox. Numbers correspond to crate boundaries crossed.
+
+1. **MCP tool invoked** — Agent calls `famp_send {to: "bob", body: "..."}`.
+   The `famp` binary's MCP server (`cli/mcp/`) checks the session-bound
+   identity set by the prior `famp_register` call. Unregistered callers
+   receive a typed `not_registered` error before any bus contact is made.
+
+2. **Envelope construction** — `cli/send/build_envelope_value` (single
+   construction site, BUS-11) builds an unsigned `BusEnvelope` with event
+   prefix `famp.send.*` and a mode-tagged inner body (`mode: new_task`,
+   `deliver`, `deliver_terminal`, or `channel_post`). `famp-envelope`
+   and `famp-canonical` are used here; no Ed25519 signing on the bus path.
+
+3. **Frame write** — The envelope is serialized to canonical JSON via
+   `famp-canonical`, length-prefixed (4-byte big-endian), and written to
+   the UDS connection managed by `famp-bus::bus_client`. The socket path is
+   `~/.famp/bus.sock`.
+
+4. **Broker dispatch** — `famp-bus::broker::handle_wire` receives the frame.
+   The `Send` arm resolves `bob`'s `MailboxName`, then:
+   - If `bob` has a parked `Await` waiter, deliver directly and wake the waiter.
+   - Otherwise append the envelope to `bob`'s durable JSONL mailbox on disk
+     (`famp-inbox::append`). The broker writes the record and advances
+     `bob`'s mailbox depth.
+
+5. **Recipient wakes** — Bob's `famp_await` hold (a long-poll UDS connection
+   parked in the broker's waiter table) receives an `Out::Reply` signal and
+   returns to the MCP caller with `"New FAMP message from alice."`. Bob then
+   calls `famp_inbox` to read the queued envelope.
+
+6. **Inspector side-channel** — At any point, `famp inspect identities` /
+   `famp inspect broker` connect via a separate UDS path, routed through
+   `famp-inspect-client` → `famp-inspect-server` (mounted inside the broker
+   process). This path is read-only and does not affect the send path.

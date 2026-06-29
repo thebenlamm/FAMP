@@ -91,3 +91,29 @@ of them invalidates every existing signature:
 
 If you need to change any of these, write the spec delta first, get it
 reviewed, then land the code change.
+
+## Filing Issues
+
+Use the GitHub issue tracker. A [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+is provided — fill in the environment block and, for canonicalization or
+signature bugs, include the byte-exact inputs (key, payload, canonical bytes).
+Feature requests and design questions are also welcome as issues.
+
+## Reporting Security Vulnerabilities
+
+Do **not** open a public issue for security bugs. See [SECURITY.md](SECURITY.md)
+for the responsible disclosure process and the scope of what counts as a
+security-relevant defect in this implementation.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By
+participating you agree to abide by its terms.
+
+## License
+
+By contributing to FAMP you agree that your contributions are dual-licensed
+under **Apache-2.0 OR MIT** at the downstream user's choice, matching the
+workspace license declared in `[workspace.package].license`. See
+[LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) at the repo
+root. (Rationale: [docs/adr/0002-dual-license-apache-mit.md](docs/adr/0002-dual-license-apache-mit.md).)

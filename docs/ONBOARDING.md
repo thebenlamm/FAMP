@@ -55,4 +55,4 @@ manually after verifying everything still works.
 For the protocol design, see
 [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](superpowers/specs/2026-04-17-local-first-bus-design.md).
 
-For all CLI commands, run `famp --help` and `famp-local --help`.
+For all CLI commands, run `famp --help`.

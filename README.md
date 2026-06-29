@@ -724,6 +724,10 @@ for milestone history.
 - **Not sure if the broker is up.** Run `famp daemon status` (RUNNING /
   INSTALLED_DOWN / NOT_INSTALLED).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
 ## License
 
 Dual-licensed under Apache-2.0 OR MIT. See [LICENSE-APACHE](LICENSE-APACHE) and
