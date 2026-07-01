@@ -110,36 +110,8 @@ fn extract_task_id(send_stdout: &[u8]) -> String {
         .to_string()
 }
 
-/// Debug 999.1 reproducer / regression guard.
-///
-/// Recipe (per SPEC): fan out two open tasks from one originator (alice).
-/// Interleave replies from the peer (bob): taskA-commit, taskB-commit,
-/// taskA-deliver-terminal, taskB-deliver-terminal. Originator round-robins
-/// filtered `famp await --task A` / `famp await --task B` calls. Every
-/// envelope from both tasks must eventually be observed exactly once — the
-/// FSM-equivalent assertion for v0.11 (there is no more persisted on-disk
-/// FSM; `Await` delivery IS the originator's only signal that a task
-/// progressed).
-///
-/// Pre-fix this failed differently depending on call shape tried: a
-/// single-shot `await --task B` after `await --task A` timed out forever
-/// (task B's envelopes were silently stranded behind the shared
-/// per-mailbox `await_offset` that task A's call advanced past them).
-/// Post-fix, a single `await --task A` call may only return task A's
-/// FIRST envelope when task B's traffic is interleaved before task A's
-/// second envelope (batch-completeness-per-call is intentionally
-/// sacrificed — see module docs) — but round-robin polling converges on
-/// zero data loss and zero duplicate delivery within a bounded number of
-/// calls, which is what this test asserts.
-#[test]
-fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_loss() {
-    let bus = Bus::new();
-    let mut alice = bus.famp_spawn(&["register", "alice"]);
-    let mut bob = bus.famp_spawn(&["register", "bob"]);
-    bus.wait_for_register("alice");
-    bus.wait_for_register("bob");
-
-    // 1. Alice fans out two new tasks to bob.
+/// Alice fans out two new tasks to bob. Returns `(task_a, task_b)`.
+fn fan_out_two_tasks(bus: &Bus) -> (String, String) {
     let send_a = bus.famp_cmd(&[
         "send",
         "--as",
@@ -172,9 +144,13 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
     );
     let task_b = extract_task_id(&send_b.stdout);
 
-    // 2. Bob replies, interleaved: commit A, commit B, terminal A, terminal B.
+    (task_a, task_b)
+}
+
+/// Bob replies, interleaved: commit A, commit B, terminal A, terminal B.
+fn send_interleaved_replies(bus: &Bus, task_a: &str, task_b: &str) {
     let commit_a = bus.famp_cmd(&[
-        "send", "--as", "bob", "--to", "alice", "--task", &task_a, "--body", "commit A",
+        "send", "--as", "bob", "--to", "alice", "--task", task_a, "--body", "commit A",
     ]);
     assert!(
         commit_a.status.success(),
@@ -183,7 +159,7 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
     );
 
     let commit_b = bus.famp_cmd(&[
-        "send", "--as", "bob", "--to", "alice", "--task", &task_b, "--body", "commit B",
+        "send", "--as", "bob", "--to", "alice", "--task", task_b, "--body", "commit B",
     ]);
     assert!(
         commit_b.status.success(),
@@ -198,7 +174,7 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
         "--to",
         "alice",
         "--task",
-        &task_a,
+        task_a,
         "--terminal",
         "--body",
         "done A",
@@ -216,7 +192,7 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
         "--to",
         "alice",
         "--task",
-        &task_b,
+        task_b,
         "--terminal",
         "--body",
         "done B",
@@ -226,30 +202,32 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
         "terminal B failed: {}",
         String::from_utf8_lossy(&terminal_b.stderr)
     );
+}
 
-    // 3/4. Alice round-robins filtered awaits between task A and task B.
-    //
-    //    Fix semantics (post-999.1): a filtered await now STOPS draining the
-    //    instant it walks past a real, filter-mismatched envelope, rather
-    //    than silently cursor-skipping over it (which is the bug this test
-    //    guards against — see module docs). This means a single filtered
-    //    `await --task A` call is no longer guaranteed to return BOTH of
-    //    task A's envelopes in one shot when task B's traffic is
-    //    interleaved in between them: it returns only up to the first
-    //    task-B entry it encounters, and requires the caller (or another
-    //    consumer) to drain past that blocking entry via a matching or
-    //    unfiltered await before task A's later envelope becomes visible.
-    //    This is the accepted, documented tradeoff (see debug file
-    //    Resolution / reasoning_checkpoint): batch-completeness-per-call is
-    //    sacrificed so that NO envelope ever becomes permanently
-    //    unreachable and NO envelope is ever delivered twice.
-    //
-    //    Round-robin polling both filters converges on delivering all four
-    //    envelopes within a bounded number of round trips. This is exactly
-    //    what the SPEC's "Assert both task FSMs reach COMPLETED on the
-    //    originator side" recipe requires in v0.11 terms: eventually, via
-    //    `Await`, the originator observes every envelope for every task —
-    //    nothing is silently and permanently lost.
+/// Alice round-robins filtered awaits between task A and task B.
+///
+///    Fix semantics (post-999.1): a filtered await now STOPS draining the
+///    instant it walks past a real, filter-mismatched envelope, rather
+///    than silently cursor-skipping over it (which is the bug this test
+///    guards against — see module docs). This means a single filtered
+///    `await --task A` call is no longer guaranteed to return BOTH of
+///    task A's envelopes in one shot when task B's traffic is
+///    interleaved in between them: it returns only up to the first
+///    task-B entry it encounters, and requires the caller (or another
+///    consumer) to drain past that blocking entry via a matching or
+///    unfiltered await before task A's later envelope becomes visible.
+///    This is the accepted, documented tradeoff (see debug file
+///    Resolution / reasoning_checkpoint): batch-completeness-per-call is
+///    sacrificed so that NO envelope ever becomes permanently
+///    unreachable and NO envelope is ever delivered twice.
+///
+///    Round-robin polling both filters converges on delivering all four
+///    envelopes within a bounded number of round trips. This is exactly
+///    what the SPEC's "Assert both task FSMs reach COMPLETED on the
+///    originator side" recipe requires in v0.11 terms: eventually, via
+///    `Await`, the originator observes every envelope for every task —
+///    nothing is silently and permanently lost.
+fn round_robin_collect(bus: &Bus, task_a: &str, task_b: &str) -> String {
     let mut collected = String::new();
     for round in 0..3 {
         let out_a = bus.famp_cmd(&[
@@ -257,7 +235,7 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
             "--as",
             "alice",
             "--task",
-            &task_a,
+            task_a,
             "--timeout",
             "300ms",
         ]);
@@ -273,7 +251,7 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
             "--as",
             "alice",
             "--task",
-            &task_b,
+            task_b,
             "--timeout",
             "300ms",
         ]);
@@ -284,6 +262,46 @@ fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_lo
         );
         collected.push_str(&String::from_utf8_lossy(&out_b.stdout));
     }
+    collected
+}
+
+/// Debug 999.1 reproducer / regression guard.
+///
+/// Recipe (per SPEC): fan out two open tasks from one originator (alice).
+/// Interleave replies from the peer (bob): taskA-commit, taskB-commit,
+/// taskA-deliver-terminal, taskB-deliver-terminal. Originator round-robins
+/// filtered `famp await --task A` / `famp await --task B` calls. Every
+/// envelope from both tasks must eventually be observed exactly once — the
+/// FSM-equivalent assertion for v0.11 (there is no more persisted on-disk
+/// FSM; `Await` delivery IS the originator's only signal that a task
+/// progressed).
+///
+/// Pre-fix this failed differently depending on call shape tried: a
+/// single-shot `await --task B` after `await --task A` timed out forever
+/// (task B's envelopes were silently stranded behind the shared
+/// per-mailbox `await_offset` that task A's call advanced past them).
+/// Post-fix, a single `await --task A` call may only return task A's
+/// FIRST envelope when task B's traffic is interleaved before task A's
+/// second envelope (batch-completeness-per-call is intentionally
+/// sacrificed — see module docs) — but round-robin polling converges on
+/// zero data loss and zero duplicate delivery within a bounded number of
+/// calls, which is what this test asserts.
+#[test]
+fn filtered_await_round_robin_delivers_all_interleaved_task_envelopes_without_loss() {
+    let bus = Bus::new();
+    let mut alice = bus.famp_spawn(&["register", "alice"]);
+    let mut bob = bus.famp_spawn(&["register", "bob"]);
+    bus.wait_for_register("alice");
+    bus.wait_for_register("bob");
+
+    // 1. Alice fans out two new tasks to bob.
+    let (task_a, task_b) = fan_out_two_tasks(&bus);
+
+    // 2. Bob replies, interleaved: commit A, commit B, terminal A, terminal B.
+    send_interleaved_replies(&bus, &task_a, &task_b);
+
+    // 3/4. Alice round-robins filtered awaits between task A and task B.
+    let collected = round_robin_collect(&bus, &task_a, &task_b);
 
     // No data loss: every envelope from both tasks is eventually observed.
     for marker in ["commit A", "done A", "commit B", "done B"] {
