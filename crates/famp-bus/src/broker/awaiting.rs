@@ -86,6 +86,12 @@ struct AwaitBatch {
     mailbox: MailboxName,
     envelopes: Vec<serde_json::Value>,
     next_offset: u64,
+    /// `false` when `drain_await_batch` stopped early because it walked
+    /// into a real, filter-mismatched envelope (Debug 999.1) rather than
+    /// exhausting everything currently drained. `await_reply_for_mailbox`
+    /// uses this to distinguish "genuinely nothing new for this filter"
+    /// (safe to report as a timeout) from other empty-batch causes.
+    fully_drained: bool,
 }
 
 fn resolve_await_owner<E: BrokerEnv>(
@@ -151,6 +157,37 @@ pub(super) fn await_reply_for_mailbox<E: BrokerEnv>(
                 next_offset: batch.next_offset,
             }
         }
+        Ok(batch) if !batch.fully_drained => {
+            // Debug 999.1: this wake was selected because the newly
+            // arrived envelope matched `filter` (see
+            // `waiting_clients_for_name`), but an EARLIER, already-on-disk
+            // envelope for a different task sat between this client's
+            // offset and the new arrival and correctly blocked the drain
+            // (see `drain_await_batch`) rather than being silently
+            // skipped. Nothing new was actually deliverable to this
+            // filter yet. Report it the same way a normal expiry would —
+            // NOT as an Internal error — so the client simply retries;
+            // the blocking entry is drained once some call (this
+            // client's own differently-filtered await, or another
+            // consumer) walks past it.
+            //
+            // Debug 999.1 operator-visible signal: this is the live
+            // replacement for the SPEC's original (now-dead-code) M3
+            // eprintln target. Without this, a filtered await blocked
+            // behind an earlier unmatched real envelope is a silent
+            // `AwaitTimeout` indistinguishable from "nothing arrived" —
+            // undiagnosable from the operator side. Log the mailbox,
+            // filter, and the byte offset the drain stalled at so
+            // `famp inspect broker`-style debugging can see it.
+            tracing::info!(
+                mailbox = %mailbox,
+                filter = ?filter,
+                blocked_at_offset = batch.next_offset,
+                "filtered await blocked behind an earlier unmatched envelope; reporting AwaitTimeout (999.1 known boundary, see backlog 999.11)"
+            );
+            set_await_offset(broker, owner, mailbox, batch.next_offset);
+            BusReply::AwaitTimeout {}
+        }
         Ok(batch) => {
             set_await_offset(broker, owner, mailbox, batch.next_offset);
             BusReply::Err {
@@ -193,6 +230,7 @@ fn drain_await_batch<E: BrokerEnv>(
 
     let mut next_offset = since;
     let mut envelopes = Vec::new();
+    let mut fully_drained = true;
     for line in drained.lines {
         let line_next_offset = next_offset + (line.len() + 1) as u64;
         // Head-of-line resilience (fix 260611): a single undecodable line
@@ -204,46 +242,94 @@ fn drain_await_batch<E: BrokerEnv>(
         match decode_line(&line) {
             Ok(value) => {
                 if is_self_authored(&value, awaiter_identity.as_deref()) {
-                    // Advance past self-post; do not push to envelopes.
+                    // Permanently unmatchable under ANY filter (an awaiter
+                    // never receives its own posts) — safe to advance past
+                    // unconditionally, same invariant as the undecodable
+                    // case below.
                     next_offset = line_next_offset;
                     continue;
                 }
                 if filter_matches(filter, &value) {
                     envelopes.push(value);
+                    next_offset = line_next_offset;
                     if envelopes.len() == AWAIT_BATCH_CAP {
                         return Ok(AwaitBatch {
                             mailbox: mailbox.clone(),
                             envelopes,
-                            next_offset: line_next_offset,
+                            next_offset,
+                            // Cap reached, not a filter-mismatch stop —
+                            // irrelevant here since the caller's
+                            // non-empty-envelopes arm matches first, but
+                            // kept accurate: there may be more undrained
+                            // data beyond this cap.
+                            fully_drained: false,
                         });
                     }
+                    continue;
                 }
+                // Debug 999.1 (broker await_offset skip): a task-filter
+                // mismatch is NOT permanently unmatchable the way a
+                // self-authored or undecodable line is — a future
+                // differently-filtered (or unfiltered) `Await` call from
+                // this same owner may still want this envelope. The
+                // persisted `next_offset` is a single linear cursor shared
+                // across every future call regardless of filter, so it
+                // cannot represent "skip this one for THIS filter, but
+                // keep it reachable for others" without also risking
+                // re-delivering entries we already returned earlier in
+                // this same batch. Stop draining right here: `next_offset`
+                // never advances past an envelope this call didn't
+                // actually hand back to the caller. Remaining lines in
+                // this batch (even ones that would have matched) are
+                // picked up on a later call, once nothing upstream of
+                // them is still blocked.
+                fully_drained = false;
+                break;
             }
-            Err(error) => tracing::warn!(
-                mailbox = %mailbox,
-                byte_offset = next_offset,
-                error = %error,
-                "skipping undecodable mailbox line (head-of-line resilience)"
-            ),
+            Err(error) => {
+                tracing::warn!(
+                    mailbox = %mailbox,
+                    byte_offset = next_offset,
+                    error = %error,
+                    "skipping undecodable mailbox line (head-of-line resilience)"
+                );
+                // An undecodable line can never match any filter either —
+                // permanently unmatchable, same as self-authored above.
+                next_offset = line_next_offset;
+            }
         }
-        next_offset = line_next_offset;
     }
-    debug_assert_eq!(next_offset, drained.next_offset);
 
-    if let Some((trigger_envelope, trigger_line_len)) = trigger {
-        let trigger_next_offset = next_offset + (trigger_line_len + 1) as u64;
-        if !is_self_authored(trigger_envelope, awaiter_identity.as_deref())
-            && filter_matches(filter, trigger_envelope)
-        {
-            envelopes.push(trigger_envelope.clone());
+    // The wake-trigger envelope is only safe to fold in when this call
+    // scanned the whole currently-drained batch cleanly (no earlier
+    // filter-mismatch left pending). Applying it after an early stop would
+    // advance `next_offset` past the trigger while an earlier mismatch is
+    // still un-drained, reproducing the exact same bug for the wake path.
+    if fully_drained {
+        debug_assert_eq!(next_offset, drained.next_offset);
+        if let Some((trigger_envelope, trigger_line_len)) = trigger {
+            let trigger_next_offset = next_offset + (trigger_line_len + 1) as u64;
+            let trigger_self_authored =
+                is_self_authored(trigger_envelope, awaiter_identity.as_deref());
+            if trigger_self_authored {
+                // Permanently unmatchable — same as the main-loop case.
+                next_offset = trigger_next_offset;
+            } else if filter_matches(filter, trigger_envelope) {
+                envelopes.push(trigger_envelope.clone());
+                next_offset = trigger_next_offset;
+            }
+            // else: a real, filter-mismatched trigger envelope. Same
+            // Debug-999.1 reasoning as the main loop — do not advance
+            // `next_offset` past it; it stays reachable for a future,
+            // differently-filtered call.
         }
-        next_offset = trigger_next_offset;
     }
 
     Ok(AwaitBatch {
         mailbox: mailbox.clone(),
         envelopes,
         next_offset,
+        fully_drained,
     })
 }
 

@@ -88,6 +88,32 @@ fn audit_log_envelope(seq: usize, sender: &str) -> serde_json::Value {
     })
 }
 
+/// Like `audit_log_envelope`, but shaped as a task reply: carries
+/// `causality.ref` = `task` so `AwaitFilter::Task(task)` matches it (see
+/// `filter_matches` in `awaiting.rs`).
+fn audit_log_reply_envelope(
+    seq: usize,
+    sender: &str,
+    recipient: &str,
+    task: uuid::Uuid,
+) -> serde_json::Value {
+    serde_json::json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": format!("01890000-0000-7000-8000-{seq:012}"),
+        "from": format!("agent:example.test/{sender}"),
+        "to": format!("agent:example.test/{recipient}"),
+        "authority": "advisory",
+        "ts": "2026-05-15T12:00:00Z",
+        "causality": { "rel": "delivers", "ref": task.to_string() },
+        "body": {
+            "event": "famp.send.deliver",
+            "details": { "seq": seq }
+        }
+    })
+}
+
 fn apply_mailbox(env: &TestEnv, outs: &[Out]) {
     for out in outs {
         if let Out::AppendMailbox { target, line } = out {
@@ -1352,6 +1378,140 @@ fn inbox_preserves_channel_envelopes_after_unmatched_task_filtered_await() {
         9,
         "envelope must be bob's seq=9 post"
     );
+}
+
+/// Debug 999.1 — pins the accepted boundary (human-verify checkpoint,
+/// 2026-07-01): a strictly-filtered `Await` blocked behind an earlier,
+/// real, filter-mismatched envelope must resolve as `AwaitTimeout` (never
+/// a broker `Internal` error, never a spurious delivery of the mismatched
+/// envelope). The blocking envelope must stay reachable on disk — not
+/// silently discarded — and a later differently-filtered (here:
+/// unfiltered) `Await` from the same client must successfully drain past
+/// it, delivering BOTH the blocking envelope and the envelope that was
+/// stuck behind it. This is the KNOWN, ACCEPTED, OUT-OF-SCOPE residual
+/// (strict single-filter awaiter starvation); the complete fix is the
+/// broker-owned-delivery-position redesign tracked at
+/// `.planning/phases/999.11-broker-owned-delivery-position/SPEC.md`.
+#[test]
+fn strict_filtered_await_blocked_behind_mismatch_reports_timeout_then_unblocks_on_unfiltered_await()
+{
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+
+    let task_a = uuid::Uuid::parse_str("01890000-0000-7000-8000-00000000000a").unwrap();
+    let task_b = uuid::Uuid::parse_str("01890000-0000-7000-8000-00000000000b").unwrap();
+
+    // Bob's task-B reply lands first and sits un-drained: the earlier,
+    // real, filter-mismatched envelope that will block alice's
+    // task-A-filtered offset.
+    let send_b = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Agent {
+                    name: "alice".into(),
+                },
+                envelope: audit_log_reply_envelope(1, "bob", "alice", task_b),
+            },
+        },
+        now,
+    );
+    apply_mailbox(&env, &send_b);
+
+    // Alice parks a strictly task-A-filtered Await. Nothing matches yet;
+    // `drain_await_batch` walks into task B's real mismatch immediately
+    // and stops (fully_drained=false, envelopes empty) instead of
+    // skipping past it, so `await_envelope` parks rather than replying.
+    let park_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Await {
+                timeout_ms: 10_000,
+                task: Some(task_a),
+            },
+        },
+        now,
+    );
+    assert!(
+        park_outs.iter().any(
+            |o| matches!(o, Out::ParkAwait { client, .. } if *client == ClientId::from(1_u64))
+        ),
+        "alice's task-A await should park, not reply immediately: {park_outs:?}"
+    );
+
+    // Bob's task-A reply arrives next. It matches alice's filter and
+    // triggers the wake path (`waiting_clients_for_name` selects alice),
+    // but task B's earlier reply is still sitting un-drained ahead of it
+    // in the mailbox — `await_reply_for_mailbox`'s
+    // `Ok(batch) if !batch.fully_drained` arm must fire (see the
+    // operator-visible `tracing::info!` added alongside it).
+    let send_a = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Agent {
+                    name: "alice".into(),
+                },
+                envelope: audit_log_reply_envelope(2, "bob", "alice", task_a),
+            },
+        },
+        now,
+    );
+
+    let alice_wake_reply = send_a
+        .iter()
+        .find_map(|o| match o {
+            Out::Reply(client, reply) if *client == ClientId::from(1_u64) => Some(reply),
+            _ => None,
+        })
+        .expect("alice must get a reply on wake");
+    assert!(
+        matches!(alice_wake_reply, BusReply::AwaitTimeout {}),
+        "blocked filtered await must resolve as AwaitTimeout, not an Internal error or a \
+         mismatched delivery: {alice_wake_reply:?}"
+    );
+
+    apply_mailbox(&env, &send_a);
+
+    // The blocking envelope (task B's reply) was never discarded: a
+    // later, differently-filtered (here: unfiltered) Await from alice
+    // must drain past it and deliver BOTH envelopes — proving nothing
+    // was permanently lost.
+    let drain_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Await {
+                timeout_ms: 0,
+                task: None,
+            },
+        },
+        now,
+    );
+    let envelopes = drain_outs
+        .iter()
+        .find_map(|o| match o {
+            Out::Reply(client, BusReply::AwaitOk { envelopes, .. })
+                if *client == ClientId::from(1_u64) =>
+            {
+                Some(envelopes.clone())
+            }
+            _ => None,
+        })
+        .expect("unfiltered await must deliver both stranded envelopes");
+    assert_eq!(
+        envelopes.len(),
+        2,
+        "unfiltered await must unblock and deliver BOTH the blocking task-B envelope and \
+         the previously-stuck task-A envelope: {envelopes:?}"
+    );
+    assert_eq!(envelopes[0]["body"]["details"]["seq"].as_u64().unwrap(), 1);
+    assert_eq!(envelopes[1]["body"]["details"]["seq"].as_u64().unwrap(), 2);
 }
 
 /// Adversarial-review regression (2026-06-19, MEDIUM): channel Inbox
