@@ -339,18 +339,6 @@ Plans:
 Plans:
 - [ ] TBD — to be folded into v1.0 federation gateway scope, NOT promoted independently. (Surface during /gsd:new-milestone for v1.0.)
 
-### Phase 999.6: `update_zprofile_init` should sandbox on non-default `FAMP_LOCAL_ROOT` (BACKLOG)
-
-**Goal:** Make `docs/history/v0.9-prep-sprint/famp-local/famp-local`'s `update_zprofile_init` a no-op when `FAMP_LOCAL_ROOT` is not the default (`$HOME/.famp-local`), so test rigs and verification matrices can run `famp-local wire` against a sandboxed state root without contaminating the user's real `~/.zprofile` login hook.
-
-**Requirements:** TBD
-**Plans:** 0 plans
-
-**Context:** Surfaced 2026-04-26/27 during v0.9 prep sprint T3 (`260426-s2j`, `identity-of` subcommand) and again during T3.5 (`260426-stp`, `validate_identity_name` drift fix). The T3 verification matrix ran `cmd_wire` with `FAMP_LOCAL_ROOT=$(mktemp -d)` expecting full state isolation, but `cmd_wire` calls `update_zprofile_init "$mesh"` which writes to `~/.zprofile` unconditionally — the executor had to manually restore the user's real 10-agent login hook. T3.5 worked around the issue by also sandboxing `$HOME`, but the underlying script bug stays in `docs/history/v0.9-prep-sprint/famp-local/famp-local`. Proposal: add `[ "$STATE_ROOT" = "$HOME/.famp-local" ] || return 0` (or equivalent) at the top of `update_zprofile_init` so it only writes the login hook for the default state root. Optional refinement: a `FAMP_LOCAL_NO_ZPROFILE=1` opt-out env var for cases where the user wants a sandboxed root *and* a login-hook write (CI smoke tests of full `cmd_wire`). ~5-minute fix, shell-only, low blast radius. Files a real bug Sofer or any second tester would hit if they ran the script's own verification matrix.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
 ### Phase 999.7: Broker inspect ingress prioritization (BACKLOG)
 
 **Goal:** Prevent saturated inspect RPC traffic from monopolizing the broker's shared ingress queue before the inspect semaphore is reached.
@@ -369,28 +357,6 @@ Plans:
 **Plans:** 0 plans
 
 **Context:** Captured 2026-05-13 during adversarial review of inspect load-test hardening. `derive_fsm_state` currently maps canonical envelope classes explicitly, but current local bus sends are encoded as `class: "audit_log"` with `body.event` and `body.details.mode`. Mailbox-only task rows and message metadata can therefore surface `UNKNOWN` for valid local bus task traffic. Future work should add explicit audit-log send-mode handling, e.g. `famp.send.new_task` / `mode: new_task` -> `REQUESTED`, `mode: deliver` -> `COMMITTED`, terminal deliver modes -> `COMPLETED|FAILED|CANCELLED`, with focused unit tests for task rows and message rows.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.9: Review unrelated local worktree changes (BACKLOG)
-
-**Goal:** Decide whether the unrelated `Justfile` and `.claude/*` worktree changes observed during the inspect-load investigation should be kept, reviewed, committed separately, or discarded by the user.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-**Context:** Captured 2026-05-13 after the inspect-load investigation. The working tree contained unrelated changes to `Justfile` and untracked `.claude/scheduled_tasks.lock` / `.claude/settings.json` that were not part of the inspect starvation fix. They were intentionally left untouched to avoid reverting user-owned work. Future cleanup should inspect their provenance and either fold them into an intentional change, add ignore rules if generated, or remove them manually if they are accidental.
-
-Plans:
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.10: `famp inspect waiters` — parked await visibility (BACKLOG)
-
-**Goal:** Add an operator-facing `famp inspect waiters` view showing currently parked `Await` consumers, their effective identity, listen-mode state, task filter, mailbox offsets, and deadline.
-**Requirements:** TBD
-**Plans:** 0 plans
-
-**Context:** Surfaced 2026-05-15 while fixing batch `AwaitOk` delivery for burst channel messages. The broker now has meaningful session-owned await state (`pending_awaits` plus per-mailbox delivery offsets), but operators still cannot ask "who is currently waiting and on which mailbox/filter?" This belongs beside the v0.10 inspector surface, not in the batch-delivery fix.
 
 Plans:
 - [ ] TBD (promote with /gsd:review-backlog when ready)
