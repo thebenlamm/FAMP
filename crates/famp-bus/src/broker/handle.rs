@@ -162,7 +162,7 @@ fn touch_activity<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) {
             state
                 .bind_as
                 .as_deref()
-                .and_then(|bound| canonical_holder_id(broker, bound))
+                .and_then(|bound| canonical_holder_id(&broker.state, bound))
         }
     });
 
@@ -566,7 +566,7 @@ fn inbox<E: BrokerEnv>(
     // instead so any future refactor of `resolve_op_identity` that
     // weakens this guarantee fails loud.
     #[allow(clippy::expect_used)]
-    let canonical = canonical_holder_id(broker, &name)
+    let canonical = canonical_holder_id(&broker.state, &name)
         .expect("resolve_op_identity succeeded above; canonical holder must exist for `name`");
     let joined_channels: Vec<String> = broker
         .state
@@ -688,7 +688,7 @@ fn join<E: BrokerEnv>(
     // D-10: mutate the canonical holder's `joined` set, not the proxy's.
     // For canonical holders this resolves to `client` itself; for
     // proxies it resolves to the live registered holder of `name`.
-    let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
+    let target_client = canonical_holder_id(&broker.state, &name).unwrap_or(client);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.insert(channel.clone());
     }
@@ -772,7 +772,7 @@ fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String
     if let Some(members) = broker.state.channels.get_mut(&channel) {
         members.remove(&name);
     }
-    let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
+    let target_client = canonical_holder_id(&broker.state, &name).unwrap_or(client);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.remove(&channel);
         // Scope B (260619): drop the per-channel cursors so a subsequent
@@ -822,7 +822,7 @@ fn whoami<E: BrokerEnv>(broker: &Broker<E>, client: ClientId) -> Vec<Out> {
             } else if let Some(ref bound) = state.bind_as {
                 // Proxy: surface the canonical holder's identity + joined.
                 if proxy_holder_alive(broker, bound) {
-                    let holder_joined = canonical_holder_id(broker, bound)
+                    let holder_joined = canonical_holder_id(&broker.state, bound)
                         .and_then(|id| broker.state.clients.get(&id))
                         .map_or_else(Vec::new, |h| h.joined.iter().cloned().collect());
                     (Some(bound.clone()), holder_joined)

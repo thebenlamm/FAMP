@@ -101,7 +101,7 @@ fn resolve_await_owner<E: BrokerEnv>(
     client: ClientId,
 ) -> Result<(String, ClientId), BusErrorKind> {
     let identity = resolve_op_identity(broker, client)?;
-    let owner = canonical_holder_id(broker, &identity).unwrap_or(client);
+    let owner = canonical_holder_id(&broker.state, &identity).unwrap_or(client);
     Ok((identity, owner))
 }
 

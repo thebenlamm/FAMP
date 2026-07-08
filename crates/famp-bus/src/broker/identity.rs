@@ -5,23 +5,22 @@
 //! (`awaiting`) route through one implementation instead of re-inlining
 //! the lookup at each call site.
 
-use crate::broker::state::ClientState;
+use crate::broker::state::{BrokerState, ClientState};
 use crate::{Broker, BrokerEnv, BusErrorKind, ClientId};
 
 /// Pre-D-10 helper kept for callers that need the *registered* name
 /// (the canonical-holder slot) explicitly, regardless of any proxy
 /// binding. Most ops should use [`resolve_op_identity`] instead.
+///
+/// Takes `&BrokerState`, not `&Broker<E>`: it never consults `broker.env`.
+/// Narrowing it lets `BrokerState`'s own `&self` methods reuse it.
 #[allow(dead_code)]
-pub(super) fn registered_name<E: BrokerEnv>(
-    broker: &Broker<E>,
-    client: ClientId,
-) -> Option<String> {
-    broker
-        .state
+pub(super) fn registered_name(state: &BrokerState, client: ClientId) -> Option<String> {
+    state
         .clients
         .get(&client)
-        .filter(|state| state.connected)
-        .and_then(|state| state.name.clone())
+        .filter(|client_state| client_state.connected)
+        .and_then(|client_state| client_state.name.clone())
 }
 
 /// D-10: resolve the effective identity for `client`. Returns the
@@ -56,13 +55,20 @@ pub(super) fn proxy_holder_alive<E: BrokerEnv>(broker: &Broker<E>, bound: &str) 
 
 /// D-10: `ClientId` of the canonical live holder for `bound`, or
 /// `None` if no holder is currently registered. Used by Join/Leave to
-/// mutate the canonical holder's `joined` set instead of the proxy's.
-pub(super) fn canonical_holder_id<E: BrokerEnv>(
-    broker: &Broker<E>,
-    bound: &str,
-) -> Option<ClientId> {
-    broker.state.clients.iter().find_map(|(id, state)| {
-        if state.connected && state.name.as_deref() == Some(bound) {
+/// mutate the canonical holder's `joined` set instead of the proxy's,
+/// and by [`BrokerState::view`] to attribute a parked await's cursors
+/// to the holder rather than the proxy.
+///
+/// Takes `&BrokerState`, not `&Broker<E>`: liveness is a `connected`-flag
+/// check, not a `broker.env.is_alive` probe (that is [`proxy_holder_alive`]).
+/// This is the SINGLE canonical-holder-by-`bind_as` lookup in the broker —
+/// `view()` used to re-inline the same `find_map`, which is drift waiting to
+/// happen.
+///
+/// [`BrokerState::view`]: crate::broker::state::BrokerState::view
+pub(super) fn canonical_holder_id(state: &BrokerState, bound: &str) -> Option<ClientId> {
+    state.clients.iter().find_map(|(id, client_state)| {
+        if client_state.connected && client_state.name.as_deref() == Some(bound) {
             Some(*id)
         } else {
             None
