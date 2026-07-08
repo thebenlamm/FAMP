@@ -18,11 +18,19 @@ mod private {
 
 /// Bytes a JSONL record occupies beyond its payload: the single trailing `\n`.
 ///
-/// The in-memory mailbox mirrors `famp-inbox`'s on-disk framing (see
-/// `famp-inbox/src/read.rs`) so cursor offsets match the durable layer
-/// byte-for-byte. Kept as a named constant so the two offset computations in
-/// `drain_from` can't silently disagree on the terminator width.
-pub(crate) const JSONL_RECORD_TERMINATOR_LEN: u64 = 1;
+/// This is the workspace-wide JSONL framing width. Every crate that computes a
+/// mailbox byte cursor MUST source the terminator width here rather than
+/// hardcoding `+ 1` — the `famp` crate's `read_raw_from` imports it via
+/// `famp_bus::JSONL_RECORD_TERMINATOR_LEN`.
+///
+/// **`famp-inbox` is the one exception, and it cannot be fixed.** `famp-inbox`
+/// is the tokio-backed durable-storage layer that sits BELOW the pure,
+/// tokio-free actor in `famp-bus` (invariant BUS-01, enforced by
+/// `just check-no-tokio-in-bus`). `famp-bus` therefore cannot depend on
+/// `famp-inbox`, and importing `famp-bus` from `famp-inbox` would invert the
+/// layering. The mirror this constant is coupled to is the `+ 1` at
+/// `famp-inbox/src/read.rs:175`; if either moves, both must move.
+pub const JSONL_RECORD_TERMINATOR_LEN: u64 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MailboxName {

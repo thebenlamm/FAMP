@@ -26,7 +26,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use famp_bus::LivenessProbe;
-use famp_bus::{DrainResult, DrainedRecord, MailboxErr, MailboxName, MailboxRead};
+use famp_bus::{
+    DrainResult, DrainedRecord, MailboxErr, MailboxName, MailboxRead, JSONL_RECORD_TERMINATOR_LEN,
+};
 use famp_inbox::Inbox;
 use tokio::sync::Mutex;
 
@@ -224,12 +226,14 @@ fn read_raw_from(path: &Path, since_bytes: u64) -> Result<DrainResult, MailboxEr
         };
         let line_end = cursor + rel;
         let record_start = running;
-        running += (rel as u64) + 1;
+        running += (rel as u64) + JSONL_RECORD_TERMINATOR_LEN;
         records.push(DrainedRecord {
             bytes: bytes[cursor..line_end].to_vec(),
             start: record_start,
             end: running,
         });
+        // `+ 1` here is a byte-index step past the `\n` we just found, not a
+        // framing width — it stays a literal.
         cursor = line_end + 1;
     }
 

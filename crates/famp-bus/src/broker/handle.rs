@@ -6,7 +6,6 @@ use crate::broker::awaiting::{
 };
 use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
 use crate::broker::state::ClientState;
-use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
 use crate::{
     Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId, Delivered,
     DrainedRecord, MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION,
@@ -553,9 +552,11 @@ fn inbox<E: BrokerEnv>(
     // live in `await_offsets[MailboxName::Channel(c)]`. Initialized to
     // the channel's join-time end-offset by `join()`, so first-poll
     // semantics are "everything posted AFTER I joined". Per-channel
-    // drain is capped at `CHANNEL_DRAIN_CAP` envelopes per poll so a
-    // hot channel cannot block other members or bloat one response —
-    // the leftover lines are picked up by the next poll.
+    // drain is capped at `CHANNEL_DRAIN_CAP` SCANNED records per poll
+    // (not delivered envelopes — self-authored and undecodable records
+    // consume budget too) so a hot channel cannot block other members
+    // or bloat one response; the leftover lines are picked up by the
+    // next poll.
     // `resolve_op_identity` (line 526) succeeded for this `name`, which
     // means either (a) `client` is itself the canonical holder of `name`,
     // or (b) `client` is a proxy whose canonical holder passed
@@ -624,7 +625,6 @@ fn inbox<E: BrokerEnv>(
         let mut line_offset = cursor;
         for record in drained.records.iter().take(CHANNEL_DRAIN_CAP) {
             let line = &record.bytes;
-            let line_next_offset = line_offset + line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
             match decode_line(line) {
                 Ok(value) => {
                     if !is_self_authored(&value, Some(&name)) {
@@ -633,12 +633,12 @@ fn inbox<E: BrokerEnv>(
                 }
                 Err(error) => tracing::warn!(
                     mailbox = %mailbox,
-                    byte_offset = line_offset,
+                    byte_offset = record.start,
                     error = %error,
                     "skipping undecodable mailbox line (head-of-line resilience)"
                 ),
             }
-            line_offset = line_next_offset;
+            line_offset = record.end;
         }
         // When un-truncated, line_offset equals drained.next_offset by
         // construction (we walked every line); the explicit branch
@@ -982,9 +982,7 @@ fn decode_lines(
     let mut out = Vec::with_capacity(records.len());
     let mut offset = start_offset;
     for record in records {
-        let line = &record.bytes;
-        let line_next_offset = offset + (line.len() + 1) as u64;
-        match decode_line(line) {
+        match decode_line(&record.bytes) {
             Ok(value) => out.push(value),
             Err(error) => tracing::warn!(
                 mailbox = %mailbox,
@@ -993,7 +991,9 @@ fn decode_lines(
                 "skipping undecodable mailbox line (head-of-line resilience)"
             ),
         }
-        offset = line_next_offset;
+        // Framing math lives in the `MailboxRead` impl; `record.end` IS the
+        // cursor value for "consumed exactly this record".
+        offset = record.end;
     }
     out
 }

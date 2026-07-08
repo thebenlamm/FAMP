@@ -14,6 +14,7 @@ use crate::broker::identity::{
     canonical_holder_id, effective_identity, proxy_holder_alive, resolve_op_identity,
 };
 use crate::broker::state::ParkedAwait;
+use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
 use crate::{AwaitFilter, Broker, BrokerEnv, BusErrorKind, BusReply, ClientId, MailboxName, Out};
 
 const AWAIT_BATCH_CAP: usize = 50;
@@ -233,7 +234,9 @@ fn drain_await_batch<E: BrokerEnv>(
     let mut fully_drained = true;
     for record in drained.records {
         let line = &record.bytes;
-        let line_next_offset = next_offset + (line.len() + 1) as u64;
+        // Framing math lives in the `MailboxRead` impl, not here: `record.end`
+        // IS the cursor value for "consumed exactly this record".
+        let line_next_offset = record.end;
         // Head-of-line resilience (fix 260611): a single undecodable line
         // must NOT wedge the await drain. The pre-fix `?` returned BEFORE
         // `next_offset` advanced, so the cursor never moved past a bad line
@@ -309,7 +312,11 @@ fn drain_await_batch<E: BrokerEnv>(
     if fully_drained {
         debug_assert_eq!(next_offset, drained.next_offset);
         if let Some((trigger_envelope, trigger_line_len)) = trigger {
-            let trigger_next_offset = next_offset + (trigger_line_len + 1) as u64;
+            // The wake-trigger envelope was never drained, so there is no
+            // `DrainedRecord` to source an offset from — frame it by hand,
+            // but from the shared terminator constant, not a magic `1`.
+            let trigger_next_offset =
+                next_offset + trigger_line_len as u64 + JSONL_RECORD_TERMINATOR_LEN;
             let trigger_self_authored =
                 is_self_authored(trigger_envelope, awaiter_identity.as_deref());
             if trigger_self_authored {
