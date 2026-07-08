@@ -977,14 +977,18 @@ fn encode_envelope(envelope: &serde_json::Value, client: ClientId) -> Result<Vec
 ///   `Join` paths. A message a client addressed to ITSELF must be delivered.
 ///   Only channel pub/sub suppresses self-authored records.
 /// - `cap: None` — the register-path drain is deliberately unbounded here.
-///   Bounding it is the separate 16 MiB register-cliff fix (§3.1 of the
-///   2026-07-08 refactoring review); adding a cap in this extraction would
-///   be a silent policy change.
+///   Bounding it would TRUNCATE the drain, silently changing Register/Join
+///   semantics (a client would come up having never seen part of its own
+///   mailbox). That is a real design change and belongs with the retention
+///   work in §3.1 of the 2026-07-08 refactoring review (backlog 999.11), not
+///   here. The interim guard is [`DRAIN_WARN_BYTES`] below: an oversized
+///   drain gets an operator-visible WARN, and still delivers every record.
 fn decode_lines(
     mailbox: &MailboxName,
     start_offset: u64,
     records: &[DrainedRecord],
 ) -> Vec<serde_json::Value> {
+    warn_if_drain_oversized(mailbox, start_offset, records);
     walk(
         mailbox,
         start_offset,
@@ -996,6 +1000,46 @@ fn decode_lines(
         },
     )
     .delivered
+}
+
+/// Half of [`MAX_FRAME_BYTES`] (16 MiB). A register/join drain whose byte
+/// span crosses this is one doubling away from the reply-frame ceiling.
+///
+/// `decode_lines` output becomes `RegisterOk.drained` / `JoinOk.drained`,
+/// encoded into a SINGLE reply frame that `codec` rejects above
+/// `MAX_FRAME_BYTES`. So a mailbox that grows past 16 MiB makes registration
+/// itself fail — with no prior signal, because no retention or compaction
+/// exists yet. This threshold buys an operator one halving of headroom.
+const DRAIN_WARN_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Byte span the drain covers: `start_offset` to the last record's `end`.
+///
+/// Sourced entirely from the offsets `DrainedRecord` already carries — no
+/// framing arithmetic is re-derived here (§3.2 removed exactly that). An
+/// empty `records` slice spans zero bytes. `saturating_sub` keeps the result
+/// sane if a caller ever passes a `start_offset` past the last record's end;
+/// the drain simply is not reported as oversized.
+fn drained_span(start_offset: u64, records: &[DrainedRecord]) -> u64 {
+    records
+        .last()
+        .map_or(0, |last| last.end.saturating_sub(start_offset))
+}
+
+/// Emit exactly one WARN when a register/join drain approaches the reply-frame
+/// limit. Does NOT truncate — see the `cap: None` note on [`decode_lines`].
+fn warn_if_drain_oversized(mailbox: &MailboxName, start_offset: u64, records: &[DrainedRecord]) {
+    let drained_bytes = drained_span(start_offset, records);
+    if drained_bytes > DRAIN_WARN_BYTES {
+        tracing::warn!(
+            mailbox = %mailbox,
+            drained_bytes,
+            records = records.len(),
+            limit = MAX_FRAME_BYTES,
+            "mailbox drain approaching the 16 MiB reply-frame limit; registration \
+             will fail once it is exceeded (no retention/compaction exists yet — \
+             see backlog 999.11)"
+        );
+    }
 }
 
 pub(super) fn decode_line(line: &[u8]) -> Result<serde_json::Value, String> {

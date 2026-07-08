@@ -1645,3 +1645,108 @@ fn leave_drops_channel_cursor() {
         "leave() must drop the await cursor; got {after_leave:?}"
     );
 }
+
+// ── 260708-g01: register/join drain size warning ─────────────────────────────
+//
+// `drained_span` is the pure kernel of the oversized-drain WARN: it decides,
+// from `(start_offset, records)` alone, whether `warn_if_drain_oversized`
+// fires. Tested directly so the threshold logic is covered without pulling a
+// tracing-capture dependency into famp-bus (BUS-01: the crate stays tokio-free
+// and dep-free; `just check-no-tokio-in-bus` gates it).
+//
+// NOTE: the WARN is a WARN, not a cap. `decode_lines` keeps `cap: None` and
+// still delivers every record. These tests must not be read as truncation.
+
+fn rec(start: u64, end: u64) -> DrainedRecord {
+    DrainedRecord {
+        bytes: Vec::new(),
+        start,
+        end,
+    }
+}
+
+#[test]
+fn drained_span_of_empty_records_is_zero() {
+    assert_eq!(drained_span(0, &[]), 0);
+    assert_eq!(drained_span(9_999, &[]), 0);
+}
+
+#[test]
+fn drained_span_measures_start_offset_to_last_record_end() {
+    let records = [rec(100, 150), rec(150, 275)];
+    assert_eq!(drained_span(100, &records), 175);
+    // A drain that began before the first record still spans to the last end.
+    assert_eq!(drained_span(0, &records), 275);
+}
+
+#[test]
+fn drained_span_saturates_when_start_offset_is_past_the_last_end() {
+    // Never underflows; an inverted range simply reports a zero-byte span,
+    // so the WARN cannot fire spuriously on a u64 wrap.
+    assert_eq!(drained_span(500, &[rec(100, 150)]), 0);
+}
+
+#[test]
+fn drain_warn_threshold_is_half_the_reply_frame_limit() {
+    assert_eq!(
+        DRAIN_WARN_BYTES * 2,
+        MAX_FRAME_BYTES as u64,
+        "DRAIN_WARN_BYTES must stay pinned to half of MAX_FRAME_BYTES; if the \
+         frame limit moves, this warning's headroom moves with it"
+    );
+}
+
+#[test]
+fn drain_warn_fires_only_strictly_above_the_threshold() {
+    // Exactly at the threshold: not oversized. One byte past: oversized.
+    let at = [rec(0, DRAIN_WARN_BYTES)];
+    let past = [rec(0, DRAIN_WARN_BYTES + 1)];
+    assert!(drained_span(0, &at) <= DRAIN_WARN_BYTES);
+    assert!(drained_span(0, &past) > DRAIN_WARN_BYTES);
+}
+
+#[test]
+fn oversized_drain_is_warned_but_never_truncated() {
+    // The contract §3.1 pins: decode_lines delivers EVERY decodable record
+    // regardless of span. Two oversized records in, two envelopes out.
+    let mailbox = crate::MailboxName::Agent("alice".to_string());
+    let big = 5 * 1024 * 1024;
+    let line = |seq: u64| {
+        famp_canonical::canonicalize(&serde_json::json!({
+            "famp": "0.5.2",
+            "class": "audit_log",
+            "scope": "standalone",
+            "id": "01890000-0000-7000-8000-000000000001",
+            "from": "agent:example.test/bob",
+            "to": "agent:example.test/alice",
+            "authority": "advisory",
+            "ts": "2026-04-27T12:00:00Z",
+            "body": { "event": "offline_message", "details": { "seq": seq } }
+        }))
+        .expect("fixture envelope must canonicalize")
+    };
+    // Byte spans are synthetic: `drained_span` reads the carried offsets, not
+    // `bytes.len()`, so a small payload can stand in for an oversized record.
+    let records = vec![
+        DrainedRecord {
+            bytes: line(0),
+            start: 0,
+            end: big,
+        },
+        DrainedRecord {
+            bytes: line(1),
+            start: big,
+            end: big * 2,
+        },
+    ];
+    assert!(
+        drained_span(0, &records) > DRAIN_WARN_BYTES,
+        "fixture must be oversized for this test to mean anything"
+    );
+    let decoded = decode_lines(&mailbox, 0, &records);
+    assert_eq!(
+        decoded.len(),
+        2,
+        "cap: None — an oversized drain must WARN, not truncate"
+    );
+}
