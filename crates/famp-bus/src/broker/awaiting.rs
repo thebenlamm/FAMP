@@ -9,11 +9,13 @@
 
 use std::time::{Duration, Instant};
 
-use crate::broker::handle::{decode_line, err};
+use crate::broker::drain_walk::{filter_matches, is_self_authored, walk, DrainCap, DrainPolicy};
+use crate::broker::handle::err;
 use crate::broker::identity::{
     canonical_holder_id, effective_identity, proxy_holder_alive, resolve_op_identity,
 };
 use crate::broker::state::ParkedAwait;
+use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
 use crate::{AwaitFilter, Broker, BrokerEnv, BusErrorKind, BusReply, ClientId, MailboxName, Out};
 
 const AWAIT_BATCH_CAP: usize = 50;
@@ -99,7 +101,7 @@ fn resolve_await_owner<E: BrokerEnv>(
     client: ClientId,
 ) -> Result<(String, ClientId), BusErrorKind> {
     let identity = resolve_op_identity(broker, client)?;
-    let owner = canonical_holder_id(broker, &identity).unwrap_or(client);
+    let owner = canonical_holder_id(&broker.state, &identity).unwrap_or(client);
     Ok((identity, owner))
 }
 
@@ -228,77 +230,22 @@ fn drain_await_batch<E: BrokerEnv>(
         None
     };
 
-    let mut next_offset = since;
-    let mut envelopes = Vec::new();
-    let mut fully_drained = true;
-    for line in drained.lines {
-        let line_next_offset = next_offset + (line.len() + 1) as u64;
-        // Head-of-line resilience (fix 260611): a single undecodable line
-        // must NOT wedge the await drain. The pre-fix `?` returned BEFORE
-        // `next_offset` advanced, so the cursor never moved past a bad line
-        // and a listen-mode agent's inbox stayed jammed forever. Skip the
-        // line, advance past it, and log LOUDLY so the misbehaving peer
-        // stays visible. (Mirrors `decode_lines` on the inbox/register path.)
-        match decode_line(&line) {
-            Ok(value) => {
-                if is_self_authored(&value, awaiter_identity.as_deref()) {
-                    // Permanently unmatchable under ANY filter (an awaiter
-                    // never receives its own posts) — safe to advance past
-                    // unconditionally, same invariant as the undecodable
-                    // case below.
-                    next_offset = line_next_offset;
-                    continue;
-                }
-                if filter_matches(filter, &value) {
-                    envelopes.push(value);
-                    next_offset = line_next_offset;
-                    if envelopes.len() == AWAIT_BATCH_CAP {
-                        return Ok(AwaitBatch {
-                            mailbox: mailbox.clone(),
-                            envelopes,
-                            next_offset,
-                            // Cap reached, not a filter-mismatch stop —
-                            // irrelevant here since the caller's
-                            // non-empty-envelopes arm matches first, but
-                            // kept accurate: there may be more undrained
-                            // data beyond this cap.
-                            fully_drained: false,
-                        });
-                    }
-                    continue;
-                }
-                // Debug 999.1 (broker await_offset skip): a task-filter
-                // mismatch is NOT permanently unmatchable the way a
-                // self-authored or undecodable line is — a future
-                // differently-filtered (or unfiltered) `Await` call from
-                // this same owner may still want this envelope. The
-                // persisted `next_offset` is a single linear cursor shared
-                // across every future call regardless of filter, so it
-                // cannot represent "skip this one for THIS filter, but
-                // keep it reachable for others" without also risking
-                // re-delivering entries we already returned earlier in
-                // this same batch. Stop draining right here: `next_offset`
-                // never advances past an envelope this call didn't
-                // actually hand back to the caller. Remaining lines in
-                // this batch (even ones that would have matched) are
-                // picked up on a later call, once nothing upstream of
-                // them is still blocked.
-                fully_drained = false;
-                break;
-            }
-            Err(error) => {
-                tracing::warn!(
-                    mailbox = %mailbox,
-                    byte_offset = next_offset,
-                    error = %error,
-                    "skipping undecodable mailbox line (head-of-line resilience)"
-                );
-                // An undecodable line can never match any filter either —
-                // permanently unmatchable, same as self-authored above.
-                next_offset = line_next_offset;
-            }
-        }
-    }
+    // `Delivered(AWAIT_BATCH_CAP)`, NOT `Scanned` — the cap bounds the size
+    // of the reply, so self-authored and undecodable records consume no
+    // budget. Skipping is free; delivering is what costs.
+    let outcome = walk(
+        mailbox,
+        since,
+        &drained.records,
+        &DrainPolicy {
+            filter,
+            skip_self_authored: awaiter_identity.as_deref(),
+            cap: Some(DrainCap::Delivered(AWAIT_BATCH_CAP)),
+        },
+    );
+    let mut next_offset = outcome.next_offset;
+    let mut envelopes = outcome.delivered;
+    let fully_drained = outcome.fully_drained;
 
     // The wake-trigger envelope is only safe to fold in when this call
     // scanned the whole currently-drained batch cleanly (no earlier
@@ -308,7 +255,11 @@ fn drain_await_batch<E: BrokerEnv>(
     if fully_drained {
         debug_assert_eq!(next_offset, drained.next_offset);
         if let Some((trigger_envelope, trigger_line_len)) = trigger {
-            let trigger_next_offset = next_offset + (trigger_line_len + 1) as u64;
+            // The wake-trigger envelope was never drained, so there is no
+            // `DrainedRecord` to source an offset from — frame it by hand,
+            // but from the shared terminator constant, not a magic `1`.
+            let trigger_next_offset =
+                next_offset + trigger_line_len as u64 + JSONL_RECORD_TERMINATOR_LEN;
             let trigger_self_authored =
                 is_self_authored(trigger_envelope, awaiter_identity.as_deref());
             if trigger_self_authored {
@@ -331,28 +282,6 @@ fn drain_await_batch<E: BrokerEnv>(
         next_offset,
         fully_drained,
     })
-}
-
-/// Returns `true` when the envelope's `from` field ends in `/<awaiter>`,
-/// indicating the awaiter authored the message.
-///
-/// Envelope `from` format: `agent:<host>/<name>`. Splitting on `/` and
-/// comparing the last segment is host-agnostic and avoids URI parsing.
-/// Returns `false` when `awaiter_identity` is `None` (non-channel path),
-/// when `from` is absent/malformed, or when the names do not match.
-pub(super) fn is_self_authored(
-    envelope: &serde_json::Value,
-    awaiter_identity: Option<&str>,
-) -> bool {
-    let Some(awaiter) = awaiter_identity else {
-        return false;
-    };
-    let Some(from) = envelope.get("from").and_then(|v| v.as_str()) else {
-        return false;
-    };
-    from.rsplit('/')
-        .next()
-        .is_some_and(|sender| sender == awaiter)
 }
 
 pub(super) fn waiting_clients_for_name<E: BrokerEnv>(
@@ -384,27 +313,4 @@ pub(super) fn waiting_clients_for_name<E: BrokerEnv>(
             }
         })
         .collect()
-}
-
-fn filter_matches(filter: &AwaitFilter, envelope: &serde_json::Value) -> bool {
-    match filter {
-        AwaitFilter::Any => true,
-        AwaitFilter::Task(task_id) => {
-            // Extract the task-scoped UUID the same way poll.rs does:
-            //   class == "request" → the envelope id IS the task id.
-            //   all other classes  → causality["ref"] links back to the
-            //                        originating request id (the task id).
-            // There is no top-level `task_id` field in FAMP envelopes.
-            let raw_id = match envelope.get("class").and_then(serde_json::Value::as_str) {
-                Some("request") => envelope.get("id").and_then(serde_json::Value::as_str),
-                _ => envelope
-                    .get("causality")
-                    .and_then(|c| c.get("ref"))
-                    .and_then(serde_json::Value::as_str),
-            };
-            raw_id
-                .and_then(|raw| uuid::Uuid::parse_str(raw).ok())
-                .is_some_and(|candidate| &candidate == task_id)
-        }
-    }
 }

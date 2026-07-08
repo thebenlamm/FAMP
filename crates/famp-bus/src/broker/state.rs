@@ -145,21 +145,15 @@ impl BrokerState {
             };
             // Resolve owner (canonical holder) — for proxy connections the
             // await_offsets live on the canonical holder's ClientState.
+            // Routed through `identity::canonical_holder_id` rather than
+            // re-inlining the `bind_as` find_map here: two copies of the
+            // same lookup is drift waiting to happen (§5.5 of the 2026-07-08
+            // refactoring review).
             let owner_id = if client_state.name.is_some() {
                 *client_id
             } else {
-                // Look up the canonical holder by bind_as name.
                 let bound = client_state.bind_as.as_deref().unwrap_or("");
-                self.clients
-                    .iter()
-                    .find_map(|(id, s)| {
-                        if s.connected && s.name.as_deref() == Some(bound) {
-                            Some(*id)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or(*client_id)
+                crate::broker::identity::canonical_holder_id(self, bound).unwrap_or(*client_id)
             };
             let owner_state = self.clients.get(&owner_id);
 

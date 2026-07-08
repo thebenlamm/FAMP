@@ -2,6 +2,7 @@
 //! infallible, synchronous, and stages every side effect as an ordered intent.
 
 mod awaiting;
+mod drain_walk;
 pub mod handle;
 mod identity;
 mod state;

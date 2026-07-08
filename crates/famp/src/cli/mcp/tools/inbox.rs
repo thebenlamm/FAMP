@@ -6,9 +6,13 @@
 //!
 //! ## Input contract
 //!
-//! - `action: "list" | "ack"` — required (v0.8 surface compatibility).
-//!   Currently only `"list"` is wired through the bus path; `"ack"` is
-//!   handled client-side.
+//! This MCP surface is **list-only**. It reads exactly two fields; anything
+//! else in the input `Value` is ignored (there is no `deny_unknown_fields`
+//! on this path, so a v0.8-era caller still passing `action: "list"` keeps
+//! working). Advancing the read cursor is **CLI-only** (`famp inbox ack`) —
+//! a real MCP `ack` lands with backlog 999.11's unified cursor, which will
+//! remove the on-disk `.cursor` file this tool would otherwise have to write.
+//!
 //! - `since: u64` — optional cursor offset, default 0.
 //! - `include_terminal: bool` — optional, default `false` per MCP-04.
 //!   STRICT bool — a non-bool surfaces `EnvelopeInvalid` with a message

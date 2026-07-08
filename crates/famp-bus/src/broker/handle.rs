@@ -1,15 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use crate::broker::awaiting::{
-    await_envelope, await_reply_for_mailbox, is_self_authored, waiting_clients_for_name,
-};
+use crate::broker::awaiting::{await_envelope, await_reply_for_mailbox, waiting_clients_for_name};
+use crate::broker::drain_walk::{walk, DrainCap, DrainPolicy};
 use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
 use crate::broker::state::ClientState;
-use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
 use crate::{
-    Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId, Delivered,
-    MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
+    AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId,
+    Delivered, DrainedRecord, MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION,
+    MAX_FRAME_BYTES,
 };
 
 pub(crate) fn handle<E: BrokerEnv>(
@@ -163,7 +162,7 @@ fn touch_activity<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId) {
             state
                 .bind_as
                 .as_deref()
-                .and_then(|bound| canonical_holder_id(broker, bound))
+                .and_then(|bound| canonical_holder_id(&broker.state, bound))
         }
     });
 
@@ -315,7 +314,7 @@ fn register<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, drained.lines);
+    let decoded = decode_lines(&mailbox, since, &drained.records);
 
     let peers = connected_names(&broker.state.clients);
     let Some(state) = broker.state.clients.get_mut(&client) else {
@@ -544,7 +543,7 @@ fn inbox<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let mut envelopes = decode_lines(&agent_mailbox, agent_since, agent_drained.lines);
+    let mut envelopes = decode_lines(&agent_mailbox, agent_since, &agent_drained.records);
     let agent_next_offset = agent_drained.next_offset;
 
     // Scope B (260619): merge each joined channel's new envelopes into
@@ -552,9 +551,11 @@ fn inbox<E: BrokerEnv>(
     // live in `await_offsets[MailboxName::Channel(c)]`. Initialized to
     // the channel's join-time end-offset by `join()`, so first-poll
     // semantics are "everything posted AFTER I joined". Per-channel
-    // drain is capped at `CHANNEL_DRAIN_CAP` envelopes per poll so a
-    // hot channel cannot block other members or bloat one response —
-    // the leftover lines are picked up by the next poll.
+    // drain is capped at `CHANNEL_DRAIN_CAP` SCANNED records per poll
+    // (not delivered envelopes — self-authored and undecodable records
+    // consume budget too) so a hot channel cannot block other members
+    // or bloat one response; the leftover lines are picked up by the
+    // next poll.
     // `resolve_op_identity` (line 526) succeeded for this `name`, which
     // means either (a) `client` is itself the canonical holder of `name`,
     // or (b) `client` is a proxy whose canonical holder passed
@@ -565,7 +566,7 @@ fn inbox<E: BrokerEnv>(
     // instead so any future refactor of `resolve_op_identity` that
     // weakens this guarantee fails loud.
     #[allow(clippy::expect_used)]
-    let canonical = canonical_holder_id(broker, &name)
+    let canonical = canonical_holder_id(&broker.state, &name)
         .expect("resolve_op_identity succeeded above; canonical holder must exist for `name`");
     let joined_channels: Vec<String> = broker
         .state
@@ -597,52 +598,48 @@ fn inbox<E: BrokerEnv>(
             // poll so the operator sees the breakage.
             Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
         };
-        if drained.lines.is_empty() {
+        if drained.records.is_empty() {
             continue;
         }
 
-        let truncated = drained.lines.len() > CHANNEL_DRAIN_CAP;
+        let truncated = drained.records.len() > CHANNEL_DRAIN_CAP;
         if truncated {
             tracing::debug!(
                 channel = %channel,
                 cap = CHANNEL_DRAIN_CAP,
-                total = drained.lines.len(),
+                total = drained.records.len(),
                 "inbox_channel_drain_capped"
             );
         }
 
-        // Scope B MEDIUM-fix (260619): walk lines per-record so the
-        // self-authored filter can skip-and-advance cleanly. Mirrors
-        // `awaiting::drain_await_batch` semantics: pub/sub default —
-        // a publisher does not receive its own channel posts. The
-        // cursor advances past both delivered envelopes AND skipped
-        // (self-authored / undecodable) lines so they never replay on
-        // the next poll. Capped at CHANNEL_DRAIN_CAP scanned lines for
-        // hot-channel backpressure; lines past the cap stay on disk
+        // Scope B MEDIUM-fix (260619): pub/sub default — a publisher does
+        // not receive its own channel posts. The cursor advances past both
+        // delivered envelopes AND skipped (self-authored / undecodable)
+        // records so they never replay on the next poll.
+        //
+        // `Scanned(CHANNEL_DRAIN_CAP)`, NOT `Delivered` — the cap bounds
+        // the WORK done per poll for hot-channel backpressure, so skipped
+        // records consume budget too. Records past the cap stay on disk
         // and surface on the next poll.
-        let mut line_offset = cursor;
-        for line in drained.lines.iter().take(CHANNEL_DRAIN_CAP) {
-            let line_next_offset = line_offset + line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
-            match decode_line(line) {
-                Ok(value) => {
-                    if !is_self_authored(&value, Some(&name)) {
-                        envelopes.push(value);
-                    }
-                }
-                Err(error) => tracing::warn!(
-                    mailbox = %mailbox,
-                    byte_offset = line_offset,
-                    error = %error,
-                    "skipping undecodable mailbox line (head-of-line resilience)"
-                ),
-            }
-            line_offset = line_next_offset;
-        }
-        // When un-truncated, line_offset equals drained.next_offset by
-        // construction (we walked every line); the explicit branch
+        //
+        // `AwaitFilter::Any` makes `walk`'s filter-mismatch stop branch
+        // unreachable here, so the walk never halts mid-batch.
+        let outcome = walk(
+            &mailbox,
+            cursor,
+            &drained.records,
+            &DrainPolicy {
+                filter: &AwaitFilter::Any,
+                skip_self_authored: Some(&name),
+                cap: Some(DrainCap::Scanned(CHANNEL_DRAIN_CAP)),
+            },
+        );
+        envelopes.extend(outcome.delivered);
+        // When un-truncated, outcome.next_offset equals drained.next_offset
+        // by construction (we walked every record); the explicit branch
         // keeps intent local to the cap path.
         let effective_next_offset = if truncated {
-            line_offset
+            outcome.next_offset
         } else {
             drained.next_offset
         };
@@ -691,7 +688,7 @@ fn join<E: BrokerEnv>(
     // D-10: mutate the canonical holder's `joined` set, not the proxy's.
     // For canonical holders this resolves to `client` itself; for
     // proxies it resolves to the live registered holder of `name`.
-    let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
+    let target_client = canonical_holder_id(&broker.state, &name).unwrap_or(client);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.insert(channel.clone());
     }
@@ -713,7 +710,7 @@ fn join<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, drained.lines);
+    let decoded = decode_lines(&mailbox, since, &drained.records);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state
             .await_offsets
@@ -775,7 +772,7 @@ fn leave<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, channel: String
     if let Some(members) = broker.state.channels.get_mut(&channel) {
         members.remove(&name);
     }
-    let target_client = canonical_holder_id(broker, &name).unwrap_or(client);
+    let target_client = canonical_holder_id(&broker.state, &name).unwrap_or(client);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state.joined.remove(&channel);
         // Scope B (260619): drop the per-channel cursors so a subsequent
@@ -825,7 +822,7 @@ fn whoami<E: BrokerEnv>(broker: &Broker<E>, client: ClientId) -> Vec<Out> {
             } else if let Some(ref bound) = state.bind_as {
                 // Proxy: surface the canonical holder's identity + joined.
                 if proxy_holder_alive(broker, bound) {
-                    let holder_joined = canonical_holder_id(broker, bound)
+                    let holder_joined = canonical_holder_id(&broker.state, bound)
                         .and_then(|id| broker.state.clients.get(&id))
                         .map_or_else(Vec::new, |h| h.joined.iter().cloned().collect());
                     (Some(bound.clone()), holder_joined)
@@ -972,27 +969,77 @@ fn encode_envelope(envelope: &serde_json::Value, client: ClientId) -> Result<Vec
 ///
 /// `start_offset` is the byte offset the drain began at; offsets reported
 /// in the warning are absolute file offsets so the bad line can be located.
+///
+/// Two `DrainPolicy` values below look like oversights and are NOT. Do not
+/// "fix" them:
+///
+/// - `skip_self_authored: None` — this walk serves the DM / `Register` /
+///   `Join` paths. A message a client addressed to ITSELF must be delivered.
+///   Only channel pub/sub suppresses self-authored records.
+/// - `cap: None` — the register-path drain is deliberately unbounded here.
+///   Bounding it would TRUNCATE the drain, silently changing Register/Join
+///   semantics (a client would come up having never seen part of its own
+///   mailbox). That is a real design change and belongs with the retention
+///   work in §3.1 of the 2026-07-08 refactoring review (backlog 999.11), not
+///   here. The interim guard is [`DRAIN_WARN_BYTES`] below: an oversized
+///   drain gets an operator-visible WARN, and still delivers every record.
 fn decode_lines(
     mailbox: &MailboxName,
     start_offset: u64,
-    lines: Vec<Vec<u8>>,
+    records: &[DrainedRecord],
 ) -> Vec<serde_json::Value> {
-    let mut out = Vec::with_capacity(lines.len());
-    let mut offset = start_offset;
-    for line in lines {
-        let line_next_offset = offset + (line.len() + 1) as u64;
-        match decode_line(&line) {
-            Ok(value) => out.push(value),
-            Err(error) => tracing::warn!(
-                mailbox = %mailbox,
-                byte_offset = offset,
-                error = %error,
-                "skipping undecodable mailbox line (head-of-line resilience)"
-            ),
-        }
-        offset = line_next_offset;
+    warn_if_drain_oversized(mailbox, start_offset, records);
+    walk(
+        mailbox,
+        start_offset,
+        records,
+        &DrainPolicy {
+            filter: &AwaitFilter::Any,
+            skip_self_authored: None,
+            cap: None,
+        },
+    )
+    .delivered
+}
+
+/// Half of [`MAX_FRAME_BYTES`] (16 MiB). A register/join drain whose byte
+/// span crosses this is one doubling away from the reply-frame ceiling.
+///
+/// `decode_lines` output becomes `RegisterOk.drained` / `JoinOk.drained`,
+/// encoded into a SINGLE reply frame that `codec` rejects above
+/// `MAX_FRAME_BYTES`. So a mailbox that grows past 16 MiB makes registration
+/// itself fail — with no prior signal, because no retention or compaction
+/// exists yet. This threshold buys an operator one halving of headroom.
+const DRAIN_WARN_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Byte span the drain covers: `start_offset` to the last record's `end`.
+///
+/// Sourced entirely from the offsets `DrainedRecord` already carries — no
+/// framing arithmetic is re-derived here (§3.2 removed exactly that). An
+/// empty `records` slice spans zero bytes. `saturating_sub` keeps the result
+/// sane if a caller ever passes a `start_offset` past the last record's end;
+/// the drain simply is not reported as oversized.
+fn drained_span(start_offset: u64, records: &[DrainedRecord]) -> u64 {
+    records
+        .last()
+        .map_or(0, |last| last.end.saturating_sub(start_offset))
+}
+
+/// Emit exactly one WARN when a register/join drain approaches the reply-frame
+/// limit. Does NOT truncate — see the `cap: None` note on [`decode_lines`].
+fn warn_if_drain_oversized(mailbox: &MailboxName, start_offset: u64, records: &[DrainedRecord]) {
+    let drained_bytes = drained_span(start_offset, records);
+    if drained_bytes > DRAIN_WARN_BYTES {
+        tracing::warn!(
+            mailbox = %mailbox,
+            drained_bytes,
+            records = records.len(),
+            limit = MAX_FRAME_BYTES,
+            "mailbox drain approaching the 16 MiB reply-frame limit; registration \
+             will fail once it is exceeded (no retention/compaction exists yet — \
+             see backlog 999.11)"
+        );
     }
-    out
 }
 
 pub(super) fn decode_line(line: &[u8]) -> Result<serde_json::Value, String> {

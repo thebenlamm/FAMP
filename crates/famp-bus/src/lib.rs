@@ -59,7 +59,10 @@ pub use env::BrokerEnv;
 pub use error::BusErrorKind;
 pub use famp_envelope::bus::{AnyBusEnvelope, BusEnvelope};
 pub use liveness::{AlwaysAliveLiveness, FakeLiveness, LivenessProbe};
-pub use mailbox::{DrainResult, InMemoryMailbox, MailboxErr, MailboxName, MailboxRead};
+pub use mailbox::{
+    DrainResult, DrainedRecord, InMemoryMailbox, MailboxErr, MailboxName, MailboxRead,
+    JSONL_RECORD_TERMINATOR_LEN,
+};
 pub use proto::{
     AwaitFilter, BusMessage, BusReply, ClientId, Delivered, MemberInfo, SessionRow, Target,
     BUS_PROTO_VERSION,

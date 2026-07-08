@@ -151,18 +151,11 @@ fn variants_a() -> Vec<(&'static str, CliError)> {
             },
         ),
         (
-            "AlreadyInitialized",
-            CliError::AlreadyInitialized {
-                existing_files: vec![path("a")],
-            },
-        ),
-        (
             "IdentityIncomplete",
             CliError::IdentityIncomplete {
                 missing: path("key.ed25519"),
             },
         ),
-        ("KeygenFailed", CliError::KeygenFailed(Box::new(io_err()))),
         (
             "Io",
             CliError::Io {
@@ -182,12 +175,6 @@ fn variants_a() -> Vec<(&'static str, CliError)> {
             },
         ),
         (
-            "PortInUse",
-            CliError::PortInUse {
-                addr: "127.0.0.1:8443".parse().expect("valid addr"),
-            },
-        ),
-        (
             "Inbox",
             CliError::Inbox(famp_inbox::InboxError::Io {
                 path: path("/tmp/inbox.jsonl"),
@@ -200,30 +187,6 @@ fn variants_a() -> Vec<(&'static str, CliError)> {
 /// Construct the second half of known `CliError` variants.
 fn variants_b() -> Vec<(&'static str, CliError)> {
     vec![
-        (
-            "PeerNotFound",
-            CliError::PeerNotFound {
-                alias: "alice".to_string(),
-            },
-        ),
-        (
-            "PeerDuplicate",
-            CliError::PeerDuplicate {
-                alias: "alice".to_string(),
-            },
-        ),
-        (
-            "PeerEndpointInvalid",
-            CliError::PeerEndpointInvalid {
-                value: "not-a-url".to_string(),
-            },
-        ),
-        (
-            "PeerPubkeyInvalid",
-            CliError::PeerPubkeyInvalid {
-                value: "bad-key".to_string(),
-            },
-        ),
         (
             "TaskNotFound",
             CliError::TaskNotFound {
@@ -301,12 +264,6 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
 /// on `variants_a` above).
 fn variants_c() -> Vec<(&'static str, CliError)> {
     vec![
-        (
-            "PeerCardInvalid",
-            CliError::PeerCardInvalid {
-                reason: "missing pubkey".to_string(),
-            },
-        ),
         (
             "InvalidAgentName",
             CliError::InvalidAgentName {
@@ -398,8 +355,8 @@ fn all_variant_kinds() -> Vec<(&'static str, String)> {
 // match itself is enforced inside `mcp_error_kind()` (no `_ =>` arm), so
 // adding a CliError variant without an arm is a build failure. Adding a
 // variant without a fixture row, however, is silent — verified manually.
-// (tey LOW-2 honesty fix; PeerCardInvalid + InvalidAgentName fixture rows
-// added the same patch.)
+// (tey LOW-2 honesty fix; the InvalidAgentName fixture row was added by the
+// same patch.)
 #[test]
 fn every_variant_has_mcp_kind() {
     for (variant, kind) in all_variant_kinds() {
@@ -425,18 +382,6 @@ fn mcp_kinds_are_unique() {
 #[test]
 fn mcp_kind_mapping_spot_checks() {
     let checks: &[(&str, CliError)] = &[
-        (
-            "peer_not_found",
-            CliError::PeerNotFound {
-                alias: "x".to_string(),
-            },
-        ),
-        (
-            "peer_duplicate",
-            CliError::PeerDuplicate {
-                alias: "x".to_string(),
-            },
-        ),
         (
             "task_not_found",
             CliError::TaskNotFound {
