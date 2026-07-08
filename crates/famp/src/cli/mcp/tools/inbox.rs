@@ -13,7 +13,26 @@
 //! a real MCP `ack` lands with backlog 999.11's unified cursor, which will
 //! remove the on-disk `.cursor` file this tool would otherwise have to write.
 //!
-//! - `since: u64` — optional cursor offset, default 0.
+//! - `since: u64` — optional cursor offset. When the caller omits it (or
+//!   passes `null`), the MCP **session layer** remembers the previous
+//!   call's `InboxOk.next_offset` (`session::inbox_offset()`) and uses
+//!   THAT as the effective `since`, so a second `famp_inbox` in one
+//!   session does not replay envelopes already seen (#13 — protects the
+//!   agent's context from the double-print pattern
+//!   `docs/CLAUDE-CODE-CONTEXT-GUIDE.md` warns about). An explicit
+//!   caller-supplied `since` (INCLUDING `0`) always wins and is used
+//!   as-is — `since: 0` is therefore a deliberate full-mailbox-replay
+//!   recovery escape hatch, not a bug. After every successful call the
+//!   session stores the RETURNED `next_offset` (never
+//!   `max(stored, returned)` — mailboxes can shrink, #11/#16, and the
+//!   stored value must follow the broker's clamp down).
+//!
+//!   **Accepted cost:** the FIRST `famp_inbox` of a session still
+//!   replays the whole mailbox. `famp_register`'s `RegisterOk.drained`
+//!   count is discarded (not the envelopes), and seeding the offset from
+//!   register would need a wire change (out of scope for #13). This is
+//!   a deliberate once-per-session cost and a recovery affordance, not a
+//!   bug — do not re-file it.
 //! - `include_terminal: bool` — optional, default `false` per MCP-04.
 //!   STRICT bool — a non-bool surfaces `EnvelopeInvalid` with a message
 //!   naming both the field and the expected type so MCP clients can
@@ -42,9 +61,12 @@ use crate::cli::mcp::tools::ToolError;
 
 /// Dispatch a `famp_inbox` tool call.
 pub async fn call(input: &Value) -> Result<Value, ToolError> {
-    // `since`: optional u64. Default 0 (broker treats None as 0 too).
+    // `since`: optional u64. When the caller omits it, fall back to the
+    // session's remembered offset from the previous call (#13) so a
+    // second famp_inbox does not replay the whole mailbox. An explicit
+    // caller value (including 0) always wins — see module doc comment.
     let since = match input.get("since") {
-        None | Some(Value::Null) => None,
+        None | Some(Value::Null) => session::inbox_offset().await,
         Some(Value::Number(n)) => n.as_u64(),
         Some(_) => {
             return Err(ToolError::new(
@@ -78,6 +100,12 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
 
     match run_at_structured(&resolve_sock_path(), args).await {
         Ok(out) => {
+            // #13: ALWAYS store the RETURNED next_offset, never
+            // max(stored, returned) — mailboxes can shrink (#11, #16)
+            // and the broker's clamp must be followed down. since:0
+            // remains a full-replay escape hatch AND still updates the
+            // stored value going forward.
+            session::set_inbox_offset(Some(out.next_offset)).await;
             // Project each envelope into the v0.8 MCP-tool entry shape:
             // include `task_id` at the top level so agents can reply without
             // re-walking the envelope. For reply messages (deliver/terminal),
