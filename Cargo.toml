@@ -53,7 +53,6 @@ tokio = { version = "1.51.1", default-features = false }
 
 # Errors
 thiserror = "2.0.18"
-anyhow = "1.0.102"
 
 # Testing
 proptest = "1.11.0"
