@@ -12,6 +12,84 @@ modularity debt the last review named is largely paid. What remains is a
 
 ---
 
+---
+
+## 0. Corrections (added 2026-07-08, after adversarial review)
+
+Two independent reviewers audited this document against the running system. **§3.1's
+central framing is wrong, and its severity was unearned.** Read this section before
+acting on anything below.
+
+**C-1 — "Retention is upstream of position" is a fused narrative, not a finding.**
+The claim that the five cursor authorities are "coping mechanisms for never
+deleting" inverts cause and correlation. Falsify it with this document's own
+proposed fix — compact below `min(all known cursors)`:
+
+- **999.1 filtered-await starvation:** the blocking envelope sits *at* the starved
+  filter's cursor. That cursor **is** the min. Compaction can never remove it.
+  Retention provably cannot fix 999.1.
+- **Scope-B cursor share:** two consumers, one cursor. Orthogonal to file length.
+  Reproduces on a 3-line mailbox.
+- **Wrong `unread`:** a 10-line mailbox is equally wrong.
+
+Retention explains exactly two of the six claimed symptoms — the 16 MiB cliff and
+`/famp-clear`. Both are *cost*, not correctness. Kafka has retention **and**
+per-consumer offsets; deleting old data never removed the need for consumer
+positions. Cursors are what multiple consumers with different read semantics
+require. The two problems were fused because both touch `mailboxes/*.jsonl`.
+
+**C-2 — The severity rests on a scaling claim that was never measured.**
+Largest mailbox on the author's machine: `baalshem.jsonl`, **138 KB**. Entire
+`~/.famp/mailboxes/`: **2.6 MB**. The 16 MiB cliff is ~120× away on the worst file;
+the 8 MiB WARN has never fired; `budget_exceeded` over 2.6 MB in 500 ms is not
+close. §3.1's **Critical** and §3.4's "dies exactly when you need it" are
+speculative severity presented as observed. Both are downgraded below.
+
+**C-3 — "`unread` grows monotonically forever" is false.** `handle.rs:348` emits
+`Out::AdvanceCursor { offset: drained.next_offset }` on **every register**. Live
+measurement: `unread` = 0, 1, 0. The bug is real — `unread` counts envelopes
+`famp_await` already consumed since the last register — but it is bounded by
+session length, not deployment lifetime.
+
+**C-4 — The count of five is rhetorical.** Authority 5 (`famp_verify`'s `read_all`)
+is not a cursor; verifying signatures over stored history *should* read all of it.
+Authority 3 (client-supplied `since`) is a recorded design decision
+(`cli/inbox/mod.rs:5`, RESEARCH §6), not an accident. The honest count is **two
+real in-memory cursors (`await_offsets`, `inbox_offsets`) plus one metadata bug**
+(the disk `.cursor` that only register/join/CLI-ack advance). §3.1's *"it has never
+been designed once"* is contradicted by its own evidence.
+
+**C-5 — `/famp-clear` was never evidence of anything.** §1 and §3.1 cite it as
+*"a workaround skill for a missing retention policy… the clearest possible signal."*
+The command is **dead**: `.claude/commands/famp-clear.md` invokes
+`bash scripts/famp-local clear`, and `scripts/famp-local` was moved to
+`docs/history/v0.9-prep-sprint/famp-local/` during the v0.9 prep sprint. It errors
+out. And the archived script only ever truncated **v0.8** paths
+(`agents/*/inbox.jsonl`), never the v0.9 broker's `~/.famp/mailboxes/*.jsonl`.
+A stale command nobody had run was used to justify a Critical-severity finding.
+Removed in a separate PR. **The rule this breaks: `grep` found the string; nobody
+ran the command.**
+
+**What survives, unchanged:** §3.2 (verified behavior-preserving on every reachable
+state, zero semantic drift), the `DrainCap::{Delivered,Scanned}` discovery, §5's
+`read.rs:97` snap-forward trap, and §3.3's `include_terminal` false-blocker
+correction. §3.2 was good work — but it was **not** "the keystone"; 999.11's real
+change lives in `state.rs`/`awaiting.rs`, which `walk` barely touches.
+
+**Process lesson, now the first rule of the `refactoring-review` skill:** before
+assigning severity to a scaling claim, **measure the running system.** Nobody ran
+`ls -la ~/.famp/mailboxes/` or `famp inspect identities` before writing "Critical."
+
+**Bugs this review missed, found by auditing it:** [#11](https://github.com/thebenlamm/FAMP/issues/11)
+(truncation strands the holder's cursor — real message loss), [#12](https://github.com/thebenlamm/FAMP/issues/12)
+(test double diverges from production, making #11 untestable), [#13](https://github.com/thebenlamm/FAMP/issues/13)
+(MCP `famp_inbox` replays the whole mailbox every call — the live token cost),
+[#14](https://github.com/thebenlamm/FAMP/issues/14), [#15](https://github.com/thebenlamm/FAMP/issues/15).
+Every one of them is worth more than the retention workstream this document ranked
+first.
+
+---
+
 ## 1. Executive Summary
 
 The codebase is disciplined, densely commented with decision rationale, and
@@ -100,8 +178,19 @@ lifecycle is smeared across four handlers** (`register` seeds, `join` seeds,
 
 ### 1. The mailbox log has no retention story, and delivery position has no owner
 
-**Severity:** Critical
-**Type:** Data model / Architecture
+> **⚠ Superseded in part — read §0 first.** The "retention is upstream of position"
+> framing is **withdrawn** (C-1): retention provably cannot fix 999.1 or the Scope-B
+> cursor share. Severity **downgraded Critical → Medium** (C-2): the scaling numbers
+> were never measured, and the real ones are ~120× from the cliff. The `unread`
+> claim below is **overstated** (C-3), and the count of five is rhetorical (C-4).
+>
+> **What still stands:** two in-memory cursors with no coordinated owner
+> (`await_offsets`, `inbox_offsets`) plus one metadata bug. That is 999.11, and it
+> is real. Retention is a separate, low-urgency cost item — **not** a prerequisite,
+> and explicitly out of scope per that phase's `SPEC.md`.
+
+**Severity:** ~~Critical~~ → **Medium** (see §0, C-2)
+**Type:** Data model
 
 **Why it matters.** No code path truncates, rotates, or compacts
 `mailboxes/*.jsonl` — grep for `rotate|truncate|compact` across `famp-inbox` and

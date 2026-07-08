@@ -20,7 +20,7 @@ one function: `crates/famp-bus/src/broker/drain_walk.rs::walk(records, &DrainPol
 
 Why this matters to you specifically:
 
-- **Offsets advance in exactly one place.** The SPEC's "recommended fix shape"
+- **Offsets advance in exactly one place *inside the bus actor*.** (`cli/broker/mailbox_env.rs::read_raw_from` and `cursor_exec` remain separate.) The SPEC's "recommended fix shape"
   (swap one `u64` per `(owner, mailbox)` for a keyed map of cursors) was a six-site
   change when the SPEC was written. It is now a one-function change.
 - **`fully_drained` is available on the Inbox path for free.** It was bespoke to
@@ -39,81 +39,47 @@ no longer advertises an `ack` it never implemented (see §4).
 
 ---
 
-## 2. The SPEC undercounts the authorities. There are five, not one.
+## 2. One correction to the SPEC
 
 The SPEC says: *"Every mailbox exposes exactly one linear delivery position per
-(owner, mailbox): `await_offsets`."* That is true **of the await path only**. As of
-Scope B (2026-06-19) and earlier, the system has five independent answers to "where
-has this reader got to?":
+(owner, mailbox): `await_offsets`."* True of the **await path only**. Scope B
+(2026-06-19) added a **second** in-memory cursor, `ClientState.inbox_offsets`
+(`famp-bus/src/broker/state.rs:53-63`), because a task-filtered `Await` was eating
+channel posts `Inbox` should have surfaced. The fix added an authority rather than
+giving position an owner. **That is the pattern 999.11 exists to stop.**
 
-| # | Authority | Location | Advanced by | Read by |
-|---|---|---|---|---|
-| 1 | `ClientState.await_offsets` | `famp-bus/src/broker/state.rs:45-52` | `Await` only | `Await`, waiter view |
-| 2 | `ClientState.inbox_offsets` | `state.rs:53-63` (channels only) | `Inbox` only | `Inbox` |
-| 3 | `since: Option<u64>` wire param | `handle.rs` `inbox` (agent mailbox) | the **client** | `Inbox` |
-| 4 | `.<name>.cursor` on disk | `cli/broker/cursor_exec.rs` | register, join, `famp inbox ack` | `inspect identities` **unread** |
-| 5 | "read the whole file" | `mcp/tools/verify.rs` (`read_all`, no cursor) | n/a | `famp_verify` |
+So: **two** in-memory cursors, not one. Plus a separate metadata bug — the on-disk
+`.<name>.cursor` (`cli/broker/cursor_exec.rs`), which only `register`, `join`, and
+the CLI-only `famp inbox ack` advance, is what `famp inspect identities` reports as
+`unread`. Since no *read* path advances it, `unread` counts envelopes `famp_await`
+already consumed since the last register. Bounded by session length (register
+re-advances it) — not unbounded. Fix with, or after, 999.11.
 
-(`famp_channel_log` is a sixth surface: caller-supplied `since`, returns a
-`next_offset` nobody persists.)
+**Retention/compaction is NOT part of this, and an earlier draft of this brief was
+wrong to say otherwise.** That draft argued rotation was upstream of cursor ownership
+and told you to amend the SPEC's out-of-scope list. **Withdrawn.** Retention cannot
+fix 999.1: the blocking envelope sits *at* the starved filter's cursor, which is the
+`min`, so compaction below `min(all cursors)` can never remove it. The Scope-B cursor
+share reproduces on a 3-line mailbox. Keep rotation out of scope, exactly as the SPEC
+says. Owning position yields `min(cursors)` as a byproduct, which enables a *later*,
+independent retention decision. That is the only relationship.
 
-**Authority 2 exists because of authority 1.** Scope B's HIGH-fix added
-`inbox_offsets` precisely because a task-filtered `Await` was eating channel posts
-`Inbox` should have surfaced. The fix was to *add an authority*, not to give
-position an owner. That is the shape of this problem: **each incident adds a
-cursor.** 999.11 is the decision to stop.
+Calibration: largest mailbox 138 KB; all mailboxes 2.6 MB. There is no retention
+problem yet. The `/famp-clear` skill cited as evidence for one turned out to be a
+dead command pointing at a v0.8 script.
 
-**Consequence you can observe right now:** `famp inspect identities`' `unread`
-column reads authority 4 — a file that **no read path advances** (only register,
-join, and the CLI-only `famp inbox ack`). A listen-mode agent consuming everything
-via `famp_await` shows monotonically growing unread forever. The project's own
-debugging memo ("run `famp inspect identities` first; delivery usually works,
-cursor-behind is the failure") is describing a structural property, not a bug.
+## 3. 999.2 is the real coupling — engage it
 
----
+The SPEC is emphatic and correct: *"design and resolve 999.11 and 999.2 together —
+do not patch one without the other."* Concurrent canonical + proxy consumers share
+the same offset, so one consumer's drain robs another's. Neither the refactoring
+review nor the first draft of this brief engaged 999.2 at all. **That, not retention,
+is the blocker.** Start there.
 
-## 3. Scope conflict — resolve this before designing
-
-**SPEC "Out of scope":** *"Any change to on-disk mailbox format/rotation."*
-**SPEC "Recommended fix shape":** *"the underlying mailbox file itself remaining
-the single source of truth (never rewritten/compacted out from under a slower
-cursor)."*
-
-**The review disagrees on the first and agrees with the second.** Its finding:
-
-> The mailbox is an append-only JSONL log that nothing ever truncates, rotates,
-> or compacts. Because history is permanent, "where has this reader got to?"
-> becomes load-bearing — and five authorities appear. **The cursors are coping
-> mechanisms for never deleting.**
-
-Grep for `rotate|truncate|compact` across `famp-inbox` and `cli/broker`: only test
-names and one doc comment. Evidence that permanence is already costing:
-
-- **A 16 MiB registration cliff.** `handle.rs` hardcodes `let since: u64 = 0;` on
-  register with the comment *"preserving the historical since=0 behavior."*
-  `decode_lines` on that path has **no cap**, and the resulting `RegisterOk.drained`
-  is encoded into one reply frame checked against `MAX_FRAME_BYTES = 16 MiB`
-  (`famp-bus/src/codec.rs:6,26`). A mailbox crossing 16 MiB makes **registration
-  itself fail.** The 8 MiB WARN shipped this week is a smoke alarm, not a fix.
-- **`/famp-clear`** — a hand-maintained skill whose only purpose is deleting
-  mailboxes. A workaround skill for a missing retention policy.
-- **Inspect degrades to `budget_exceeded`.** `read_message_snapshot`
-  (`cli/broker/mod.rs`) `read_all`s every mailbox on every `Tasks`/`Messages`
-  inspect, under a 500 ms budget with one permit. Cost grows monotonically with
-  deployment lifetime — the observability tool dies exactly when you need it.
-
-**These two positions are reconcilable, and that is the design.** The SPEC forbids
-compacting *out from under a slower cursor*. Compaction below
-`min(all known cursors for that mailbox)` never does. **Retention is not a separate
-concern from position — it is the reason position is hard.** Once the broker owns
-every cursor, it knows the min, and compaction becomes safe and trivial. Own
-position *in order to* enable retention.
-
-Recommendation: **amend the SPEC's out-of-scope list** rather than working around
-it. If the reviewer who filed it disagrees, that disagreement is the first thing
-to settle — it changes the whole shape.
-
----
+Also now settled and in your way if you don't know it: mailbox files can shrink
+beneath a cursor. `walk()` clamps (`since.min(drained.next_offset)`) and warns; the
+old `debug_assert_eq!` that panicked the broker actor is gone (#11, #16). Any
+per-consumer cursor map you build inherits that clamp obligation **per cursor**.
 
 ## 4. Decisions already made that constrain you
 
