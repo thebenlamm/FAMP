@@ -1,7 +1,7 @@
 //! D-10 unit tests for `bind_as` proxy semantics.
 
 use super::*;
-use crate::{Broker, FakeLiveness, InMemoryMailbox};
+use crate::{Broker, FakeLiveness, InMemoryMailbox, MailboxRead as _};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
@@ -1749,4 +1749,346 @@ fn oversized_drain_is_warned_but_never_truncated() {
         2,
         "cap: None — an oversized drain must WARN, not truncate"
     );
+}
+
+// ── 260708-l1x (#11): a mailbox that shrinks beneath a holder's cursor ───────
+//
+// `/famp-clear` truncates `~/.famp/mailboxes/*.jsonl` while the broker is
+// running and still holding in-memory cursors into them. Pre-fix the holder's
+// cursor never came back down, so the holder silently stopped receiving — and
+// in a debug build `drain_await_batch`'s `debug_assert_eq!(next_offset,
+// drained.next_offset)` panicked the whole broker actor task instead.
+
+fn alice_mailbox() -> MailboxName {
+    MailboxName::Agent("alice".into())
+}
+
+/// The exact bytes the broker would append for `envelope` (canonical JSON,
+/// no trailing `\n` — `InMemoryMailbox` supplies the framing).
+fn mailbox_line(envelope: &serde_json::Value) -> Vec<u8> {
+    famp_canonical::canonicalize(envelope).expect("fixture envelope must canonicalize")
+}
+
+fn await_now(broker: &mut Broker<TestEnv>, client: u64, now: Instant) -> Vec<Out> {
+    broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(client),
+            msg: BusMessage::Await {
+                timeout_ms: 10_000,
+                task: None,
+            },
+        },
+        now,
+    )
+}
+
+fn await_ok(outs: &[Out], client: u64) -> Option<(Vec<serde_json::Value>, u64)> {
+    outs.iter().find_map(|out| match out {
+        Out::Reply(
+            ClientId(c),
+            BusReply::AwaitOk {
+                envelopes,
+                next_offset,
+                ..
+            },
+        ) if *c == client => Some((envelopes.clone(), *next_offset)),
+        _ => None,
+    })
+}
+
+fn parked(outs: &[Out]) -> bool {
+    outs.iter().any(|out| matches!(out, Out::ParkAwait { .. }))
+}
+
+fn await_cursor(broker: &Broker<TestEnv>, client: u64, mailbox: &MailboxName) -> Option<u64> {
+    broker
+        .state
+        .clients
+        .get(&ClientId::from(client))
+        .and_then(|state| state.await_offsets.get(mailbox).copied())
+}
+
+fn inbox_cursor(broker: &Broker<TestEnv>, client: u64, mailbox: &MailboxName) -> Option<u64> {
+    broker
+        .state
+        .clients
+        .get(&ClientId::from(client))
+        .and_then(|state| state.inbox_offsets.get(mailbox).copied())
+}
+
+fn seqs(envelopes: &[serde_json::Value]) -> Vec<u64> {
+    envelopes
+        .iter()
+        .map(|envelope| envelope["body"]["details"]["seq"].as_u64().unwrap())
+        .collect()
+}
+
+/// Register alice (client 1) and bob (client 2) as canonical holders.
+fn register_alice_and_bob(broker: &mut Broker<TestEnv>, now: Instant) {
+    hello_canonical(broker, 1, "alice", now);
+    register(broker, 1, "alice", 100, now);
+    hello_canonical(broker, 2, "bob", now);
+    register(broker, 2, "bob", 200, now);
+}
+
+/// bob DMs alice through the broker, landing the append in the test mailbox.
+fn bob_dms_alice(
+    broker: &mut Broker<TestEnv>,
+    env: &TestEnv,
+    seq: usize,
+    now: Instant,
+) -> Vec<Out> {
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Agent {
+                    name: "alice".into(),
+                },
+                envelope: audit_log_envelope(seq, "bob"),
+            },
+        },
+        now,
+    );
+    apply_mailbox(env, &outs);
+    outs
+}
+
+/// #11, agent mailbox, plain (unparked) await path.
+///
+/// Pre-fix: `walk` seeds `next_offset = since` and returns it untouched for a
+/// zero-record drain, so `await_envelope`'s `if batch.next_offset != since`
+/// never fires and the cursor stays at the pre-truncation offset forever. The
+/// holder never sees another message. (In this debug-assertions build it
+/// panics in `drain_await_batch` before it even gets that far.)
+#[test]
+fn truncated_agent_mailbox_heals_cursor_and_delivers_after_regrowth() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    register_alice_and_bob(&mut broker, now);
+
+    for seq in [1, 2] {
+        bob_dms_alice(&mut broker, &env, seq, now);
+    }
+
+    let outs = await_now(&mut broker, 1, now);
+    let (envelopes, stale_cursor) = await_ok(&outs, 1).expect("alice drains both DMs");
+    assert_eq!(seqs(&envelopes), vec![1, 2]);
+    assert_eq!(
+        await_cursor(&broker, 1, &alice_mailbox()),
+        Some(stale_cursor)
+    );
+
+    // External truncation, mid-flight: `/famp-clear` empties the file.
+    env.mailbox.truncate(&alice_mailbox());
+
+    // The healing drain. Nothing to deliver, so alice parks — but her cursor
+    // MUST come down to the mailbox's new end before she does.
+    let outs = await_now(&mut broker, 1, now);
+    assert!(await_ok(&outs, 1).is_none(), "nothing to deliver yet");
+    assert!(parked(&outs), "alice parks: {outs:?}");
+    assert_eq!(
+        await_cursor(&broker, 1, &alice_mailbox()),
+        Some(0),
+        "cursor must clamp to the truncated mailbox's end (was {stale_cursor})"
+    );
+
+    // The mailbox regrows. Append directly so alice's parked await is not
+    // woken — this pins the plain drain path, not the wake path.
+    env.mailbox.append(
+        &alice_mailbox(),
+        mailbox_line(&audit_log_envelope(3, "bob")),
+    );
+
+    let outs = await_now(&mut broker, 1, now);
+    let (envelopes, next_offset) =
+        await_ok(&outs, 1).expect("a healed cursor must deliver the regrown record");
+    assert_eq!(seqs(&envelopes), vec![3]);
+    let eof = env
+        .mailbox
+        .drain_from(&alice_mailbox(), 0)
+        .unwrap()
+        .next_offset;
+    assert_eq!(next_offset, eof);
+}
+
+/// #11, channel mailbox, `Inbox` path.
+///
+/// Pre-fix `inbox`'s channel loop hits `if drained.records.is_empty() {
+/// continue; }` and skips the `inbox_offsets` write-back entirely, so a
+/// truncated channel mailbox strands the cursor exactly the same way. No
+/// `debug_assert` guards this path, so pre-fix it fails silently rather than
+/// panicking.
+#[test]
+fn truncated_channel_mailbox_heals_inbox_cursor_and_delivers_after_regrowth() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    let channel = MailboxName::Channel("#planning".into());
+
+    handshake_register_join(&mut broker, &env, 1, "alice", 100, "#planning", now);
+    handshake_register_join(&mut broker, &env, 2, "bob", 200, "#planning", now);
+
+    let post = |broker: &mut Broker<TestEnv>, env: &TestEnv, seq: usize| {
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Send {
+                    to: Target::Channel {
+                        name: "#planning".into(),
+                    },
+                    envelope: audit_log_envelope(seq, "bob"),
+                },
+            },
+            now,
+        );
+        apply_mailbox(env, &outs);
+    };
+    let poll_inbox = |broker: &mut Broker<TestEnv>| {
+        broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Inbox {
+                    since: Some(0),
+                    include_terminal: None,
+                },
+            },
+            now,
+        )
+    };
+
+    post(&mut broker, &env, 1);
+    post(&mut broker, &env, 2);
+
+    let outs = poll_inbox(&mut broker);
+    let (envelopes, _) = inbox_reply(&outs, 1).expect("alice gets InboxOk");
+    assert_eq!(seqs(&envelopes), vec![1, 2]);
+    let stale_cursor = inbox_cursor(&broker, 1, &channel).expect("channel cursor set");
+    assert!(stale_cursor > 0);
+
+    env.mailbox.truncate(&channel);
+
+    let outs = poll_inbox(&mut broker);
+    let (envelopes, _) = inbox_reply(&outs, 1).expect("alice gets InboxOk");
+    assert!(envelopes.is_empty(), "nothing to deliver yet");
+    assert_eq!(
+        inbox_cursor(&broker, 1, &channel),
+        Some(0),
+        "the empty-records `continue` must not skip the clamp (was {stale_cursor})"
+    );
+
+    post(&mut broker, &env, 3);
+    let outs = poll_inbox(&mut broker);
+    let (envelopes, _) = inbox_reply(&outs, 1).expect("alice gets InboxOk");
+    assert_eq!(
+        seqs(&envelopes),
+        vec![3],
+        "a healed inbox cursor must deliver the regrown channel post"
+    );
+}
+
+/// #11, debug-build broker panic, wake path.
+///
+/// alice parks a clean await; the mailbox is then truncated beneath her; bob's
+/// send wakes her. `await_reply_for_mailbox` → `drain_await_batch` reaches the
+/// `fully_drained` arm with `next_offset = stale_cursor` and
+/// `drained.next_offset = 0`, and `debug_assert_eq!` panics the broker actor
+/// task — taking down every connected client. `cargo test` builds with debug
+/// assertions on, so this test IS the reproduction.
+#[test]
+fn truncated_mailbox_wake_path_does_not_panic_and_delivers_the_trigger() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    register_alice_and_bob(&mut broker, now);
+
+    bob_dms_alice(&mut broker, &env, 1, now);
+    let outs = await_now(&mut broker, 1, now);
+    let (envelopes, stale_cursor) = await_ok(&outs, 1).expect("alice drains the first DM");
+    assert_eq!(seqs(&envelopes), vec![1]);
+    assert!(stale_cursor > 0);
+
+    // A clean park: mailbox is caught up, nothing truncated yet.
+    let outs = await_now(&mut broker, 1, now);
+    assert!(parked(&outs), "alice parks with nothing new: {outs:?}");
+
+    // Now the mailbox shrinks beneath the parked holder.
+    env.mailbox.truncate(&alice_mailbox());
+
+    // bob's send takes the wake path, folding the trigger envelope into the
+    // reply without re-draining it.
+    let outs = bob_dms_alice(&mut broker, &env, 2, now);
+    let (envelopes, next_offset) =
+        await_ok(&outs, 1).expect("the wake must deliver through a truncated mailbox");
+    assert_eq!(seqs(&envelopes), vec![2]);
+
+    // The folded trigger offset is framed from `next_offset`, so a stale
+    // `next_offset` would also hand the client a cursor past the real EOF.
+    let eof = env
+        .mailbox
+        .drain_from(&alice_mailbox(), 0)
+        .unwrap()
+        .next_offset;
+    assert_eq!(
+        next_offset, eof,
+        "the reply's resume offset must match where the record actually landed"
+    );
+    assert_eq!(await_cursor(&broker, 1, &alice_mailbox()), Some(eof));
+}
+
+/// #11, KNOWN BOUNDARY — not a bug being fixed, a limit being pinned.
+///
+/// The clamp lands the cursor on the drain's `next_offset`, i.e. the mailbox's
+/// CURRENT end. A record appended between the truncation and the first drain
+/// that observes it therefore sits BELOW the clamped cursor and is skipped:
+/// clamping cannot recover it, because the past-EOF drain that detects the
+/// truncation returns zero records by construction. The alternative — clamping
+/// to 0 and replaying whatever the file now holds — trades this bounded loss
+/// for duplicate delivery, and is not what #11 specifies.
+///
+/// What the clamp does guarantee: the holder is no longer stalled forever.
+#[test]
+fn record_appended_before_the_healing_drain_is_skipped_but_does_not_stall() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    register_alice_and_bob(&mut broker, now);
+
+    for seq in [1, 2] {
+        bob_dms_alice(&mut broker, &env, seq, now);
+    }
+    let outs = await_now(&mut broker, 1, now);
+    let (_, stale_cursor) = await_ok(&outs, 1).expect("alice drains both DMs");
+
+    env.mailbox.truncate(&alice_mailbox());
+    // Appended BEFORE any drain observes the truncation, and below the stale
+    // cursor. Direct append so alice's (unparked) state is untouched.
+    env.mailbox.append(
+        &alice_mailbox(),
+        mailbox_line(&audit_log_envelope(3, "bob")),
+    );
+    let eof = env
+        .mailbox
+        .drain_from(&alice_mailbox(), 0)
+        .unwrap()
+        .next_offset;
+    assert!(eof < stale_cursor, "fixture: the mailbox really did shrink");
+
+    let outs = await_now(&mut broker, 1, now);
+    assert!(
+        await_ok(&outs, 1).is_none(),
+        "seq 3 is below the clamped cursor: documented loss, not delivery"
+    );
+    assert!(parked(&outs));
+    assert_eq!(await_cursor(&broker, 1, &alice_mailbox()), Some(eof));
+
+    // ...but the holder is unstalled: the next record arrives.
+    env.mailbox.append(
+        &alice_mailbox(),
+        mailbox_line(&audit_log_envelope(4, "bob")),
+    );
+    let outs = await_now(&mut broker, 1, now);
+    let (envelopes, _) = await_ok(&outs, 1).expect("the holder must not be stalled");
+    assert_eq!(seqs(&envelopes), vec![4]);
 }
