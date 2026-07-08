@@ -236,7 +236,7 @@ fn drain_await_batch<E: BrokerEnv>(
     let outcome = walk(
         mailbox,
         since,
-        &drained.records,
+        &drained,
         &DrainPolicy {
             filter,
             skip_self_authored: awaiter_identity.as_deref(),
@@ -253,7 +253,26 @@ fn drain_await_batch<E: BrokerEnv>(
     // advance `next_offset` past the trigger while an earlier mismatch is
     // still un-drained, reproducing the exact same bug for the wake path.
     if fully_drained {
-        debug_assert_eq!(next_offset, drained.next_offset);
+        // Fix 260708-l1x (#11): this was `debug_assert_eq!(next_offset,
+        // drained.next_offset)`, which panicked the whole broker actor task
+        // — every connected client — whenever a mailbox was truncated
+        // beneath a holder's cursor. That is an EXPECTED external event
+        // (`/famp-clear`), not a broker invariant, so it must never be an
+        // assert. The clamp in `walk` now reconciles the truncation case, but
+        // a gap here is still reachable without any truncation: production's
+        // `read_raw_from` returns `next_offset = file_len` with ZERO records
+        // when `since` lands mid-line in a partial trailing line, or when the
+        // snap-forward lands exactly on EOF. `walk` correctly refuses to
+        // advance past a record it never saw, so the two legitimately differ.
+        // Observability, not a crash.
+        if next_offset != drained.next_offset {
+            tracing::warn!(
+                mailbox = %mailbox,
+                walk_next_offset = next_offset,
+                drain_next_offset = drained.next_offset,
+                "fully-drained walk disagrees with the drain's end offset (partial trailing line, or a mid-line cursor)"
+            );
+        }
         if let Some((trigger_envelope, trigger_line_len)) = trigger {
             // The wake-trigger envelope was never drained, so there is no
             // `DrainedRecord` to source an offset from — frame it by hand,

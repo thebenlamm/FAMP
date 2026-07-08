@@ -10,7 +10,7 @@
 //! Synchronous, allocation-light, tokio-free (BUS-01).
 
 use crate::broker::handle::decode_line;
-use crate::{AwaitFilter, DrainedRecord, MailboxName};
+use crate::{AwaitFilter, DrainResult, MailboxName};
 
 /// How a walk is allowed to stop early. The two variants are NOT
 /// interchangeable and collapsing them into one `usize` silently changes
@@ -58,24 +58,31 @@ pub(super) struct WalkOutcome {
     pub fully_drained: bool,
 }
 
-/// Walk `records`, deciding deliver / skip / stop per record and advancing
-/// the cursor exactly once per accounted-for record.
+/// Walk `drained`'s records, deciding deliver / skip / stop per record and
+/// advancing the cursor exactly once per accounted-for record.
 ///
 /// `since` seeds `next_offset`, so a zero-record walk returns the caller's
 /// own cursor untouched. Every subsequent advance is sourced from
 /// `DrainedRecord::end` — no framing arithmetic happens here.
+///
+/// Takes the whole [`DrainResult`], not a bare `&[DrainedRecord]`, because the
+/// seed depends on `drained.next_offset` as well as `since` (see the clamp
+/// below). Passing the two separately would let a call site hand in a
+/// `next_offset` that does not belong to the records it also handed in — the
+/// exact class of mistake this module exists to make impossible.
 pub(super) fn walk(
     mailbox: &MailboxName,
     since: u64,
-    records: &[DrainedRecord],
+    drained: &DrainResult,
     policy: &DrainPolicy<'_>,
 ) -> WalkOutcome {
+    let records = &drained.records;
     // `Scanned(n)` truncates the walk to the first n records and, if that
     // truncated anything, the drain is by definition not fully consumed.
     // Computed before the loop so the cap kind never leaks into the body.
     let (scan, mut fully_drained) = match policy.cap {
         Some(DrainCap::Scanned(n)) => (records.get(..n).unwrap_or(records), records.len() <= n),
-        _ => (records, true),
+        _ => (records.as_slice(), true),
     };
     let delivered_cap = match policy.cap {
         Some(DrainCap::Delivered(n)) => Some(n),
@@ -83,7 +90,32 @@ pub(super) fn walk(
     };
 
     let mut delivered: Vec<serde_json::Value> = Vec::new();
-    let mut next_offset = since;
+    // Fix 260708-l1x (#11): the mailbox can shrink beneath our cursor —
+    // `/famp-clear` truncates mailbox files while the broker holds in-memory
+    // offsets into them. The drain is authoritative about where the file now
+    // ends; a cursor past that point is stale, not an invariant violation.
+    // Clamp DOWN to it, and only to it, so forward progress is preserved on
+    // every non-truncation path:
+    //
+    //   records present     → next_offset > since  → min == since  (no-op)
+    //   empty, EOF == cursor→ next_offset == since → min == since  (no-op)
+    //   mid-line `since`    → production snaps forward, so
+    //                         next_offset == file_len >= since
+    //                                              → min == since  (no-op;
+    //                         the loop below then overwrites from record.end)
+    //   TRUNCATED           → next_offset < since  → min == next_offset (heal)
+    //
+    // Silent healing is how this stayed invisible for so long: warn when it
+    // actually fires.
+    if drained.next_offset < since {
+        tracing::warn!(
+            mailbox = %mailbox,
+            stale_cursor = since,
+            clamped_to = drained.next_offset,
+            "mailbox shrank beneath the holder's cursor; clamping (external truncation, e.g. /famp-clear)"
+        );
+    }
+    let mut next_offset = since.min(drained.next_offset);
 
     for record in scan {
         match decode_line(&record.bytes) {
