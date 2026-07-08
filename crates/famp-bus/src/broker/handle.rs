@@ -7,8 +7,8 @@ use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_o
 use crate::broker::state::ClientState;
 use crate::{
     AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId,
-    Delivered, DrainedRecord, MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION,
-    MAX_FRAME_BYTES,
+    Delivered, DrainResult, DrainedRecord, MailboxName, MemberInfo, Out, SessionRow, Target,
+    BUS_PROTO_VERSION, MAX_FRAME_BYTES,
 };
 
 pub(crate) fn handle<E: BrokerEnv>(
@@ -314,7 +314,7 @@ fn register<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, &drained.records);
+    let decoded = decode_lines(&mailbox, since, &drained);
 
     let peers = connected_names(&broker.state.clients);
     let Some(state) = broker.state.clients.get_mut(&client) else {
@@ -543,7 +543,7 @@ fn inbox<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let mut envelopes = decode_lines(&agent_mailbox, agent_since, &agent_drained.records);
+    let mut envelopes = decode_lines(&agent_mailbox, agent_since, &agent_drained);
     let agent_next_offset = agent_drained.next_offset;
 
     // Scope B (260619): merge each joined channel's new envelopes into
@@ -599,6 +599,22 @@ fn inbox<E: BrokerEnv>(
             Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
         };
         if drained.records.is_empty() {
+            // Fix 260708-l1x (#11): an empty drain still carries news when the
+            // channel mailbox has shrunk beneath this holder's cursor —
+            // `drained.next_offset` is the file's new end. Skipping the
+            // write-back here (as this `continue` used to do unconditionally)
+            // stranded the cursor above EOF forever, and the holder silently
+            // stopped seeing the channel. `walk` clamps the Await path; this
+            // loop never reaches `walk` on an empty drain, so it clamps here.
+            if drained.next_offset < cursor {
+                tracing::warn!(
+                    channel = %channel,
+                    stale_cursor = cursor,
+                    clamped_to = drained.next_offset,
+                    "channel mailbox shrank beneath the holder's Inbox cursor; clamping (external truncation, e.g. /famp-clear)"
+                );
+                cursor_advances.push((mailbox, drained.next_offset));
+            }
             continue;
         }
 
@@ -627,7 +643,7 @@ fn inbox<E: BrokerEnv>(
         let outcome = walk(
             &mailbox,
             cursor,
-            &drained.records,
+            &drained,
             &DrainPolicy {
                 filter: &AwaitFilter::Any,
                 skip_self_authored: Some(&name),
@@ -710,7 +726,7 @@ fn join<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, &drained.records);
+    let decoded = decode_lines(&mailbox, since, &drained);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state
             .await_offsets
@@ -986,13 +1002,13 @@ fn encode_envelope(envelope: &serde_json::Value, client: ClientId) -> Result<Vec
 fn decode_lines(
     mailbox: &MailboxName,
     start_offset: u64,
-    records: &[DrainedRecord],
+    drained: &DrainResult,
 ) -> Vec<serde_json::Value> {
-    warn_if_drain_oversized(mailbox, start_offset, records);
+    warn_if_drain_oversized(mailbox, start_offset, &drained.records);
     walk(
         mailbox,
         start_offset,
-        records,
+        drained,
         &DrainPolicy {
             filter: &AwaitFilter::Any,
             skip_self_authored: None,

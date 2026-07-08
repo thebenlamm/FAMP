@@ -1743,7 +1743,11 @@ fn oversized_drain_is_warned_but_never_truncated() {
         drained_span(0, &records) > DRAIN_WARN_BYTES,
         "fixture must be oversized for this test to mean anything"
     );
-    let decoded = decode_lines(&mailbox, 0, &records);
+    let drained = DrainResult {
+        next_offset: big * 2,
+        records,
+    };
+    let decoded = decode_lines(&mailbox, 0, &drained);
     assert_eq!(
         decoded.len(),
         2,
