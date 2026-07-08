@@ -475,3 +475,106 @@ fn test_listen_mode_await_unblocks_on_send() {
     alice.shutdown();
     bob.shutdown();
 }
+
+/// #13 — session-scoped `famp_inbox` cursor advance.
+///
+/// The MCP session layer remembers `InboxOk.next_offset` and passes it as
+/// `since` on the NEXT call, so a second `famp_inbox` in one session does
+/// not replay envelopes already seen. `since: 0` remains a deliberate
+/// full-replay escape hatch (see `tools/inbox.rs` doc comment for the
+/// first-call-replays-is-accepted decision).
+#[test]
+fn test_inbox_session_cursor_advance_and_since_zero_escape_hatch() {
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let sock = tmp.path().join("cursor-test-bus.sock");
+
+    let mut alice = McpHarness::spawn(&sock, "alice-cur");
+    let mut bob = McpHarness::spawn(&sock, "bob-cur");
+
+    let reg_a = alice.tool_call("famp_register", &json!({ "name": "alice-cur" }));
+    McpHarness::ok_result(&reg_a, "alice register");
+    let reg_b = bob.tool_call("famp_register", &json!({ "name": "bob-cur" }));
+    McpHarness::ok_result(&reg_b, "bob register");
+
+    // alice sends message A
+    let send_a = alice.tool_call(
+        "famp_send",
+        &json!({ "peer": "bob-cur", "mode": "new_task", "title": "message A" }),
+    );
+    McpHarness::ok_result(&send_a, "alice send A");
+    std::thread::sleep(Duration::from_millis(200));
+
+    // bob's FIRST famp_inbox call — sees A. The first call of a session is
+    // an accepted full-mailbox replay (see tools/inbox.rs doc comment).
+    let inbox1 = bob.tool_call("famp_inbox", &json!({}));
+    let inbox1_body = McpHarness::ok_result(&inbox1, "bob inbox #1");
+    let entries1 = inbox1_body["entries"]
+        .as_array()
+        .unwrap_or_else(|| panic!("entries not an array: {inbox1_body}"));
+    assert_eq!(
+        entries1.len(),
+        1,
+        "first inbox call should see message A only: {inbox1_body}"
+    );
+    assert_eq!(
+        entries1[0]["envelope"]["body"]["details"]["summary"], "message A",
+        "first inbox call entry should be message A: {inbox1_body}"
+    );
+
+    // alice sends message B
+    let send_b = alice.tool_call(
+        "famp_send",
+        &json!({ "peer": "bob-cur", "mode": "new_task", "title": "message B" }),
+    );
+    McpHarness::ok_result(&send_b, "alice send B");
+    std::thread::sleep(Duration::from_millis(200));
+
+    // bob's SECOND famp_inbox call with NO `since` — must return ONLY B,
+    // not a replay of A. This is the core cursor-advance behavior (#13).
+    let inbox2 = bob.tool_call("famp_inbox", &json!({}));
+    let inbox2_body = McpHarness::ok_result(&inbox2, "bob inbox #2");
+    let entries2 = inbox2_body["entries"]
+        .as_array()
+        .unwrap_or_else(|| panic!("entries not an array: {inbox2_body}"));
+    assert_eq!(
+        entries2.len(),
+        1,
+        "second inbox call (no since) must return ONLY the new message, not replay A: {inbox2_body}"
+    );
+    assert_eq!(
+        entries2[0]["envelope"]["body"]["details"]["summary"], "message B",
+        "second inbox call entry should be message B, not a replay of A: {inbox2_body}"
+    );
+
+    // bob's THIRD famp_inbox call with explicit `since: 0` — the deliberate
+    // full-replay escape hatch. Must return BOTH A and B again.
+    let inbox3 = bob.tool_call("famp_inbox", &json!({ "since": 0 }));
+    let inbox3_body = McpHarness::ok_result(&inbox3, "bob inbox #3 (since:0)");
+    let entries3 = inbox3_body["entries"]
+        .as_array()
+        .unwrap_or_else(|| panic!("entries not an array: {inbox3_body}"));
+    assert_eq!(
+        entries3.len(),
+        2,
+        "explicit since:0 must force a full mailbox replay (both A and B): {inbox3_body}"
+    );
+    let summaries: Vec<&str> = entries3
+        .iter()
+        .map(|e| {
+            e["envelope"]["body"]["details"]["summary"]
+                .as_str()
+                .unwrap_or("")
+        })
+        .collect();
+    assert!(
+        summaries.contains(&"message A"),
+        "since:0 replay missing message A: {inbox3_body}"
+    );
+    assert!(
+        summaries.contains(&"message B"),
+        "since:0 replay missing message B: {inbox3_body}"
+    );
+
+    alice.shutdown();
+    bob.shutdown();
+}

@@ -98,11 +98,19 @@ pub struct LastSend {
 /// is set by `tools::register::call` after the broker confirms `RegisterOk`.
 /// `last_send` is set by `tools::send::call` on every successful send so
 /// `tools::whoami::call` can surface it as a recovery hint when Claude
-/// Code drops the `famp_send` tool result.
+/// Code drops the `famp_send` tool result. `inbox_offset` remembers the
+/// most recent `InboxOk.next_offset` so `tools::inbox::call` can pass it
+/// as `since` on the next call without replaying the whole mailbox
+/// (#13). Session-scoped only — no wire change, no broker change, no
+/// on-disk cursor. Reset to `None` on identity rebind (see
+/// `set_active_identity` and `tools::register::call`'s `RegisterOk` arm)
+/// because a stale byte offset carried into a different mailbox would
+/// read at a meaningless position.
 pub struct SessionState {
     pub bus: Option<BusClient>,
     pub active_identity: Option<String>,
     pub last_send: Option<LastSend>,
+    pub inbox_offset: Option<u64>,
 }
 
 /// Module-scope storage for the session state.
@@ -126,6 +134,7 @@ pub fn state() -> &'static Mutex<SessionState> {
             bus: None,
             active_identity: None,
             last_send: None,
+            inbox_offset: None,
         })
     })
 }
@@ -252,6 +261,22 @@ pub async fn last_send() -> Option<LastSend> {
     state().lock().await.last_send.clone()
 }
 
+/// Read the remembered inbox cursor offset (#13). `None` until the
+/// session has performed at least one successful `famp_inbox` call, or
+/// after an identity rebind resets it.
+pub async fn inbox_offset() -> Option<u64> {
+    state().lock().await.inbox_offset
+}
+
+/// Set the remembered inbox cursor offset (#13). Called by
+/// `tools::inbox::call` after every successful `run_at_structured` with
+/// the RETURNED `next_offset` — never `max(stored, returned)`, since
+/// mailboxes can shrink (#11, #16) and the broker's clamp must be
+/// followed down.
+pub async fn set_inbox_offset(offset: Option<u64>) {
+    state().lock().await.inbox_offset = offset;
+}
+
 /// Clear all session state. Intentionally only available under `cfg(test)`
 /// — production code never resets a session within a single process
 /// lifetime.
@@ -261,6 +286,7 @@ pub async fn clear() {
     guard.bus = None;
     guard.active_identity = None;
     guard.last_send = None;
+    guard.inbox_offset = None;
 }
 
 #[cfg(test)]
@@ -373,6 +399,25 @@ mod tests {
         assert_eq!(
             crate::cli::mcp::error_kind::bus_error_to_jsonrpc(BusErrorKind::BrokerUnreachable).0,
             -32108
+        );
+    }
+
+    /// #13 RED: identity rebind must reset the remembered inbox cursor
+    /// offset. A stale byte offset carried over into a different
+    /// mailbox would read at a meaningless position for the new
+    /// identity. Pins the reset that stops that from happening.
+    #[tokio::test]
+    async fn set_active_identity_resets_inbox_offset() {
+        clear().await;
+        set_inbox_offset(Some(42)).await;
+        assert_eq!(inbox_offset().await, Some(42));
+
+        set_active_identity("someone-else".to_string()).await;
+
+        assert_eq!(
+            inbox_offset().await,
+            None,
+            "inbox_offset must reset to None on identity rebind"
         );
     }
 }
