@@ -84,9 +84,9 @@ proptest! {
             .drain_from(&MailboxName::Agent("alice".into()), 0)
             .unwrap();
         let decoded: Vec<serde_json::Value> = drained
-            .lines
+            .records
             .iter()
-            .map(|line| famp_canonical::from_slice_strict(line).unwrap())
+            .map(|record| famp_canonical::from_slice_strict(&record.bytes).unwrap())
             .collect();
 
         for sender_idx in 0..n_senders {

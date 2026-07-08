@@ -9,7 +9,8 @@ use crate::broker::state::ClientState;
 use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
 use crate::{
     Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId, Delivered,
-    MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
+    DrainedRecord, MailboxName, MemberInfo, Out, SessionRow, Target, BUS_PROTO_VERSION,
+    MAX_FRAME_BYTES,
 };
 
 pub(crate) fn handle<E: BrokerEnv>(
@@ -315,7 +316,7 @@ fn register<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, drained.lines);
+    let decoded = decode_lines(&mailbox, since, drained.records);
 
     let peers = connected_names(&broker.state.clients);
     let Some(state) = broker.state.clients.get_mut(&client) else {
@@ -544,7 +545,7 @@ fn inbox<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let mut envelopes = decode_lines(&agent_mailbox, agent_since, agent_drained.lines);
+    let mut envelopes = decode_lines(&agent_mailbox, agent_since, agent_drained.records);
     let agent_next_offset = agent_drained.next_offset;
 
     // Scope B (260619): merge each joined channel's new envelopes into
@@ -597,16 +598,16 @@ fn inbox<E: BrokerEnv>(
             // poll so the operator sees the breakage.
             Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
         };
-        if drained.lines.is_empty() {
+        if drained.records.is_empty() {
             continue;
         }
 
-        let truncated = drained.lines.len() > CHANNEL_DRAIN_CAP;
+        let truncated = drained.records.len() > CHANNEL_DRAIN_CAP;
         if truncated {
             tracing::debug!(
                 channel = %channel,
                 cap = CHANNEL_DRAIN_CAP,
-                total = drained.lines.len(),
+                total = drained.records.len(),
                 "inbox_channel_drain_capped"
             );
         }
@@ -621,7 +622,8 @@ fn inbox<E: BrokerEnv>(
         // hot-channel backpressure; lines past the cap stay on disk
         // and surface on the next poll.
         let mut line_offset = cursor;
-        for line in drained.lines.iter().take(CHANNEL_DRAIN_CAP) {
+        for record in drained.records.iter().take(CHANNEL_DRAIN_CAP) {
+            let line = &record.bytes;
             let line_next_offset = line_offset + line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
             match decode_line(line) {
                 Ok(value) => {
@@ -713,7 +715,7 @@ fn join<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, drained.lines);
+    let decoded = decode_lines(&mailbox, since, drained.records);
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
         state
             .await_offsets
@@ -975,13 +977,14 @@ fn encode_envelope(envelope: &serde_json::Value, client: ClientId) -> Result<Vec
 fn decode_lines(
     mailbox: &MailboxName,
     start_offset: u64,
-    lines: Vec<Vec<u8>>,
+    records: Vec<DrainedRecord>,
 ) -> Vec<serde_json::Value> {
-    let mut out = Vec::with_capacity(lines.len());
+    let mut out = Vec::with_capacity(records.len());
     let mut offset = start_offset;
-    for line in lines {
+    for record in records {
+        let line = &record.bytes;
         let line_next_offset = offset + (line.len() + 1) as u64;
-        match decode_line(&line) {
+        match decode_line(line) {
             Ok(value) => out.push(value),
             Err(error) => tracing::warn!(
                 mailbox = %mailbox,

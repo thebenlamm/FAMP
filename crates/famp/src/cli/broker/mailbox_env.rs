@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use famp_bus::LivenessProbe;
-use famp_bus::{DrainResult, MailboxErr, MailboxName, MailboxRead};
+use famp_bus::{DrainResult, DrainedRecord, MailboxErr, MailboxName, MailboxRead};
 use famp_inbox::Inbox;
 use tokio::sync::Mutex;
 
@@ -165,7 +165,7 @@ fn read_raw_from(path: &Path, since_bytes: u64) -> Result<DrainResult, MailboxEr
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return Ok(DrainResult {
-                lines: Vec::new(),
+                records: Vec::new(),
                 next_offset: since_bytes,
             });
         }
@@ -179,13 +179,13 @@ fn read_raw_from(path: &Path, since_bytes: u64) -> Result<DrainResult, MailboxEr
     let file_len = bytes.len() as u64;
     if since_bytes >= file_len {
         return Ok(DrainResult {
-            lines: Vec::new(),
+            records: Vec::new(),
             next_offset: file_len,
         });
     }
     let Ok(start) = usize::try_from(since_bytes) else {
         return Ok(DrainResult {
-            lines: Vec::new(),
+            records: Vec::new(),
             next_offset: since_bytes,
         });
     };
@@ -198,7 +198,7 @@ fn read_raw_from(path: &Path, since_bytes: u64) -> Result<DrainResult, MailboxEr
             Some(off) => start + off + 1,
             None => {
                 return Ok(DrainResult {
-                    lines: Vec::new(),
+                    records: Vec::new(),
                     next_offset: file_len,
                 })
             }
@@ -206,12 +206,12 @@ fn read_raw_from(path: &Path, since_bytes: u64) -> Result<DrainResult, MailboxEr
     };
     if snapped >= bytes.len() {
         return Ok(DrainResult {
-            lines: Vec::new(),
+            records: Vec::new(),
             next_offset: file_len,
         });
     }
 
-    let mut lines: Vec<Vec<u8>> = Vec::new();
+    let mut records: Vec<DrainedRecord> = Vec::new();
     let mut running = snapped as u64;
     let mut cursor = snapped;
     let total = bytes.len();
@@ -223,13 +223,18 @@ fn read_raw_from(path: &Path, since_bytes: u64) -> Result<DrainResult, MailboxEr
             break;
         };
         let line_end = cursor + rel;
-        lines.push(bytes[cursor..line_end].to_vec());
+        let record_start = running;
         running += (rel as u64) + 1;
+        records.push(DrainedRecord {
+            bytes: bytes[cursor..line_end].to_vec(),
+            start: record_start,
+            end: running,
+        });
         cursor = line_end + 1;
     }
 
     Ok(DrainResult {
-        lines,
+        records,
         next_offset: running,
     })
 }
@@ -249,8 +254,46 @@ mod tests {
         env.append(&name, b"line2".to_vec()).await.unwrap();
 
         let drained = env.drain_from(&name, 0).unwrap();
-        assert_eq!(drained.lines, vec![b"line1".to_vec(), b"line2".to_vec()]);
+        assert_eq!(
+            drained.records,
+            vec![
+                DrainedRecord {
+                    bytes: b"line1".to_vec(),
+                    start: 0,
+                    end: 6,
+                },
+                DrainedRecord {
+                    bytes: b"line2".to_vec(),
+                    start: 6,
+                    end: 12,
+                },
+            ]
+        );
         assert_eq!(drained.next_offset, "line1\nline2\n".len() as u64);
+    }
+
+    /// A mid-line `since_bytes` snaps forward to the next record boundary.
+    /// The surviving records' `start`/`end` are ABSOLUTE file offsets, so
+    /// `records[0].start` is the snapped boundary — NOT the raw `since`.
+    #[tokio::test]
+    async fn drain_from_midline_offset_snaps_forward_with_absolute_offsets() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let env = DiskMailboxEnv::new(tmp.path()).unwrap();
+        let name = MailboxName::Agent("carol".into());
+        env.append(&name, b"line1".to_vec()).await.unwrap();
+        env.append(&name, b"line2".to_vec()).await.unwrap();
+
+        // Offset 2 lands inside `line1`.
+        let drained = env.drain_from(&name, 2).unwrap();
+        assert_eq!(
+            drained.records,
+            vec![DrainedRecord {
+                bytes: b"line2".to_vec(),
+                start: 6,
+                end: 12,
+            }]
+        );
+        assert_eq!(drained.next_offset, 12);
     }
 
     #[tokio::test]
@@ -261,9 +304,13 @@ mod tests {
         env.append(&name, b"a".to_vec()).await.unwrap();
         env.append(&name, b"b".to_vec()).await.unwrap();
         let first = env.drain_from(&name, 0).unwrap();
-        assert_eq!(first.lines.len(), 2);
+        assert_eq!(first.records.len(), 2);
+        assert_eq!(first.records[0].start, 0);
+        assert_eq!(first.records[0].end, 2);
+        assert_eq!(first.records[1].start, 2);
+        assert_eq!(first.records[1].end, first.next_offset);
         let second = env.drain_from(&name, first.next_offset).unwrap();
-        assert!(second.lines.is_empty());
+        assert!(second.records.is_empty());
         assert_eq!(second.next_offset, first.next_offset);
     }
 
@@ -273,7 +320,7 @@ mod tests {
         let env = DiskMailboxEnv::new(tmp.path()).unwrap();
         let name = MailboxName::Agent("nobody".into());
         let drained = env.drain_from(&name, 0).unwrap();
-        assert!(drained.lines.is_empty());
+        assert!(drained.records.is_empty());
         assert_eq!(drained.next_offset, 0);
     }
 

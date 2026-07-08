@@ -93,13 +93,14 @@ proptest! {
             .mailbox()
             .drain_from(&MailboxName::Channel(channel), 0)
             .unwrap();
-        prop_assert_eq!(drained.lines.len(), n_messages);
+        prop_assert_eq!(drained.records.len(), n_messages);
 
         let observed: BTreeSet<u64> = drained
-            .lines
+            .records
             .iter()
-            .map(|line| {
-                let value: serde_json::Value = famp_canonical::from_slice_strict(line).unwrap();
+            .map(|record| {
+                let value: serde_json::Value =
+                    famp_canonical::from_slice_strict(&record.bytes).unwrap();
                 value["channel_seq"].as_u64().unwrap()
             })
             .collect();

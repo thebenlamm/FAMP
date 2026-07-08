@@ -231,7 +231,8 @@ fn drain_await_batch<E: BrokerEnv>(
     let mut next_offset = since;
     let mut envelopes = Vec::new();
     let mut fully_drained = true;
-    for line in drained.lines {
+    for record in drained.records {
+        let line = &record.bytes;
         let line_next_offset = next_offset + (line.len() + 1) as u64;
         // Head-of-line resilience (fix 260611): a single undecodable line
         // must NOT wedge the await drain. The pre-fix `?` returned BEFORE
@@ -239,7 +240,7 @@ fn drain_await_batch<E: BrokerEnv>(
         // and a listen-mode agent's inbox stayed jammed forever. Skip the
         // line, advance past it, and log LOUDLY so the misbehaving peer
         // stays visible. (Mirrors `decode_lines` on the inbox/register path.)
-        match decode_line(&line) {
+        match decode_line(line) {
             Ok(value) => {
                 if is_self_authored(&value, awaiter_identity.as_deref()) {
                     // Permanently unmatchable under ANY filter (an awaiter

@@ -120,9 +120,26 @@ impl fmt::Display for MailboxName {
     }
 }
 
+/// One JSONL record drained from a mailbox, carrying its own byte framing.
+///
+/// Consumers MUST NOT re-derive offsets from `bytes.len()`: `end` is the
+/// single authority for "the cursor value after consuming exactly this
+/// record". Producing `start`/`end` in the `MailboxRead` impl (the only
+/// code that knows the on-disk layout) is what keeps the three drain
+/// consumers from each maintaining their own framing arithmetic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DrainedRecord {
+    /// The record's payload, WITHOUT its trailing `\n`.
+    pub bytes: Vec<u8>,
+    /// Absolute byte offset of the record's first byte.
+    pub start: u64,
+    /// Absolute byte offset one past the record's terminating `\n`.
+    pub end: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DrainResult {
-    pub lines: Vec<Vec<u8>>,
+    pub records: Vec<DrainedRecord>,
     pub next_offset: u64,
 }
 
@@ -168,7 +185,7 @@ impl MailboxRead for InMemoryMailbox {
                 .map_err(|_| MailboxErr::Internal("in-memory mailbox lock poisoned".into()))?;
             let Some(entries) = guard.get(name) else {
                 return Ok(DrainResult {
-                    lines: Vec::new(),
+                    records: Vec::new(),
                     next_offset: since_bytes,
                 });
             };
@@ -187,19 +204,23 @@ impl MailboxRead for InMemoryMailbox {
         }
 
         let mut cursor = 0_u64;
-        let mut lines = Vec::new();
+        let mut records = Vec::new();
         for line in entries {
             // Each line's size is payload + `\n`, mirroring the disk JSONL
             // framing in `famp-inbox/src/read.rs`.
             let next = cursor + line.len() as u64 + JSONL_RECORD_TERMINATOR_LEN;
             if cursor >= since_bytes {
-                lines.push(line.clone());
+                records.push(DrainedRecord {
+                    bytes: line,
+                    start: cursor,
+                    end: next,
+                });
             }
             cursor = next;
         }
 
         Ok(DrainResult {
-            lines,
+            records,
             next_offset: cursor,
         })
     }
@@ -209,7 +230,7 @@ impl MailboxRead for InMemoryMailbox {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{InMemoryMailbox, MailboxName, MailboxRead};
+    use super::{DrainedRecord, InMemoryMailbox, MailboxName, MailboxRead};
 
     #[test]
     fn in_memory_mailbox_accounts_for_newline_offsets() {
@@ -219,7 +240,46 @@ mod tests {
         mailbox.append(&name, b"line1".to_vec());
         let drained = mailbox.drain_from(&name, 0).unwrap();
 
-        assert_eq!(drained.lines, vec![b"line1".to_vec()]);
+        assert_eq!(
+            drained.records,
+            vec![DrainedRecord {
+                bytes: b"line1".to_vec(),
+                start: 0,
+                end: 6,
+            }]
+        );
         assert_eq!(drained.next_offset, 6);
+    }
+
+    #[test]
+    fn in_memory_mailbox_records_carry_absolute_offsets() {
+        let mailbox = InMemoryMailbox::new();
+        let name = MailboxName::Agent("alice".into());
+
+        mailbox.append(&name, b"aa".to_vec());
+        mailbox.append(&name, b"bbbb".to_vec());
+        mailbox.append(&name, b"c".to_vec());
+
+        // Drain from the boundary after the first record: the surviving
+        // records keep ABSOLUTE offsets, not offsets relative to `since`.
+        let drained = mailbox.drain_from(&name, 3).unwrap();
+        assert_eq!(
+            drained.records,
+            vec![
+                DrainedRecord {
+                    bytes: b"bbbb".to_vec(),
+                    start: 3,
+                    end: 8,
+                },
+                DrainedRecord {
+                    bytes: b"c".to_vec(),
+                    start: 8,
+                    end: 10,
+                },
+            ]
+        );
+        assert_eq!(drained.next_offset, 10);
+        // The last record's `end` is the drain's next cursor.
+        assert_eq!(drained.records[1].end, drained.next_offset);
     }
 }
