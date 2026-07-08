@@ -29,9 +29,12 @@ pub struct AckArgs {
     pub act_as: Option<String>,
 }
 
-/// Structured outcome — used by the MCP `famp_inbox` tool wrapper
-/// (plan 02-09). Always reports `acked: true` on success; failure
-/// surfaces as `CliError`.
+/// Structured outcome of `famp inbox ack`. **CLI-only.**
+///
+/// The MCP `famp_inbox` tool is list-only and never constructs this. (An
+/// earlier doc comment here claimed an MCP wrapper from plan 02-09; that
+/// wrapper was never wired. A real MCP `ack` lands with backlog 999.11.)
+/// Always reports `acked: true` on success; failure surfaces as `CliError`.
 pub struct AckOutcome {
     pub acked: bool,
     pub offset: u64,

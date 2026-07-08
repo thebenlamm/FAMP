@@ -65,16 +65,13 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_inbox",
-            "description": "List received messages from your agent mailbox AND any channels you've joined, or advance the read cursor. Each list entry has a 'task_id' — use that with famp_send (mode=deliver or terminal) to reply. To observe task completion in real time, use famp_await. Note: include_terminal is accepted on the wire but currently a no-op — broker-side terminal-FSM filtering is deferred to v1; today every list returns all unread envelopes.",
+            "description": "List received messages from your agent mailbox AND any channels you've joined. List-only: advancing the read cursor is CLI-only (`famp inbox ack`); there is no MCP ack. Each list entry has a 'task_id' — use that with famp_send (mode=deliver or terminal) to reply. To observe task completion in real time, use famp_await. Note: include_terminal is accepted on the wire but currently a no-op — broker-side terminal-FSM filtering is deferred to v1; today every list returns all unread envelopes.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "action":           { "type": "string",  "enum": ["list", "ack"], "description": "list=show messages, ack=mark as processed" },
                     "since":            { "type": "integer", "description": "Byte offset to start from (default 0)" },
-                    "offset":           { "type": "integer", "description": "Byte offset to ack up to (required for action=ack)" },
                     "include_terminal": { "type": "boolean", "description": "Accepted for wire compatibility but currently a no-op: broker-side terminal-FSM filtering (hide COMPLETED/FAILED/CANCELLED) is deferred to v1. Today, list returns every unread envelope regardless of this flag." }
-                },
-                "required": ["action"]
+                }
             }
         },
         {
