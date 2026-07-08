@@ -5,7 +5,6 @@
 //! rcgen secret. This is enforced by acceptance-criteria grep in Plan 01 and
 //! by Plan 03's `init_no_leak.rs` integration test.
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
@@ -26,17 +25,8 @@ pub enum CliError {
         source: std::io::Error,
     },
 
-    #[error(
-        "FAMP_HOME already initialized ({} existing files); pass --force to overwrite",
-        existing_files.len()
-    )]
-    AlreadyInitialized { existing_files: Vec<PathBuf> },
-
     #[error("FAMP_HOME identity incomplete: missing {}", missing.display())]
     IdentityIncomplete { missing: PathBuf },
-
-    #[error("keygen failed")]
-    KeygenFailed(#[source] Box<dyn std::error::Error + Send + Sync>),
 
     #[error("io error at {}", path.display())]
     Io {
@@ -58,26 +48,8 @@ pub enum CliError {
     #[error("toml table expected at {}", path.display())]
     TomlTableExpected { path: PathBuf },
 
-    #[error("another famp listen is already bound to {addr}")]
-    PortInUse { addr: SocketAddr },
-
     #[error("inbox error")]
     Inbox(#[from] famp_inbox::InboxError),
-
-    #[error("peer not found: {alias}")]
-    PeerNotFound { alias: String },
-
-    #[error("peer already exists: {alias}")]
-    PeerDuplicate { alias: String },
-
-    #[error("invalid peer endpoint: {value}")]
-    PeerEndpointInvalid { value: String },
-
-    #[error("invalid peer pubkey (must be 32 bytes base64url-unpadded): {value}")]
-    PeerPubkeyInvalid { value: String },
-
-    #[error("invalid peer card JSON: {reason}")]
-    PeerCardInvalid { reason: String },
 
     #[error("invalid agent name '{name}': {reason}")]
     InvalidAgentName { name: String, reason: String },
