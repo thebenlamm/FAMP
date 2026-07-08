@@ -241,8 +241,20 @@ pub async fn active_identity() -> Option<String> {
 
 /// Set the active identity. Called by `tools::register::call` after the
 /// broker confirms `RegisterOk { name }`.
+///
+/// Also resets `inbox_offset` to `None` (#13): a stale byte offset
+/// carried over from a previous identity's mailbox would read at a
+/// meaningless position against the new identity's mailbox.
+///
+/// NOTE: `tools::register::call` binds the identity INLINE on its own
+/// held mutex guard and does NOT call this function directly (calling
+/// it would re-lock the same tokio `Mutex` and deadlock). Its
+/// `RegisterOk` arm duplicates this reset next to its own
+/// `active_identity` assignment. Keep both resets in sync.
 pub async fn set_active_identity(name: String) {
-    state().lock().await.active_identity = Some(name);
+    let mut guard = state().lock().await;
+    guard.active_identity = Some(name);
+    guard.inbox_offset = None;
 }
 
 /// Record metadata for the most-recent successful `famp_send`.
@@ -268,11 +280,12 @@ pub async fn inbox_offset() -> Option<u64> {
     state().lock().await.inbox_offset
 }
 
-/// Set the remembered inbox cursor offset (#13). Called by
-/// `tools::inbox::call` after every successful `run_at_structured` with
-/// the RETURNED `next_offset` — never `max(stored, returned)`, since
-/// mailboxes can shrink (#11, #16) and the broker's clamp must be
-/// followed down.
+/// Set the remembered inbox cursor offset (#13).
+///
+/// Called by `tools::inbox::call` after every successful
+/// `run_at_structured` with the RETURNED `next_offset` — never
+/// `max(stored, returned)`, since mailboxes can shrink (#11, #16) and
+/// the broker's clamp must be followed down.
 pub async fn set_inbox_offset(offset: Option<u64>) {
     state().lock().await.inbox_offset = offset;
 }

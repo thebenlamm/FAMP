@@ -116,6 +116,15 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             peers,
         } => {
             guard.active_identity = Some(active.clone());
+            // #13: reset the remembered inbox cursor offset on identity
+            // (re)bind. This is the production rebind path — register
+            // binds INLINE on this held mutex guard and cannot call
+            // `session::set_active_identity` (that would re-lock this
+            // same tokio Mutex and deadlock). A stale byte offset
+            // against a different mailbox would read at a meaningless
+            // position, so the reset must live here too, not only in
+            // `set_active_identity`.
+            guard.inbox_offset = None;
             Ok(serde_json::json!({
                 "active": active,
                 "drained": drained.len(),
