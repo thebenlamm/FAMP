@@ -244,9 +244,30 @@ Two clarifications the evidence forced, against my first reading:
 The real divergence is the **missing cap** on `decode_lines` (the register/join
 path), which is the 16 MiB registration cliff from §3.1, and the fact that
 `JSONL_RECORD_TERMINATOR_LEN` is `pub(crate)` in `famp-bus`
-(`mailbox.rs:25`) — it *cannot* be shared with `famp-inbox` or the `famp` crate
-even in principle. The prior review's quick win #5 was structurally incapable of
+(`mailbox.rs:25`) — it *cannot* be shared with the `famp` crate even in
+principle. The prior review's quick win #5 was structurally incapable of
 finishing.
+
+There is also a **fifth** hardcoded `+ 1`, at `awaiting.rs:311`
+(`trigger_line_len + 1`, on the wake path).
+
+**Two corrections, found while planning this work:**
+
+- **The const cannot move to `famp-inbox`.** `famp-inbox` depends on tokio
+  (`Cargo.toml:15`), and `just check-no-tokio-in-bus` is a CI gate. Importing it
+  into `famp-bus` would break BUS-01. The correct move is to flip the const to
+  `pub` in `famp-bus/src/mailbox.rs` and re-export it from the crate root; the
+  `famp` crate already depends on `famp-bus`, so `mailbox_env.rs` can import it.
+  For the same reason, `MailboxRead` impls **cannot** source offsets from
+  `famp_inbox::read::read_from` — it returns parsed `Value`s, and the broker
+  requires verbatim bytes.
+- **`cap` is two axes, not one.** `drain_await_batch` caps on *delivered*
+  envelopes (`awaiting.rs:255`, after a push); the `inbox` channel loop caps on
+  *scanned* records (`handle.rs:624`, `.take(...)`). A single `Option<usize>`
+  would silently change both. The policy type needs
+  `enum DrainCap { Delivered(usize), Scanned(usize) }`. (Note `handle.rs:555`'s
+  doc comment says "capped at CHANNEL_DRAIN_CAP envelopes" — the code caps
+  lines. Fix the comment while you are there.)
 
 **Root problem.** `DrainResult { lines: Vec<Vec<u8>>, next_offset: u64 }`
 throws away per-line offsets. Every consumer must therefore re-derive the
@@ -484,10 +505,12 @@ Each <30 min, zero behavioral risk.
 2. **Wire MCP `action: "ack"`** to `cli::inbox::ack::run_at_structured`, or
    delete `action`/`offset` from the `famp_inbox` schema. Either honest outcome
    beats today's silent no-op. (§3.5)
-3. **Promote `JSONL_RECORD_TERMINATOR_LEN` into `famp-inbox` as `pub`** and
-   replace the three hardcoded `+ 1`s (`handle.rs:983`, `awaiting.rs:235`,
-   `mailbox_env.rs`). Finishes the prior review's quick win #5, which was
-   impossible while the const was `pub(crate)` in the wrong crate.
+3. **Flip `JSONL_RECORD_TERMINATOR_LEN` to `pub`** in `famp-bus/src/mailbox.rs`
+   and re-export it from the crate root, then replace the four hardcoded `+ 1`s
+   (`handle.rs:983`, `awaiting.rs:235`, `awaiting.rs:311`, `mailbox_env.rs`).
+   Finishes the prior review's quick win #5, which was impossible while the const
+   was `pub(crate)`. (It cannot live in `famp-inbox` — that crate depends on
+   tokio and `just check-no-tokio-in-bus` is a CI gate.)
 4. **Cap or loudly warn `decode_lines` on the register path.** One `.take(N)` or
    one `tracing::warn!` when `drained.lines.len()` is large converts the silent
    16 MiB registration cliff into an early signal. (Interim guard for §3.1.)
