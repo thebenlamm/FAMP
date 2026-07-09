@@ -67,6 +67,9 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         // not fall back to wires.tsv. dispatch_tool guarantees
         // active_identity is Some by this point.
         act_as: session::active_identity().await,
+        // The MCP tool surface is unchanged (issue #21): the cancellation
+        // seam is a hook-only concern, so the MCP path never arms it.
+        abort_on_fd: None,
     };
 
     match run_at_structured(&resolve_sock_path(), args).await {

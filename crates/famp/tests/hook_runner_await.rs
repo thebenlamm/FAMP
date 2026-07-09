@@ -7,15 +7,25 @@
 //! binary that records its argv. Tests assert whether `famp await --as
 //! <name>` was invoked (listen mode entered) or not (no-op).
 
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 fn hook_path() -> PathBuf {
     dirs::home_dir()
         .expect("home dir")
         .join(".claude/hooks/famp-await.sh")
+}
+
+/// The repo asset — the SOURCE OF TRUTH for the hook (installed copies are
+/// `include_str!`-embedded from here). Issue #21 tests MUST exercise this,
+/// not the installed `~/.claude/hooks/famp-await.sh`, so they test the code
+/// under version control and do not depend on `famp install` having run.
+fn asset_hook_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/famp-await.sh")
 }
 
 /// Skip the test if the hook is not installed (e.g., fresh CI checkout that
@@ -653,5 +663,289 @@ fn identity_with_shell_metacharacters_is_noop() {
     assert!(
         !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
         "hook must not invoke famp for invalid identity"
+    );
+}
+
+// ── issue #21: cancellation-seam watcher tests ─────────────────────────────
+//
+// These exercise the ASSET hook (`asset_hook_path()`), driving its transcript
+// queue-watcher via a mock `famp` whose `await --abort-on-fd <fd>` reads one
+// byte from <fd>: a byte (written by the hook's watcher when the predicate
+// fires) => abort (exit 3); a timeout => no message (exit 0). Whether the hook
+// aborted is observed through its own log line, since both abort and
+// timeout end the hook with exit 0 and no stdout.
+
+/// Mock `famp` for the #21 tests: reads one byte from the `--abort-on-fd`
+/// fd with a short timeout, exiting 3 (abort) on a byte or 0 (no message)
+/// on timeout. Lets a test assert the HOOK's watcher/predicate behaviour
+/// without a real bus.
+fn stage_abort_mock_famp(bin_dir: &Path) {
+    std::fs::create_dir_all(bin_dir).unwrap();
+    let famp = bin_dir.join("famp");
+    std::fs::write(
+        &famp,
+        r#"#!/usr/bin/env bash
+fd=""
+prev=""
+for a in "$@"; do
+    if [ "$prev" = "--abort-on-fd" ]; then fd="$a"; fi
+    prev="$a"
+done
+if [ "$1" = "await" ] && [ -n "$fd" ]; then
+    if read -t 3 -r -n 1 _ <&"$fd" 2>/dev/null; then
+        printf '{"aborted":true}\n'
+        exit 3
+    fi
+fi
+exit 0
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Write a listen-mode transcript: a successful `famp_register(listen:true)`
+/// followed by `extra` raw JSONL lines (queue-operation records, etc.).
+fn write_listen_transcript(path: &Path, identity: &str, extra: &str) {
+    let body = format!(
+        r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"toolu_reg","name":"mcp__famp__famp_register","input":{{"identity":"{identity}","listen":true}}}}]}}}}
+{{"type":"user","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"toolu_reg","is_error":false,"content":[{{"type":"text","text":"registered as {identity}"}}]}}]}}}}
+{extra}
+"#
+    );
+    std::fs::write(path, body).unwrap();
+}
+
+fn await_hook_log(xdg: &Path) -> String {
+    std::fs::read_to_string(xdg.join("famp/await-hook.log")).unwrap_or_default()
+}
+
+/// Spawn the ASSET hook with a fast (1s) watcher interval so tests don't
+/// wait the production 2s cadence.
+fn spawn_asset_hook(transcript: &Path, bin_dir: &Path, xdg: &Path) -> std::process::Child {
+    let stop_json = format!(
+        r#"{{"transcript_path":"{}","hook_event_name":"Stop"}}"#,
+        transcript.display()
+    );
+    let host_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{host_path}", bin_dir.display());
+    let mut child = Command::new("bash")
+        .arg(asset_hook_path())
+        .env("PATH", &new_path)
+        .env("XDG_STATE_HOME", xdg)
+        .env("FAMP_QWATCH_INTERVAL", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _ = child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stop_json.as_bytes());
+    drop(child.stdin.take());
+    child
+}
+
+const ABORT_LOG_LINE: &str = "aborted: host queue has pending input";
+
+/// TEST 5 (C2 — pre-existing enqueue): a background agent that finished
+/// mid-turn lands its enqueue BEFORE the Stop hook runs, so no *new* enqueue
+/// ever arrives. The predicate is "outstanding right now" (enqueues >
+/// dequeues), so the hook still aborts.
+#[test]
+fn hook_aborts_when_transcript_has_outstanding_enqueue() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(
+        &transcript,
+        "dk",
+        r#"{"type":"queue-operation","operation":"enqueue","content":"pending notif"}"#,
+    );
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let log = await_hook_log(&xdg);
+    assert!(
+        log.contains(ABORT_LOG_LINE),
+        "hook must abort on an outstanding enqueue (C2); log:\n{log}"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).trim().is_empty(),
+        "abort must emit NO block decision"
+    );
+}
+
+/// TEST 6 (the observed bug): the transcript starts drained, then a
+/// background agent finishes WHILE the hook blocks and appends a fresh
+/// enqueue. The polling watcher catches it and aborts.
+#[test]
+fn hook_aborts_when_enqueue_appears_while_blocked() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    // Start balanced (one enqueue already drained) => no abort initially.
+    write_listen_transcript(
+        &transcript,
+        "dk",
+        "{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"content\":\"old\"}\n{\"type\":\"queue-operation\",\"operation\":\"dequeue\"}",
+    );
+
+    let child = spawn_asset_hook(&transcript, &bin_dir, &xdg);
+    // While blocked, a background agent completes: append a NEW enqueue.
+    std::thread::sleep(Duration::from_millis(600));
+    {
+        let mut f = OpenOptions::new().append(true).open(&transcript).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"queue-operation","operation":"enqueue","content":"new notif"}}"#
+        )
+        .unwrap();
+    }
+
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let log = await_hook_log(&xdg);
+    assert!(
+        log.contains(ABORT_LOG_LINE),
+        "hook must abort when an enqueue appears mid-block; log:\n{log}"
+    );
+}
+
+/// TEST 7 (drained): an enqueue matched by a dequeue is NOT outstanding —
+/// keep blocking, do not abort.
+#[test]
+fn hook_does_not_abort_when_enqueue_is_matched_by_dequeue() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(
+        &transcript,
+        "dk",
+        "{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"content\":\"x\"}\n{\"type\":\"queue-operation\",\"operation\":\"dequeue\"}",
+    );
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let log = await_hook_log(&xdg);
+    assert!(
+        !log.contains(ABORT_LOG_LINE),
+        "hook must NOT abort on a drained queue; log:\n{log}"
+    );
+}
+
+/// TEST 8 (C1 regression): a normal assistant message whose `content`
+/// embeds the literal string `"operation":"enqueue"`. A grep implementation
+/// aborts here (false positive that silently kills listen mode); a JSON
+/// parse checks `type == "queue-operation"` and does not.
+#[test]
+fn hook_does_not_abort_on_a_nested_non_toplevel_queue_operation() {
+    // A record whose TOP-LEVEL type is not `queue-operation`, but which
+    // embeds an unescaped nested object carrying those keys — the shape a
+    // structured tool result takes. The literal bytes
+    // `"operation":"enqueue"` are present and a substring grep matches
+    // them, but this is not a host queue operation and must not abort.
+    //
+    // (Text inside a JSON *string* would be escaped as `\"operation\":...`
+    // and could not match a grep, so a nested object — not a content
+    // string — is the shape that actually distinguishes the two
+    // implementations.)
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(
+        &transcript,
+        "dk",
+        r#"{"type":"user","toolUseResult":{"type":"queue-operation","operation":"enqueue"}}"#,
+    );
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let log = await_hook_log(&xdg);
+    assert!(
+        !log.contains(ABORT_LOG_LINE),
+        "a nested, non-top-level queue-operation must NOT abort; log:\n{log}"
+    );
+}
+
+#[test]
+fn hook_does_not_abort_when_the_enqueued_item_was_removed() {
+    // `remove` is a queued message the user deleted before it ran. It is a
+    // DRAIN, and it is the op that breaks a naive enqueue/dequeue counter:
+    // the counter never decrements, so it latches positive and aborts every
+    // subsequent Stop hook, silently disabling listen mode for the rest of
+    // the session. Measured across 96 real transcripts: {enqueue: 710,
+    // dequeue: 434, remove: 269, popAll: 6}.
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(
+        &transcript,
+        "dk",
+        concat!(
+            r#"{"type":"queue-operation","operation":"enqueue","content":"queued then deleted"}"#,
+            "\n",
+            r#"{"type":"queue-operation","operation":"remove"}"#
+        ),
+    );
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let log = await_hook_log(&xdg);
+    assert!(
+        !log.contains(ABORT_LOG_LINE),
+        "`remove` drains the queue — hook must NOT abort; log:\n{log}"
+    );
+}
+
+#[test]
+fn hook_does_not_abort_when_the_queue_was_pop_all_ed() {
+    // `popAll` drains every queued item at once. Same latch hazard as
+    // `remove`: a counter that only knows enqueue/dequeue never clears.
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(
+        &transcript,
+        "dk",
+        concat!(
+            r#"{"type":"queue-operation","operation":"enqueue","content":"a"}"#,
+            "\n",
+            r#"{"type":"queue-operation","operation":"enqueue","content":"b"}"#,
+            "\n",
+            r#"{"type":"queue-operation","operation":"popAll"}"#
+        ),
+    );
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let log = await_hook_log(&xdg);
+    assert!(
+        !log.contains(ABORT_LOG_LINE),
+        "`popAll` drains the queue — hook must NOT abort; log:\n{log}"
     );
 }

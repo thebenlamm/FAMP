@@ -60,6 +60,7 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
                     next_offset: None,
                     timed_out: false,
                     diagnostic: None,
+                    aborted: false,
                 });
             }
         }
@@ -100,6 +101,7 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
             next_offset: Some(next_offset),
             timed_out: false,
             diagnostic: None,
+            aborted: false,
         }),
         BusReply::AwaitTimeout {} => Ok(AwaitOutcome {
             envelopes: Vec::new(),
@@ -110,6 +112,7 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
                 "wait-reply timed out for task {} after checking the existing inbox, including terminal messages",
                 args.task
             )),
+            aborted: false,
         }),
         BusReply::Err {
             kind: BusErrorKind::NotRegistered,

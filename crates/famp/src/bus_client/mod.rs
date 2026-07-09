@@ -168,6 +168,57 @@ impl BusClient {
         codec::read_frame::<_, BusReply>(&mut reader).await
     }
 
+    /// Like [`send_recv`](Self::send_recv), but races the reply against
+    /// readability on `abort` (issue #21). Returns `Ok(Some(reply))` when a
+    /// bus reply arrives and `Ok(None)` when the abort wins.
+    ///
+    /// `abort` becomes readable on bytes OR EOF; the caller decides what
+    /// that means (a queued host notification, a parent shutdown, …). This
+    /// layer is host-neutral.
+    ///
+    /// ## Exit-code tie-break (why `biased;` + a grace re-poll)
+    ///
+    /// The read future is **pinned once and reused** so a partially-read
+    /// frame is never dropped mid-decode. `biased;` polls the reply branch
+    /// first, so if both are ready in the same tick the message wins. When
+    /// only the abort is ready we still give the reply a short grace window
+    /// (`ABORT_GRACE`) by re-polling the *same* pinned read future: an
+    /// `AwaitOk` the broker already wrote to the socket must beat a
+    /// simultaneous abort. Only if the grace elapses with no frame do we
+    /// abort.
+    pub async fn send_recv_abortable(
+        &mut self,
+        msg: BusMessage,
+        abort: &tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>,
+    ) -> Result<Option<BusReply>, BusClientError> {
+        /// Grace window during which an in-flight reply beats the abort.
+        /// Generous enough to ride out a loaded-CI socket round-trip; the
+        /// only cost of over-sizing it is delaying a *genuine* abort by at
+        /// most this long, negligible against the multi-minute stall #21
+        /// removes.
+        const ABORT_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+        let (mut reader, mut writer) = self.stream.split();
+        codec::write_frame(&mut writer, &msg).await?;
+
+        let read = codec::read_frame::<_, BusReply>(&mut reader);
+        tokio::pin!(read);
+
+        tokio::select! {
+            biased;
+            // Reply polled first: on a both-ready tie, the message wins.
+            r = &mut read => Ok(Some(r?)),
+            // Abort became readable. Re-poll the SAME pinned read future for
+            // a grace window so an already-in-flight reply is not lost.
+            _ = abort.readable() => {
+                match tokio::time::timeout(ABORT_GRACE, &mut read).await {
+                    Ok(r) => Ok(Some(r?)),
+                    Err(_) => Ok(None),
+                }
+            }
+        }
+    }
+
     /// Cleanly close the connection (best-effort). Does not error if the
     /// broker has already gone away.
     pub async fn shutdown(&mut self) {

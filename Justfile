@@ -112,10 +112,12 @@ publish-workspace-dry-run:
     cargo package -p famp-transport-http --allow-dirty --no-verify --list > /dev/null
     cargo package -p famp --allow-dirty --no-verify --list > /dev/null
 
-# Shellcheck the hook-runner asset (D-08 invariant: shellcheck-clean).
-# Recipe colocated with the asset (`crates/famp/assets/hook-runner.sh`) — both ship in plan 03-02.
+# Shellcheck the hook assets (D-08 invariant: shellcheck-clean).
+# `hook-runner.sh` ships in plan 03-02; `famp-await.sh` is the listen-mode
+# Stop hook source of truth (issue #21 cancellation seam lives here).
 check-shellcheck:
     shellcheck crates/famp/assets/hook-runner.sh
+    shellcheck crates/famp/assets/famp-await.sh
 
 # Run the FAMP v0.5.1 spec anchor lint (ripgrep-based; see scripts/spec-lint.sh).
 spec-lint:
