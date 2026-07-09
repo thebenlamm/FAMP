@@ -851,18 +851,26 @@ fn hook_does_not_abort_when_enqueue_is_matched_by_dequeue() {
 /// aborts here (false positive that silently kills listen mode); a JSON
 /// parse checks `type == "queue-operation"` and does not.
 #[test]
-fn hook_does_not_abort_on_enqueue_string_inside_a_content_field() {
+fn hook_does_not_abort_on_a_nested_non_toplevel_queue_operation() {
+    // A record whose TOP-LEVEL type is not `queue-operation`, but which
+    // embeds an unescaped nested object carrying those keys — the shape a
+    // structured tool result takes. The literal bytes
+    // `"operation":"enqueue"` are present and a substring grep matches
+    // them, but this is not a host queue operation and must not abort.
+    //
+    // (Text inside a JSON *string* would be escaped as `\"operation\":...`
+    // and could not match a grep, so a nested object — not a content
+    // string — is the shape that actually distinguishes the two
+    // implementations.)
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().join("xdg");
     let bin_dir = dir.path().join("bin");
     stage_abort_mock_famp(&bin_dir);
     let transcript = dir.path().join("t.jsonl");
-    // Valid JSON line, type=assistant, with the predicate string buried in
-    // free text — NOT a queue-operation record.
     write_listen_transcript(
         &transcript,
         "dk",
-        r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"as discussed, an enqueue record looks like {\"type\":\"queue-operation\",\"operation\":\"enqueue\"} in the transcript"}]}}"#,
+        r#"{"type":"user","toolUseResult":{"type":"queue-operation","operation":"enqueue"}}"#,
     );
 
     let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
@@ -872,7 +880,7 @@ fn hook_does_not_abort_on_enqueue_string_inside_a_content_field() {
     let log = await_hook_log(&xdg);
     assert!(
         !log.contains(ABORT_LOG_LINE),
-        "C1: hook must NOT abort on an enqueue string inside a content field; log:\n{log}"
+        "a nested, non-top-level queue-operation must NOT abort; log:\n{log}"
     );
 }
 
