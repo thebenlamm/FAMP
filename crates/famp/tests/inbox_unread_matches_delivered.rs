@@ -117,7 +117,8 @@ fn inspect_identities_unread_equals_subsequent_famp_inbox_delivered_count() {
     let delivered_2 = inbox_entry_count(&mut receiver, None);
 
     assert_eq!(
-        unread_after_b as usize, delivered_2,
+        usize::try_from(unread_after_b).unwrap(),
+        delivered_2,
         "999.11: `famp inspect identities` unread ({unread_after_b}) must equal \
          the number of envelopes a subsequent famp_inbox call actually returns \
          ({delivered_2}) — see HANDOFF.md §2/§6. Two uncoordinated cursor \
