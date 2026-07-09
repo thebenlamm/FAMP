@@ -27,7 +27,7 @@ pub(super) fn await_envelope<E: BrokerEnv>(
     task: Option<uuid::Uuid>,
     now: Instant,
 ) -> Vec<Out> {
-    const MAX_AWAIT_MS: u64 = 60 * 60 * 1000; // 1 hour
+    const MAX_AWAIT_MS: u64 = 23 * 60 * 60 * 1000; // 23 hours
 
     // D-10: proxy connections can `Await` on the canonical holder's
     // mailbox; reject if neither a registered holder nor a live proxy
@@ -67,6 +67,13 @@ pub(super) fn await_envelope<E: BrokerEnv>(
     // panics on overflow; `Duration::from_millis(u64::MAX)` is ~584M
     // years and a malicious or buggy client sending the max would crash
     // the broker actor task (taking down every connected client).
+    //
+    // 23h specifically: the FAMP Stop hook
+    // (`crates/famp/assets/famp-await.sh`) is installed with a Claude Code
+    // hook timeout of 86400s (24h). A 23h broker cap means the broker
+    // returns a clean `BusReply::AwaitTimeout` and the hook exits 0
+    // gracefully, rather than the harness SIGKILLing the hook mid-block at
+    // 24h. Do NOT raise `MAX_AWAIT_MS` to >= 24h.
     let timeout_ms = timeout_ms.min(MAX_AWAIT_MS);
     let deadline = now + Duration::from_millis(timeout_ms);
     broker.state.pending_awaits.insert(
