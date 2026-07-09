@@ -4,7 +4,7 @@ use super::*;
 use crate::{Broker, FakeLiveness, InMemoryMailbox, MailboxRead as _};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Default, Clone)]
 struct TestEnv {
@@ -2095,4 +2095,84 @@ fn record_appended_before_the_healing_drain_is_skipped_but_does_not_stall() {
     let outs = await_now(&mut broker, 1, now);
     let (envelopes, _) = await_ok(&outs, 1).expect("the holder must not be stalled");
     assert_eq!(seqs(&envelopes), vec![4]);
+}
+
+/// quick-260709-9zu: proves an `Await` requesting more than 1h is no longer
+/// clamped to the old `MAX_AWAIT_MS` 1h ceiling. The FAMP Stop hook parks
+/// with `--timeout 23h`; before this fix `awaiting.rs:70` silently clamped
+/// every await to 3_600_000 ms, so a listen window went deaf ~1h after its
+/// last turn. This test fails if `MAX_AWAIT_MS` is reverted to 1h: the
+/// 3700s Tick (past the old 1h/3600s ceiling) would then expire the await.
+#[test]
+fn await_over_one_hour_survives_past_old_1h_ceiling() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+
+    let park_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Await {
+                timeout_ms: 23 * 60 * 60 * 1000,
+                task: None,
+            },
+        },
+        now,
+    );
+    assert!(
+        park_outs.iter().any(
+            |o| matches!(o, Out::ParkAwait { client, .. } if *client == ClientId::from(1_u64))
+        ),
+        "a 23h await should park, not reply immediately: {park_outs:?}"
+    );
+
+    // Advance past the OLD 1h ceiling (3700s > 3600s).
+    let tick_outs = broker.handle(BrokerInput::Tick, now + Duration::from_secs(3700));
+    assert!(
+        !tick_outs.iter().any(|o| matches!(
+            o,
+            Out::Reply(client, BusReply::AwaitTimeout {}) if *client == ClientId::from(1_u64)
+        )),
+        "a 23h await must NOT expire at the old 1h ceiling: {tick_outs:?}"
+    );
+    assert!(
+        broker
+            .state
+            .pending_awaits
+            .contains_key(&ClientId::from(1_u64)),
+        "alice's await must still be parked past the old 1h ceiling"
+    );
+}
+
+/// WR-05 guard regression: a hostile `u64::MAX` timeout must still be
+/// clamped by `.min(MAX_AWAIT_MS)` rather than overflowing `Instant + Duration`
+/// (which panics and would take down the whole broker actor task).
+#[test]
+fn await_u64_max_timeout_parks_without_overflow_panic() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Await {
+                timeout_ms: u64::MAX,
+                task: None,
+            },
+        },
+        now,
+    );
+    assert!(
+        outs.iter().any(
+            |o| matches!(o, Out::ParkAwait { client, .. } if *client == ClientId::from(1_u64))
+        ),
+        "a u64::MAX timeout must still park (clamped by WR-05), not panic: {outs:?}"
+    );
 }
