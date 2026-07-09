@@ -54,10 +54,24 @@ use famp_bus::BusErrorKind;
 use famp_envelope::EnvelopeView;
 use serde_json::Value;
 
-use crate::bus_client::resolve_sock_path;
+use crate::bus_client::{bus_dir, resolve_sock_path};
+use crate::cli::broker::cursor_exec::execute_advance_cursor;
 use crate::cli::inbox::list::{run_at_structured, ListArgs};
 use crate::cli::mcp::session;
 use crate::cli::mcp::tools::ToolError;
+
+/// Read the current on-disk cursor for `name` under `dir`'s `mailboxes/`
+/// directory. Mirrors the parse pattern in
+/// `cli/broker/mod.rs::read_mailbox_meta_for`: body is a single ASCII
+/// decimal followed by `\n`; a missing or unparseable file is treated as
+/// `0` — never blocks the already-succeeded inbox read this feeds.
+fn read_disk_cursor(dir: &std::path::Path, name: &str) -> u64 {
+    let cursor_path = dir.join("mailboxes").join(format!(".{name}.cursor"));
+    std::fs::read_to_string(&cursor_path)
+        .ok()
+        .and_then(|s| s.trim_end_matches('\n').parse::<u64>().ok())
+        .unwrap_or(0)
+}
 
 /// Dispatch a `famp_inbox` tool call.
 pub async fn call(input: &Value) -> Result<Value, ToolError> {
@@ -106,6 +120,37 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // remains a full-replay escape hatch AND still updates the
             // stored value going forward.
             session::set_inbox_offset(Some(out.next_offset)).await;
+
+            // Write-through to the on-disk `.{name}.cursor` so `famp inspect
+            // identities` (which reads ONLY the disk cursor via
+            // `read_mailbox_meta_for`) stops lagging the MCP session cursor.
+            // This is the one authority `unread` is computed from; the read
+            // above has already succeeded, so this is a best-effort
+            // observability write, not a gate on the tool's success.
+            //
+            // Monotonic `max(current_disk_cursor, out.next_offset)` — NEVER
+            // regress the disk cursor, even when the caller passed an
+            // explicit `since` override for a manual replay (`since: 0` must
+            // not rewind it). This is deliberately NOT the same policy as
+            // `session::set_inbox_offset` above (which follows the broker's
+            // shrink-clamp down, #11/#16): the disk cursor is the `unread`
+            // floor read by the inspector and by `register`/`join`, and must
+            // advance monotonically regardless of what a manual replay does
+            // to the session-local offset. Do not unify the two policies.
+            if let Some(name) = session::active_identity().await {
+                let dir = bus_dir(&resolve_sock_path()).to_path_buf();
+                let current = read_disk_cursor(&dir, &name);
+                let target = current.max(out.next_offset);
+                if target > current {
+                    if let Err(e) = execute_advance_cursor(&dir, &name, target).await {
+                        eprintln!(
+                            "warning: famp_inbox cursor write-through failed for {name} \
+                             (target offset {target}): {e}"
+                        );
+                    }
+                }
+            }
+
             // Project each envelope into the v0.8 MCP-tool entry shape:
             // include `task_id` at the top level so agents can reply without
             // re-walking the envelope. For reply messages (deliver/terminal),
