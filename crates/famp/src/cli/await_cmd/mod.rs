@@ -44,10 +44,12 @@
 //! (D-10) — the `Await` message itself carries no identity field.
 
 use std::io::Write;
+use std::os::fd::{AsFd, FromRawFd, OwnedFd};
 use std::path::Path;
 
 use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName};
 use serde_json::Value;
+use tokio::io::unix::AsyncFd;
 
 use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
 use crate::cli::error::CliError;
@@ -85,6 +87,18 @@ pub struct AwaitArgs {
     /// `Hello.bind_as` on the connection (D-10).
     #[arg(long = "as")]
     pub act_as: Option<String>,
+    /// Generic, host-neutral cancellation seam (issue #21). When set, the
+    /// parked await races the bus reply against readability (bytes **or**
+    /// EOF) on this already-open file descriptor. On abort the command
+    /// prints `{"aborted":true}` and exits **3** (distinct from 0 =
+    /// message/timeout, 1 = error). The fd must be `>= 3` (never stdio)
+    /// and already open; an invalid fd is a hard error, not UB.
+    ///
+    /// This carries **no** knowledge of what writes the fd — a pipe, a
+    /// FIFO, whatever. All host coupling (e.g. the Claude Code Stop hook's
+    /// queue watcher) lives outside `famp`.
+    #[arg(long = "abort-on-fd")]
+    pub abort_on_fd: Option<i32>,
 }
 
 /// Structured outcome from [`run_at_structured`]. `envelopes` is empty
@@ -104,6 +118,11 @@ pub struct AwaitOutcome {
     pub timed_out: bool,
     /// Optional human-readable diagnostic printed with timeout JSON.
     pub diagnostic: Option<String>,
+    /// `true` when the await was cancelled via `--abort-on-fd` before a
+    /// reply arrived (issue #21). Always `false` unless `abort_on_fd` was
+    /// set; the MCP tool never sets it, so this stays `false` there.
+    /// Drives the `{"aborted":true}` stdout line and the exit-code-3 return.
+    pub aborted: bool,
 }
 
 /// Top-level entry point for `Commands::Await`.
@@ -115,7 +134,15 @@ pub struct AwaitOutcome {
 /// otherwise leak across the suspension point.
 pub async fn run(args: AwaitArgs) -> Result<(), CliError> {
     let outcome = run_at_structured(&resolve_sock_path(), args).await?;
-    write_outcome(&outcome, &mut std::io::stdout())
+    write_outcome(&outcome, &mut std::io::stdout())?;
+    // Exit 3 is the distinct abort code (issue #21): 0 = message/timeout,
+    // 1 = real error, 3 = cancelled via --abort-on-fd. `main` maps
+    // `CliError::Exit(code)` → `process::exit(code)` WITHOUT printing an
+    // error line, so the `{"aborted":true}` stdout above is the only output.
+    if outcome.aborted {
+        return Err(CliError::Exit(3));
+    }
+    Ok(())
 }
 
 /// Render an [`AwaitOutcome`] to a writer as a single JSONL line.
@@ -127,6 +154,16 @@ pub async fn run(args: AwaitArgs) -> Result<(), CliError> {
 /// - On message: `{"mailbox": {"kind": "channel"/"agent", "name": "..."}, "envelopes": [...], "next_offset": N}`
 /// - On timeout: `{"timeout": true}` (optionally with `"diagnostic": "..."`)
 pub(crate) fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Result<(), CliError> {
+    if outcome.aborted {
+        // Cancellation seam (issue #21). Peer/host bytes never reach this
+        // line — it is a fixed sentinel. The caller (`run`/`run_at`) maps
+        // this to exit code 3.
+        writeln!(out, "{}", serde_json::json!({"aborted": true})).map_err(|e| CliError::Io {
+            path: std::path::PathBuf::new(),
+            source: e,
+        })?;
+        return Ok(());
+    }
     if outcome.timed_out {
         let mut value = serde_json::json!({"timeout": true});
         if let Some(diagnostic) = outcome.diagnostic.as_deref() {
@@ -171,7 +208,11 @@ pub(crate) fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Resu
 /// so the future stays `Send` regardless of the writer type.
 pub async fn run_at(sock: &Path, args: AwaitArgs, out: impl Write) -> Result<(), CliError> {
     let outcome = run_at_structured(sock, args).await?;
-    write_outcome(&outcome, out)
+    write_outcome(&outcome, out)?;
+    if outcome.aborted {
+        return Err(CliError::Exit(3));
+    }
+    Ok(())
 }
 
 /// Structured entry point.
@@ -190,22 +231,51 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
         .try_into()
         .unwrap_or(u64::MAX);
 
+    // 2b. Build the optional cancellation seam (issue #21) BEFORE connecting
+    //     so an invalid fd is a fast, broker-independent hard error rather
+    //     than surfacing only after a Hello round-trip.
+    let abort_fd = match args.abort_on_fd {
+        Some(n) => Some(build_abort_fd(n)?),
+        None => None,
+    };
+
     // 3. Open the bus connection with the D-10 proxy binding. The
     //    broker validates at Hello time that `identity` is held by a
     //    live `famp register` process; refusal surfaces as
     //    HelloFailed { NotRegistered }.
     let mut bus = connect_bound(sock, &identity).await?;
 
-    // 4. Single round-trip: Await { timeout_ms, task }.
-    let reply = bus
-        .send_recv(BusMessage::Await {
-            timeout_ms,
-            task: args.task,
-        })
-        .await
-        .map_err(|e| CliError::BusClient {
+    // 4. Single round-trip: Await { timeout_ms, task }. When a
+    //    cancellation fd is armed, race the reply against fd-readability;
+    //    `None` means the abort won.
+    let msg = BusMessage::Await {
+        timeout_ms,
+        task: args.task,
+    };
+    let reply = if let Some(async_fd) = &abort_fd {
+        match bus
+            .send_recv_abortable(msg, async_fd)
+            .await
+            .map_err(|e| CliError::BusClient {
+                detail: format!("{e:?}"),
+            })? {
+            Some(reply) => reply,
+            None => {
+                return Ok(AwaitOutcome {
+                    envelopes: Vec::new(),
+                    mailbox: None,
+                    next_offset: None,
+                    timed_out: false,
+                    diagnostic: None,
+                    aborted: true,
+                });
+            }
+        }
+    } else {
+        bus.send_recv(msg).await.map_err(|e| CliError::BusClient {
             detail: format!("{e:?}"),
-        })?;
+        })?
+    };
 
     // 5. Map the four expected reply variants. `BusErrorKind` is closed
     //    so the `_ =>` wildcard arm is on `BusReply` variants we never
@@ -223,6 +293,7 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
             next_offset: Some(next_offset),
             timed_out: false,
             diagnostic: None,
+            aborted: false,
         }),
         BusReply::AwaitTimeout {} => {
             let diagnostic = timeout_diagnostic(&mut bus, &identity, args.task).await;
@@ -232,6 +303,7 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
                 next_offset: None,
                 timed_out: true,
                 diagnostic: Some(diagnostic),
+                aborted: false,
             })
         }
         BusReply::Err {
@@ -243,6 +315,78 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
             detail: format!("unexpected reply to Await: {other:?}"),
         }),
     }
+}
+
+/// Validate and adopt a caller-supplied file descriptor as an async
+/// cancellation seam (issue #21).
+///
+/// The fd must be `>= 3` (refusing to steal stdio) and already open. We
+/// verify openness with `F_GETFD` (EBADF on a closed fd → hard error) and
+/// set `O_NONBLOCK` because [`AsyncFd`] requires a non-blocking fd. A
+/// readable event on the returned `AsyncFd` (bytes OR EOF) is the abort
+/// signal — this is generic over pipes and FIFOs and carries no
+/// host-specific meaning.
+///
+/// # Ownership / unsafe
+///
+/// nix 0.31's `fcntl` takes `AsFd`, not `RawFd`, so we adopt the fd via
+/// `OwnedFd::from_raw_fd` FIRST and validate immediately after. That is
+/// the single narrowly-scoped `#[allow(unsafe_code)]` in this crate
+/// outside `bus_client::spawn` — the crate posture is `unsafe_code =
+/// "deny"` (not `forbid`) expressly to permit exactly this.
+///
+/// If the very first check (`F_GETFD`) shows the fd is closed, we
+/// `mem::forget` the `OwnedFd` instead of dropping it: dropping an
+/// `OwnedFd` that wraps an invalid fd makes `close(2)` return `EBADF`,
+/// which Rust's IO-safety runtime treats as a fatal double-close and
+/// `abort()`s the process. Forgetting the (invalid) fd leaks nothing —
+/// there is no real resource behind it — and lets us return a clean
+/// `CliError`. Later failure paths (`F_GETFL`/`F_SETFL`/reactor
+/// registration) run only after `F_GETFD` proved the fd valid, so a
+/// normal drop there is correct.
+fn build_abort_fd(n: i32) -> Result<AsyncFd<OwnedFd>, CliError> {
+    use nix::fcntl::{fcntl, FcntlArg, OFlag};
+
+    if n < 3 {
+        return Err(CliError::Generic(format!(
+            "--abort-on-fd must be >= 3 (refusing to take over stdio); got {n}"
+        )));
+    }
+
+    // SAFETY: We assume ownership of the caller-supplied fd. Validity is
+    // verified via F_GETFD immediately below before any use; an invalid fd
+    // yields a hard CliError (after mem::forget to dodge the close-EBADF
+    // abort). Single-unsafe adaptation required by nix 0.31's AsFd-based
+    // fcntl API.
+    #[allow(unsafe_code)]
+    let owned = unsafe { OwnedFd::from_raw_fd(n) };
+
+    // Verify the fd is actually open (EBADF → hard error, not UB). On
+    // failure, forget the OwnedFd so its Drop does not close(2) an invalid
+    // fd and trip the IO-safety runtime abort.
+    if let Err(e) = fcntl(owned.as_fd(), FcntlArg::F_GETFD) {
+        std::mem::forget(owned);
+        return Err(CliError::Generic(format!(
+            "--abort-on-fd {n} is not a valid open file descriptor: {e}"
+        )));
+    }
+
+    // AsyncFd requires the fd be non-blocking.
+    let cur = fcntl(owned.as_fd(), FcntlArg::F_GETFL).map_err(|e| {
+        CliError::Generic(format!("failed to read flags on --abort-on-fd {n}: {e}"))
+    })?;
+    let newflags = OFlag::from_bits_truncate(cur) | OFlag::O_NONBLOCK;
+    fcntl(owned.as_fd(), FcntlArg::F_SETFL(newflags)).map_err(|e| {
+        CliError::Generic(format!(
+            "failed to set O_NONBLOCK on --abort-on-fd {n}: {e}"
+        ))
+    })?;
+
+    AsyncFd::new(owned).map_err(|e| {
+        CliError::Generic(format!(
+            "failed to register --abort-on-fd {n} with the async reactor: {e}"
+        ))
+    })
 }
 
 pub(crate) async fn connect_bound(sock: &Path, identity: &str) -> Result<BusClient, CliError> {

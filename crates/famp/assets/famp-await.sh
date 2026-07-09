@@ -139,20 +139,168 @@ fi
 FAMP_BIN="$(command -v famp 2>/dev/null || echo "$HOME/.cargo/bin/famp")"
 log "listen mode active: identity=$ACTIVE_IDENTITY bin=$FAMP_BIN"
 
+# --- Cancellation seam for issue #21 (host input-queue watcher) --------
+# A blocked Stop hook keeps the turn alive so an inbound FAMP message can
+# wake the agent — that block is the wake mechanism and must stay. The bug
+# is that the block is uncancellable: while it blocks, the host never
+# drains its input queue, so background-agent completion notifications sit
+# there until the user hits Esc.
+#
+# Fix: a background watcher writes one byte to fd 9 when the Claude Code
+# input queue has outstanding input (the most recent JSON-parsed
+# queue-operation record is an `enqueue`). `famp await --abort-on-fd 9`
+# then returns exit 3; we exit 0; the host drains. Listen mode self-heals
+# — the next turn's Stop hook re-arms the await.
+#
+# Everything here is FAIL-OPEN: any setup/watcher/python error means we run
+# a plain `famp await` exactly as before and NEVER abort on uncertainty.
+# `famp` itself knows nothing about Claude Code — all host coupling is here.
+ABORT_FD_READY=""
+QWATCH_DIR=""
+QWATCH_FIFO=""
+QWATCH_PY=""
+QWATCH_PID=""
+
+# fd 9 opened read-write (<>): opening neither blocks for a peer nor reports
+# spurious EOF, and bash does not set CLOEXEC on exec-redirected fds, so
+# `famp await --abort-on-fd 9` inherits it.
+QWATCH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/famp-qwatch-XXXXXX" 2>/dev/null || true)"
+if [ -n "$QWATCH_DIR" ]; then
+    QWATCH_FIFO="$QWATCH_DIR/abort.fifo"
+    QWATCH_PY="$QWATCH_DIR/qwatch.py"
+    if mkfifo "$QWATCH_FIFO" 2>/dev/null && exec 9<>"$QWATCH_FIFO" 2>/dev/null; then
+        # Predicate: "the most recent queue-operation record is an
+        # `enqueue`" == the host has input queued that it has not drained.
+        # Exit 0 => abort; anything else or any error => do NOT abort.
+        cat > "$QWATCH_PY" << 'QPYEOF'
+import json, os, sys
+
+path = sys.argv[1]
+try:
+    size = os.path.getsize(path)
+except OSError:
+    sys.exit(1)  # fail-open: cannot stat -> never abort
+
+offset = max(0, size - 2_000_000)
+last_op = None
+try:
+    with open(path, encoding='utf-8', errors='replace') as f:
+        if offset:
+            f.seek(offset)
+            f.readline()  # discard partial line at the seek boundary
+        for line in f:
+            try:
+                ev = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(ev, dict):
+                continue
+            # Match the STRUCTURED record, never a substring. An `enqueue`
+            # record embeds the full agent result in `content`, so a
+            # transcript that merely DISCUSSES this predicate contains the
+            # literal bytes "operation":"enqueue" inside an unrelated
+            # record. A grep would abort spuriously and silently kill
+            # listen mode -- the exact failure that got the raw
+            # byte-growth approach rejected.
+            if ev.get("type") != "queue-operation":
+                continue
+            last_op = ev.get("operation")
+except OSError:
+    sys.exit(1)  # fail-open
+
+# Why "last op is an enqueue" and NOT "enqueues > dequeues":
+#
+# The queue vocabulary observed across 96 real transcripts is
+# {enqueue: 710, dequeue: 434, remove: 269, popAll: 6} -- `remove` (a
+# queued message deleted before it ran) and `popAll` also drain the queue.
+# A naive enqueue/dequeue counter never sees them, so its count LATCHES
+# permanently positive after the first `remove`, aborting every
+# subsequent Stop hook and silently disabling listen mode for the rest of
+# the session. Simulated over those transcripts, the counting predicate
+# would abort at 79.8% of positions in the worst session; this last-op
+# predicate, 46.1%.
+#
+# The last-op rule is self-clearing: ANY drain op (dequeue/remove/popAll)
+# clears it, whatever the counts say, so it cannot latch on a vocabulary
+# we have not seen. It also needs only the final record, so the 2 MB tail
+# bound can never truncate it into a false positive.
+#
+# It covers both cases that matter: an enqueue that lands while we are
+# blocked (the reported bug), and an enqueue already outstanding when the
+# hook starts (a background agent that finished mid-turn -- a byte
+# baseline captured at hook start would never see it).
+#
+# Its one miss is enqueue,enqueue,dequeue (one item still queued, last op
+# is a drain). That fails toward NOT aborting -- i.e. toward today's
+# behavior -- and the next enqueue fires it. Never abort on uncertainty.
+sys.exit(0 if last_op == "enqueue" else 1)
+QPYEOF
+        # Watcher subshell inherits fd 9. Poll from t=0. On the predicate
+        # firing, write one byte and exit. Any python error => loop without
+        # writing (fail-open). Reaped when `famp await` returns regardless.
+        (
+            while : ; do
+                if python3 "$QWATCH_PY" "$TRANSCRIPT" 2>/dev/null ; then
+                    printf 'x' >&9 2>/dev/null || true
+                    break
+                fi
+                sleep "${FAMP_QWATCH_INTERVAL:-2}"
+            done
+        ) &
+        QWATCH_PID=$!
+        ABORT_FD_READY=1
+        log "cancellation watcher armed (pid=$QWATCH_PID)"
+    else
+        log "abort fifo setup failed; running plain await (fail-open)"
+    fi
+else
+    log "abort fifo mktemp failed; running plain await (fail-open)"
+fi
+
+# Run `famp await`, arming --abort-on-fd 9 only when the watcher is up.
+run_await() {
+    if [ -n "$ABORT_FD_READY" ]; then
+        "$FAMP_BIN" await --as "$ACTIVE_IDENTITY" --timeout 23h --abort-on-fd 9
+    else
+        "$FAMP_BIN" await --as "$ACTIVE_IDENTITY" --timeout 23h
+    fi
+}
+
 # --- Block on inbox ---------------------------------------------------
 ERR_FILE="$(mktemp "${TMPDIR:-/tmp}/famp-await-err.XXXXXX")" || ERR_FILE=""
 if [ -n "$ERR_FILE" ]; then
-    MSG=$("$FAMP_BIN" await --as "$ACTIVE_IDENTITY" --timeout 23h 2>"$ERR_FILE")
+    MSG=$(run_await 2>"$ERR_FILE")
     STATUS=$?
     ERR=$(cat "$ERR_FILE" 2>/dev/null || true)
     rm -f "$ERR_FILE"
 else
-    MSG=$("$FAMP_BIN" await --as "$ACTIVE_IDENTITY" --timeout 23h 2>&1)
+    MSG=$(run_await 2>&1)
     STATUS=$?
     ERR="$MSG"
 fi
 log "await returned status=$STATUS msg_bytes=${#MSG}"
 [ -n "$ERR" ] && log "stderr: $ERR"
+
+# --- Reap the cancellation watcher and release fd 9 -------------------
+if [ -n "$QWATCH_PID" ]; then
+    kill "$QWATCH_PID" 2>/dev/null || true
+    wait "$QWATCH_PID" 2>/dev/null || true
+fi
+if [ -n "$ABORT_FD_READY" ]; then
+    exec 9>&- 2>/dev/null || true
+fi
+if [ -n "$QWATCH_DIR" ]; then
+    rm -rf "$QWATCH_DIR" 2>/dev/null || true
+fi
+
+# --- Abort path (issue #21): host queue has pending input -------------
+# `famp await` exited 3 => a queued host notification is waiting. Exit 0
+# with NO block decision so the turn ends and the host drains its queue.
+# The `{"aborted":true}` sentinel on stdout is NOT forwarded to the host.
+if [ "$STATUS" -eq 3 ]; then
+    log "aborted: host queue has pending input; fail-open exit 0 so host drains"
+    exit 0
+fi
 
 # --- 64KB cap + UTF-8 sanitization (spec security requirement) --------
 if [ "${#MSG}" -gt 65536 ]; then
