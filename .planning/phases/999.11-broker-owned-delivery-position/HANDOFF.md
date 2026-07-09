@@ -165,3 +165,42 @@ tests did not catch the cursor-share bug. Only cross-handler interleaving did.
 4. `crates/famp-bus/src/broker/drain_walk.rs` — the one function you will change.
 5. `crates/famp-bus/src/broker/state.rs:45-63` — the two in-memory cursor maps and
    their (individually correct, mutually uncoordinated) decision records.
+
+---
+
+## Addendum — 2026-07-08: unread divergence fixed narrowly; redesign re-parked
+
+**(a) The §2/§6 divergence is fixed narrowly.** The `unread`-vs-delivered
+divergence this HANDOFF diagnosed in §2 ("no *read* path advances [the on-disk
+cursor]") and pinned as the acceptance test in §6 is now fixed — narrowly, not
+via the broader redesign. The MCP `famp_inbox` read path (`cli/mcp/tools/inbox.rs`)
+now write-throughs its returned `next_offset` to the on-disk `.{name}.cursor` via
+`cursor_exec::execute_advance_cursor` — the same atomic writer the CLI `famp
+inbox ack` path already used — taking `max(current_disk_cursor, next_offset)` so
+a manual `since: 0` full-replay never rewinds the disk cursor. `famp inspect
+identities`' `unread` no longer lags the MCP session cursor. The §6 acceptance
+test (`crates/famp/tests/inbox_unread_matches_delivered.rs`) flipped RED to GREEN
+in commit `fda9de9`.
+
+**(b) The broader redesign is RE-PARKED, not abandoned.** Owning delivery
+position at the broker (one authority instead of five: the two in-memory
+maps in §2, the on-disk cursor just patched above, plus 999.2's shared-offset
+coupling) remains parked behind the federation spike per the 2026-07-01
+v0.12-reliability-bucket decision (Matt+Magnus: local-case-black-hole).
+This narrow fix removes one symptom (the inspector-vs-delivered drift) without
+touching the underlying five-authority architecture §2 diagnoses, and does
+**not** engage 999.2 (§3) at all. The full design doc survives at
+`docs/superpowers/specs/2026-07-08-999-11-broker-owned-delivery-position-design.md`
+for whenever the spike fires and this is picked back up.
+
+**(c) Must-fix findings before implementation resumes.** Three independent
+reviews of the design doc found it is not yet ready to implement as written.
+Most notably:
+- The design doc as written does **not** repoint the two cursor authorities
+  the way this narrow fix just did for the disk cursor — it needs to account
+  for the write-through pattern now shipped here, or supersede it cleanly with
+  the unified cursor, not layer on top of it.
+- The doc's **"bounded hole-set" claim was found to be UNBOUNDED** in the exact
+  starvation scenario it targets (the 999.1/999.2 concurrent-consumer coupling
+  §3 describes). Any resumed design work must close this gap before it is
+  treated as ready to build.
