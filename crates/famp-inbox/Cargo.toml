@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — durable JSONL inbox (append with fsync, tail-tolerant read)"
+description = "FAMP v0.5.2 — durable JSONL inbox (append with fsync, tail-tolerant read)"
 
 [lints]
 workspace = true

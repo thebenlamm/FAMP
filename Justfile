@@ -207,6 +207,11 @@ check-spec-version-coherence:
     @if grep -q 'pub const FAMP_SPEC_VERSION: &str = "0.5.2"' crates/famp-envelope/src/version.rs; then \
       grep -q 'AuditLog' crates/famp-core/src/class.rs || (echo "spec version 0.5.2 declared but MessageClass::AuditLog missing" && exit 1); \
       grep -q 'AuditLogBody' crates/famp-envelope/src/body/mod.rs || (echo "spec version 0.5.2 declared but AuditLogBody missing" && exit 1); \
+      for f in crates/*/Cargo.toml; do \
+        if grep -n '^description' "$f" | grep -q 'v0.5.1'; then \
+          echo "stale crate description still says v0.5.1 (spec version is 0.5.2): $f" && exit 1; \
+        fi; \
+      done; \
     fi
 
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.

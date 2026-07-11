@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — Ed25519 sign/verify with domain separation and strict ingress"
+description = "FAMP v0.5.2 — Ed25519 sign/verify with domain separation and strict ingress"
 
 [lints]
 workspace = true

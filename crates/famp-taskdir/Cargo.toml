@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — per-task TOML storage primitive (atomic replace + fsync)"
+description = "FAMP v0.5.2 — per-task TOML storage primitive (atomic replace + fsync)"
 
 [lints]
 workspace = true

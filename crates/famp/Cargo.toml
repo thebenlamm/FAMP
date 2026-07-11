@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.1 — umbrella crate and CLI"
+description = "FAMP v0.5.2 — umbrella crate and CLI"
 
 [lints.rust]
 # Inherit the workspace clippy/rust lint set, but downgrade `unsafe_code`
