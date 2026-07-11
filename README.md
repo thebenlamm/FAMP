@@ -91,6 +91,9 @@ runtime path; federation transport internals remain preserved for v1.0.
 - `git`
 - `curl`
 - Rust 1.89+ — the Quick Start installs `rustup` if you don't have it
+- The first build also installs `rustfmt` + `clippy` (pinned in
+  `rust-toolchain.toml`) — `just ci`, `just lint`, and the pre-push git hook
+  all require them, so expect that extra download on a fresh/offline install.
 
 ## Build from Source (contributors)
 
@@ -497,6 +500,23 @@ Optional: set `FAMP_LOCAL_ROOT` in the environment to override the
 default `~/.famp-local` backing-store directory. MCP windows pick identity
 at runtime via `famp_register` and don't use this path. It matters for
 non-MCP CLI use where `wires.tsv` cwd→identity binding is in effect.
+
+### Two directories: `~/.famp` vs `~/.famp-local`
+
+FAMP uses two separate directories on disk, and both are live:
+
+- **`~/.famp`** — the message runtime: the broker's UDS socket
+  (`~/.famp/bus.sock`) and each identity's durable, per-name mailbox files.
+  This is what `famp send` / `famp inbox` / `famp await` talk to.
+- **`~/.famp-local`** — the identity backing store for **non-MCP CLI use**:
+  `wires.tsv` (cwd → identity bindings, so `famp send` in a given directory
+  knows which identity to act as) and `hooks.tsv`. Override its location with
+  `FAMP_LOCAL_ROOT` (see above). MCP sessions bind identity in-memory via
+  `famp_register` and don't touch this directory, but any non-MCP CLI
+  invocation of `famp` still requires it.
+
+An eventual unification of the two directories is tracked as a separate,
+out-of-scope runtime change in a GitHub issue on this repository.
 
 ## Programmatic Examples
 
