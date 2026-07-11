@@ -58,19 +58,23 @@ runtime path; federation transport internals remain preserved for v1.0.
   - `famp await` — block until new messages arrive (unfiltered; canonical real-time signal, including task completion)
   - `famp join` / `famp leave` — manage channel membership
 - **MCP server** (`famp mcp`) for Claude Code and Codex
+- **Local-first bus (v0.9, shipped):** UDS-backed broker replacing the
+  per-identity TLS listener mesh for same-host agents; IRC-style channels /
+  broadcast primitive (`#name`); zero-crypto same-host path (filesystem is
+  the trust boundary). See the full
+  [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
+- **Broker daemon & cross-tool bootstrap (v0.11, shipped):** `famp daemon
+  install` runs the broker as a service-managed daemon (launchd on macOS,
+  systemd `--user` on Linux) so it survives across sessions instead of
+  relying on per-client auto-spawn; version handshake at connect catches
+  daemon/client skew.
 - Two runnable examples:
   - same-process happy path
   - cross-machine HTTPS happy path
 
 ## Not Shipped Yet
 
-**v0.9 — Local-First Bus** (shipping now):
-- UDS-backed broker with socket-activated lifecycle
-- IRC-style channels / broadcast primitive (`#name`)
-- Zero-crypto same-host path (filesystem is the trust boundary)
-- See the full [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
-
-**v1.0 — Federation Profile** (after v0.9):
+**v1.0 — Federation Profile** (after v0.11):
 - `famp-gateway` bridging the local bus to remote FAMP-over-HTTPS
 - Agent Cards and federation credentials
 - `.well-known` card distribution
@@ -696,10 +700,17 @@ workflow (Quick Start install path) runs separately in CI and is not included in
 - `v0.6`: foundation crates, shipped
 - `v0.7`: personal runtime, shipped
 - `v0.8`: usable from Claude Code, with Codex support via user-scope MCP registration, shipped
-- `v0.9`: **local-first bus** — shipping now. UDS-backed broker replacing
+- `v0.9`: **local-first bus** — shipped. UDS-backed broker replacing
   the per-identity TLS listener mesh for same-host agents. See the
   [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
-- `v1.0`: federation profile — after v0.9. Agent Cards, delegation,
+- `v0.10`: inspector & observability — shipped. `famp inspect broker` /
+  `famp inspect identities` / `famp inspect tasks` / `famp inspect messages`
+  for read-only broker diagnosis without registration.
+- `v0.11`: **broker daemon & cross-tool bootstrap** — shipped, current
+  runtime. `famp daemon install` runs a service-managed broker (launchd /
+  systemd `--user`) so Claude Code and Codex connect to a persistent broker
+  instead of relying on per-client auto-spawn; version handshake at connect.
+- `v1.0`: federation profile — after v0.11. Agent Cards, delegation,
   provenance, cross-host via a `famp-gateway` process.
 
 See [`docs/history/ROADMAP.md`](docs/history/ROADMAP.md) for the curated

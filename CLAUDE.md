@@ -54,15 +54,17 @@ When listen mode is active, the Stop hook (`~/.claude/hooks/famp-await.sh`) bloc
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-**FAMP today is local-first** (v0.9): a UDS-backed broker for same-host agent
-messaging. **FAMP at v1.0 is federated**: cross-host messaging via
-`famp-gateway` wrapping the local bus. See [ARCHITECTURE.md](ARCHITECTURE.md)
-for the full layered model (Layer 0 protocol primitives -> Layer 1 local bus ->
-Layer 2 federation gateway).
+**FAMP today is local-first** (v0.11, built on the v0.9 local bus): a
+persistent, service-managed UDS broker daemon for same-host agent messaging,
+with cross-tool bootstrap (Claude Code + Codex). **FAMP at v1.0 is
+federated**: cross-host messaging via `famp-gateway` wrapping the local bus.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full layered model (Layer 0
+protocol primitives -> Layer 1 local bus -> Layer 2 federation gateway).
 
 In v0.8 the federation transport used `famp listen` HTTPS daemons with
-TOFU-pinned peers; v0.9 replaces this with the local bus. Every federation
-wire envelope stayed Ed25519-signed over canonical JSON under the
+TOFU-pinned peers; v0.9 shipped the local bus that replaced it, and v0.11
+made that bus reliably reachable via a service-managed daemon. Every
+federation wire envelope stayed Ed25519-signed over canonical JSON under the
 `FAMP-sig-v1\0` domain prefix (INV-10). 5-state task FSM (`famp-fsm`):
 REQUESTED -> COMMITTED -> {COMPLETED | FAILED | CANCELLED}, terminals
 absorbing.
@@ -70,12 +72,19 @@ absorbing.
 Note: as of v0.8.x (the session-bound MCP identity bridge phase), the
 `famp mcp` server reads identity from session state via `famp_register`,
 not from `FAMP_HOME`. The v0.8 federation transport used `FAMP_HOME` per
-identity; v0.9's local bus collapses this distinction.
+identity; v0.9's local bus collapsed this distinction, and v0.11's daemon
+now keeps that bus alive across sessions.
 
-**v0.9 shipping path:** collapse same-host agents onto a single
-UDS-backed broker; drop crypto on the local path; treat federation
-(cross-host) as a v1.0 gateway that wraps the bus. IRC-style channels,
-durable per-name mailboxes, stable MCP tool surface across v0.8 / v0.9 / v1.0.
+**v0.9 (shipped):** collapsed same-host agents onto a single UDS-backed
+broker; dropped crypto on the local path; treats federation (cross-host) as
+a v1.0 gateway that wraps the bus. IRC-style channels, durable per-name
+mailboxes, stable MCP tool surface across v0.8 / v0.9 / v0.11 / v1.0.
+
+**v0.11 (shipped 2026-06-06, current runtime):** `famp daemon install`
+installs a launchd (macOS) or systemd `--user` (Linux) service that keeps the
+v0.9 broker alive across sessions, replacing per-session auto-spawn as the
+primary reachability path; version handshake at connect catches
+daemon/client skew.
 
 **v1.0 readiness trigger (named):** v1.0 federation milestone fires
 when Sofer (or a named equivalent) runs FAMP from a different machine
