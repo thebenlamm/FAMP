@@ -25,14 +25,15 @@ header or Agent Card field that references the spec version. A message with
 a mismatched version is rejected with `unsupported_version`.
 
 > **Reference-implementation note (non-normative).** The Rust reference
-> implementation in `crates/famp-envelope/src/version.rs` intentionally
-> retains the constant value `"0.5.1"` until v0.9 Phase 1 ships the
-> `MessageClass::AuditLog` impl. During this gap the wire `famp` field
-> continues to declare `"0.5.1"` exactly; conformance therefore means
-> "v0.5.1 wire vocabulary, v0.5.2 spec text." This note is editorial; the
-> normative version constant for v0.5.2 conformance is `"0.5.2"`, and any
-> second implementer targeting v0.5.2 conformance MUST emit `"0.5.2"` on
-> the wire and reject `"0.5.1"` per §19.
+> implementation in `crates/famp-envelope/src/version.rs` retained the
+> constant value `"0.5.1"` on the wire until v0.9 Phase 1 shipped the
+> `MessageClass::AuditLog` impl; during that gap conformance meant
+> "v0.5.1 wire vocabulary, v0.5.2 spec text." That gap has closed: the
+> constant now emits `"0.5.2"` on the wire, matching the normative version
+> constant below. This note is editorial; the normative version constant
+> for v0.5.2 conformance is `"0.5.2"`, and any second implementer targeting
+> v0.5.2 conformance MUST emit `"0.5.2"` on the wire and reject `"0.5.1"`
+> per §19.
 
 ---
 
@@ -1137,3 +1138,4 @@ through Δ33 (audit_log MessageClass amendment).
 - `v0.5.2-Δ31 — §7.3a + §8a.6 — v0.9 prep sprint T5 — audit_log declared non-FSM-firing (sibling to ack); receivers MUST store, MUST NOT emit ack reply. Forbids "improvement" via auto-acknowledge.`
 - `v0.5.2-Δ32 — §6 / §8a.6 — v0.9 prep sprint T5 — New causality rel value "audits" introduced (distinct from existing "acknowledges"); OPTIONAL on audit_log; omitted for ambient audits (scope: standalone).`
 - `v0.5.2-Δ33 — §23 Open Questions — v0.9 prep sprint T5 — Q7 filed: audit_log retention/rotation/quota deferred to v1.0 federation gateway; v0.5.2 leaves implementation-defined.`
+- `v0.5.2-Δ34 — top-of-doc Reference-implementation note (§ near line 27) — editorial / quick task 260711-g1t doc-drift reconciliation — Rewrote the Δ29 Rust-constant-lag note in past tense: the reference implementation now emits FAMP_SPEC_VERSION = "0.5.2" on the wire (the v0.9 Phase 1 gap has closed). No normative text changed.`

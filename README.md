@@ -21,7 +21,7 @@ is documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 exchanging messages via the local bus. See [Quick Start](#quick-start)
 below; no cert wrangling, no peer-card piping.
 
-Under the hood it's a v0.5.1-spec-conformant stack: canonical JSON
+Under the hood it's a v0.5.2-spec-conformant stack: canonical JSON
 (RFC 8785), Ed25519 signatures with domain separation, typed identity
 and envelope types, and a 5-state task FSM. The local bus is the v0.11
 runtime path; federation transport internals remain preserved for v1.0.
@@ -691,6 +691,8 @@ workflow (Quick Start install path) runs separately in CI and is not included in
 ## Current Milestones
 
 - `v0.5.1`: spec fork, shipped
+- `v0.5.2`: spec amendment adding the `audit_log` `MessageClass` (does not fire
+  the task FSM), shipped alongside v0.9 Phase 1
 - `v0.6`: foundation crates, shipped
 - `v0.7`: personal runtime, shipped
 - `v0.8`: usable from Claude Code, with Codex support via user-scope MCP registration, shipped

@@ -13,7 +13,7 @@ A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.
 - **Tech stack (deferred)**: No Python/TS bindings in v1; keep FFI surface clean but unwired.
 - **Transport**: HTTP/1.1 + JSON over TLS as reference wire; in-process `MemoryTransport` for tests. Other transports live behind the `Transport` trait.
 - **Conformance target**: Staged conformance is supported — each milestone tags conformance level achieved; vector pack ships in v1.0 alongside federation gateway.
-- **Spec fidelity**: v0.5.1 fork is the authority for this implementation. All diffs from v0.5 documented with reviewer rationale.
+- **Spec fidelity**: v0.5.2 is the authority for this implementation (the v0.5.1 fork amended with the `audit_log` `MessageClass`, which does not fire the task FSM, shipped alongside v0.9 Phase 1). All diffs from v0.5 documented with reviewer rationale.
 - **Security**: Every message signed (INV-10); unsigned messages rejected. Ed25519 non-negotiable. Domain separation prefix added in v0.5.1 fork.
 - **Developer onboarding**: Rust toolchain install is Phase 0; assume zero prior Rust experience.
 <!-- GSD:project-end -->
