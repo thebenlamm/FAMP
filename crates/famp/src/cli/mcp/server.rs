@@ -474,3 +474,57 @@ async fn dispatch_tool(
         )),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::tool_descriptors;
+
+    /// Anti-drift gate (quick task 260711-g1t, item 3): the MCP `Mcp`
+    /// subcommand doc-comment used to hardcode a tool count that drifted
+    /// from the registry below. This test pins the registry directly so a
+    /// future add/remove of a tool fails loud here instead of silently
+    /// re-opening the drift in help text.
+    #[test]
+    fn tool_descriptors_has_exactly_twelve_named_tools() {
+        let descriptors = tool_descriptors();
+        let names: Vec<&str> = descriptors
+            .as_array()
+            .expect("tool_descriptors() must return a JSON array")
+            .iter()
+            .map(|entry| {
+                entry
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .expect("each descriptor must have a string \"name\" field")
+            })
+            .collect();
+
+        assert_eq!(
+            names.len(),
+            12,
+            "expected exactly twelve tool descriptors, got {}: {names:?}",
+            names.len()
+        );
+
+        let expected = [
+            "famp_send",
+            "famp_await",
+            "famp_inbox",
+            "famp_channel_log",
+            "famp_peers",
+            "famp_register",
+            "famp_set_listen",
+            "famp_whoami",
+            "famp_verify",
+            "famp_join",
+            "famp_leave",
+            "famp_inspect_waiters",
+        ];
+        for name in expected {
+            assert!(
+                names.contains(&name),
+                "expected tool descriptor {name:?} missing from tool_descriptors(); got {names:?}"
+            );
+        }
+    }
+}

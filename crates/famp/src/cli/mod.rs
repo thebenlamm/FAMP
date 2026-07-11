@@ -85,10 +85,11 @@ pub enum Commands {
     WaitReply(wait_reply::WaitReplyArgs),
     /// Inspect the inbox (list + cursor ack).
     Inbox(inbox::InboxArgs),
-    /// Start the MCP stdio JSON-RPC server (eight tools: `famp_register`,
-    /// `famp_whoami`, `famp_send`, `famp_await`, `famp_inbox`, `famp_peers`,
-    /// `famp_join`, `famp_leave`). Reads Content-Length-framed JSON-RPC from
-    /// stdin; writes framed responses to stdout.
+    /// Start the MCP stdio JSON-RPC server. Reads Content-Length-framed
+    /// JSON-RPC from stdin; writes framed responses to stdout. The tool set
+    /// is enumerated at runtime via the MCP `tools/list` method — call that
+    /// method against a running server for the current, authoritative list
+    /// rather than relying on a count maintained in this doc-comment.
     Mcp(mcp::McpArgs),
     /// Run the local-first UDS broker daemon (Phase 02). Auto-spawned by
     /// `bus_client::spawn::spawn_broker_if_absent`; rarely invoked
