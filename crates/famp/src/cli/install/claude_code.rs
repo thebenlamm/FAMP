@@ -123,7 +123,9 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     writeln!(err).ok();
     writeln!(
         err,
-        "install-claude-code complete. Restart Claude Code windows to pick up changes."
+        "install-claude-code complete. The 7 slash commands and Stop hooks are \
+         live immediately in already-open windows. The MCP server registration \
+         (mcpServers.famp) only takes effect after restarting Claude Code."
     )
     .ok();
     if which::which("famp").is_err() {
