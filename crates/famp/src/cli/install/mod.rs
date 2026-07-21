@@ -2,7 +2,7 @@
 //!
 //! Phase 3 ships four install/uninstall pairs:
 //!  - `install-claude-code` / `uninstall-claude-code` (D-04 symmetric pair)
-//!  - `install-codex`        / `uninstall-codex`       (D-12 MCP-only pair)
+//!  - `install-codex`        / `uninstall-codex`       (MCP + Stop hook pair)
 //!
 //! This module hosts the install-side handlers and the shared helper
 //! modules. Uninstall handlers live in `crate::cli::uninstall` (see plan

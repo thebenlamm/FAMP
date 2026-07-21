@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ~/.claude/hooks/famp-await.sh — FAMP inbound listen-mode Stop hook (v0.9)
+# FAMP inbound listen-mode Stop hook (Claude Code + Codex).
 #
 # Activates when the session transcript contains the most recent successful
 # famp_register call with listen:true. Blocks on
@@ -15,10 +15,13 @@
 # files (not -c strings) — a known 3.2 limitation fixed in bash 4.x.
 set -uo pipefail
 
-# --- Read transcript_path from stdin BEFORE redirecting stdin -----------
+# --- Read hook metadata from stdin BEFORE redirecting stdin --------------
 STDIN_JSON="$(cat 2>/dev/null || true)"
 TRANSCRIPT="$(printf '%s' "$STDIN_JSON" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin).get("transcript_path",""))' \
+    2>/dev/null || true)"
+SESSION_ID="$(printf '%s' "$STDIN_JSON" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("session_id",""))' \
     2>/dev/null || true)"
 
 # Disconnect stdin now to avoid SIGPIPE during the long await block.
@@ -31,6 +34,69 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 [ -L "$LOG_FILE" ] && LOG_FILE=/dev/null
 log() { printf '[%s pid=%s] %s\n' "$(date -Iseconds)" "$$" "$*" >> "$LOG_FILE" 2>/dev/null || true; }
 log "hook invoked"
+
+# --- Codex rollout fallback --------------------------------------------
+# Some Codex Stop-hook payloads omit transcript_path. Resolve the rollout
+# path from Codex's state DB by session_id so listen mode still arms.
+if { [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; } && [ -n "$SESSION_ID" ]; then
+    RESOLVED_TRANSCRIPT="$(python3 -c '
+import glob, os, sys, urllib.parse
+
+try:
+    import sqlite3
+except Exception:
+    sqlite3 = None
+
+session_id = sys.argv[1]
+home = os.environ.get("HOME") or ""
+codex_home = os.environ.get("CODEX_HOME") or (os.path.join(home, ".codex") if home else "")
+sqlite_home = os.environ.get("CODEX_SQLITE_HOME") or codex_home
+session_root = os.path.join(codex_home, "sessions") if codex_home else ""
+
+db_candidates = []
+if sqlite_home:
+    db_candidates.append(os.path.join(sqlite_home, "state_5.sqlite"))
+if codex_home and codex_home != sqlite_home:
+    db_candidates.append(os.path.join(codex_home, "state_5.sqlite"))
+
+def allowed_rollout_path(path):
+    if not path or not os.path.isfile(path) or not session_root:
+        return False
+    try:
+        real_path = os.path.realpath(path)
+        real_root = os.path.realpath(session_root)
+        return os.path.commonpath([real_path, real_root]) == real_root
+    except Exception:
+        return False
+
+if sqlite3 is not None:
+    for db in db_candidates:
+        if not os.path.isfile(db):
+            continue
+        try:
+            uri = "file:" + urllib.parse.quote(os.path.abspath(db)) + "?mode=ro"
+            con = sqlite3.connect(uri, uri=True, timeout=0.2)
+            con.execute("pragma query_only = ON")
+            row = con.execute("select rollout_path from threads where id = ?", (session_id,)).fetchone()
+            con.close()
+        except Exception:
+            row = None
+        if row and allowed_rollout_path(row[0]):
+            print(row[0])
+            sys.exit(0)
+
+if codex_home:
+    pattern = os.path.join(codex_home, "sessions", "**", f"rollout-*{session_id}.jsonl")
+    matches = [p for p in glob.glob(pattern, recursive=True) if os.path.isfile(p)]
+    if matches:
+        matches.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        print(matches[0])
+' "$SESSION_ID" 2>/dev/null || true)"
+    if [ -n "$RESOLVED_TRANSCRIPT" ]; then
+        TRANSCRIPT="$RESOLVED_TRANSCRIPT"
+        log "resolved transcript from Codex session_id=$SESSION_ID"
+    fi
+fi
 
 # --- Transcript gate ---------------------------------------------------
 if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
@@ -51,8 +117,26 @@ cat > "$PY_SCRIPT" << 'PYEOF'
 import json, os, sys
 
 path = sys.argv[1]
-regs    = []   # (line_pos, tool_use_id, identity)
+actions = []   # (line_pos, tool_use_id, kind, identity, listen)
 results = {}   # tool_use_id -> ok (bool)
+
+def parse_args(raw):
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+def function_output_success(payload):
+    output = payload.get("output", "")
+    if not isinstance(output, str):
+        return True
+    lowered = output.lower().replace(" ", "")
+    return "\"iserror\":true" not in lowered and "\"is_error\":true" not in lowered
 
 # Limit scan to last 2 MB to protect against huge transcripts.
 MAX_BYTES = 2_000_000
@@ -60,10 +144,6 @@ fsize  = os.path.getsize(path)
 offset = max(0, fsize - MAX_BYTES)
 
 pos = 0
-# Known limitation: a later famp_register(listen:false) in the same session
-# does not cancel listen mode — only the most recent listen-active register
-# (absent OR true) is tracked. Dedicated listen windows never re-register,
-# so this is acceptable.
 with open(path, encoding='utf-8', errors='replace') as f:
     if offset > 0:
         f.seek(offset)
@@ -74,44 +154,84 @@ with open(path, encoding='utf-8', errors='replace') as f:
             ev = json.loads(line)
         except Exception:
             continue
+        # Claude Code transcript format.
         msg = ev.get("message") if isinstance(ev.get("message"), dict) else ev
         content = msg.get("content") or []
         if isinstance(content, str):
-            continue
+            content = []
         for block in content:
             if not isinstance(block, dict):
                 continue
             t    = block.get("type", "")
             name = str(block.get("name", ""))
             if t == "tool_use":
+                inp = parse_args(block.get("input"))
+                uid = block.get("id", "")
                 if name.endswith("famp_register"):
-                    inp = block.get("input") or {}
-                    # Fix 1 (2026-05-12): listen defaults to ON when the
-                    # field is absent or JSON null, mirroring the MCP
-                    # tool default at register.rs:80 (unwrap_or(true)).
-                    # Only an explicit JSON `false` suppresses listen.
-                    # `inp.get("listen") is not False` returns True for
-                    # missing key (None) and True for JSON true; only
-                    # JSON false makes it False.
-                    if inp.get("listen") is not False:
-                        ident = inp.get("identity") or inp.get("name", "")
-                        uid   = block.get("id", "")
-                        if ident and uid:
-                            regs.append((pos, uid, ident))
+                    ident = inp.get("identity") or inp.get("name", "")
+                    if ident and uid:
+                        actions.append((pos, uid, "register", ident, inp.get("listen")))
+                elif name.endswith("famp_set_listen") and uid:
+                    actions.append((pos, uid, "set_listen", "", inp.get("listen")))
             elif t == "tool_result":
                 uid = block.get("tool_use_id", "")
                 # Strict boolean check: only JSON true (Python True) counts as error.
                 # Avoids bool("false") == True for string-typed is_error values.
                 results[uid] = block.get("is_error") is not True
 
-# Find the most recent listen registration that succeeded.
-# famp_leave is a channel operation, not an unregister — we do not track it.
+        # Codex rollout JSONL format.
+        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
+        if payload.get("type") == "function_call":
+            tool = str(payload.get("name", ""))
+            namespace = str(payload.get("namespace", ""))
+            if namespace and namespace != "mcp__famp":
+                tool = ""
+            args = parse_args(payload.get("arguments"))
+            uid = payload.get("call_id") or f"codex-fc:{pos}"
+            if tool.endswith("famp_register"):
+                ident = args.get("identity") or args.get("name", "")
+                if ident:
+                    actions.append((pos, uid, "register", ident, args.get("listen")))
+            elif tool.endswith("famp_set_listen"):
+                actions.append((pos, uid, "set_listen", "", args.get("listen")))
+        elif payload.get("type") == "function_call_output":
+            uid = payload.get("call_id", "")
+            if uid and uid not in results:
+                results[uid] = function_output_success(payload)
+
+        if payload.get("type") == "mcp_tool_call_end":
+            inv = payload.get("invocation") if isinstance(payload.get("invocation"), dict) else {}
+            tool = str(inv.get("tool", ""))
+            args = parse_args(inv.get("arguments"))
+            result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            ok_payload = result.get("Ok") if isinstance(result.get("Ok"), dict) else None
+            ok = ok_payload is not None and ok_payload.get("isError") is not True
+            uid = payload.get("call_id") or f"codex:{pos}"
+            if tool.endswith("famp_register"):
+                ident = args.get("identity") or args.get("name", "")
+                if ident:
+                    actions.append((pos, uid, "register", ident, args.get("listen")))
+                    results[uid] = ok
+            elif tool.endswith("famp_set_listen"):
+                actions.append((pos, uid, "set_listen", "", args.get("listen")))
+                results[uid] = ok
+
+# Replay successful control actions in transcript order. Listen defaults ON
+# for register calls; only an explicit JSON false disables it. A later
+# famp_set_listen(false) cancels listen mode without requiring re-register.
 active = ""
-for _, uid, ident in reversed(regs):
+last_identity = ""
+for _, uid, kind, ident, listen in actions:
     if not results.get(uid, False):
         continue
-    active = ident
-    break
+    if kind == "register":
+        last_identity = ident or last_identity
+        active = ident if listen is not False else ""
+    elif kind == "set_listen":
+        if listen is False:
+            active = ""
+        elif last_identity:
+            active = last_identity
 
 print(active)
 PYEOF

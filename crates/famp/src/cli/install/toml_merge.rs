@@ -94,6 +94,188 @@ pub fn remove_codex_table(
     Ok(TomlMergeOutcome::Removed)
 }
 
+/// Idempotent upsert of a nested table leaf within a TOML file.
+///
+/// `parent_path = &["hooks", "state"]` and `leaf_key = "/repo/.codex/hooks.json:stop:1:0"`
+/// writes `[hooks.state."<leaf_key>"]`.
+pub fn upsert_nested_table(
+    path: &Path,
+    parent_path: &[&str],
+    leaf_key: &str,
+    value: toml::Table,
+) -> Result<TomlMergeOutcome, CliError> {
+    let display_path = path.to_path_buf();
+    let mut root = read_toml_table(path, &display_path, true)?;
+    let parent = ensure_nested_parent(&mut root, parent_path, &display_path)?;
+
+    let outcome = match parent.get(leaf_key) {
+        Some(Value::Table(existing)) if *existing == value => {
+            return Ok(TomlMergeOutcome::AlreadyMatches);
+        }
+        Some(_) => TomlMergeOutcome::Updated,
+        None => TomlMergeOutcome::Inserted,
+    };
+    parent.insert(leaf_key.to_string(), Value::Table(value));
+
+    backup_if_exists(path)?;
+    persist_toml(path, &display_path, &root)?;
+    Ok(outcome)
+}
+
+/// Symmetric remove for a nested table leaf. Empty parent tables created solely
+/// for this leaf are pruned on the way back out.
+pub fn remove_nested_table(
+    path: &Path,
+    parent_path: &[&str],
+    leaf_key: &str,
+) -> Result<TomlMergeOutcome, CliError> {
+    let display_path = path.to_path_buf();
+    let mut root = match read_toml_table(path, &display_path, false) {
+        Ok(root) => root,
+        Err(CliError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(TomlMergeOutcome::NotPresent);
+        }
+        Err(e) => return Err(e),
+    };
+
+    let Some(parent) = get_nested_parent_mut(&mut root, parent_path, &display_path)? else {
+        return Ok(TomlMergeOutcome::NotPresent);
+    };
+    if parent.remove(leaf_key).is_none() {
+        return Ok(TomlMergeOutcome::NotPresent);
+    }
+    prune_empty_nested_parent(&mut root, parent_path);
+
+    backup_if_exists(path)?;
+    persist_toml(path, &display_path, &root)?;
+    Ok(TomlMergeOutcome::Removed)
+}
+
+pub(crate) fn remove_nested_tables_where<F>(
+    path: &Path,
+    parent_path: &[&str],
+    mut predicate: F,
+) -> Result<(TomlMergeOutcome, Vec<String>), CliError>
+where
+    F: FnMut(&str, &toml::Table) -> bool,
+{
+    let display_path = path.to_path_buf();
+    let mut root = match read_toml_table(path, &display_path, false) {
+        Ok(root) => root,
+        Err(CliError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((TomlMergeOutcome::NotPresent, Vec::new()));
+        }
+        Err(e) => return Err(e),
+    };
+
+    let Some(parent) = get_nested_parent_mut(&mut root, parent_path, &display_path)? else {
+        return Ok((TomlMergeOutcome::NotPresent, Vec::new()));
+    };
+    let keys: Vec<String> = parent
+        .iter()
+        .filter_map(|(key, value)| {
+            value
+                .as_table()
+                .filter(|table| predicate(key, table))
+                .map(|_| key.clone())
+        })
+        .collect();
+    if keys.is_empty() {
+        return Ok((TomlMergeOutcome::NotPresent, Vec::new()));
+    }
+
+    for key in &keys {
+        parent.remove(key);
+    }
+    prune_empty_nested_parent(&mut root, parent_path);
+
+    backup_if_exists(path)?;
+    persist_toml(path, &display_path, &root)?;
+    Ok((TomlMergeOutcome::Removed, keys))
+}
+
+fn ensure_nested_parent<'a>(
+    root: &'a mut toml::Table,
+    parent_path: &[&str],
+    display_path: &Path,
+) -> Result<&'a mut toml::Table, CliError> {
+    let mut current = root;
+    let mut traversed = String::new();
+    for segment in parent_path {
+        if !traversed.is_empty() {
+            traversed.push('.');
+        }
+        traversed.push_str(segment);
+        let entry = current
+            .entry((*segment).to_string())
+            .or_insert_with(|| Value::Table(toml::Table::new()));
+        current = entry
+            .as_table_mut()
+            .ok_or_else(|| CliError::TomlTableExpected {
+                path: PathBuf::from(format!("{}#/{traversed}", display_path.display())),
+            })?;
+    }
+    Ok(current)
+}
+
+fn get_nested_parent_mut<'a>(
+    root: &'a mut toml::Table,
+    parent_path: &[&str],
+    display_path: &Path,
+) -> Result<Option<&'a mut toml::Table>, CliError> {
+    let mut current = root;
+    let mut traversed = String::new();
+    for segment in parent_path {
+        if !traversed.is_empty() {
+            traversed.push('.');
+        }
+        traversed.push_str(segment);
+        let Some(value) = current.get_mut(*segment) else {
+            return Ok(None);
+        };
+        current = value
+            .as_table_mut()
+            .ok_or_else(|| CliError::TomlTableExpected {
+                path: PathBuf::from(format!("{}#/{traversed}", display_path.display())),
+            })?;
+    }
+    Ok(Some(current))
+}
+
+fn prune_empty_nested_parent(root: &mut toml::Table, parent_path: &[&str]) {
+    for depth in (1..=parent_path.len()).rev() {
+        if nested_parent_is_empty(root, &parent_path[..depth]) {
+            remove_nested_parent(root, &parent_path[..depth]);
+        }
+    }
+}
+
+fn nested_parent_is_empty(root: &toml::Table, parent_path: &[&str]) -> bool {
+    let mut current = root;
+    for segment in parent_path {
+        let Some(Value::Table(table)) = current.get(*segment) else {
+            return false;
+        };
+        current = table;
+    }
+    current.is_empty()
+}
+
+fn remove_nested_parent(root: &mut toml::Table, parent_path: &[&str]) {
+    if parent_path.len() == 1 {
+        root.remove(parent_path[0]);
+        return;
+    }
+    let mut current = root;
+    for segment in &parent_path[..parent_path.len() - 1] {
+        let Some(Value::Table(table)) = current.get_mut(*segment) else {
+            return;
+        };
+        current = table;
+    }
+    current.remove(parent_path[parent_path.len() - 1]);
+}
+
 fn read_toml_table(
     path: &Path,
     display_path: &Path,
@@ -258,5 +440,61 @@ mod tests {
         let path = dir.path().join("config.toml");
         let outcome = remove_codex_table(&path, "mcp_servers", "famp").unwrap();
         assert_eq!(outcome, TomlMergeOutcome::NotPresent);
+    }
+
+    #[test]
+    fn upsert_nested_table_writes_codex_hook_state_shape() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut value = toml::Table::new();
+        value.insert(
+            "trusted_hash".into(),
+            Value::String("sha256:abc".to_string()),
+        );
+        value.insert("enabled".into(), Value::Boolean(true));
+
+        let outcome = upsert_nested_table(
+            &path,
+            &["hooks", "state"],
+            "/repo/.codex/hooks.json:stop:1:0",
+            value,
+        )
+        .unwrap();
+        assert_eq!(outcome, TomlMergeOutcome::Inserted);
+
+        let post: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            post["hooks"]["state"]["/repo/.codex/hooks.json:stop:1:0"]["trusted_hash"]
+                .as_str()
+                .unwrap(),
+            "sha256:abc"
+        );
+        assert!(
+            post["hooks"]["state"]["/repo/.codex/hooks.json:stop:1:0"]["enabled"]
+                .as_bool()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn remove_nested_table_prunes_empty_codex_hook_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[hooks.state.\"/repo/.codex/hooks.json:stop:1:0\"]\ntrusted_hash = \"sha256:abc\"\nenabled = true\n",
+        )
+        .unwrap();
+
+        let outcome = remove_nested_table(
+            &path,
+            &["hooks", "state"],
+            "/repo/.codex/hooks.json:stop:1:0",
+        )
+        .unwrap();
+        assert_eq!(outcome, TomlMergeOutcome::Removed);
+
+        let post: toml::Table = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(post.get("hooks").is_none());
     }
 }

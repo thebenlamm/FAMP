@@ -1,7 +1,5 @@
 //! Shared Stop-hook entry filter used by install and uninstall.
 
-use std::path::Path;
-
 use serde_json::Value;
 
 /// Remove famp-owned commands from a single Stop-hook array element.
@@ -16,9 +14,8 @@ use serde_json::Value;
 /// matches when its `command` field:
 ///   - equals a shim exactly, OR
 ///   - starts with `"<shim> "` (legacy entries with trailing arguments), OR
-///   - contains a whitespace-separated token whose basename equals a shim's
-///     filename (matches wrapped forms like `bash <path>`, `/bin/bash <path>`,
-///     `sh <path>`).
+///   - contains a whitespace-separated token equal to a shim path (matches
+///     wrapped forms like `bash <path>`, `/bin/bash <path>`, `sh <path>`).
 pub fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Option<Value> {
     if entry
         .get("command")
@@ -60,30 +57,26 @@ pub fn remove_famp_hook_from_stop_entry(entry: &Value, shims: &[String]) -> Opti
 /// Recognizes:
 /// - exact match: `command == shim`
 /// - prefix match: `command` starts with `"<shim> "` (legacy trailing args)
-/// - wrapped form: any whitespace-separated token in `command` whose
-///   basename equals the filename of a shim (e.g. `bash <shim>`,
-///   `/bin/bash <shim>`, `sh <shim>`).
-fn is_famp_command(command: &str, shims: &[String]) -> bool {
+/// - wrapped form: any whitespace-separated token in `command` that equals a
+///   shim path (e.g. `bash <shim>`, `/bin/bash <shim>`, `sh <shim>`).
+pub(crate) fn is_famp_command(command: &str, shims: &[String]) -> bool {
     // Existing forms: exact match or "<shim> " prefix.
     for shim in shims {
-        if command == shim.as_str() || command.starts_with(&format!("{shim} ")) {
+        let trimmed = command.trim_matches(['\'', '"']);
+        if command == shim.as_str()
+            || trimmed == shim.as_str()
+            || command.starts_with(&format!("{shim} "))
+        {
             return true;
         }
     }
-    // NEW: wrapped forms like `bash <path>`, `/bin/bash <path>`, `sh <path>`.
-    // Tokenize on whitespace; if any token's basename matches a shim's filename, match.
-    let shim_filenames: Vec<&str> = shims
-        .iter()
-        .filter_map(|s| Path::new(s).file_name().and_then(|f| f.to_str()))
-        .collect();
-    if shim_filenames.is_empty() {
-        return false;
-    }
+    // Wrapped forms like `bash <path>`, `/bin/bash <path>`, `sh <path>`.
+    // Tokenize on whitespace and require the actual installed path. Basename
+    // matching would let an unrelated `famp-await.sh` be removed as ours.
     for token in command.split_whitespace() {
-        if let Some(basename) = Path::new(token).file_name().and_then(|f| f.to_str()) {
-            if shim_filenames.contains(&basename) {
-                return true;
-            }
+        let token = token.trim_matches(['\'', '"']);
+        if shims.iter().any(|shim| token == shim) {
+            return true;
         }
     }
     false
@@ -162,6 +155,15 @@ mod tests {
         assert!(
             remove_famp_hook_from_stop_entry(&entry, &shims()).is_none(),
             "`sh <shim>` entry must be dropped"
+        );
+    }
+
+    #[test]
+    fn unrelated_same_basename_is_preserved() {
+        let entry = bare_entry("bash /tmp/other/famp-await.sh");
+        assert!(
+            remove_famp_hook_from_stop_entry(&entry, &shims()).is_some(),
+            "same basename at a different path must not be treated as FAMP-owned"
         );
     }
 

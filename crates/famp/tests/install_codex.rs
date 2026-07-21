@@ -1,9 +1,17 @@
-//! D-12: install-codex writes `[mcp_servers.famp]` table to
-//! `~/.codex/config.toml` preserving every other section. MCP-only - no slash
-//! commands, no hooks.
+//! install-codex writes `[mcp_servers.famp]` to `~/.codex/config.toml` and a
+//! FAMP-owned Stop hook to `.codex/hooks.json`, preserving unrelated config.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
+
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+
+fn absolute(path: &Path) -> PathBuf {
+    path.canonicalize()
+        .unwrap_or_else(|_| std::path::absolute(path).unwrap())
+}
 
 #[test]
 fn install_codex_writes_mcp_servers_famp_table_under_tempdir_home() {
@@ -32,6 +40,133 @@ fn install_codex_writes_mcp_servers_famp_table_under_tempdir_home() {
     assert!(
         !home.join(".famp/hook-runner.sh").exists(),
         "Codex install must not write the shim"
+    );
+    assert!(
+        home.join(".codex/hooks/famp-await.sh").exists(),
+        "Codex install must write the project await shim"
+    );
+
+    let hooks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(home.join(".codex/hooks.json")).unwrap())
+            .unwrap();
+    let stop = hooks["hooks"]["Stop"].as_array().unwrap();
+    assert_eq!(stop.len(), 1);
+    assert!(stop[0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("famp-await.sh"));
+
+    let project = absolute(home);
+    let trust_key = format!("{}:stop:0:0", project.join(".codex/hooks.json").display());
+    assert!(parsed["hooks"]["state"][trust_key]["trusted_hash"]
+        .as_str()
+        .unwrap()
+        .starts_with("sha256:"));
+}
+
+#[test]
+fn install_codex_uses_absolute_project_paths_for_relative_project_arg() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path().join("home");
+    let cwd = std::env::current_dir().unwrap();
+    let project_dir = tempfile::tempdir_in(&cwd).unwrap();
+    let relative_project = PathBuf::from(project_dir.path().file_name().unwrap());
+    let absolute_project = absolute(project_dir.path());
+
+    let mut out = Vec::<u8>::new();
+    let mut err = Vec::<u8>::new();
+    famp::cli::install::codex::run_at_project(&home, &relative_project, &mut out, &mut err)
+        .unwrap();
+
+    let hooks_path = absolute_project.join(".codex/hooks.json");
+    let hooks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+    let command = hooks["hooks"]["Stop"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .trim_matches(['\'', '"'])
+        .to_string();
+    assert!(
+        Path::new(&command).is_absolute(),
+        "hook command must be absolute, got {command:?}"
+    );
+    assert!(
+        command.starts_with(absolute_project.to_str().unwrap()),
+        "hook command must point at absolute project path, got {command:?}"
+    );
+
+    let config_path = absolute(&home).join(".codex/config.toml");
+    let parsed: toml::Table =
+        toml::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
+    let trust_key = format!("{}:stop:0:0", hooks_path.display());
+    assert!(
+        parsed["hooks"]["state"]
+            .as_table()
+            .unwrap()
+            .contains_key(&trust_key),
+        "absolute trust key missing: {trust_key}"
+    );
+}
+
+#[test]
+fn install_codex_treats_empty_project_hooks_json_as_empty_config() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(home.join(".codex/hooks.json"), " \n\t").unwrap();
+
+    let mut out = Vec::<u8>::new();
+    let mut err = Vec::<u8>::new();
+    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+
+    let hooks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(home.join(".codex/hooks.json")).unwrap())
+            .unwrap();
+    assert_eq!(hooks["hooks"]["Stop"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn reinstall_codex_prunes_stale_famp_hook_trust_after_stop_index_churn() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path();
+    let project = absolute(home);
+    let hooks_path = project.join(".codex/hooks.json");
+    let config_path = project.join(".codex/config.toml");
+
+    let mut out = Vec::<u8>::new();
+    let mut err = Vec::<u8>::new();
+    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+
+    let stale_key = format!("{}:stop:0:0", hooks_path.display());
+    let current_key = format!("{}:stop:1:0", hooks_path.display());
+    let mut hooks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+    hooks["hooks"]["Stop"].as_array_mut().unwrap().insert(
+        0,
+        json!({"hooks": [{"type": "command", "command": "echo keep", "timeout": 10}]}),
+    );
+    std::fs::write(&hooks_path, serde_json::to_string_pretty(&hooks).unwrap()).unwrap();
+
+    let mut out2 = Vec::<u8>::new();
+    let mut err2 = Vec::<u8>::new();
+    famp::cli::install::codex::run_at(home, &mut out2, &mut err2).unwrap();
+
+    let hooks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&hooks_path).unwrap()).unwrap();
+    let stop = hooks["hooks"]["Stop"].as_array().unwrap();
+    assert_eq!(stop.len(), 2);
+    assert_eq!(stop[0]["hooks"][0]["command"], "echo keep");
+
+    let parsed: toml::Table =
+        toml::from_str(&std::fs::read_to_string(config_path).unwrap()).unwrap();
+    let state = parsed["hooks"]["state"].as_table().unwrap();
+    assert!(
+        !state.contains_key(&stale_key),
+        "stale FAMP trust key should be removed: {stale_key}"
+    );
+    assert!(
+        state.contains_key(&current_key),
+        "current FAMP trust key should be seeded: {current_key}"
     );
 }
 
@@ -80,4 +215,41 @@ args = []
         "/opt/fs"
     );
     assert!(post["mcp_servers"]["famp"].as_table().is_some());
+}
+
+#[test]
+fn install_codex_merges_with_existing_project_hooks() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let home = tmp.path();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(
+        home.join(".codex/hooks.json"),
+        r#"{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "echo start"}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "echo existing", "timeout": 10}]}]
+  }
+}
+"#,
+    )
+    .unwrap();
+
+    let mut out = Vec::<u8>::new();
+    let mut err = Vec::<u8>::new();
+    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+
+    let hooks: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(home.join(".codex/hooks.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+        "echo start"
+    );
+    let stop = hooks["hooks"]["Stop"].as_array().unwrap();
+    assert_eq!(stop.len(), 2);
+    assert_eq!(stop[0]["hooks"][0]["command"], "echo existing");
+    assert!(stop[1]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .contains("famp-await.sh"));
 }

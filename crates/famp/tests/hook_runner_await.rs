@@ -129,6 +129,59 @@ fn run_hook(
     child.wait_with_output().unwrap()
 }
 
+fn run_hook_with_stdin(
+    hook: &Path,
+    stop_json: &str,
+    bin_dir: &Path,
+    xdg_state: &Path,
+    codex_home: Option<&Path>,
+) -> std::process::Output {
+    let host_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{host_path}", bin_dir.display());
+
+    let mut command = Command::new("bash");
+    command
+        .arg(hook)
+        .env("PATH", &new_path)
+        .env("XDG_STATE_HOME", xdg_state)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(codex_home) = codex_home {
+        command.env("CODEX_HOME", codex_home);
+    }
+
+    let mut child = command.spawn().unwrap();
+    let _ = child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stop_json.as_bytes());
+    drop(child.stdin.take());
+    child.wait_with_output().unwrap()
+}
+
+fn write_codex_state_db(codex_home: &Path, session_id: &str, rollout_path: &Path) {
+    std::fs::create_dir_all(codex_home).unwrap();
+    let status = Command::new("python3")
+        .arg("-c")
+        .arg(
+            r#"
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+con.execute("create table threads (id text primary key, rollout_path text)")
+con.execute("insert into threads (id, rollout_path) values (?, ?)", (sys.argv[2], sys.argv[3]))
+con.commit()
+"#,
+        )
+        .arg(codex_home.join("state_5.sqlite"))
+        .arg(session_id)
+        .arg(rollout_path)
+        .status()
+        .unwrap();
+    assert!(status.success(), "failed to create Codex state_5.sqlite");
+}
+
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -255,6 +308,243 @@ fn listen_false_is_noop() {
     assert!(
         !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
         "expected no famp invocation for listen:false"
+    );
+}
+
+#[test]
+fn codex_mcp_register_rollout_enters_listen_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_mock_famp(&bin_dir, &log);
+    let transcript = dir.path().join("rollout.jsonl");
+    std::fs::write(
+        &transcript,
+        r#"{"timestamp":"2026-06-30T16:55:10.000Z","type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[{"type":"text","text":"{\"active\":\"codex\"}"}],"isError":false}}}}
+"#,
+    )
+    .unwrap();
+
+    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    assert!(
+        out.status.success(),
+        "hook failed: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as codex"),
+        "expected Codex rollout registration to arm listen mode, got: {argv:?}"
+    );
+}
+
+#[test]
+fn codex_mcp_register_with_string_arguments_enters_listen_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_mock_famp(&bin_dir, &log);
+    let transcript = dir.path().join("rollout.jsonl");
+    std::fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":"{\"identity\":\"codex\",\"listen\":true}"},"result":{"Ok":{"content":[{"type":"text","text":"{\"active\":\"codex\"}"}],"isError":false}}}}
+"#,
+    )
+    .unwrap();
+
+    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    assert!(out.status.success());
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as codex"),
+        "expected string-arguments Codex rollout to arm listen mode, got: {argv:?}"
+    );
+}
+
+#[test]
+fn codex_function_call_with_string_arguments_enters_listen_mode_without_mcp_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_mock_famp(&bin_dir, &log);
+    let transcript = dir.path().join("rollout.jsonl");
+    std::fs::write(
+        &transcript,
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"famp_register","namespace":"mcp__famp","arguments":"{\"identity\":\"codex\",\"listen\":true}","call_id":"call_register"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_register","output":"Wall time: 0.1 seconds\nOutput:\n[{\"type\":\"text\",\"text\":\"{\\\"active\\\":\\\"codex\\\"}\"}]"}}
+"#,
+    )
+    .unwrap();
+
+    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    assert!(out.status.success());
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as codex"),
+        "expected function_call fallback to arm listen mode, got: {argv:?}"
+    );
+}
+
+#[test]
+fn codex_mcp_end_failure_overrides_function_call_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_mock_famp(&bin_dir, &log);
+    let transcript = dir.path().join("rollout.jsonl");
+    std::fs::write(
+        &transcript,
+        r#"{"type":"response_item","payload":{"type":"function_call","name":"famp_register","namespace":"mcp__famp","arguments":"{\"identity\":\"codex\",\"listen\":true}","call_id":"call_register"}}
+{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[{"type":"text","text":"name taken"}],"isError":true}}}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_register","output":"Wall time: 0.1 seconds\nOutput:\n[{\"type\":\"text\",\"text\":\"name taken\"}]"}}
+"#,
+    )
+    .unwrap();
+
+    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    assert!(out.status.success());
+    assert!(
+        !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
+        "expected failed mcp_tool_call_end to keep listen mode inactive"
+    );
+}
+
+#[test]
+fn codex_set_listen_false_cancels_listen_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_mock_famp(&bin_dir, &log);
+    let transcript = dir.path().join("rollout.jsonl");
+    std::fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[{"type":"text","text":"{\"active\":\"codex\"}"}],"isError":false}}}}
+{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_set_listen","invocation":{"server":"famp","tool":"famp_set_listen","arguments":{"listen":false}},"result":{"Ok":{"content":[{"type":"text","text":"{\"listen_mode\":false}"}],"isError":false}}}}
+"#,
+    )
+    .unwrap();
+
+    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    assert!(out.status.success());
+    assert!(
+        !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
+        "expected no famp invocation after successful famp_set_listen(false)"
+    );
+}
+
+#[test]
+fn codex_session_id_fallback_resolves_rollout_without_transcript_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    let codex_home = dir.path().join("codex-home");
+    stage_mock_famp(&bin_dir, &log);
+
+    let session_id = "019f824d-971f-7ec1-8c9b-8929d3f97c7a";
+    let transcript = codex_home
+        .join("sessions/2026/07/20")
+        .join(format!("rollout-2026-07-20T21-32-30-{session_id}.jsonl"));
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    std::fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[{"type":"text","text":"{\"active\":\"codex\"}"}],"isError":false}}}}
+"#,
+    )
+    .unwrap();
+
+    let stop_json = format!(r#"{{"session_id":"{session_id}","hook_event_name":"Stop"}}"#);
+    let out = run_hook_with_stdin(
+        &asset_hook_path(),
+        &stop_json,
+        &bin_dir,
+        &xdg,
+        Some(&codex_home),
+    );
+    assert!(
+        out.status.success(),
+        "hook failed: {:?}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as codex"),
+        "expected session_id fallback to arm listen mode, got: {argv:?}"
+    );
+}
+
+#[test]
+fn codex_session_id_fallback_resolves_rollout_from_sqlite_state_db() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    let codex_home = dir.path().join("codex-home");
+    stage_mock_famp(&bin_dir, &log);
+
+    let session_id = "019f824d-dbdb-7ec1-8c9b-8929d3f97c7a";
+    let transcript = codex_home.join("sessions/db-only-rollout.jsonl");
+    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+    std::fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[{"type":"text","text":"{\"active\":\"codex\"}"}],"isError":false}}}}
+"#,
+    )
+    .unwrap();
+    write_codex_state_db(&codex_home, session_id, &transcript);
+
+    let stop_json = format!(r#"{{"session_id":"{session_id}","hook_event_name":"Stop"}}"#);
+    let out = run_hook_with_stdin(
+        &asset_hook_path(),
+        &stop_json,
+        &bin_dir,
+        &xdg,
+        Some(&codex_home),
+    );
+    assert!(out.status.success());
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as codex"),
+        "expected sqlite rollout_path fallback to arm listen mode, got: {argv:?}"
+    );
+}
+
+#[test]
+fn codex_sqlite_fallback_rejects_rollout_path_outside_codex_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    let codex_home = dir.path().join("codex-home");
+    stage_mock_famp(&bin_dir, &log);
+
+    let session_id = "019f824d-bad0-7ec1-8c9b-8929d3f97c7a";
+    let transcript = dir.path().join("outside-rollout.jsonl");
+    std::fs::write(
+        &transcript,
+        r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[{"type":"text","text":"{\"active\":\"codex\"}"}],"isError":false}}}}
+"#,
+    )
+    .unwrap();
+    write_codex_state_db(&codex_home, session_id, &transcript);
+
+    let stop_json = format!(r#"{{"session_id":"{session_id}","hook_event_name":"Stop"}}"#);
+    let out = run_hook_with_stdin(
+        &asset_hook_path(),
+        &stop_json,
+        &bin_dir,
+        &xdg,
+        Some(&codex_home),
+    );
+    assert!(out.status.success());
+    assert!(
+        !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
+        "expected out-of-tree sqlite rollout_path to be ignored"
     );
 }
 

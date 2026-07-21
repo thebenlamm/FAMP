@@ -221,7 +221,7 @@ Full CLI:
 | `famp daemon uninstall` | Stop and remove the service; idempotent |
 | `famp broker --no-idle-exit` | Run the broker in the foreground with no 300s idle exit (no-install bridge) |
 | `famp install-claude-code` / `famp uninstall-claude-code` | Install or remove Claude Code MCP/slash-command integration |
-| `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP integration |
+| `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP plus project Stop-hook integration |
 
 The v0.8 `famp-local` wrapper has moved into history at
 [`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).
@@ -334,9 +334,10 @@ per client; the window picks an identity at runtime via `famp_register`.**
 ```sh
 famp install-codex
 ```
-Registers the user-scope Codex MCP server. After this lands, call
-`register as <name>` per Codex window; the binding happens inside the
-session.
+Registers the user-scope Codex MCP server and adds a project-local Stop hook
+that wakes listen-mode Codex windows when FAMP messages arrive. After this
+lands, call `register as <name>` per Codex window; the binding happens inside
+the session.
 
 ### Peer discovery (`famp_peers`)
 
@@ -748,8 +749,9 @@ for milestone history.
 - **A peer doesn't appear in `famp_peers`.** Their session has exited.
   Re-register in that window.
 - **Listen-mode window doesn't wake on a message.** Verify the Stop hook is
-  installed (`famp install-claude-code` writes it). Check `~/.famp/broker.log`
-  for `await` activity around the send time.
+  installed (`famp install-claude-code` for Claude Code,
+  `famp install-codex` for Codex). Check `~/.famp/broker.log` for `await`
+  activity around the send time.
 - **Stuck after a binary upgrade.** Restart all Claude Code windows (they cache
   the binary path at launch) AND, if you run the broker as a service, run
   `famp daemon restart` so the daemon picks up the new binary — otherwise a

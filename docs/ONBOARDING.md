@@ -33,6 +33,9 @@ open in <30 s. Subsequent installs from a different shell window only run
 cargo install famp && famp install-codex
 ```
 
+`famp install-codex` writes both the user-scope MCP server entry and a
+project-local Codex Stop hook, including the matching hook-trust state.
+
 For Cursor / Continue / other MCP-aware clients: file an issue at
 <https://github.com/thebenlamm/FAMP/issues> describing the client and we'll
 ship a `famp install-<client>` subcommand. The pattern is ~50 lines of
@@ -42,12 +45,12 @@ Rust per client (one TOML or JSON merge target, one MCP entry).
 
 ```bash
 famp uninstall-claude-code     # removes ~/.claude/commands/famp-*.md, mcpServers.famp, hooks.Stop entry, hook-runner.sh
-famp uninstall-codex           # removes [mcp_servers.famp] from ~/.codex/config.toml
+famp uninstall-codex           # removes Codex MCP entry, project Stop hook, await shim, and trust state
 cargo uninstall famp           # removes the binary itself (run last)
 ```
 
-`*.bak.<unix-ts>` backup files of `~/.claude.json` and `~/.claude/settings.json`
-are preserved so you can recover from a bad merge - `rm ~/.claude.json.bak.*`
+`*.bak.<unix-ts>` backup files of Claude/Codex config files are preserved so
+you can recover from a bad merge - `rm ~/.claude.json.bak.*`
 manually after verifying everything still works.
 
 ---

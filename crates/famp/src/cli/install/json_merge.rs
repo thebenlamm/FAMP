@@ -47,6 +47,7 @@ pub fn upsert_user_json(
     let pb: PathBuf = path.to_path_buf();
 
     let mut root: Value = match std::fs::read_to_string(path) {
+        Ok(s) if s.trim().is_empty() => Value::Object(Map::new()),
         Ok(s) => serde_json::from_str(&s).map_err(|e| CliError::JsonMergeParse {
             path: pb.clone(),
             source: e,
@@ -96,6 +97,7 @@ pub fn remove_user_json(
     let pb: PathBuf = path.to_path_buf();
 
     let mut root: Value = match std::fs::read_to_string(path) {
+        Ok(s) if s.trim().is_empty() => return Ok(MergeOutcome::NotPresent),
         Ok(s) => serde_json::from_str(&s).map_err(|e| CliError::JsonMergeParse {
             path: pb.clone(),
             source: e,
@@ -258,6 +260,19 @@ mod tests {
     }
 
     #[test]
+    fn upsert_treats_empty_file_as_empty_object() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hooks.json");
+        std::fs::write(&path, " \n\t").unwrap();
+
+        let outcome = upsert_user_json(&path, "hooks", "Stop", json!([])).unwrap();
+        assert_eq!(outcome, MergeOutcome::Inserted);
+
+        let post: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(post["hooks"]["Stop"], json!([]));
+    }
+
+    #[test]
     fn upsert_with_different_value_returns_updated() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("claude.json");
@@ -283,6 +298,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("claude.json");
         let outcome = remove_user_json(&path, "mcpServers", "famp").unwrap();
+        assert_eq!(outcome, MergeOutcome::NotPresent);
+    }
+
+    #[test]
+    fn remove_treats_empty_file_as_not_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hooks.json");
+        std::fs::write(&path, "\n").unwrap();
+
+        let outcome = remove_user_json(&path, "hooks", "Stop").unwrap();
         assert_eq!(outcome, MergeOutcome::NotPresent);
     }
 

@@ -84,6 +84,9 @@ any open Claude Code windows after running this.
 famp install-codex
 ```
 
+This writes the MCP server config plus a project-local Stop hook that wakes
+listen-mode Codex sessions when FAMP messages arrive.
+
 ---
 
 ## First Run

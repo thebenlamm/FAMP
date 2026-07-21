@@ -57,12 +57,12 @@ pub enum Commands {
     /// `~/.claude/settings.json` while preserving any other Stop hooks, and
     /// removes `~/.famp/hook-runner.sh`. Idempotent (D-04).
     UninstallClaudeCode(uninstall::claude_code::UninstallClaudeCodeArgs),
-    /// Install Codex MCP integration: writes `[mcp_servers.famp]` table to
-    /// `~/.codex/config.toml`. MCP-only - no slash commands, no hooks (D-12).
-    /// Idempotent (D-02).
+    /// Install Codex integration: writes `[mcp_servers.famp]` to
+    /// `~/.codex/config.toml`, installs a project Stop hook in
+    /// `.codex/hooks.json`, and seeds Codex hook trust. Idempotent (D-02).
     InstallCodex(install::codex::InstallCodexArgs),
-    /// Uninstall Codex MCP integration: removes only `[mcp_servers.famp]`
-    /// from `~/.codex/config.toml`, preserving every other section (D-12).
+    /// Uninstall Codex integration: removes FAMP's MCP entry, project Stop hook,
+    /// await shim, and matching hook trust while preserving unrelated config.
     UninstallCodex(uninstall::codex::UninstallCodexArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),

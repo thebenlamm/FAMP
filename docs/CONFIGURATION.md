@@ -262,6 +262,7 @@ start. Cursor files are managed client-side by `famp inbox ack --offset <N>`.
 | Flag | Env override | Description |
 |---|---|---|
 | `--home <path>` | `FAMP_INSTALL_TARGET_HOME` | Redirect all install writes to a custom home directory. Hidden; intended for integration tests. |
+| `--project <path>` | `FAMP_INSTALL_CODEX_PROJECT_DIR` | For `install-codex` / `uninstall-codex`, choose the project root whose `.codex/hooks.json` receives or removes the FAMP Stop hook. Defaults to the current git root, or the current directory outside git. |
 
 ### `famp join <channel>`
 
