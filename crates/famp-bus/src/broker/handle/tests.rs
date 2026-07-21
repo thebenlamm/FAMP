@@ -367,6 +367,201 @@ fn test_self_reregister_is_idempotent_but_others_are_rejected() {
     );
 }
 
+/// Build a valid audit_log envelope whose canonical form is large enough
+/// that packing it into `RegisterOk`/`JoinOk` exceeds [`MAX_FRAME_BYTES`].
+fn oversized_drain_envelope(pad_bytes: usize) -> Vec<u8> {
+    let pad = "x".repeat(pad_bytes);
+    let envelope = serde_json::json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": "01890000-0000-7000-8000-000000000099",
+        "from": "agent:example.test/bob",
+        "to": "agent:example.test/alice",
+        "authority": "advisory",
+        "ts": "2026-04-27T12:00:00Z",
+        // `pad` lives under `details` — AuditLogBody denies unknown top-level
+        // body fields, and decode_lines skips undecodable lines (empty drained
+        // would make RegisterOk encode fine and miss the cliff under test).
+        "body": { "event": "offline_message", "details": { "pad": pad } }
+    });
+    famp_canonical::canonicalize(&envelope).expect("oversized fixture must canonicalize")
+}
+
+/// #14: when RegisterOk cannot be framed, the name must not bind — otherwise
+/// the client's retry hits NameTaken until liveness reaping.
+#[test]
+fn register_oversized_register_ok_does_not_bind_name() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    let mailbox = MailboxName::Agent("alice".into());
+    // One envelope whose body alone is ~16 MiB → RegisterOk frame > MAX_FRAME_BYTES.
+    env.mailbox
+        .append(&mailbox, oversized_drain_envelope(MAX_FRAME_BYTES));
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Register {
+                name: "alice".into(),
+                pid: 100,
+                cwd: None,
+                listen: true,
+            },
+        },
+        now,
+    );
+    assert!(
+        outs.iter().any(|o| matches!(
+            o,
+            Out::Reply(_, BusReply::Err { kind, message })
+                if *kind == BusErrorKind::EnvelopeTooLarge
+                    && message.contains("RegisterOk")
+        )),
+        "oversized RegisterOk must surface EnvelopeTooLarge: {outs:?}"
+    );
+    assert!(
+        !outs
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::RegisterOk { .. }))),
+        "must not emit RegisterOk when the frame cannot encode: {outs:?}"
+    );
+    assert!(
+        !outs.iter().any(|o| matches!(o, Out::AdvanceCursor { .. })),
+        "must not advance the disk cursor on a refused register: {outs:?}"
+    );
+    let state = &broker.state.clients[&ClientId::from(1_u64)];
+    assert!(
+        state.name.is_none(),
+        "name must stay unbound so a retry is not NameTaken; got {:?}",
+        state.name
+    );
+
+    // After the oversized backlog is gone, the same client can register cleanly.
+    env.mailbox.truncate(&mailbox);
+    let retry = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Register {
+                name: "alice".into(),
+                pid: 100,
+                cwd: None,
+                listen: true,
+            },
+        },
+        now,
+    );
+    assert!(
+        retry.iter().any(
+            |o| matches!(o, Out::Reply(_, BusReply::RegisterOk { active, .. }) if active == "alice")
+        ),
+        "register after truncating the oversized mailbox must succeed: {retry:?}"
+    );
+}
+
+/// #14: encode failure on a self re-register must not wipe the prior bind.
+#[test]
+fn self_reregister_oversized_register_ok_preserves_existing_bind() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    let mailbox = MailboxName::Agent("alice".into());
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    assert_eq!(
+        broker.state.clients[&ClientId::from(1_u64)].name.as_deref(),
+        Some("alice")
+    );
+
+    // Grow the mailbox past the frame limit after the initial bind.
+    env.mailbox
+        .append(&mailbox, oversized_drain_envelope(MAX_FRAME_BYTES));
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Register {
+                name: "alice".into(),
+                pid: 100,
+                cwd: None,
+                listen: true, // would flip listen if commit ran
+            },
+        },
+        now,
+    );
+    assert!(
+        outs.iter().any(|o| matches!(
+            o,
+            Out::Reply(_, BusReply::Err { kind, .. }) if *kind == BusErrorKind::EnvelopeTooLarge
+        )),
+        "re-register with oversized RegisterOk must error: {outs:?}"
+    );
+    let state = &broker.state.clients[&ClientId::from(1_u64)];
+    assert_eq!(
+        state.name.as_deref(),
+        Some("alice"),
+        "prior bind must remain"
+    );
+    assert!(
+        !state.listen_mode,
+        "listen flag must not flip when the re-register reply cannot encode"
+    );
+}
+
+/// #14: JoinOk encode failure must not leave the holder half-joined.
+#[test]
+fn join_oversized_join_ok_does_not_commit_membership() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    let channel = MailboxName::Channel("#huge".into());
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    env.mailbox
+        .append(&channel, oversized_drain_envelope(MAX_FRAME_BYTES));
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Join {
+                channel: "#huge".into(),
+                role: Some("peer".into()),
+            },
+        },
+        now,
+    );
+    assert!(
+        outs.iter().any(|o| matches!(
+            o,
+            Out::Reply(_, BusReply::Err { kind, message })
+                if *kind == BusErrorKind::EnvelopeTooLarge && message.contains("JoinOk")
+        )),
+        "oversized JoinOk must surface EnvelopeTooLarge: {outs:?}"
+    );
+    assert!(
+        !broker
+            .state
+            .channels
+            .get("#huge")
+            .is_some_and(|m| m.contains("alice")),
+        "channel membership must not commit when JoinOk cannot encode"
+    );
+    assert!(
+        !broker.state.clients[&ClientId::from(1_u64)]
+            .joined
+            .contains("#huge"),
+        "holder joined set must not commit when JoinOk cannot encode"
+    );
+    assert!(
+        !outs.iter().any(|o| matches!(o, Out::AdvanceCursor { .. })),
+        "must not advance cursor on a refused join: {outs:?}"
+    );
+}
+
 #[test]
 fn inbox_list_does_not_advance_broker_cursor() {
     let env = TestEnv::default();

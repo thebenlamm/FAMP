@@ -6,9 +6,9 @@ use crate::broker::drain_walk::{is_self_authored, walk, DrainCap, DrainPolicy};
 use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
 use crate::broker::state::ClientState;
 use crate::{
-    AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply, ClientId,
-    Delivered, DrainResult, DrainedRecord, MailboxName, MemberInfo, Out, SessionRow, Target,
-    BUS_PROTO_VERSION, MAX_FRAME_BYTES,
+    encode_frame, AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply,
+    ClientId, Delivered, DrainResult, DrainedRecord, MailboxName, MemberInfo, Out, SessionRow,
+    Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
 };
 
 pub(crate) fn handle<E: BrokerEnv>(
@@ -325,7 +325,28 @@ fn register<E: BrokerEnv>(
     };
     let decoded = decode_lines(&mailbox, since, &drained);
 
+    // Peers snapshot is taken BEFORE binding so a first-time register does
+    // not list itself (matches pre-#14 behaviour). A self re-register still
+    // appears because its prior bind is already on the map.
     let peers = connected_names(&broker.state.clients);
+    let reply = BusReply::RegisterOk {
+        active: name.clone(),
+        drained: decoded,
+        peers,
+    };
+    // #14: encode-before-commit. `Out::Reply` is only written after this
+    // handler returns; if we bound the name first and the write loop then
+    // hit `encode_frame` FrameTooLarge, the client never saw RegisterOk but
+    // the broker still held the name → retry got NameTaken until reaping.
+    // Refuse without mutating when the reply itself cannot be framed.
+    if let Err(error) = encode_frame(&reply) {
+        return vec![err(
+            client,
+            BusErrorKind::EnvelopeTooLarge,
+            format!("RegisterOk exceeds 16 MiB reply-frame limit: {error}"),
+        )];
+    }
+
     let Some(state) = broker.state.clients.get_mut(&client) else {
         return vec![err(
             client,
@@ -333,7 +354,7 @@ fn register<E: BrokerEnv>(
             "Hello required as first frame",
         )];
     };
-    state.name = Some(name.clone());
+    state.name = Some(name);
     state.pid = Some(pid);
     state.connected = true;
     state.cwd = cwd;
@@ -346,14 +367,7 @@ fn register<E: BrokerEnv>(
         .insert(mailbox.clone(), drained.next_offset);
 
     vec![
-        Out::Reply(
-            client,
-            BusReply::RegisterOk {
-                active: name,
-                drained: decoded,
-                peers,
-            },
-        ),
+        Out::Reply(client, reply),
         Out::AdvanceCursor {
             name: mailbox,
             offset: drained.next_offset,
@@ -713,39 +727,79 @@ fn join<E: BrokerEnv>(
             "client is not registered",
         )];
     };
-    broker
-        .state
-        .channels
-        .entry(channel.clone())
-        .or_default()
-        .insert(name.clone());
     // D-10: mutate the canonical holder's `joined` set, not the proxy's.
     // For canonical holders this resolves to `client` itself; for
     // proxies it resolves to the live registered holder of `name`.
     let target_client = canonical_holder_id(&broker.state, &name).unwrap_or(client);
-    if let Some(state) = broker.state.clients.get_mut(&target_client) {
-        state.joined.insert(channel.clone());
-    }
-
-    // Store the declared role in `channel_roles` if provided.
-    if let Some(ref r) = role {
-        broker
-            .state
-            .channel_roles
-            .insert((channel.clone(), name), r.clone());
-    }
 
     let mailbox = MailboxName::Channel(channel.clone());
     // Join drain-from-start: the in-memory `cursors` map was never
     // populated (deleted in fix 260512-jdv); preserving the historical
-    // since=0 behavior.
+    // since=0 behavior. Drain BEFORE committing membership so a drain
+    // or encode failure cannot leave the holder half-joined (#14).
     let since: u64 = 0;
     let drained = match broker.env.drain_from(&mailbox, since) {
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
     let decoded = decode_lines(&mailbox, since, &drained);
+
+    // Prospective members list as it will look after this join commits
+    // (existing members + self, with role applied only when provided).
+    let mut member_names: BTreeSet<String> = broker
+        .state
+        .channels
+        .get(&channel)
+        .cloned()
+        .unwrap_or_default();
+    member_names.insert(name.clone());
+    let members: Vec<MemberInfo> = member_names
+        .iter()
+        .map(|member_name| {
+            let member_role = if member_name == &name {
+                role.clone().or_else(|| {
+                    broker
+                        .state
+                        .channel_roles
+                        .get(&(channel.clone(), member_name.clone()))
+                        .cloned()
+                })
+            } else {
+                broker
+                    .state
+                    .channel_roles
+                    .get(&(channel.clone(), member_name.clone()))
+                    .cloned()
+            };
+            MemberInfo {
+                name: member_name.clone(),
+                role: member_role,
+            }
+        })
+        .collect();
+
+    let reply = BusReply::JoinOk {
+        channel: channel.clone(),
+        members,
+        drained: decoded,
+    };
+    // #14: encode-before-commit (same half-success class as register).
+    if let Err(error) = encode_frame(&reply) {
+        return vec![err(
+            client,
+            BusErrorKind::EnvelopeTooLarge,
+            format!("JoinOk exceeds 16 MiB reply-frame limit: {error}"),
+        )];
+    }
+
+    broker
+        .state
+        .channels
+        .entry(channel.clone())
+        .or_default()
+        .insert(name.clone());
     if let Some(state) = broker.state.clients.get_mut(&target_client) {
+        state.joined.insert(channel.clone());
         state
             .await_offsets
             .insert(mailbox.clone(), drained.next_offset);
@@ -757,35 +811,16 @@ fn join<E: BrokerEnv>(
             .inbox_offsets
             .insert(mailbox.clone(), drained.next_offset);
     }
-    // Build MemberInfo list: look up each member's role from channel_roles.
-    let members: Vec<MemberInfo> = broker
-        .state
-        .channels
-        .get(&channel)
-        .map(|member_names| {
-            member_names
-                .iter()
-                .map(|member_name| MemberInfo {
-                    name: member_name.clone(),
-                    role: broker
-                        .state
-                        .channel_roles
-                        .get(&(channel.clone(), member_name.clone()))
-                        .cloned(),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    // Store the declared role in `channel_roles` if provided.
+    if let Some(ref r) = role {
+        broker
+            .state
+            .channel_roles
+            .insert((channel, name), r.clone());
+    }
 
     vec![
-        Out::Reply(
-            client,
-            BusReply::JoinOk {
-                channel,
-                members,
-                drained: decoded,
-            },
-        ),
+        Out::Reply(client, reply),
         Out::AdvanceCursor {
             name: mailbox,
             offset: drained.next_offset,
@@ -1008,15 +1043,18 @@ fn encode_envelope(envelope: &serde_json::Value, client: ClientId) -> Result<Vec
 /// "fix" them:
 ///
 /// - `skip_self_authored: None` — this walk serves the DM / `Register` /
-///   `Join` paths. A message a client addressed to ITSELF must be delivered.
-///   Only channel pub/sub suppresses self-authored records.
-/// - `cap: None` — the register-path drain is deliberately unbounded here.
-///   Bounding it would TRUNCATE the drain, silently changing Register/Join
-///   semantics (a client would come up having never seen part of its own
-///   mailbox). That is a real design change and belongs with the retention
-///   work in §3.1 of the 2026-07-08 refactoring review (backlog 999.11), not
-///   here. The interim guard is [`DRAIN_WARN_BYTES`] below: an oversized
-///   drain gets an operator-visible WARN, and still delivers every record.
+///   `Join` / agent-mailbox `Inbox` paths. A message a client addressed to
+///   ITSELF must be delivered. Only channel pub/sub suppresses self-authored
+///   records.
+/// - `cap: None` — the drain is deliberately unbounded here on all three
+///   call sites (`register`, `join`, and agent-mailbox `inbox`). Bounding
+///   it would TRUNCATE the drain, silently changing Register/Join/Inbox
+///   semantics (a client would come up — or poll — having never seen part
+///   of its own mailbox). That is a real design change and belongs with the
+///   retention work in §3.1 of the 2026-07-08 refactoring review (backlog
+///   999.11), not here. The interim guard is [`DRAIN_WARN_BYTES`] below: an
+///   oversized drain gets an operator-visible WARN, and still delivers every
+///   record. Do not "fix" the cliff with a silent `.take(N)`.
 fn decode_lines(
     mailbox: &MailboxName,
     start_offset: u64,
@@ -1036,14 +1074,26 @@ fn decode_lines(
     .delivered
 }
 
-/// Half of [`MAX_FRAME_BYTES`] (16 MiB). A register/join drain whose byte
-/// span crosses this is one doubling away from the reply-frame ceiling.
+/// Half of [`MAX_FRAME_BYTES`] (16 MiB). A drain whose byte span crosses
+/// this is one doubling away from the reply-frame ceiling.
 ///
-/// `decode_lines` output becomes `RegisterOk.drained` / `JoinOk.drained`,
-/// encoded into a SINGLE reply frame that `codec` rejects above
-/// `MAX_FRAME_BYTES`. So a mailbox that grows past 16 MiB makes registration
-/// itself fail — with no prior signal, because no retention or compaction
-/// exists yet. This threshold buys an operator one halving of headroom.
+/// `decode_lines` is shared by **three** reply paths (issue #14), not just
+/// register/join:
+///
+/// - `RegisterOk.drained` — full agent-mailbox drain at register
+/// - `JoinOk.drained` — full channel-mailbox drain at join
+/// - `InboxOk.envelopes` — agent-mailbox branch of `Inbox` (channel branch
+///   uses `walk` directly with a scanned-record cap, not this helper)
+///
+/// Each of those is encoded into a SINGLE reply frame that `codec` rejects
+/// above `MAX_FRAME_BYTES`. So a mailbox past 16 MiB makes **register, join,
+/// and `famp_inbox` (since=0 / first-poll)** fail — not only registration.
+/// MCP `famp_inbox` defaults `since` from the session cursor (#13) but the
+/// first call of a session (and any explicit `since: 0`) still drains from
+/// the head. No retention or compaction exists yet; this threshold buys an
+/// operator one halving of headroom. Register/join additionally encode the
+/// reply *before* committing state (#14) so a frame failure cannot leave a
+/// half-applied bind.
 const DRAIN_WARN_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Byte span the drain covers: `start_offset` to the last record's `end`.
@@ -1059,8 +1109,9 @@ fn drained_span(start_offset: u64, records: &[DrainedRecord]) -> u64 {
         .map_or(0, |last| last.end.saturating_sub(start_offset))
 }
 
-/// Emit exactly one WARN when a register/join drain approaches the reply-frame
-/// limit. Does NOT truncate — see the `cap: None` note on [`decode_lines`].
+/// Emit exactly one WARN when a `decode_lines` drain (register / join /
+/// agent-mailbox inbox) approaches the reply-frame limit. Does NOT truncate —
+/// see the `cap: None` note on [`decode_lines`].
 fn warn_if_drain_oversized(mailbox: &MailboxName, start_offset: u64, records: &[DrainedRecord]) {
     let drained_bytes = drained_span(start_offset, records);
     if drained_bytes > DRAIN_WARN_BYTES {
@@ -1069,9 +1120,9 @@ fn warn_if_drain_oversized(mailbox: &MailboxName, start_offset: u64, records: &[
             drained_bytes,
             records = records.len(),
             limit = MAX_FRAME_BYTES,
-            "mailbox drain approaching the 16 MiB reply-frame limit; registration \
-             will fail once it is exceeded (no retention/compaction exists yet — \
-             see backlog 999.11)"
+            "mailbox drain approaching the 16 MiB reply-frame limit; RegisterOk / \
+             JoinOk / InboxOk will fail to encode once it is exceeded (no \
+             retention/compaction exists yet — see backlog 999.11)"
         );
     }
 }
