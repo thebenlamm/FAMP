@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use crate::broker::awaiting::{await_envelope, await_reply_for_mailbox, waiting_clients_for_name};
-use crate::broker::drain_walk::{walk, DrainCap, DrainPolicy};
+use crate::broker::drain_walk::{is_self_authored, walk, DrainCap, DrainPolicy};
 use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
 use crate::broker::state::ClientState;
 use crate::{
@@ -468,6 +468,15 @@ fn send_channel<E: BrokerEnv>(
     });
 
     for member in &members {
+        // Issue #15: standard pub/sub — a publisher does not receive their
+        // own channel posts. `drain_await_batch` already skips self-authored
+        // envelopes, but if we still *wake* the author, the empty fully-
+        // drained batch used to return `BusReply::Err{Internal}` and kill
+        // the parked `famp_await` (disarming listen-mode Stop hooks). Skip
+        // the author at selection so they stay parked.
+        if is_self_authored(envelope, Some(member)) {
+            continue;
+        }
         let waiters = waiting_clients_for_name(broker, member, envelope);
         if waiters.is_empty() {
             continue;
