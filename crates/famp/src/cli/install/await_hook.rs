@@ -106,6 +106,26 @@ mod tests {
         );
     }
 
+    /// #26: agent-mailbox wake notification must prefer disk-ack
+    /// `mailbox_unread` over the raw await-batch length so a re-arm that
+    /// replays historical envelopes does not claim "N new messages" when
+    /// `famp_inbox` is already past them.
+    #[test]
+    fn shim_prefers_disk_ack_unread_for_agent_count() {
+        assert!(
+            FAMP_AWAIT_SH.contains("mailbox_unread"),
+            "hook must consult inspect identities mailbox_unread for agent wakes"
+        );
+        assert!(
+            FAMP_AWAIT_SH.contains("disk-ack unread=0"),
+            "hook must suppress wake when disk-ack unread is zero (#26)"
+        );
+        assert!(
+            FAMP_AWAIT_SH.contains("AWAIT_BATCH_COUNT"),
+            "hook must retain the await-batch count for diagnostics / channel path"
+        );
+    }
+
     #[test]
     fn install_shim_creates_file_at_mode_0755() {
         let dir = tempfile::tempdir().unwrap();

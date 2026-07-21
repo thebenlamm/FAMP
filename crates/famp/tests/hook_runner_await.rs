@@ -1239,3 +1239,113 @@ fn hook_does_not_abort_when_the_queue_was_pop_all_ed() {
         "`popAll` drains the queue — hook must NOT abort; log:\n{log}"
     );
 }
+
+/// Mock `famp` for #26: `await` returns a large agent-mailbox batch
+/// (historical replay), while `inspect identities --json` reports the
+/// disk-ack unread count (and last_sender) that `famp_inbox` would see.
+fn stage_overcount_mock_famp(bin_dir: &Path, unread: u64, last_sender: &str) {
+    std::fs::create_dir_all(bin_dir).unwrap();
+    let famp = bin_dir.join("famp");
+    // Sixteen historical envelopes from worker-2, matching the beta report.
+    let mut envelopes = String::from("[");
+    for i in 0..16 {
+        if i > 0 {
+            envelopes.push(',');
+        }
+        envelopes.push_str(r#"{"from":"worker-2","body":"old"}"#);
+    }
+    envelopes.push(']');
+    let script = format!(
+        r#"#!/usr/bin/env bash
+if [ "$1" = "await" ]; then
+  printf '%s\n' '{{"mailbox":{{"kind":"agent","name":"dk"}},"envelopes":{envelopes},"next_offset":999}}'
+  exit 0
+fi
+if [ "$1" = "inspect" ] && [ "$2" = "identities" ]; then
+  cat <<'EOF'
+{{
+  "rows": [
+    {{
+      "name": "dk",
+      "listen_mode": true,
+      "cwd": null,
+      "registered_at_unix_seconds": 0,
+      "last_activity_unix_seconds": 0,
+      "mailbox_unread": {unread},
+      "mailbox_total": 16,
+      "last_sender": "{last_sender}",
+      "last_received_at_unix_seconds": null
+    }}
+  ]
+}}
+EOF
+  exit 0
+fi
+exit 0
+"#
+    );
+    std::fs::write(&famp, script).unwrap();
+    std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// #26: when await replays already-acked envelopes (batch=16) but disk-ack
+/// unread is 0, the hook must NOT claim "16 new" — exit 0 with no block.
+#[test]
+fn hook_suppresses_wake_when_disk_ack_unread_is_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_overcount_mock_famp(&bin_dir, 0, "(none)");
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(&transcript, "dk", "");
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.trim().is_empty(),
+        "unread=0 must emit NO block decision; stdout:\n{stdout}"
+    );
+    let log = await_hook_log(&xdg);
+    assert!(
+        log.contains("disk-ack unread=0"),
+        "log must record the #26 no-actionable-wake path; log:\n{log}"
+    );
+    assert!(
+        !stdout.contains("16 new"),
+        "must not announce the await-batch size as new"
+    );
+}
+
+/// #26: when await batch is oversized relative to disk-ack unread, the
+/// notification must report the actionable unread count (and its sender).
+#[test]
+fn hook_reports_disk_ack_unread_not_await_batch_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_overcount_mock_famp(&bin_dir, 1, "worker-2");
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(&transcript, "dk", "");
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("New FAMP message from worker-2"),
+        "must report singular actionable message from disk-ack sender; stdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("16 new"),
+        "must not over-count from the await batch; stdout:\n{stdout}"
+    );
+    let log = await_hook_log(&xdg);
+    assert!(
+        log.contains("reduced to disk-ack unread=1") || log.contains("count=1"),
+        "log should show the reduced count; log:\n{log}"
+    );
+}

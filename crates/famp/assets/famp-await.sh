@@ -597,6 +597,61 @@ if [ "$COUNT" -lt 1 ]; then
     log "await timeout payload; clean stop"
     exit 0
 fi
+AWAIT_BATCH_COUNT="$COUNT"
+
+# --- #26: agent-mailbox count must match actionable inbox unread -------
+# Await and famp_inbox use independent cursors (Scope B). After re-arm /
+# re-register the await cursor can sit behind the identity's acknowledged
+# inbox (disk) cursor, so the await batch replaying historical envelopes
+# would over-count "N new messages" while famp_inbox returns empty.
+# For agent mailboxes, prefer `inspect identities` mailbox_unread (disk
+# cursor) + last_sender so "N new" means N actionable. Fail-open to the
+# await batch count if inspect is unavailable. Channel wakes keep the
+# await-batch count (channel_log is the recovery surface, not famp_inbox).
+if [ "$MAILBOX_KIND" != "channel" ]; then
+    ACTIONABLE="$("$FAMP_BIN" inspect identities --json 2>/dev/null \
+        | python3 -c 'import json, sys
+name = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+rows = data.get("rows", []) if isinstance(data, dict) else []
+for r in rows:
+    if not isinstance(r, dict) or r.get("name") != name:
+        continue
+    unread = r.get("mailbox_unread")
+    if not isinstance(unread, int) or unread < 0:
+        break
+    sender = r.get("last_sender") or "unknown"
+    if sender == "(none)":
+        sender = "unknown"
+    print(f"{unread}|{sender}")
+    break' \
+        "$ACTIVE_IDENTITY" 2>/dev/null || true)"
+    if [ -n "$ACTIONABLE" ]; then
+        AC_COUNT="${ACTIONABLE%%|*}"
+        AC_SENDER="${ACTIONABLE#*|}"
+        case "$AC_COUNT" in
+            ''|*[!0-9]*) ;;
+            *)
+                if [ "$AC_COUNT" -eq 0 ]; then
+                    log "await batch had $AWAIT_BATCH_COUNT envelopes but disk-ack unread=0 for $ACTIVE_IDENTITY; no actionable wake (#26)"
+                    exit 0
+                fi
+                if [ "$AC_COUNT" -ne "$COUNT" ]; then
+                    log "await batch count=$COUNT reduced to disk-ack unread=$AC_COUNT for $ACTIVE_IDENTITY (#26)"
+                fi
+                COUNT="$AC_COUNT"
+                if [ -n "$AC_SENDER" ]; then
+                    SENDER="$AC_SENDER"
+                fi
+                ;;
+        esac
+    else
+        log "inspect identities unavailable; keeping await-batch count=$COUNT (fail-open)"
+    fi
+fi
 
 # Validate sender — reject anything outside printable word/punct chars.
 if ! printf '%s' "$SENDER" | grep -qE '^[A-Za-z0-9@._:/-]{1,128}$'; then
@@ -628,5 +683,5 @@ else
     fi
 fi
 OUT=$(jq -n --arg r "$REASON" '{decision: "block", reason: $r}')
-log "emitting block decision (${#OUT} bytes); count=$COUNT sender=$SENDER"
+log "emitting block decision (${#OUT} bytes); count=$COUNT sender=$SENDER await_batch=$AWAIT_BATCH_COUNT"
 printf '%s\n' "$OUT"
