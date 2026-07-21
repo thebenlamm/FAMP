@@ -74,6 +74,38 @@ mod tests {
         assert!(FAMP_AWAIT_SH.contains("famp await"));
     }
 
+    /// 260721: the shipped shim MUST carry the compaction-resilience
+    /// fallback so a compacted transcript (which drops the famp_register
+    /// marker out of the 2 MB scan window) can still resolve its identity.
+    /// Shipping this in the asset — not a hand-patched installed file — is
+    /// the whole point: a reinstall must never silently revert it.
+    #[test]
+    fn shim_has_pid_correlated_fallback() {
+        // Resolves identity by correlating THIS window's `famp mcp` server
+        // via process ancestry, then mapping its pid to a name through
+        // `famp sessions`, then confirming listen via `inspect`.
+        assert!(FAMP_AWAIT_SH.contains("pid-correlated"));
+        assert!(FAMP_AWAIT_SH.contains("SIBLING_MCP_PIDS"));
+        assert!(FAMP_AWAIT_SH.contains("inspect identities --json"));
+    }
+
+    /// Anti-hijack invariant (260721): the fallback MUST NOT adopt an
+    /// identity merely because it is registered in the same cwd — that would
+    /// convert an innocent, never-registered window sharing the checkout
+    /// into an awaiter on another agent's identity. Adoption keys on process
+    /// ancestry, so the old cwd-matching heuristic must stay gone.
+    #[test]
+    fn shim_does_not_adopt_by_cwd() {
+        assert!(
+            FAMP_AWAIT_SH.contains("ANCESTORS"),
+            "fallback must resolve identity via process ancestry"
+        );
+        assert!(
+            !FAMP_AWAIT_SH.contains("!AMBIGUOUS"),
+            "the cwd-ambiguity sentinel must be gone (it implied cwd-based adoption)"
+        );
+    }
+
     #[test]
     fn install_shim_creates_file_at_mode_0755() {
         let dir = tempfile::tempdir().unwrap();

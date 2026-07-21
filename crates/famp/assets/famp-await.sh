@@ -240,8 +240,103 @@ PYEOF
 ACTIVE_IDENTITY="$(python3 "$PY_SCRIPT" "$TRANSCRIPT" 2>/dev/null || true)"
 rm -f "$PY_SCRIPT"
 
+FAMP_BIN="$(command -v famp 2>/dev/null || echo "$HOME/.cargo/bin/famp")"
+
 if [ -z "$ACTIVE_IDENTITY" ]; then
-    log "no listen registration in transcript; exiting no-op"
+    # --- Broker fallback (compaction resilience, 260721) ---------------
+    # A long session whose transcript was compacted (Claude Code /compact)
+    # can lose its famp_register marker out of the 2 MB scan tail above,
+    # leaving no identity even though THIS window's MCP server still holds
+    # a live listen=true registration. Recover it WITHOUT guessing from the
+    # cwd (a cwd match would hijack an innocent, never-registered window
+    # that merely shares the checkout — it would start awaiting on another
+    # agent's identity). Instead correlate by process ancestry:
+    #
+    #   this hook  ── spawned by ──>  the Claude Code process  <── spawns ── `famp mcp`
+    #
+    # So THIS window's `famp mcp` server is the one whose parent pid appears
+    # in this hook's ancestor chain. `famp sessions` maps that mcp pid to the
+    # registered name; `inspect identities --json` confirms listen=true. We
+    # adopt ONLY that identity — never one merely co-located by cwd. If the
+    # process model doesn't cooperate (nothing resolves), we no-op exactly
+    # as before: fail-open, and strictly never a hijack. Runs only when the
+    # transcript yielded nothing, so normal Stops pay no cost.
+
+    # 1. Ancestor pids of this hook (bounded walk; skip 0/1 so an mcp that
+    #    got reparented to init can never false-match via pid 1).
+    ANCESTORS=""
+    _p="$$"
+    _depth=0
+    while [ "$_depth" -lt 6 ]; do
+        _pp="$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' ')"
+        case "$_pp" in ''|0|1) break ;; esac
+        ANCESTORS="$ANCESTORS $_pp"
+        _p="$_pp"
+        _depth=$((_depth + 1))
+    done
+
+    # 2. `famp mcp` pids whose parent is one of our ancestors == this
+    #    window's mcp server(s). (The path "/.../bin/famp mcp" contains the
+    #    literal substring "famp mcp".)
+    SIBLING_MCP_PIDS=""
+    if [ -n "$ANCESTORS" ]; then
+        SIBLING_MCP_PIDS="$(ps -eo pid=,ppid=,args= 2>/dev/null \
+            | awk -v anc="$ANCESTORS" '
+                BEGIN { n = split(anc, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") A[a[i]] = 1 }
+                ($2 in A) && index($0, "famp mcp") { print $1 }' \
+            2>/dev/null || true)"
+    fi
+
+    # 3. mcp pid -> registered name via `famp sessions` (adopt only a UNIQUE
+    #    name; one mcp per window means this is normally exactly one).
+    CANDIDATE=""
+    if [ -n "$SIBLING_MCP_PIDS" ]; then
+        CANDIDATE="$("$FAMP_BIN" sessions 2>/dev/null \
+            | python3 -c 'import json, sys
+pids = set(sys.argv[1].split())
+names = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        row = json.loads(line)
+    except Exception:
+        continue
+    if str(row.get("pid", "")) in pids and row.get("name"):
+        names.append(row["name"])
+uniq = sorted(set(names))
+print(uniq[0] if len(uniq) == 1 else "")' \
+            "$SIBLING_MCP_PIDS" 2>/dev/null || true)"
+    fi
+
+    # 4. Adopt only if that name is registered with listen_mode==true
+    #    (a window that registered with listen:false opted out of auto-wake).
+    if [ -n "$CANDIDATE" ]; then
+        LISTEN_OK="$("$FAMP_BIN" inspect identities --json 2>/dev/null \
+            | python3 -c 'import json, sys
+name = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+rows = data.get("rows", []) if isinstance(data, dict) else []
+for r in rows:
+    if isinstance(r, dict) and r.get("name") == name and r.get("listen_mode") is True:
+        print("yes")
+        break' \
+            "$CANDIDATE" 2>/dev/null || true)"
+        if [ "$LISTEN_OK" = "yes" ]; then
+            ACTIVE_IDENTITY="$CANDIDATE"
+            log "transcript had no register; pid-correlated fallback resolved identity=$ACTIVE_IDENTITY (sibling mcp pids:$SIBLING_MCP_PIDS)"
+        else
+            log "pid-correlated candidate '$CANDIDATE' is not listen=true; no-op"
+        fi
+    fi
+fi
+
+if [ -z "$ACTIVE_IDENTITY" ]; then
+    log "no listen registration in transcript (and no pid-correlated listen identity); exiting no-op"
     exit 0
 fi
 
@@ -256,7 +351,6 @@ if ! printf '%s' "$ACTIVE_IDENTITY" | grep -qE '^[A-Za-z0-9._-]{1,64}$'; then
     exit 0
 fi
 
-FAMP_BIN="$(command -v famp 2>/dev/null || echo "$HOME/.cargo/bin/famp")"
 log "listen mode active: identity=$ACTIVE_IDENTITY bin=$FAMP_BIN"
 
 # --- Cancellation seam for issue #21 (host input-queue watcher) --------

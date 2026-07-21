@@ -292,11 +292,20 @@ fn register<E: BrokerEnv>(
         }
     }
 
-    let name_taken = broker
-        .state
-        .clients
-        .values()
-        .any(|c| c.connected && c.name.as_deref() == Some(name.as_str()));
+    // Idempotent self-re-register (260721): a name is "taken" only when a
+    // *different* live client holds it. Excluding the calling client lets a
+    // session re-register its own held name and fall through to the normal
+    // path below (which refreshes listen_mode and returns RegisterOk),
+    // rather than getting -32101. This is what makes "just re-register" a
+    // real recovery path after a Claude Code /compact drops the register
+    // marker out of the listen-hook's transcript scan window — the fresh
+    // RegisterOk re-lands a successful marker the hook can find again.
+    // NameTaken stays reserved for a genuinely different session grabbing a
+    // held name.
+    let name_taken =
+        broker.state.clients.iter().any(|(id, c)| {
+            *id != client && c.connected && c.name.as_deref() == Some(name.as_str())
+        });
     if name_taken {
         return vec![err(
             client,

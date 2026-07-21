@@ -56,6 +56,16 @@ fn install_claude_code_writes_all_artifacts() {
     assert!(await_shim.exists(), "famp-await.sh missing");
     let await_mode = std::fs::metadata(&await_shim).unwrap().permissions().mode() & 0o777;
     assert_eq!(await_mode, 0o755);
+    // 260721: the INSTALLED hook (what `install-claude-code` actually writes,
+    // not just the embedded const) must carry the compaction-resilience
+    // pid-correlated fallback. A reinstall must never revert it to the
+    // silent-disarm version — nor to a cwd-matching version that could
+    // hijack an innocent co-located window.
+    let await_body = std::fs::read_to_string(&await_shim).unwrap();
+    assert!(
+        await_body.contains("pid-correlated") && await_body.contains("SIBLING_MCP_PIDS"),
+        "installed famp-await.sh is missing the pid-correlated fallback"
+    );
 
     let settings = home.join(".claude").join("settings.json");
     let s: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();

@@ -294,6 +294,79 @@ fn test_hello_bind_as_live_holder_succeeds() {
     assert!(has_append, "proxy Send must produce an AppendMailbox");
 }
 
+/// Fix B (260721): a session re-registering its OWN held name is
+/// idempotent — it returns RegisterOk (refreshing the listen flag), not
+/// -32101 NameTaken. A DIFFERENT client grabbing the held name still gets
+/// NameTaken. This restores "just re-register" as a real recovery path
+/// after a Claude Code /compact drops the register marker from the
+/// listen-hook's transcript scan window.
+#[test]
+fn test_self_reregister_is_idempotent_but_others_are_rejected() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    // Client 1 registers "orchestrator" with listen OFF.
+    hello_canonical(&mut broker, 1, "orchestrator", now);
+    let reg = |broker: &mut Broker<TestEnv>, client: u64, listen: bool| -> Vec<Out> {
+        broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(client),
+                msg: BusMessage::Register {
+                    name: "orchestrator".into(),
+                    pid: 999,
+                    cwd: None,
+                    listen,
+                },
+            },
+            now,
+        )
+    };
+
+    let first = reg(&mut broker, 1, false);
+    assert!(
+        first
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::RegisterOk { .. }))),
+        "first register should succeed: {first:?}"
+    );
+    assert!(
+        !broker.state.clients[&ClientId::from(1_u64)].listen_mode,
+        "listen should be off after first register"
+    );
+
+    // Same client re-registers with listen ON: idempotent success that
+    // refreshes the listen flag — NOT NameTaken.
+    let again = reg(&mut broker, 1, true);
+    assert!(
+        again
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::RegisterOk { active, .. }) if active == "orchestrator")),
+        "self re-register must return RegisterOk, got: {again:?}"
+    );
+    assert!(
+        !again
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::Err { .. }))),
+        "self re-register must not error: {again:?}"
+    );
+    assert!(
+        broker.state.clients[&ClientId::from(1_u64)].listen_mode,
+        "listen flag should be refreshed to true by the idempotent re-register"
+    );
+
+    // A DIFFERENT live client trying to take the held name is still rejected.
+    hello_canonical(&mut broker, 2, "orchestrator-intruder", now);
+    let intruder = reg(&mut broker, 2, false);
+    assert!(
+        intruder.iter().any(|o| matches!(
+            o,
+            Out::Reply(_, BusReply::Err { kind, .. }) if *kind == BusErrorKind::NameTaken
+        )),
+        "a different client must still get NameTaken: {intruder:?}"
+    );
+}
+
 #[test]
 fn inbox_list_does_not_advance_broker_cursor() {
     let env = TestEnv::default();
