@@ -74,6 +74,37 @@ mod tests {
         assert!(FAMP_AWAIT_SH.contains("famp await"));
     }
 
+    /// Fix A (260721): the shipped shim MUST carry the broker fallback so a
+    /// compacted transcript (which drops the famp_register marker out of the
+    /// 2 MB scan window) can still resolve its identity. This is the whole
+    /// point of shipping the fix in the asset rather than a hand-patched
+    /// installed file — a reinstall must never silently revert it.
+    #[test]
+    fn shim_has_broker_fallback_via_inspect_json() {
+        assert!(
+            FAMP_AWAIT_SH.contains("inspect identities --json"),
+            "shim lost the broker-fallback identity resolution"
+        );
+        // Must key the fallback on BOTH listen mode and this session's cwd.
+        assert!(FAMP_AWAIT_SH.contains("listen_mode"));
+        assert!(FAMP_AWAIT_SH.contains("SESSION_CWD"));
+    }
+
+    /// Fix E (260721): the shim MUST surface the disarm (a visible block
+    /// warning) when it detects an ambiguous but clearly-listening state,
+    /// rather than silently no-opping.
+    #[test]
+    fn shim_surfaces_disarm_on_ambiguity() {
+        assert!(
+            FAMP_AWAIT_SH.contains("!AMBIGUOUS"),
+            "shim lost the ambiguity sentinel"
+        );
+        assert!(
+            FAMP_AWAIT_SH.contains("DISARMED"),
+            "shim lost the surfaced disarm warning"
+        );
+    }
+
     #[test]
     fn install_shim_creates_file_at_mode_0755() {
         let dir = tempfile::tempdir().unwrap();

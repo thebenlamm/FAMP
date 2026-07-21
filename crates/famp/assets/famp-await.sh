@@ -120,8 +120,76 @@ PYEOF
 ACTIVE_IDENTITY="$(python3 "$PY_SCRIPT" "$TRANSCRIPT" 2>/dev/null || true)"
 rm -f "$PY_SCRIPT"
 
+FAMP_BIN="$(command -v famp 2>/dev/null || echo "$HOME/.cargo/bin/famp")"
+
 if [ -z "$ACTIVE_IDENTITY" ]; then
-    log "no listen registration in transcript; exiting no-op"
+    # --- Broker fallback (compaction resilience, Fix A 260721) ---------
+    # A long session whose transcript was compacted (Claude Code /compact)
+    # can lose its famp_register marker out of the 2 MB scan tail above,
+    # leaving no identity even though the broker still holds a live
+    # listen=true registration for this session. Resolve it from the broker
+    # by matching listen_mode==true AND this session's cwd, parsed from
+    # `famp inspect identities --json` (robust against spaces in paths;
+    # supersedes the fragile awk-on-table approach). This only runs when
+    # the transcript yielded nothing, so it adds no cost to normal Stops.
+    #
+    # Three outcomes, all FAIL-OPEN:
+    #   exactly 1 listen=true row for this cwd -> adopt it (silent self-heal).
+    #   >=2 (ambiguous)                        -> Fix E: surface the disarm.
+    #   0                                       -> nothing to listen for; no-op.
+    SESSION_CWD="$(printf '%s' "$STDIN_JSON" \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("cwd",""))' \
+        2>/dev/null || true)"
+    [ -n "$SESSION_CWD" ] || SESSION_CWD="$PWD"
+
+    # Emits the unique listen=true identity for this cwd, or the sentinel
+    # "!AMBIGUOUS" (the '!' is outside the identity charset, so it can never
+    # be mistaken for a real name), or "" for no match / any error.
+    FALLBACK="$("$FAMP_BIN" inspect identities --json 2>/dev/null \
+        | python3 -c 'import json, sys
+cwd = sys.argv[1]
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+rows = data.get("rows", []) if isinstance(data, dict) else []
+m = [r.get("name", "") for r in rows
+     if isinstance(r, dict) and r.get("listen_mode") is True
+     and r.get("cwd") == cwd and r.get("name")]
+print(m[0] if len(m) == 1 else ("!AMBIGUOUS" if len(m) >= 2 else ""))' \
+        "$SESSION_CWD" 2>/dev/null || true)"
+
+    if [ "$FALLBACK" = "!AMBIGUOUS" ]; then
+        # --- Fix E (260721): surface the disarm instead of silent no-op --
+        # >=2 listen=true identities share this cwd, so we cannot safely
+        # auto-adopt, but the broker clearly shows this session SHOULD be
+        # listening. Emit a visible block warning ONCE (marker keyed by
+        # transcript) so the agent/human learns immediately rather than via
+        # a missed message hours later. With Fix B (idempotent
+        # self-re-register) the suggested recovery actually works now.
+        WARN_MARK="$STATE_DIR/disarm-warned/$(basename "$TRANSCRIPT" 2>/dev/null || printf 'default')"
+        if [ -f "$WARN_MARK" ]; then
+            log "listen-mode disarm already surfaced this session (ambiguous cwd=$SESSION_CWD); no-op"
+            exit 0
+        fi
+        mkdir -p "$(dirname "$WARN_MARK")" 2>/dev/null || true
+        : > "$WARN_MARK" 2>/dev/null || true
+        if command -v jq >/dev/null 2>&1; then
+            WREASON="[FAMP listen mode] Auto-wake appears DISARMED (likely after a /compact): the broker shows multiple listen=true identities in this directory, so the Stop hook cannot tell which one is yours. Re-register (famp_register with your identity and listen:true) or restart this window to re-arm."
+            jq -n --arg r "$WREASON" '{decision: "block", reason: $r}'
+            log "surfaced listen-mode disarm warning (ambiguous cwd=$SESSION_CWD)"
+            exit 0
+        fi
+        log "listen-mode disarm detected (ambiguous) but jq missing; no-op"
+        exit 0
+    elif [ -n "$FALLBACK" ]; then
+        ACTIVE_IDENTITY="$FALLBACK"
+        log "transcript had no register; broker fallback resolved identity=$ACTIVE_IDENTITY (cwd=$SESSION_CWD)"
+    fi
+fi
+
+if [ -z "$ACTIVE_IDENTITY" ]; then
+    log "no listen registration in transcript (and no unique broker fallback); exiting no-op"
     exit 0
 fi
 
@@ -136,7 +204,6 @@ if ! printf '%s' "$ACTIVE_IDENTITY" | grep -qE '^[A-Za-z0-9._-]{1,64}$'; then
     exit 0
 fi
 
-FAMP_BIN="$(command -v famp 2>/dev/null || echo "$HOME/.cargo/bin/famp")"
 log "listen mode active: identity=$ACTIVE_IDENTITY bin=$FAMP_BIN"
 
 # --- Cancellation seam for issue #21 (host input-queue watcher) --------

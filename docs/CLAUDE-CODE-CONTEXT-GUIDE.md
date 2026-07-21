@@ -183,5 +183,28 @@ tightly scoped to remaining open questions.
 
 ---
 
-*Last updated: 2026-05-09. Source: production session — baalshem × matt × torah-graph
-integration discussion.*
+## Listen mode and `/compact`
+
+A listen-mode window derives its identity from the most recent successful
+`famp_register` in the transcript. Claude Code's `/compact` rewrites the
+transcript and can drop that marker, which historically left the Stop hook
+unable to find the identity — auto-wake went silently dead even though the
+broker still held a live `listen=true` registration.
+
+As of the 260721 fix this self-heals: when the transcript has no register
+marker, the hook falls back to the broker, adopting the unique `listen=true`
+identity registered for the window's cwd (`famp inspect identities --json`).
+If two `listen=true` identities share one cwd the hook can't disambiguate, so
+it surfaces a one-time visible warning instead of failing silently.
+
+If you ever see that warning — or suspect a post-`/compact` window has gone
+quiet — just re-register (`famp_register({ identity: "<you>", listen: true })`)
+or restart the window to re-arm. Re-registering your own held name is now
+idempotent (it no longer returns `-32101 name already registered`), so it
+cleanly re-lands the marker.
+
+---
+
+*Last updated: 2026-07-21. Source: beta feedback — listen-mode compaction
+disarm (orchestrator, Municipal Monitor). Earlier: 2026-05-09 production
+session — baalshem × matt × torah-graph integration discussion.*
