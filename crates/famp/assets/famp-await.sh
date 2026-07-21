@@ -123,73 +123,100 @@ rm -f "$PY_SCRIPT"
 FAMP_BIN="$(command -v famp 2>/dev/null || echo "$HOME/.cargo/bin/famp")"
 
 if [ -z "$ACTIVE_IDENTITY" ]; then
-    # --- Broker fallback (compaction resilience, Fix A 260721) ---------
+    # --- Broker fallback (compaction resilience, 260721) ---------------
     # A long session whose transcript was compacted (Claude Code /compact)
     # can lose its famp_register marker out of the 2 MB scan tail above,
-    # leaving no identity even though the broker still holds a live
-    # listen=true registration for this session. Resolve it from the broker
-    # by matching listen_mode==true AND this session's cwd, parsed from
-    # `famp inspect identities --json` (robust against spaces in paths;
-    # supersedes the fragile awk-on-table approach). This only runs when
-    # the transcript yielded nothing, so it adds no cost to normal Stops.
+    # leaving no identity even though THIS window's MCP server still holds
+    # a live listen=true registration. Recover it WITHOUT guessing from the
+    # cwd (a cwd match would hijack an innocent, never-registered window
+    # that merely shares the checkout — it would start awaiting on another
+    # agent's identity). Instead correlate by process ancestry:
     #
-    # Three outcomes, all FAIL-OPEN:
-    #   exactly 1 listen=true row for this cwd -> adopt it (silent self-heal).
-    #   >=2 (ambiguous)                        -> Fix E: surface the disarm.
-    #   0                                       -> nothing to listen for; no-op.
-    SESSION_CWD="$(printf '%s' "$STDIN_JSON" \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("cwd",""))' \
-        2>/dev/null || true)"
-    [ -n "$SESSION_CWD" ] || SESSION_CWD="$PWD"
+    #   this hook  ── spawned by ──>  the Claude Code process  <── spawns ── `famp mcp`
+    #
+    # So THIS window's `famp mcp` server is the one whose parent pid appears
+    # in this hook's ancestor chain. `famp sessions` maps that mcp pid to the
+    # registered name; `inspect identities --json` confirms listen=true. We
+    # adopt ONLY that identity — never one merely co-located by cwd. If the
+    # process model doesn't cooperate (nothing resolves), we no-op exactly
+    # as before: fail-open, and strictly never a hijack. Runs only when the
+    # transcript yielded nothing, so normal Stops pay no cost.
 
-    # Emits the unique listen=true identity for this cwd, or the sentinel
-    # "!AMBIGUOUS" (the '!' is outside the identity charset, so it can never
-    # be mistaken for a real name), or "" for no match / any error.
-    FALLBACK="$("$FAMP_BIN" inspect identities --json 2>/dev/null \
-        | python3 -c 'import json, sys
-cwd = sys.argv[1]
+    # 1. Ancestor pids of this hook (bounded walk; skip 0/1 so an mcp that
+    #    got reparented to init can never false-match via pid 1).
+    ANCESTORS=""
+    _p="$$"
+    _depth=0
+    while [ "$_depth" -lt 6 ]; do
+        _pp="$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' ')"
+        case "$_pp" in ''|0|1) break ;; esac
+        ANCESTORS="$ANCESTORS $_pp"
+        _p="$_pp"
+        _depth=$((_depth + 1))
+    done
+
+    # 2. `famp mcp` pids whose parent is one of our ancestors == this
+    #    window's mcp server(s). (The path "/.../bin/famp mcp" contains the
+    #    literal substring "famp mcp".)
+    SIBLING_MCP_PIDS=""
+    if [ -n "$ANCESTORS" ]; then
+        SIBLING_MCP_PIDS="$(ps -eo pid=,ppid=,args= 2>/dev/null \
+            | awk -v anc="$ANCESTORS" '
+                BEGIN { n = split(anc, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") A[a[i]] = 1 }
+                ($2 in A) && index($0, "famp mcp") { print $1 }' \
+            2>/dev/null || true)"
+    fi
+
+    # 3. mcp pid -> registered name via `famp sessions` (adopt only a UNIQUE
+    #    name; one mcp per window means this is normally exactly one).
+    CANDIDATE=""
+    if [ -n "$SIBLING_MCP_PIDS" ]; then
+        CANDIDATE="$("$FAMP_BIN" sessions 2>/dev/null \
+            | python3 -c 'import json, sys
+pids = set(sys.argv[1].split())
+names = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        row = json.loads(line)
+    except Exception:
+        continue
+    if str(row.get("pid", "")) in pids and row.get("name"):
+        names.append(row["name"])
+uniq = sorted(set(names))
+print(uniq[0] if len(uniq) == 1 else "")' \
+            "$SIBLING_MCP_PIDS" 2>/dev/null || true)"
+    fi
+
+    # 4. Adopt only if that name is registered with listen_mode==true
+    #    (a window that registered with listen:false opted out of auto-wake).
+    if [ -n "$CANDIDATE" ]; then
+        LISTEN_OK="$("$FAMP_BIN" inspect identities --json 2>/dev/null \
+            | python3 -c 'import json, sys
+name = sys.argv[1]
 try:
     data = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
 rows = data.get("rows", []) if isinstance(data, dict) else []
-m = [r.get("name", "") for r in rows
-     if isinstance(r, dict) and r.get("listen_mode") is True
-     and r.get("cwd") == cwd and r.get("name")]
-print(m[0] if len(m) == 1 else ("!AMBIGUOUS" if len(m) >= 2 else ""))' \
-        "$SESSION_CWD" 2>/dev/null || true)"
-
-    if [ "$FALLBACK" = "!AMBIGUOUS" ]; then
-        # --- Fix E (260721): surface the disarm instead of silent no-op --
-        # >=2 listen=true identities share this cwd, so we cannot safely
-        # auto-adopt, but the broker clearly shows this session SHOULD be
-        # listening. Emit a visible block warning ONCE (marker keyed by
-        # transcript) so the agent/human learns immediately rather than via
-        # a missed message hours later. With Fix B (idempotent
-        # self-re-register) the suggested recovery actually works now.
-        WARN_MARK="$STATE_DIR/disarm-warned/$(basename "$TRANSCRIPT" 2>/dev/null || printf 'default')"
-        if [ -f "$WARN_MARK" ]; then
-            log "listen-mode disarm already surfaced this session (ambiguous cwd=$SESSION_CWD); no-op"
-            exit 0
+for r in rows:
+    if isinstance(r, dict) and r.get("name") == name and r.get("listen_mode") is True:
+        print("yes")
+        break' \
+            "$CANDIDATE" 2>/dev/null || true)"
+        if [ "$LISTEN_OK" = "yes" ]; then
+            ACTIVE_IDENTITY="$CANDIDATE"
+            log "transcript had no register; pid-correlated fallback resolved identity=$ACTIVE_IDENTITY (sibling mcp pids:$SIBLING_MCP_PIDS)"
+        else
+            log "pid-correlated candidate '$CANDIDATE' is not listen=true; no-op"
         fi
-        mkdir -p "$(dirname "$WARN_MARK")" 2>/dev/null || true
-        : > "$WARN_MARK" 2>/dev/null || true
-        if command -v jq >/dev/null 2>&1; then
-            WREASON="[FAMP listen mode] Auto-wake appears DISARMED (likely after a /compact): the broker shows multiple listen=true identities in this directory, so the Stop hook cannot tell which one is yours. Re-register (famp_register with your identity and listen:true) or restart this window to re-arm."
-            jq -n --arg r "$WREASON" '{decision: "block", reason: $r}'
-            log "surfaced listen-mode disarm warning (ambiguous cwd=$SESSION_CWD)"
-            exit 0
-        fi
-        log "listen-mode disarm detected (ambiguous) but jq missing; no-op"
-        exit 0
-    elif [ -n "$FALLBACK" ]; then
-        ACTIVE_IDENTITY="$FALLBACK"
-        log "transcript had no register; broker fallback resolved identity=$ACTIVE_IDENTITY (cwd=$SESSION_CWD)"
     fi
 fi
 
 if [ -z "$ACTIVE_IDENTITY" ]; then
-    log "no listen registration in transcript (and no unique broker fallback); exiting no-op"
+    log "no listen registration in transcript (and no pid-correlated listen identity); exiting no-op"
     exit 0
 fi
 

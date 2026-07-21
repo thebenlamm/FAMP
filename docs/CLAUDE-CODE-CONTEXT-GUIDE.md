@@ -191,17 +191,23 @@ transcript and can drop that marker, which historically left the Stop hook
 unable to find the identity — auto-wake went silently dead even though the
 broker still held a live `listen=true` registration.
 
-As of the 260721 fix this self-heals: when the transcript has no register
-marker, the hook falls back to the broker, adopting the unique `listen=true`
-identity registered for the window's cwd (`famp inspect identities --json`).
-If two `listen=true` identities share one cwd the hook can't disambiguate, so
-it surfaces a one-time visible warning instead of failing silently.
+As of the 260721 fix this self-heals. When the transcript has no register
+marker, the hook recovers the identity by **process correlation**, not by
+guessing from the cwd: this window's Stop hook and its `famp mcp` server are
+both spawned by the same Claude Code process, so the hook walks its process
+ancestry, finds the `famp mcp` whose parent is a shared ancestor, maps that
+pid to a registered name via `famp sessions`, and adopts it only if `famp
+inspect identities --json` confirms `listen=true`. It therefore adopts *only*
+the identity this window actually registered — never one that merely shares
+the checkout — so an innocent, never-registered window in the same directory
+is never converted into an awaiter. If the correlation resolves nothing
+(unusual process model, broker down), the hook no-ops exactly as before:
+fail-open, never a hijack.
 
-If you ever see that warning — or suspect a post-`/compact` window has gone
-quiet — just re-register (`famp_register({ identity: "<you>", listen: true })`)
-or restart the window to re-arm. Re-registering your own held name is now
-idempotent (it no longer returns `-32101 name already registered`), so it
-cleanly re-lands the marker.
+If a post-`/compact` window still goes quiet, just re-register
+(`famp_register({ identity: "<you>", listen: true })`) or restart the window
+to re-arm. Re-registering your own held name is now idempotent (it no longer
+returns `-32101 name already registered`), so it cleanly re-lands the marker.
 
 ---
 
