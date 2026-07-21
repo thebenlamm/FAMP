@@ -99,6 +99,18 @@ pub enum DaemonError {
     )]
     RestartTimedOut { waited_ms: u64, socket: String },
 
+    /// A broker answered Hello on the bus socket, but its argv is not the
+    /// daemon-managed form (`broker --no-idle-exit`). Auto-spawned orphans
+    /// (`famp broker --socket …` without `--no-idle-exit`) bind the socket and
+    /// cause the LaunchAgent/systemd job to exit cleanly on bind conflict —
+    /// readiness must not report success against that trap (issue #20).
+    #[error(
+        "daemon restart found a healthy broker at {socket} (pid={pid}) that is \
+         not daemon-managed (missing --no-idle-exit in argv); kill pid {pid} \
+         or free the socket, then re-run `famp daemon restart`"
+    )]
+    OrphanBrokerHoldsSocket { pid: u32, socket: String },
+
     /// A path interpolated into the systemd unit's `ExecStart` contains
     /// whitespace. systemd tokenizes `ExecStart` on whitespace, so such a path
     /// would split into separate argv tokens and the unit would fail to start.
