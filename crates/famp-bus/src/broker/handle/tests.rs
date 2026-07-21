@@ -1587,6 +1587,87 @@ fn strict_filtered_await_blocked_behind_mismatch_reports_timeout_then_unblocks_o
     assert_eq!(envelopes[1]["body"]["details"]["seq"].as_u64().unwrap(), 2);
 }
 
+fn park_unfiltered_await(broker: &mut Broker<TestEnv>, client: u64, now: Instant) {
+    let park_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(client),
+            msg: BusMessage::Await {
+                timeout_ms: 10_000,
+                task: None,
+            },
+        },
+        now,
+    );
+    assert!(
+        park_outs
+            .iter()
+            .any(|o| matches!(o, Out::ParkAwait { client: c, .. } if *c == ClientId::from(client))),
+        "client {client} should park: {park_outs:?}"
+    );
+}
+
+/// Assert the author was not unparked / await-woken by their own channel post.
+fn assert_author_await_survived_own_channel_post(
+    broker: &Broker<TestEnv>,
+    send_outs: &[Out],
+    author: u64,
+) {
+    let author_id = ClientId::from(author);
+    assert!(
+        !send_outs
+            .iter()
+            .any(|o| matches!(o, Out::UnparkAwait { client } if *client == author_id)),
+        "author must not be unparked by own channel post: {send_outs:?}"
+    );
+    assert!(
+        !send_outs.iter().any(|o| matches!(
+            o,
+            Out::Reply(
+                client,
+                BusReply::AwaitOk { .. }
+                    | BusReply::AwaitTimeout {}
+                    | BusReply::Err {
+                        kind: BusErrorKind::Internal,
+                        ..
+                    }
+            ) if *client == author_id
+        )),
+        "author must not get await wake/timeout/Internal for own post: {send_outs:?}"
+    );
+    assert!(
+        broker.state.pending_awaits.contains_key(&author_id),
+        "author's parked await must survive own channel post"
+    );
+}
+
+fn assert_member_woke_with_authors_post(broker: &Broker<TestEnv>, send_outs: &[Out], member: u64) {
+    let member_id = ClientId::from(member);
+    let reply = send_outs.iter().find_map(|o| match o {
+        Out::Reply(client, reply) if *client == member_id => Some(reply),
+        _ => None,
+    });
+    match reply {
+        Some(BusReply::AwaitOk { envelopes, .. }) => {
+            assert_eq!(envelopes.len(), 1, "member should receive author's post");
+            assert_eq!(
+                envelopes[0]["from"].as_str().unwrap(),
+                "agent:example.test/alice"
+            );
+        }
+        other => panic!("member must get AwaitOk with author's post, got {other:?}"),
+    }
+    assert!(
+        send_outs
+            .iter()
+            .any(|o| matches!(o, Out::UnparkAwait { client } if *client == member_id)),
+        "member must be unparked: {send_outs:?}"
+    );
+    assert!(
+        !broker.state.pending_awaits.contains_key(&member_id),
+        "member should no longer be parked after delivery"
+    );
+}
+
 /// Issue #15: a listen-mode agent parked on `Await` that posts to a
 /// channel it has joined must stay parked. Before the fix, `send_channel`
 /// woke the author, the self-authored drain produced an empty fully-
@@ -1600,26 +1681,8 @@ fn self_authored_channel_post_does_not_wake_or_kill_authors_parked_await() {
 
     handshake_register_join(&mut broker, &env, 1, "alice", 100, "#planning", now);
     handshake_register_join(&mut broker, &env, 2, "bob", 200, "#planning", now);
-
-    // Both park unfiltered Awaits (listen-mode shape).
-    for client in [1_u64, 2] {
-        let park_outs = broker.handle(
-            BrokerInput::Wire {
-                client: ClientId::from(client),
-                msg: BusMessage::Await {
-                    timeout_ms: 10_000,
-                    task: None,
-                },
-            },
-            now,
-        );
-        assert!(
-            park_outs.iter().any(
-                |o| matches!(o, Out::ParkAwait { client: c, .. } if *c == ClientId::from(client))
-            ),
-            "client {client} should park: {park_outs:?}"
-        );
-    }
+    park_unfiltered_await(&mut broker, 1, now);
+    park_unfiltered_await(&mut broker, 2, now);
     assert!(
         broker
             .state
@@ -1632,9 +1695,6 @@ fn self_authored_channel_post_does_not_wake_or_kill_authors_parked_await() {
         "both alice and bob must be parked before the post"
     );
 
-    // Alice posts to the channel she has joined — over a separate logical
-    // connection path from her parked await (same client id is fine; the
-    // Send and parked Await share identity).
     let send_outs = broker.handle(
         BrokerInput::Wire {
             client: ClientId::from(1_u64),
@@ -1648,68 +1708,8 @@ fn self_authored_channel_post_does_not_wake_or_kill_authors_parked_await() {
         now,
     );
 
-    // Alice must NOT be unparked or receive an await wake (AwaitOk /
-    // AwaitTimeout / Internal). She will get SendOk for her own post —
-    // that is fine and must not be confused with a wake.
-    assert!(
-        !send_outs.iter().any(|o| matches!(
-            o,
-            Out::UnparkAwait { client } if *client == ClientId::from(1_u64)
-        )),
-        "alice must not be unparked by her own channel post: {send_outs:?}"
-    );
-    assert!(
-        !send_outs.iter().any(|o| matches!(
-            o,
-            Out::Reply(
-                client,
-                BusReply::AwaitOk { .. }
-                    | BusReply::AwaitTimeout {}
-                    | BusReply::Err {
-                        kind: BusErrorKind::Internal,
-                        ..
-                    }
-            ) if *client == ClientId::from(1_u64)
-        )),
-        "alice must not receive an await wake/timeout/Internal for her own post: {send_outs:?}"
-    );
-    assert!(
-        broker
-            .state
-            .pending_awaits
-            .contains_key(&ClientId::from(1_u64)),
-        "alice's parked await must survive her own channel post"
-    );
-
-    // Bob (other member, parked) must wake with Alice's post.
-    let bob_reply = send_outs.iter().find_map(|o| match o {
-        Out::Reply(client, reply) if *client == ClientId::from(2_u64) => Some(reply),
-        _ => None,
-    });
-    match bob_reply {
-        Some(BusReply::AwaitOk { envelopes, .. }) => {
-            assert_eq!(envelopes.len(), 1, "bob should receive alice's post");
-            assert_eq!(
-                envelopes[0]["from"].as_str().unwrap(),
-                "agent:example.test/alice"
-            );
-        }
-        other => panic!("bob must get AwaitOk with alice's post, got {other:?}"),
-    }
-    assert!(
-        send_outs.iter().any(|o| matches!(
-            o,
-            Out::UnparkAwait { client } if *client == ClientId::from(2_u64)
-        )),
-        "bob must be unparked: {send_outs:?}"
-    );
-    assert!(
-        !broker
-            .state
-            .pending_awaits
-            .contains_key(&ClientId::from(2_u64)),
-        "bob should no longer be parked after delivery"
-    );
+    assert_author_await_survived_own_channel_post(&broker, &send_outs, 1);
+    assert_member_woke_with_authors_post(&broker, &send_outs, 2);
 }
 
 /// Adversarial-review regression (2026-06-19, MEDIUM): channel Inbox
