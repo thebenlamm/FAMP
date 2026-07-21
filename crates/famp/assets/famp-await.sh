@@ -261,7 +261,14 @@ if [ -z "$ACTIVE_IDENTITY" ]; then
     # process model doesn't cooperate (nothing resolves), we no-op exactly
     # as before: fail-open, and strictly never a hijack. Runs only when the
     # transcript yielded nothing, so normal Stops pay no cost.
+    #
+    # Hermetic tests set FAMP_DISABLE_PID_FALLBACK=1 so a live `famp mcp`
+    # elsewhere on the host (same IDE parent chain) cannot turn a deliberate
+    # no-op transcript into a false listen-mode await.
 
+    if [ "${FAMP_DISABLE_PID_FALLBACK:-}" = "1" ]; then
+        log "pid-correlated fallback disabled (FAMP_DISABLE_PID_FALLBACK=1)"
+    else
     # 1. Ancestor pids of this hook (bounded walk; skip 0/1 so an mcp that
     #    got reparented to init can never false-match via pid 1).
     ANCESTORS=""
@@ -333,6 +340,7 @@ for r in rows:
             log "pid-correlated candidate '$CANDIDATE' is not listen=true; no-op"
         fi
     fi
+    fi # FAMP_DISABLE_PID_FALLBACK
 fi
 
 if [ -z "$ACTIVE_IDENTITY" ]; then

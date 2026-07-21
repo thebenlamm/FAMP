@@ -112,6 +112,9 @@ fn run_hook(
         .arg(hook)
         .env("PATH", &new_path)
         .env("XDG_STATE_HOME", xdg_state)
+        // Hermetic: a live `famp mcp` under the same IDE parent chain must not
+        // turn deliberate no-op transcripts into listen-mode awaits.
+        .env("FAMP_DISABLE_PID_FALLBACK", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -144,6 +147,7 @@ fn run_hook_with_stdin(
         .arg(hook)
         .env("PATH", &new_path)
         .env("XDG_STATE_HOME", xdg_state)
+        .env("FAMP_DISABLE_PID_FALLBACK", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -289,7 +293,8 @@ fn listen_null_enters_listen_mode() {
 
 #[test]
 fn listen_false_is_noop() {
-    require_hook!();
+    // Asset hook (not the installed ~/.claude copy): hermetic under
+    // FAMP_DISABLE_PID_FALLBACK so a live host `famp mcp` cannot false-fire.
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -298,7 +303,7 @@ fn listen_false_is_noop() {
     make_transcript(&transcript, "dk", false, true, false);
 
     let out = run_hook(
-        &hook_path(),
+        &asset_hook_path(),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -550,7 +555,6 @@ fn codex_sqlite_fallback_rejects_rollout_path_outside_codex_sessions() {
 
 #[test]
 fn failed_register_result_is_noop() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -559,7 +563,7 @@ fn failed_register_result_is_noop() {
     make_transcript(&transcript, "dk", true, false, false); // ok=false
 
     let out = run_hook(
-        &hook_path(),
+        &asset_hook_path(),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -605,7 +609,6 @@ fn register_then_channel_leave_still_listens() {
 
 #[test]
 fn no_register_in_transcript_is_noop() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -618,7 +621,7 @@ fn no_register_in_transcript_is_noop() {
     .unwrap();
 
     let out = run_hook(
-        &hook_path(),
+        &asset_hook_path(),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -633,7 +636,6 @@ fn no_register_in_transcript_is_noop() {
 
 #[test]
 fn missing_transcript_is_noop() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -641,7 +643,7 @@ fn missing_transcript_is_noop() {
     let transcript = dir.path().join("does_not_exist.jsonl");
 
     let out = run_hook(
-        &hook_path(),
+        &asset_hook_path(),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -659,7 +661,6 @@ fn missing_transcript_is_noop() {
 
 #[test]
 fn malformed_transcript_is_noop() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -668,7 +669,7 @@ fn malformed_transcript_is_noop() {
     std::fs::write(&transcript, "not json at all\n{broken\n").unwrap();
 
     let out = run_hook(
-        &hook_path(),
+        &asset_hook_path(),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -1024,6 +1025,9 @@ fn spawn_asset_hook(transcript: &Path, bin_dir: &Path, xdg: &Path) -> std::proce
         .env("PATH", &new_path)
         .env("XDG_STATE_HOME", xdg)
         .env("FAMP_QWATCH_INTERVAL", "1")
+        // Same hermetic default as `run_hook` — #26 / no-op tests must not
+        // adopt a live sibling `famp mcp` from the host process tree.
+        .env("FAMP_DISABLE_PID_FALLBACK", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

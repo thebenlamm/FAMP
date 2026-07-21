@@ -511,6 +511,74 @@ fn self_reregister_oversized_register_ok_preserves_existing_bind() {
     );
 }
 
+/// #14: InboxOk encode failure must not advance channel `inbox_offsets`
+/// (retry would otherwise skip the undelivered channel posts).
+#[test]
+fn inbox_oversized_inbox_ok_does_not_advance_channel_cursors() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    let channel = MailboxName::Channel("#huge".into());
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    // Join while the channel is empty so membership commits (JoinOk is small).
+    let join_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Join {
+                channel: "#huge".into(),
+                role: None,
+            },
+        },
+        now,
+    );
+    assert!(
+        join_outs
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::JoinOk { .. }))),
+        "join empty channel must succeed: {join_outs:?}"
+    );
+    let cursor_before = broker
+        .state
+        .clients
+        .get(&ClientId::from(1_u64))
+        .and_then(|s| s.inbox_offsets.get(&channel).copied());
+
+    // Post an oversized channel envelope after join (join-time seed is behind it).
+    env.mailbox
+        .append(&channel, oversized_drain_envelope(MAX_FRAME_BYTES));
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Inbox {
+                since: Some(0),
+                include_terminal: None,
+            },
+        },
+        now,
+    );
+    assert!(
+        outs.iter().any(|o| matches!(
+            o,
+            Out::Reply(_, BusReply::Err { kind, message })
+                if *kind == BusErrorKind::EnvelopeTooLarge && message.contains("InboxOk")
+        )),
+        "oversized InboxOk must surface EnvelopeTooLarge: {outs:?}"
+    );
+    let cursor_after = broker
+        .state
+        .clients
+        .get(&ClientId::from(1_u64))
+        .and_then(|s| s.inbox_offsets.get(&channel).copied());
+    assert_eq!(
+        cursor_after, cursor_before,
+        "channel inbox_offsets must not advance when InboxOk cannot encode \
+         (before={cursor_before:?}, after={cursor_after:?})"
+    );
+}
+
 /// #14: JoinOk encode failure must not leave the holder half-joined.
 #[test]
 fn join_oversized_join_ok_does_not_commit_membership() {

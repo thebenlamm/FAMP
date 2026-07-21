@@ -694,21 +694,32 @@ fn inbox<E: BrokerEnv>(
         cursor_advances.push((mailbox, effective_next_offset));
     }
 
-    // Stage all per-channel cursor advances after the read loop so the
-    // borrow checker stays happy (drain_from borrows broker immutably).
+    let reply = BusReply::InboxOk {
+        envelopes,
+        next_offset: agent_next_offset,
+    };
+    // #14: encode-before-commit for channel `inbox_offsets`. Pre-fix the
+    // cursors advanced even when the write loop later failed FrameTooLarge on
+    // the combined InboxOk — the client never saw the envelopes but a retry
+    // started past them (skipped channel posts). Agent-mailbox position is
+    // still client-tracked via `since` (no broker commit here).
+    if let Err(error) = encode_frame(&reply) {
+        return vec![err(
+            client,
+            BusErrorKind::EnvelopeTooLarge,
+            format!("InboxOk exceeds 16 MiB reply-frame limit: {error}"),
+        )];
+    }
+
+    // Stage all per-channel cursor advances only after the reply is known to
+    // encode. Drain loop above only borrowed broker immutably.
     for (mailbox, offset) in cursor_advances {
         if let Some(state) = broker.state.clients.get_mut(&canonical) {
             state.inbox_offsets.insert(mailbox, offset);
         }
     }
 
-    vec![Out::Reply(
-        client,
-        BusReply::InboxOk {
-            envelopes,
-            next_offset: agent_next_offset,
-        },
-    )]
+    vec![Out::Reply(client, reply)]
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1091,9 +1102,9 @@ fn decode_lines(
 /// MCP `famp_inbox` defaults `since` from the session cursor (#13) but the
 /// first call of a session (and any explicit `since: 0`) still drains from
 /// the head. No retention or compaction exists yet; this threshold buys an
-/// operator one halving of headroom. Register/join additionally encode the
-/// reply *before* committing state (#14) so a frame failure cannot leave a
-/// half-applied bind.
+/// operator one halving of headroom. Register, join, **and** inbox encode
+/// the reply *before* committing state (#14) so a frame failure cannot leave
+/// a half-applied bind, half-join, or advanced channel `inbox_offsets`.
 const DRAIN_WARN_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Byte span the drain covers: `start_offset` to the last record's `end`.

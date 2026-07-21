@@ -30,7 +30,7 @@ See: .planning/PROJECT.md — v0.11 Broker Daemon & Cross-Tool Bootstrap is **CO
 Phase: Not started (defining requirements)
 Plan: —
 Status: Defining requirements
-Last activity: 2026-07-21 - Completed quick task 260721-fix-14: RegisterOk/JoinOk encode-before-commit + docs for 16 MiB cliff on register/join/inbox (#14). Deploy: rebuild broker + daemon restart.
+Last activity: 2026-07-21 - Review harden #14/#26: InboxOk encode-before-commit for channel cursors; hermetic hook no-op tests (FAMP_DISABLE_PID_FALLBACK + asset path). Deploy: just install + broker restart.
 
 ## v0.11 Phase Map
 

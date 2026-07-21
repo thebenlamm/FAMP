@@ -126,6 +126,16 @@ mod tests {
         );
     }
 
+    /// Hermetic tests set this so a live host `famp mcp` cannot turn a
+    /// deliberate no-op transcript into listen-mode via pid-correlation.
+    #[test]
+    fn shim_honors_disable_pid_fallback_env() {
+        assert!(
+            FAMP_AWAIT_SH.contains("FAMP_DISABLE_PID_FALLBACK"),
+            "hook must gate the pid-correlated fallback behind an env opt-out"
+        );
+    }
+
     #[test]
     fn install_shim_creates_file_at_mode_0755() {
         let dir = tempfile::tempdir().unwrap();
