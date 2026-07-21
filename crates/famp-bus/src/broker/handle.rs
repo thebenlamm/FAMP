@@ -302,11 +302,8 @@ fn register<E: BrokerEnv>(
     // RegisterOk re-lands a successful marker the hook can find again.
     // NameTaken stays reserved for a genuinely different session grabbing a
     // held name.
-    let name_taken = broker
-        .state
-        .clients
-        .iter()
-        .any(|(id, c)| {
+    let name_taken =
+        broker.state.clients.iter().any(|(id, c)| {
             *id != client && c.connected && c.name.as_deref() == Some(name.as_str())
         });
     if name_taken {
