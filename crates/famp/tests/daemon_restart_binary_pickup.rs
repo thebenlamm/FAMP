@@ -1,7 +1,13 @@
-//! DAEMON-05: binary-pickup restart integration test (macOS-gated).
+//! DAEMON-05 / issues #9+#20: binary-pickup restart integration test (macOS-gated).
 //!
-//! This test verifies that `famp daemon restart` picks up a freshly installed
-//! on-disk binary via `launchctl kickstart -k`.
+//! Verifies that `famp daemon restart`:
+//! 1. exits 0 against a live registered service,
+//! 2. prints a success line (`broker restarted  pid=…`),
+//! 3. leaves `famp inspect broker` reporting HEALTHY **immediately** after
+//!    return (readiness poll — issue #9; no race window for `restart && famp …`).
+//!
+//! macOS path is now bootout+bootstrap+kickstart (LWCR refresh, issue #20),
+//! not bare `kickstart -k`.
 //!
 //! Gate: this test is `#[ignore]`d (so a default `cargo test` reports it as
 //! IGNORED, not PASSED) AND requires `FAMP_RUN_LAUNCHCTL_TESTS` set. Run with:
@@ -29,12 +35,8 @@ mod macos_only {
         std::env::var("FAMP_RUN_LAUNCHCTL_TESTS").is_ok()
     }
 
-    /// DAEMON-05: verify that `famp daemon restart` returns Ok against a live
-    /// registered service, proving the kickstart -k path executes.
-    ///
-    /// The full version-swap verification (pid changes, new build_version visible
-    /// in `famp daemon status`) is the VALIDATION.md manual step — it requires a
-    /// live registered service and a real binary replacement.
+    /// DAEMON-05 + #9: `famp daemon restart` returns Ok only after HEALTHY,
+    /// and prints the success line. Requires a live registered service.
     ///
     /// `#[ignore]`: requires a live registered service, so it is not run by a
     /// default `cargo test` — and is reported as **ignored**, not **passed**, so a
@@ -54,20 +56,41 @@ mod macos_only {
             return;
         }
 
-        // Run `famp daemon restart` against the live service. This calls
-        // `launchctl kickstart -k gui/$UID/com.famp.broker` on macOS.
         // Requires: service must be installed and registered (run `famp daemon
-        // install` first).
-        let status = std::process::Command::new("famp")
+        // install` first). Uses the `famp` on PATH (typically `just install`).
+        let output = std::process::Command::new("famp")
             .args(["daemon", "restart"])
-            .status()
+            .output()
             .expect("famp daemon restart must be runnable (is `famp` in PATH?)");
 
         assert!(
-            status.success(),
+            output.status.success(),
             "famp daemon restart must exit 0 against a live registered service; \
-         got {:?}. Is the service installed? Run `famp daemon install` first.",
-            status.code()
+             got {:?}\nstdout:\n{}\nstderr:\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("broker restarted") && stdout.contains("pid="),
+            "restart must print a success line with pid; got stdout:\n{stdout}"
+        );
+
+        // Issue #9: immediately after restart returns Ok, inspect must be HEALTHY
+        // (no race window for `famp daemon restart && famp …` scripts).
+        let inspect = std::process::Command::new("famp")
+            .args(["inspect", "broker"])
+            .output()
+            .expect("famp inspect broker must be runnable");
+        let inspect_out = String::from_utf8_lossy(&inspect.stdout);
+        assert!(
+            inspect.status.success() && inspect_out.contains("HEALTHY"),
+            "inspect broker must be HEALTHY immediately after restart returns; \
+             exit={:?} stdout:\n{inspect_out}\nstderr:\n{}",
+            inspect.status.code(),
+            String::from_utf8_lossy(&inspect.stderr),
         );
     }
 } // mod macos_only

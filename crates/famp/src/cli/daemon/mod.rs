@@ -38,17 +38,20 @@ pub enum DaemonSubcommand {
     /// installed-but-down, running). Exits 0 when running, 1 when not installed,
     /// 2 when installed but the broker process is not responding.
     Status(status::DaemonStatusArgs),
-    /// Restart the daemon, picking up a new on-disk binary after `cargo install`.
+    /// Restart the daemon, picking up a new on-disk binary after `cargo install`
+    /// / `just install`. Blocks until the broker answers Hello (or times out).
+    /// Drops in-memory registrations and parked `famp await` waiters — listen-mode
+    /// agents must re-register after a restart.
     Restart(restart::DaemonRestartArgs),
 }
 
-/// Async dispatcher. `install`, `uninstall`, `restart` are sync fns called
-/// directly; `status` is async (calls the broker inspect probe).
+/// Async dispatcher. `install` / `uninstall` are sync; `status` and `restart`
+/// are async (both call the broker inspect probe — restart for readiness).
 pub async fn run(args: DaemonArgs) -> Result<(), CliError> {
     match args.command {
         DaemonSubcommand::Install(args) => install::run(args),
         DaemonSubcommand::Uninstall(args) => uninstall::run(args),
         DaemonSubcommand::Status(args) => status::run(args).await,
-        DaemonSubcommand::Restart(args) => restart::run(args),
+        DaemonSubcommand::Restart(args) => restart::run(args).await,
     }
 }

@@ -87,6 +87,18 @@ pub enum DaemonError {
     #[error("daemon service is not installed; run `famp daemon install` first")]
     NotInstalled,
 
+    /// `famp daemon restart` asked the service manager to relaunch, but the
+    /// broker never answered a Hello handshake within the readiness budget.
+    /// Names the socket so the operator can compare with `famp inspect broker`.
+    #[error(
+        "daemon restart timed out after {waited_ms}ms waiting for broker Hello \
+         at {socket}; check `famp inspect broker` and `~/.famp/broker.log` \
+         (on macOS an EX_CONFIG crash loop after `just install` needs a full \
+         bootout+bootstrap, which restart now performs — if this still fails, \
+         try `famp daemon uninstall` then `famp daemon install`)"
+    )]
+    RestartTimedOut { waited_ms: u64, socket: String },
+
     /// A path interpolated into the systemd unit's `ExecStart` contains
     /// whitespace. systemd tokenizes `ExecStart` on whitespace, so such a path
     /// would split into separate argv tokens and the unit would fail to start.
