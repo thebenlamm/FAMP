@@ -126,9 +126,15 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // `set_active_identity`.
             guard.inbox_offset = None;
             guard.listen_mode = Some(listen);
-            // Base surface stays `{ active, drained, peers }`. When listen
-            // is true, add a wake hint: Stop hook is the primary path for
-            // Claude/Codex/Grok; optional monitor is fallback only.
+            // Base surface stays `{ active, drained, peers }`. Listen mode is
+            // driven entirely by the Stop hook (famp-await decision:block) for
+            // Claude/Codex/Grok. Do NOT advertise a `famp listen-wake --follow`
+            // monitor here: in the Stop-hook deployment nothing writes the
+            // `.wake` file, so `--follow` blocks forever, and arming
+            // `--daemon` opens a second bus waiter that steals messages from
+            // the Stop await (the exact race the comment at drop(guard) below
+            // avoids internally). The orphaned monitor surface must not be
+            // handed to users.
             let mut body = serde_json::json!({
                 "active": &active,
                 "drained": drained.len(),
@@ -136,12 +142,6 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             });
             if listen {
                 body["listen_mode"] = serde_json::json!(true);
-                body["wake_hint"] = serde_json::json!({
-                    "note": format!(
-                        "Claude/Codex/Grok auto-wake via Stop hook (famp-await decision:block). Optional monitor fallback: famp listen-wake --as {active} --follow"
-                    ),
-                    "grok_monitor": format!("famp listen-wake --as {active} --follow"),
-                });
             }
             Ok(body)
         }
