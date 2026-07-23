@@ -20,7 +20,9 @@ use famp_inbox as _;
 use famp_inspect_client as _;
 use famp_inspect_proto as _;
 use famp_inspect_server as _;
-#[cfg(test)]
+// famp-keyring is now a real (non-dev) dependency (Phase 8 `famp peer`);
+// the bin target itself only calls `famp::cli::run`, so silence
+// unused_crate_dependencies here rather than gating it to `#[cfg(test)]`.
 use famp_keyring as _;
 use famp_taskdir as _;
 #[cfg(test)]

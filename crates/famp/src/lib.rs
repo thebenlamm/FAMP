@@ -30,7 +30,10 @@ use ed25519_dalek as _;
 use famp_inspect_client as _;
 use famp_inspect_proto as _;
 use famp_inspect_server as _;
-#[cfg(test)]
+// famp-keyring is a real (non-dev) dependency as of Phase 8 (`famp peer`
+// export/import, TRUST-01); `cli::peer::{export,import}` use it directly,
+// but during the Task 1 stub-wiring intermediate state nothing does yet —
+// silence unconditionally rather than `#[cfg(test)]`-gating it.
 use famp_keyring as _;
 #[cfg(test)]
 use famp_transport as _;

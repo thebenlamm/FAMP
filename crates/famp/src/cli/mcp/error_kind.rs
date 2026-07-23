@@ -28,9 +28,9 @@ use crate::cli::error::CliError::{
     HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
     InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
     JsonMergeRead, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented, NotRegistered,
-    NotRegisteredHint, PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound,
-    TaskTerminal, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse, TomlSerialize,
-    TomlTableExpected, UnknownIdentity,
+    NotRegisteredHint, PeerBlobMalformed, PeerKeyConflict, PrincipalInvalid, SendArgsInvalid,
+    SendFailed, TaskDir, TaskNotFound, TaskTerminal, TlsFingerprintMismatch, TofuBootstrapRefused,
+    TomlParse, TomlSerialize, TomlTableExpected, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -98,6 +98,8 @@ impl crate::cli::error::CliError {
             Generic(_) => "generic",
             NotImplemented { .. } => "not_implemented",
             Daemon(_) => "daemon_error",
+            PeerBlobMalformed { .. } => "peer_blob_malformed",
+            PeerKeyConflict { .. } => "peer_key_conflict",
         }
     }
 }

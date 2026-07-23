@@ -70,10 +70,13 @@ dirs = "5"
 regex = { workspace = true }
 which = "7"
 rusqlite = { version = "0.32", features = ["bundled"] }
+# famp-keyring is a REAL dependency (not dev-only): `famp peer
+# export`/`import` (Phase 8, TRUST-01) read/write the gateway peer
+# keyring at runtime, not just in tests.
+famp-keyring = { path = "../famp-keyring", version = "0.11.0" }
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).
-famp-keyring = { path = "../famp-keyring", version = "0.11.0" }
 famp-transport-http = { path = "../famp-transport-http", version = "0.11.0" }
 famp-transport = { path = "../famp-transport", version = "0.11.0", features = ["test-util"] }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "test-util", "process", "io-util", "signal", "net"] }

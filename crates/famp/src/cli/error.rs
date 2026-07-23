@@ -281,6 +281,24 @@ pub enum CliError {
 
     #[error("not implemented: {what}")]
     NotImplemented { what: String },
+
+    /// `famp peer import`'s export blob failed to parse: missing
+    /// principal/pubkey field, invalid base64url pubkey encoding, or an
+    /// invalid principal string. Fresh, narrowly-scoped variant for
+    /// Phase 8's `famp peer` surface — deliberately NOT a repurposing of
+    /// `TlsFingerprintMismatch`/`TofuBootstrapRefused` (those are orphaned
+    /// TLS-cert-era fossils with zero construction sites; RESEARCH
+    /// Pitfall 5).
+    #[error("malformed peer export blob: {reason}")]
+    PeerBlobMalformed { reason: String },
+
+    /// `famp peer import` attempted to pin a DIFFERENT key for a
+    /// principal already pinned in the gateway peer keyring —
+    /// `Keyring::pin_tofu` fails closed (T-08-11, TRUST-02 precondition).
+    /// The operator must resolve the conflict out-of-band; FAMP never
+    /// silently overwrites a pinned trust anchor.
+    #[error("peer key conflict: {principal} is already pinned to a different key")]
+    PeerKeyConflict { principal: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

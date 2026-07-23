@@ -20,6 +20,7 @@ pub mod leave;
 pub mod listen_wake;
 pub mod mcp;
 pub mod paths;
+pub mod peer;
 pub mod perms;
 pub mod register;
 pub mod send;
@@ -155,6 +156,12 @@ pub enum Commands {
     /// full Codex listen-mode lifecycle: transcript resolve, await, and
     /// block-decision JSON — no jq/python on the critical path.
     Hook(hook::HookArgs),
+    /// Two-machine Ed25519 trust bootstrap (Phase 8, TRUST-01): `famp peer
+    /// export --as <name>` prints a copy/paste-safe blob; `famp peer
+    /// import [<file>|-]` TOFU-pins it into the gateway peer keyring. No
+    /// key material ever crosses FAMP — the blob transport is the
+    /// operator's own clipboard/Signal.
+    Peer(peer::PeerArgs),
 }
 
 /// Build a multi-thread tokio runtime and block on `fut`. Shared by every
@@ -193,6 +200,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::UninstallGrok(args) => uninstall::grok::run(args),
         Commands::Hook(args) => hook::run(args),
         Commands::Info(args) => info::run(&args).map(|_| ()),
+        Commands::Peer(args) => peer::run(args),
         // Async arms: each boots a multi-thread tokio runtime via
         // `block_on_async` and dispatches into the subcommand's
         // `async fn run`. Only async-required arms pay the runtime cost.
