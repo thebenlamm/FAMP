@@ -52,5 +52,24 @@ pub(crate) struct WireEnvelope<B: BodySchema> {
     pub idempotency_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extensions: Option<BTreeMap<String, serde_json::Value>>,
+    // --- Federation fields (Phase 8, WIRE-02 / D-01 / D-02) — plain Option
+    // members only, omit-when-empty. JCS sorts object keys, so declaration
+    // order here does not affect signed/encoded bytes, only field name +
+    // presence do. `capability`/`approval` are reserved, opaque, v2.0+
+    // real-estate: carried and signed, interpreted by NOTHING this phase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_key_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expiry: Option<Timestamp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<serde_json::Value>,
     pub body: B,
 }

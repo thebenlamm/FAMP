@@ -16,7 +16,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Timestamp(pub String);
 
-fn shallow_validate(v: &str) -> bool {
+pub(crate) fn shallow_validate(v: &str) -> bool {
     // PITFALL P6: shallow only. Full parsing would normalize.
     let bytes = v.as_bytes();
     if bytes.len() < 20 {

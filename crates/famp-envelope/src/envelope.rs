@@ -63,6 +63,13 @@ use std::collections::BTreeMap;
 ///     terminal_status: None,
 ///     idempotency_key: None,
 ///     extensions: None,
+///     from_domain: None,
+///     to_domain: None,
+///     sender_key_id: None,
+///     nonce: None,
+///     expiry: None,
+///     capability: None,
+///     approval: None,
 ///     body: unimplemented!(),
 /// };
 /// ```
@@ -81,6 +88,13 @@ pub struct UnsignedEnvelope<B: BodySchema> {
     pub terminal_status: Option<TerminalStatus>,
     pub idempotency_key: Option<String>,
     pub extensions: Option<BTreeMap<String, Value>>,
+    pub from_domain: Option<String>,
+    pub to_domain: Option<String>,
+    pub sender_key_id: Option<String>,
+    pub nonce: Option<String>,
+    pub expiry: Option<Timestamp>,
+    pub capability: Option<Value>,
+    pub approval: Option<Value>,
     pub body: B,
 }
 
@@ -146,6 +160,13 @@ impl<B: BodySchema> UnsignedEnvelope<B> {
             terminal_status: None,
             idempotency_key: None,
             extensions: None,
+            from_domain: None,
+            to_domain: None,
+            sender_key_id: None,
+            nonce: None,
+            expiry: None,
+            capability: None,
+            approval: None,
             body,
         }
     }
@@ -165,6 +186,44 @@ impl<B: BodySchema> UnsignedEnvelope<B> {
     #[must_use]
     pub fn with_idempotency_key(mut self, k: String) -> Self {
         self.idempotency_key = Some(k);
+        self
+    }
+
+    /// Set the sender's domain (`Principal.authority`), D-03. Federation-only
+    /// field — reserved and unused on the local bus.
+    #[must_use]
+    pub fn with_from_domain(mut self, domain: String) -> Self {
+        self.from_domain = Some(domain);
+        self
+    }
+
+    /// Set the receiver's domain (`Principal.authority`), D-03.
+    #[must_use]
+    pub fn with_to_domain(mut self, domain: String) -> Self {
+        self.to_domain = Some(domain);
+        self
+    }
+
+    /// Set the sender's key_id fingerprint (D-03).
+    #[must_use]
+    pub fn with_sender_key_id(mut self, key_id: String) -> Self {
+        self.sender_key_id = Some(key_id);
+        self
+    }
+
+    /// Set a random nonce. Carried and signed but NOT actively checked
+    /// against a replay cache this phase (D-04, format-validate only).
+    #[must_use]
+    pub fn with_nonce(mut self, nonce: String) -> Self {
+        self.nonce = Some(nonce);
+        self
+    }
+
+    /// Set an absolute expiry timestamp. Carried and signed but NOT actively
+    /// enforced this phase (D-04, format-validate only).
+    #[must_use]
+    pub fn with_expiry(mut self, expiry: Timestamp) -> Self {
+        self.expiry = Some(expiry);
         self
     }
 
@@ -188,6 +247,13 @@ impl<B: BodySchema> UnsignedEnvelope<B> {
             terminal_status: self.terminal_status.as_ref(),
             idempotency_key: self.idempotency_key.as_ref(),
             extensions: self.extensions.as_ref(),
+            from_domain: self.from_domain.as_ref(),
+            to_domain: self.to_domain.as_ref(),
+            sender_key_id: self.sender_key_id.as_ref(),
+            nonce: self.nonce.as_ref(),
+            expiry: self.expiry.as_ref(),
+            capability: self.capability.as_ref(),
+            approval: self.approval.as_ref(),
             body: &self.body,
         };
         let value = serde_json::to_value(&view)
@@ -222,6 +288,20 @@ struct WireEnvelopeRef<'a, B: BodySchema> {
     idempotency_key: Option<&'a String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     extensions: Option<&'a BTreeMap<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    from_domain: Option<&'a String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_domain: Option<&'a String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sender_key_id: Option<&'a String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nonce: Option<&'a String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expiry: Option<&'a Timestamp>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capability: Option<&'a Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    approval: Option<&'a Value>,
     body: &'a B,
 }
 
@@ -325,6 +405,13 @@ impl<B: BodySchema> SignedEnvelope<B> {
             terminal_status: wire.terminal_status,
             idempotency_key: wire.idempotency_key,
             extensions: wire.extensions,
+            from_domain: wire.from_domain,
+            to_domain: wire.to_domain,
+            sender_key_id: wire.sender_key_id,
+            nonce: wire.nonce,
+            expiry: wire.expiry,
+            capability: wire.capability,
+            approval: wire.approval,
             body: wire.body,
         };
         Ok(SignedEnvelope { inner, signature })
@@ -358,6 +445,13 @@ impl<B: BodySchema> SignedEnvelope<B> {
             terminal_status: self.inner.terminal_status.as_ref(),
             idempotency_key: self.inner.idempotency_key.as_ref(),
             extensions: self.inner.extensions.as_ref(),
+            from_domain: self.inner.from_domain.as_ref(),
+            to_domain: self.inner.to_domain.as_ref(),
+            sender_key_id: self.inner.sender_key_id.as_ref(),
+            nonce: self.inner.nonce.as_ref(),
+            expiry: self.inner.expiry.as_ref(),
+            capability: self.inner.capability.as_ref(),
+            approval: self.inner.approval.as_ref(),
             body: &self.inner.body,
         };
         let mut value = serde_json::to_value(&view)
@@ -420,6 +514,35 @@ impl<B: BodySchema> SignedEnvelope<B> {
 
     pub fn inner(&self) -> &UnsignedEnvelope<B> {
         &self.inner
+    }
+
+    /// D-04 well-formedness check ONLY: does the nonce/expiry pair carried on
+    /// this envelope parse as the wire format expects? This does NOT reject
+    /// an expired (past) `expiry` and does NOT consult any replay cache —
+    /// active anti-replay + expiry rejection are v1.1 concerns.
+    ///
+    /// - `nonce`, when present, must be non-empty.
+    /// - `expiry`, when present, must pass the same shallow RFC 3339 format
+    ///   gate as `ts` (see `crate::timestamp`) and must be strictly after
+    ///   `ts` by lexical (byte-string) comparison. Both fixed-width RFC 3339
+    ///   strings in the same offset representation order correctly under
+    ///   lexical comparison; this is a format check, not a security boundary.
+    #[must_use]
+    pub fn federation_format_ok(&self) -> bool {
+        if let Some(nonce) = self.inner.nonce.as_ref() {
+            if nonce.is_empty() {
+                return false;
+            }
+        }
+        if let Some(expiry) = self.inner.expiry.as_ref() {
+            if !crate::timestamp::shallow_validate(&expiry.0) {
+                return false;
+            }
+            if expiry.0 <= self.inner.ts.0 {
+                return false;
+            }
+        }
+        true
     }
 }
 
