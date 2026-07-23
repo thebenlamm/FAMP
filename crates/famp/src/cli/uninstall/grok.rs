@@ -1,9 +1,14 @@
 //! `famp uninstall-grok` subcommand handler.
 //!
-//! Reverses `install-grok` mutations:
+//! Reverses `install-grok` mutations under `~/.grok/` only:
 //!  1. removes `~/.grok/config.toml :: [mcp_servers.famp]`
 //!  2. removes FAMP-owned `~/.grok/skills/famp-listen/SKILL.md` only
 //!     (never deletes user-owned sibling files; leaves modified skills)
+//!  3. removes `~/.grok/hooks/famp-listen-stop.json`
+//!  4. removes `~/.grok/hooks/famp-await.sh`
+//!
+//! Intentionally leaves `~/.claude/` alone — Claude may still own the
+//! primary famp-await Stop path for Claude Code users.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -11,7 +16,7 @@ use std::path::{Path, PathBuf};
 use clap::Args;
 
 use crate::cli::error::CliError;
-use crate::cli::install::{grok as install_grok, toml_merge};
+use crate::cli::install::{await_hook, grok as install_grok, toml_merge};
 
 #[derive(Debug, Args)]
 pub struct UninstallGrokArgs {
@@ -42,12 +47,17 @@ pub fn run(args: UninstallGrokArgs) -> Result<(), CliError> {
 pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<(), CliError> {
     let config_path = home.join(".grok").join("config.toml");
     let skill_dir = home.join(".grok").join("skills").join("famp-listen");
+    let stop_json = home
+        .join(".grok")
+        .join("hooks")
+        .join("famp-listen-stop.json");
+    let grok_await = home.join(".grok").join("hooks").join("famp-await.sh");
 
     writeln!(err, "Uninstalling Grok MCP entry from {}", home.display()).ok();
     let outcome = toml_merge::remove_codex_table(&config_path, "mcp_servers", "famp")?;
     writeln!(
         err,
-        "  [1/2] {} :: [mcp_servers.famp] -> {:?}",
+        "  [1/4] {} :: [mcp_servers.famp] -> {:?}",
         config_path.display(),
         outcome
     )
@@ -56,13 +66,42 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     install_grok::remove_skill_dir(&skill_dir)?;
     writeln!(
         err,
-        "  [2/2] {} :: famp-listen skill removed",
+        "  [2/4] {} :: famp-listen skill removed",
         skill_dir.display()
     )
     .ok();
 
+    match std::fs::remove_file(&stop_json) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(CliError::Io {
+                path: stop_json.clone(),
+                source,
+            });
+        }
+    }
+    writeln!(
+        err,
+        "  [3/4] {} :: Stop hook json removed",
+        stop_json.display()
+    )
+    .ok();
+
+    await_hook::remove_shim(&grok_await)?;
+    writeln!(
+        err,
+        "  [4/4] {} :: grok await shim removed",
+        grok_await.display()
+    )
+    .ok();
+
     writeln!(err).ok();
-    writeln!(err, "uninstall-grok complete.").ok();
+    writeln!(
+        err,
+        "uninstall-grok complete. (~/.claude left untouched.)"
+    )
+    .ok();
     Ok(())
 }
 
@@ -73,12 +112,17 @@ mod tests {
     use crate::cli::install;
 
     #[test]
-    fn uninstall_after_install_removes_famp_table_and_skill() {
+    fn uninstall_after_install_removes_famp_table_skill_and_hooks() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
         install::grok::run_at(home, &mut out, &mut err).unwrap();
+
+        assert!(home.join(".grok/hooks/famp-listen-stop.json").exists());
+        assert!(home.join(".grok/hooks/famp-await.sh").exists());
+        // install always writes claude await shim — uninstall must leave it.
+        assert!(home.join(".claude/hooks/famp-await.sh").exists());
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();
@@ -98,6 +142,10 @@ mod tests {
             }
         }
         assert!(!home.join(".grok/skills/famp-listen").exists());
+        assert!(!home.join(".grok/hooks/famp-listen-stop.json").exists());
+        assert!(!home.join(".grok/hooks/famp-await.sh").exists());
+        // Claude tree untouched by uninstall-grok.
+        assert!(home.join(".claude/hooks/famp-await.sh").exists());
     }
 
     #[test]

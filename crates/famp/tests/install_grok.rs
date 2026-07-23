@@ -1,6 +1,6 @@
-//! install-grok writes `[mcp_servers.famp]` to `~/.grok/config.toml` and the
-//! famp-listen skill, without touching Claude/Codex trees or installing a
-//! long Stop hook.
+//! install-grok writes MCP, await shim, Stop hook json, and skill.
+//! Refreshes ~/.claude/hooks/famp-await.sh; merges Claude settings only
+//! when that file already exists.
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -28,14 +28,31 @@ fn install_grok_writes_mcp_servers_famp_table_under_tempdir_home() {
     let skill = home.join(".grok/skills/famp-listen/SKILL.md");
     assert!(skill.exists(), "famp-listen skill missing");
     let skill_body = std::fs::read_to_string(&skill).unwrap();
-    assert!(skill_body.contains("famp listen-wake"));
-    assert!(skill_body.contains("persistent"));
+    assert!(skill_body.contains("famp_register"));
 
-    // Must not pollute Claude / Codex / shared Stop-hook paths.
+    // Await shims + Stop JSON with timeout 86400.
+    let grok_shim = home.join(".grok/hooks/famp-await.sh");
+    let claude_shim = home.join(".claude/hooks/famp-await.sh");
+    assert!(grok_shim.exists(), "grok await shim missing");
+    assert!(claude_shim.exists(), "claude await shim must be refreshed");
     assert!(
-        !home.join(".claude").exists(),
-        "Grok install must not touch ~/.claude/"
+        std::fs::read_to_string(&grok_shim)
+            .unwrap()
+            .contains("trying pid-correlated")
     );
+
+    let stop_json = home.join(".grok/hooks/famp-listen-stop.json");
+    assert!(stop_json.exists(), "Stop hook json missing");
+    let stop: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&stop_json).unwrap()).unwrap();
+    let hooks = stop["hooks"]["Stop"][0]["hooks"].as_array().unwrap();
+    assert_eq!(hooks[0]["timeout"], 86400);
+    assert_eq!(
+        hooks[0]["command"].as_str().unwrap(),
+        grok_shim.display().to_string()
+    );
+
+    // Must not pollute Codex or write Claude hook-runner.
     assert!(
         !home.join(".codex").exists(),
         "Grok install must not touch ~/.codex/"
@@ -44,9 +61,10 @@ fn install_grok_writes_mcp_servers_famp_table_under_tempdir_home() {
         !home.join(".famp/hook-runner.sh").exists(),
         "Grok install must not write the Claude hook-runner shim"
     );
+    // Without pre-existing settings.json, do not create one.
     assert!(
-        !home.join(".claude/hooks/famp-await.sh").exists(),
-        "Grok install must not install a long Stop await shim"
+        !home.join(".claude/settings.json").exists(),
+        "must not create Claude settings from scratch"
     );
 }
 

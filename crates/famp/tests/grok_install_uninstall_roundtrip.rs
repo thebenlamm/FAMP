@@ -25,6 +25,8 @@ fn grok_install_then_uninstall_restores_pre_state() {
     famp::cli::install::grok::run_at(home, &mut out, &mut err).unwrap();
 
     assert!(home.join(".grok/skills/famp-listen/SKILL.md").exists());
+    assert!(home.join(".grok/hooks/famp-listen-stop.json").exists());
+    assert!(home.join(".grok/hooks/famp-await.sh").exists());
 
     let mut out2 = Vec::<u8>::new();
     let mut err2 = Vec::<u8>::new();
@@ -37,6 +39,8 @@ fn grok_install_then_uninstall_restores_pre_state() {
         "config.toml drifted across roundtrip\nPRE: {pre_parsed:#?}\nPOST: {post_parsed:#?}"
     );
     assert!(!home.join(".grok/skills/famp-listen").exists());
+    assert!(!home.join(".grok/hooks/famp-listen-stop.json").exists());
+    assert!(!home.join(".grok/hooks/famp-await.sh").exists());
 }
 
 #[test]
@@ -65,4 +69,6 @@ fn grok_install_then_uninstall_on_empty_home_leaves_clean_state() {
         }
     }
     assert!(!home.join(".grok/skills/famp-listen").exists());
+    assert!(!home.join(".grok/hooks/famp-listen-stop.json").exists());
+    assert!(!home.join(".grok/hooks/famp-await.sh").exists());
 }

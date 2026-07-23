@@ -151,6 +151,41 @@ mod tests {
         );
     }
 
+    /// Grok stdin is camelCase; Claude/Codex use snake_case — both required.
+    #[test]
+    fn shim_accepts_snake_and_camel_case_keys() {
+        assert!(
+            FAMP_AWAIT_SH.contains("transcriptPath") && FAMP_AWAIT_SH.contains("transcript_path"),
+            "must parse both transcript_path and transcriptPath"
+        );
+        assert!(
+            FAMP_AWAIT_SH.contains("sessionId") && FAMP_AWAIT_SH.contains("session_id"),
+            "must parse both session_id and sessionId"
+        );
+    }
+
+    /// Grok fires Stop at session end with reason channel_closed/shutdown —
+    /// must not park on those observe fires.
+    #[test]
+    fn shim_skips_session_end_observe_fire() {
+        assert!(
+            FAMP_AWAIT_SH.contains("session-end observe fire"),
+            "must log and exit on non-end_turn reason"
+        );
+        assert!(
+            FAMP_AWAIT_SH.contains("end_turn"),
+            "must only park on empty reason or end_turn"
+        );
+    }
+
+    #[test]
+    fn shim_header_mentions_grok() {
+        assert!(
+            FAMP_AWAIT_SH.contains("Claude Code + Codex + Grok"),
+            "header must list Grok alongside Claude/Codex"
+        );
+    }
+
     #[test]
     fn install_shim_creates_file_at_mode_0755() {
         let dir = tempfile::tempdir().unwrap();

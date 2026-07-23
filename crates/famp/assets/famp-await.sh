@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
-# FAMP inbound listen-mode Stop hook (Claude Code + Codex).
+# FAMP inbound listen-mode Stop hook (Claude Code + Codex + Grok).
 #
 # Activates when the session transcript contains the most recent successful
 # famp_register call with listen:true. Blocks on
 # `famp await --as <identity> --timeout 23h`. On message, emits a
-# notification-only {"decision":"block","reason":"..."} so Claude calls
+# notification-only {"decision":"block","reason":"..."} so the host calls
 # famp_inbox to retrieve the content — peer bytes never touch `reason`.
 #
-# Exit 0 always (fail-open): never trap Claude in a session.
+# Exit 0 always (fail-open): never trap the host in a session.
+#
+# Input keys: Claude/Codex use snake_case (transcript_path, session_id);
+# Grok uses camelCase (transcriptPath, sessionId). Both are accepted.
+#
+# Grok Stop also fires at session end (reason: channel_closed / shutdown).
+# Only park on empty reason or reason=end_turn (genuine turn completion).
 #
 # Note: uses a Python temp-file approach rather than heredocs for the
 # identity-extraction script, to remain compatible with bash 3.2 (macOS
@@ -17,11 +23,31 @@ set -uo pipefail
 
 # --- Read hook metadata from stdin BEFORE redirecting stdin --------------
 STDIN_JSON="$(cat 2>/dev/null || true)"
+# Accept snake_case (Claude/Codex) and camelCase (Grok) keys.
 TRANSCRIPT="$(printf '%s' "$STDIN_JSON" \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("transcript_path",""))' \
+    | python3 -c 'import json,sys
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    d={}
+print(d.get("transcript_path") or d.get("transcriptPath") or "")' \
     2>/dev/null || true)"
 SESSION_ID="$(printf '%s' "$STDIN_JSON" \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("session_id",""))' \
+    | python3 -c 'import json,sys
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    d={}
+print(d.get("session_id") or d.get("sessionId") or "")' \
+    2>/dev/null || true)"
+# Grok Stop reason: only park on genuine turn end (empty or end_turn).
+HOOK_REASON="$(printf '%s' "$STDIN_JSON" \
+    | python3 -c 'import json,sys
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    d={}
+print(d.get("reason") or "")' \
     2>/dev/null || true)"
 
 # Disconnect stdin now to avoid SIGPIPE during the long await block.
@@ -34,6 +60,13 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 [ -L "$LOG_FILE" ] && LOG_FILE=/dev/null
 log() { printf '[%s pid=%s] %s\n' "$(date -Iseconds)" "$$" "$*" >> "$LOG_FILE" 2>/dev/null || true; }
 log "hook invoked"
+
+# Session-end observe fire (Grok): decision output is ignored; do not park.
+# Park only when reason is empty (Claude/Codex) or end_turn (Grok genuine stop).
+if [ -n "$HOOK_REASON" ] && [ "$HOOK_REASON" != "end_turn" ]; then
+    log "session-end observe fire reason=$HOOK_REASON; exiting no-op"
+    exit 0
+fi
 
 # --- Codex rollout fallback --------------------------------------------
 # Some Codex Stop-hook payloads omit transcript_path. Resolve the rollout

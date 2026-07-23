@@ -1,47 +1,25 @@
 # Grok listen-wake review
 
-The direction is right, but the current Grok path still depends too much on a model following prose. If the goal is to make onboarding simple and, above all, make it work, the wake lifecycle needs to be more mechanical.
+## Status (2026-07-22)
 
-What looks good:
+**Addressed by Stop path.** `famp install-grok` now installs a long Stop
+hook (`famp-await.sh`, timeout 86400) — same foolproof mechanism as
+Claude/Codex. User says "register with famp" → `famp_register` only; no
+monitor memory required.
 
-- `famp listen-wake` is the right host-neutral wake primitive.
-- The wake line is scrubbed and does not leak peer body bytes.
-- Splitting wake notification from inbox retrieval is the right abstraction.
-- Avoiding a long blocking Stop hook for Grok is sensible.
+### Residual notes (historical)
 
-What is still fragile:
+Earlier design used `famp listen-wake` + model-started monitor. That path
+depended on the model following skill prose. Stop `decision:block` is now
+primary; monitor/`listen-wake --follow` is optional fallback only.
 
-- `famp_register` only returns a `wake_hint.grok_monitor` string.
-- The Grok skill tells the model to start a persistent monitor.
-- Nothing here actually launches or supervises that monitor in code.
-- `famp_set_listen(false)` only helps if a monitor is already running.
-- Install/uninstall own the whole `~/.grok/skills/famp-listen/` tree, which is risky if that directory ever contains anything user-owned.
-- The install path freezes a resolved `famp` command early, which can be brittle across shells, environments, or later binary moves.
+Grok host limit remains: **8 Stop continuations per turn**. After the cap
+the turn ends; the next user prompt re-arms the hook.
 
-The core problem is that the control plane is still prompt-driven:
+### What still holds
 
-1. register succeeds
-2. the model notices the hint
-3. the model starts the monitor
-4. the monitor stays alive
-5. listen-off is noticed
-6. the monitor is killed
-
-That is too many non-deterministic steps for the thing that is supposed to wake agents.
-
-What I think is better:
-
-- keep `famp listen-wake` as the single core primitive
-- move monitor startup/supervision into a real adapter or host-side mechanism
-- treat the skill as documentation, not the mechanism that makes wake work
-- make uninstall remove only files FAMP clearly owns
-
-Acceptance criteria I would want:
-
-- install creates one clear MCP entry and one clear wake adapter
-- a fresh Grok session can wake without manual re-arming by the model
-- listen-off stops future wake behavior predictably
-- uninstall does not delete user-owned content
-- the flow still works if the skill text is ignored
-
-Bottom line: the current design is good at defining the wake signal, but not yet good enough at guaranteeing the wake lifecycle. The next step should be to move monitor management out of the skill and into executable host-side code.
+- `famp listen-wake` remains the host-neutral wake primitive for non-Stop
+  hosts.
+- Wake lines stay scrubbed (no peer body).
+- Uninstall-grok removes only `~/.grok/` artifacts; leaves `~/.claude/`
+  alone so Claude Code's primary famp-await is not torn down.

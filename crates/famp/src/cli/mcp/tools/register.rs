@@ -127,8 +127,8 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             guard.inbox_offset = None;
             guard.listen_mode = Some(listen);
             // Base surface stays `{ active, drained, peers }`. When listen
-            // is true, add host-wake hints so Grok can arm a non-blocking
-            // monitor without Claude-style long Stop hooks.
+            // is true, add a wake hint: Stop hook is the primary path for
+            // Claude/Codex/Grok; optional monitor is fallback only.
             let mut body = serde_json::json!({
                 "active": &active,
                 "drained": drained.len(),
@@ -136,14 +136,14 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             });
             if listen {
                 body["listen_mode"] = serde_json::json!(true);
-                // MCP mechanically arms the singleton listen-wake daemon;
-                // Grok inject still needs a monitor on --follow (wake file).
                 body["wake_hint"] = serde_json::json!({
+                    "note": format!(
+                        "Claude/Codex/Grok auto-wake via Stop hook (famp-await decision:block). Optional monitor fallback: famp listen-wake --as {active} --follow"
+                    ),
                     "grok_monitor": format!("famp listen-wake --as {active} --follow"),
-                    "note": "Claude/Codex auto-wake via Stop hook; Grok: MCP arms listen-wake daemon; start monitor with grok_monitor (--follow) to inject agent turns"
                 });
             }
-            Ok((body, active, listen))
+            Ok(body)
         }
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         // `BusReply` is open-coded with many ok-shaped variants. A non-Err,
@@ -155,22 +155,9 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         )),
     };
     drop(guard);
-
-    match result {
-        Ok((body, active, listen_flag)) => {
-            // Arm/disarm outside the session mutex — spawn/kill must not
-            // hold the bus lock.
-            if listen_flag {
-                // Force restart on (re)register so a prior daemon cannot
-                // strand a double-proxy race if the old process is wedged.
-                crate::cli::listen_wake::ensure_supervised(&active, true);
-            } else {
-                crate::cli::listen_wake::stop_supervised(&active);
-            }
-            Ok(body)
-        }
-        Err(e) => Err(e),
-    }
+    // Stop hook is the foolproof wake path (Claude/Codex/Grok). Do not arm
+    // ensure_supervised here — a second bus waiter races the Stop await.
+    result
 }
 
 /// Validate the identity name. Mirrors the bash regex AND length cap from

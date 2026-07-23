@@ -1,23 +1,30 @@
 //! `famp install-grok` subcommand handler.
 //!
-//! Installs Grok integration surfaces only:
-//!  1. `~/.grok/config.toml :: [mcp_servers.famp]` (same shape as Codex)
-//!  2. `~/.grok/skills/famp-listen/SKILL.md` (non-blocking listen-wake skill)
+//! Installs Grok integration surfaces:
+//!  1. `~/.grok/config.toml :: [mcp_servers.famp]` (absolute `famp` path)
+//!  2. Await shim via `await_hook::install_shim` to:
+//!     - `~/.grok/hooks/famp-await.sh`
+//!     - `~/.claude/hooks/famp-await.sh` (always refresh so Grok's Claude
+//!       compat path is never stale)
+//!  3. Stop hook JSON at `~/.grok/hooks/famp-listen-stop.json` (timeout 86400)
+//!     plus merge of the same Stop entry into `~/.claude/settings.json` when
+//!     that file already exists (compat-loaded by Grok).
+//!  4. `~/.grok/skills/famp-listen/SKILL.md` ("just register" docs)
 //!
-//! Intentionally does **not** install a long blocking Stop hook — Grok's
-//! UI stays free; auto-wake is via `famp listen-wake` + a persistent
-//! monitor (see the skill).
+//! Auto-wake is the long Stop hook (`decision: block`) — same as Claude/Codex.
+//! Grok host limit: 8 Stop continuations per turn.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
+use serde_json::{json, Value};
 use toml::Value as TomlValue;
 
 use crate::cli::error::CliError;
-use crate::cli::install::toml_merge;
+use crate::cli::install::{await_hook, json_merge, stop_entry, toml_merge};
 
-/// Embedded Grok skill body (non-blocking listen-wake instructions).
+/// Embedded Grok skill body ("just register" + Stop auto-wake).
 pub const FAMP_LISTEN_SKILL_MD: &str =
     include_str!("../../../assets/skills/famp-listen/SKILL.md");
 
@@ -54,6 +61,13 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         .join("skills")
         .join("famp-listen")
         .join("SKILL.md");
+    let grok_await_shim = home.join(".grok").join("hooks").join("famp-await.sh");
+    let claude_await_shim = home.join(".claude").join("hooks").join("famp-await.sh");
+    let stop_json_path = home
+        .join(".grok")
+        .join("hooks")
+        .join("famp-listen-stop.json");
+    let claude_settings = home.join(".claude").join("settings.json");
     // Absolute path only. Grok's MCP spawn env often lacks ~/.cargo/bin on
     // PATH, so bare `command = "famp"` fails with ENOENT (live smoke 2026-07-23).
     // Re-run `famp install-grok` after moving the binary.
@@ -79,16 +93,48 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     let outcome = toml_merge::upsert_codex_table(&config_path, "mcp_servers", "famp", famp_table)?;
     writeln!(
         err,
-        "  [1/2] {} :: [mcp_servers.famp] -> {:?}",
+        "  [1/4] {} :: [mcp_servers.famp] -> {:?}",
         config_path.display(),
         outcome
     )
     .ok();
 
+    // Always refresh both shims so Grok Claude-compat path is never stale.
+    await_hook::install_shim(&grok_await_shim)?;
+    await_hook::install_shim(&claude_await_shim)?;
+    writeln!(
+        err,
+        "  [2/4] await shim -> {} and {}",
+        grok_await_shim.display(),
+        claude_await_shim.display()
+    )
+    .ok();
+
+    install_stop_hook_json(&stop_json_path, &grok_await_shim)?;
+    writeln!(
+        err,
+        "  [3/4] {} :: Stop hook (timeout 86400)",
+        stop_json_path.display()
+    )
+    .ok();
+
+    // Merge Stop into Claude settings only when the file already exists so
+    // Grok's compat loader picks up a fresh path + timeout without creating
+    // a Claude-only tree from nothing.
+    if claude_settings.exists() {
+        merge_claude_stop_await(&claude_settings, &claude_await_shim)?;
+        writeln!(
+            err,
+            "  [3b] {} :: hooks.Stop await entry refreshed",
+            claude_settings.display()
+        )
+        .ok();
+    }
+
     install_skill(&skill_path)?;
     writeln!(
         err,
-        "  [2/2] {} :: famp-listen skill installed",
+        "  [4/4] {} :: famp-listen skill installed",
         skill_path.display()
     )
     .ok();
@@ -96,9 +142,9 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     writeln!(err).ok();
     writeln!(
         err,
-        "install-grok complete. Restart Grok sessions to pick up MCP changes. \
-         MCP register(listen=true) arms `famp listen-wake --loop` (daemon); \
-         Grok inject uses `famp listen-wake --as <id> --follow` (no long Stop hook)."
+        "install-grok complete. Restart Grok sessions to pick up MCP/hook changes. \
+         User says \"register with famp\" → famp_register only; Stop hook auto-wakes \
+         (same as Claude; Grok cap: 8 continuations/turn)."
     )
     .ok();
     if which::which("famp").is_err() {
@@ -108,6 +154,104 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         )
         .ok();
     }
+    Ok(())
+}
+
+/// Write `~/.grok/hooks/famp-listen-stop.json` with absolute await shim path.
+fn install_stop_hook_json(path: &Path, await_shim: &Path) -> Result<(), CliError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|source| CliError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let body = json!({
+        "hooks": {
+            "Stop": [
+                {
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": await_shim.display().to_string(),
+                            "timeout": 86400
+                        }
+                    ]
+                }
+            ]
+        }
+    });
+    let serialized = serde_json::to_string_pretty(&body).map_err(|source| {
+        CliError::JsonMergeParse {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    std::fs::write(path, format!("{serialized}\n")).map_err(|source| CliError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644)).map_err(
+            |source| CliError::Io {
+                path: path.to_path_buf(),
+                source,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+/// Ensure `hooks.Stop` in Claude settings has a famp-await entry (timeout 86400).
+/// Strips stale famp-await commands (claude + grok shim paths) then appends fresh.
+fn merge_claude_stop_await(settings_path: &Path, await_shim: &Path) -> Result<(), CliError> {
+    let existing: Value = match std::fs::read_to_string(settings_path) {
+        Ok(s) if s.trim().is_empty() => Value::Object(serde_json::Map::new()),
+        Ok(s) => serde_json::from_str(&s).map_err(|source| CliError::JsonMergeParse {
+            path: settings_path.to_path_buf(),
+            source,
+        })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(());
+        }
+        Err(source) => {
+            return Err(CliError::JsonMergeRead {
+                path: settings_path.to_path_buf(),
+                source,
+            });
+        }
+    };
+
+    let prior_stop: &[Value] = existing
+        .get("hooks")
+        .and_then(|h| h.get("Stop"))
+        .and_then(Value::as_array)
+        .map_or(&[], Vec::as_slice);
+
+    // Only strip await-shim paths (not hook-runner) so Claude's other FAMP
+    // Stop entries stay intact.
+    let shims = [await_shim.display().to_string()];
+    let mut new_stop: Vec<Value> = prior_stop
+        .iter()
+        .filter_map(|elem| stop_entry::remove_famp_hook_from_stop_entry(elem, &shims))
+        .collect();
+
+    new_stop.push(json!({
+        "matcher": "",
+        "hooks": [{
+            "type": "command",
+            "command": await_shim.display().to_string(),
+            "timeout": 86400,
+        }],
+    }));
+
+    let _ = json_merge::upsert_user_json(
+        settings_path,
+        "hooks",
+        "Stop",
+        Value::Array(new_stop),
+    )?;
     Ok(())
 }
 
@@ -191,7 +335,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn install_grok_writes_mcp_and_skill() {
+    fn install_grok_writes_mcp_skill_shim_and_stop_json() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let mut out = Vec::<u8>::new();
@@ -217,13 +361,81 @@ mod tests {
         let skill = home.join(".grok/skills/famp-listen/SKILL.md");
         assert!(skill.exists());
         let body = std::fs::read_to_string(&skill).unwrap();
-        assert!(body.contains("famp listen-wake"));
-        assert!(body.contains("persistent") || body.contains("--follow"));
+        assert!(body.contains("famp_register"));
+        assert!(body.contains("register with famp") || body.contains("just register"));
 
-        // Must not pollute Claude/Codex trees.
-        assert!(!home.join(".claude").exists());
+        // Await shims + Stop JSON.
+        let grok_shim = home.join(".grok/hooks/famp-await.sh");
+        let claude_shim = home.join(".claude/hooks/famp-await.sh");
+        assert!(grok_shim.exists(), "grok await shim missing");
+        assert!(claude_shim.exists(), "claude await shim must be refreshed");
+        assert!(
+            std::fs::read_to_string(&grok_shim)
+                .unwrap()
+                .contains("trying pid-correlated"),
+            "shim must carry pid-correlated fallback"
+        );
+
+        let stop_json = home.join(".grok/hooks/famp-listen-stop.json");
+        assert!(stop_json.exists(), "Stop hook json missing");
+        let stop: Value =
+            serde_json::from_str(&std::fs::read_to_string(&stop_json).unwrap()).unwrap();
+        let hooks = stop["hooks"]["Stop"][0]["hooks"].as_array().unwrap();
+        assert_eq!(hooks[0]["timeout"], 86400);
+        assert_eq!(
+            hooks[0]["command"].as_str().unwrap(),
+            grok_shim.display().to_string()
+        );
+
+        // Must not pollute Codex trees or write Claude hook-runner.
         assert!(!home.join(".codex").exists());
         assert!(!home.join(".famp/hook-runner.sh").exists());
+        // Without a pre-existing Claude settings.json we do not create one.
+        assert!(!home.join(".claude/settings.json").exists());
+    }
+
+    #[test]
+    fn install_grok_merges_stop_into_existing_claude_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let settings = home.join(".claude/settings.json");
+        std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
+        std::fs::write(
+            &settings,
+            r#"{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"/other/hook.sh","timeout":5}]}]}}"#,
+        )
+        .unwrap();
+
+        let mut out = Vec::<u8>::new();
+        let mut err = Vec::<u8>::new();
+        run_at(home, &mut out, &mut err).unwrap();
+
+        let post: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        let stop = post["hooks"]["Stop"].as_array().unwrap();
+        assert!(
+            stop.iter().any(|e| {
+                e["hooks"].as_array().is_some_and(|hs| {
+                    hs.iter().any(|h| h["command"] == "/other/hook.sh")
+                })
+            }),
+            "unrelated Stop hooks must be preserved"
+        );
+        let await_shim = home
+            .join(".claude")
+            .join("hooks")
+            .join("famp-await.sh")
+            .display()
+            .to_string();
+        let await_entry = stop.iter().find(|e| {
+            e["hooks"]
+                .as_array()
+                .is_some_and(|hs| hs.iter().any(|h| h["command"] == await_shim))
+        });
+        assert!(await_entry.is_some(), "await Stop entry missing: {stop:#?}");
+        assert_eq!(
+            await_entry.unwrap()["hooks"][0]["timeout"],
+            json!(86400)
+        );
     }
 
     #[test]
@@ -260,6 +472,8 @@ mod tests {
         let mut err = Vec::<u8>::new();
         run_at(home, &mut out, &mut err).unwrap();
         let first = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
+        let first_stop =
+            std::fs::read_to_string(home.join(".grok/hooks/famp-listen-stop.json")).unwrap();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
@@ -267,17 +481,24 @@ mod tests {
         let mut err2 = Vec::<u8>::new();
         run_at(home, &mut out2, &mut err2).unwrap();
         let second = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
+        let second_stop =
+            std::fs::read_to_string(home.join(".grok/hooks/famp-listen-stop.json")).unwrap();
         assert_eq!(first, second);
+        assert_eq!(first_stop, second_stop);
     }
 
     #[test]
-    fn skill_asset_mentions_monitor_and_forbids_long_stop() {
-        assert!(FAMP_LISTEN_SKILL_MD.contains("famp listen-wake --as"));
+    fn skill_asset_is_just_register_docs() {
+        assert!(FAMP_LISTEN_SKILL_MD.contains("famp_register"));
         assert!(
-            FAMP_LISTEN_SKILL_MD.contains("--follow")
-                || FAMP_LISTEN_SKILL_MD.contains("persistent")
+            FAMP_LISTEN_SKILL_MD.contains("register with famp")
+                || FAMP_LISTEN_SKILL_MD.contains("just register")
         );
-        assert!(FAMP_LISTEN_SKILL_MD.to_lowercase().contains("never"));
         assert!(FAMP_LISTEN_SKILL_MD.contains("Stop"));
+        // Monitor is optional fallback only — not the primary path.
+        assert!(
+            FAMP_LISTEN_SKILL_MD.to_lowercase().contains("optional")
+                || FAMP_LISTEN_SKILL_MD.contains("fallback")
+        );
     }
 }

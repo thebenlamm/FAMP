@@ -66,13 +66,14 @@ pub enum Commands {
     /// await shim, and matching hook trust while preserving unrelated config.
     UninstallCodex(uninstall::codex::UninstallCodexArgs),
     /// Install Grok integration: writes `[mcp_servers.famp]` to
-    /// `~/.grok/config.toml` and installs the non-blocking `famp-listen`
-    /// skill. Does **not** install a long Stop hook — Grok auto-wake uses
-    /// `famp listen-wake` via a persistent monitor. Idempotent (D-02).
+    /// `~/.grok/config.toml`, installs Stop-hook await shim +
+    /// `famp-listen-stop.json` (timeout 86400), refreshes
+    /// `~/.claude/hooks/famp-await.sh`, and the `famp-listen` skill.
+    /// Auto-wake is Stop `decision:block` (same as Claude). Idempotent (D-02).
     InstallGrok(install::grok::InstallGrokArgs),
     /// Uninstall Grok integration: removes FAMP's MCP entry from
-    /// `~/.grok/config.toml` and the FAMP-owned `famp-listen` skill file
-    /// (preserves user-modified skills and sibling files).
+    /// `~/.grok/config.toml`, Stop hook json, grok await shim, and the
+    /// FAMP-owned `famp-listen` skill file. Leaves `~/.claude/` alone.
     UninstallGrok(uninstall::grok::UninstallGrokArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),

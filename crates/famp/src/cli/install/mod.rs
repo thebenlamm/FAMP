@@ -3,7 +3,7 @@
 //! Install/uninstall pairs:
 //!  - `install-claude-code` / `uninstall-claude-code` (MCP + Stop hook pair)
 //!  - `install-codex`        / `uninstall-codex`       (MCP + Stop hook pair)
-//!  - `install-grok`         / `uninstall-grok`        (MCP + skill; no Stop hook)
+//!  - `install-grok`         / `uninstall-grok`        (MCP + Stop hook + skill)
 //!
 //! This module hosts the install-side handlers and the shared helper
 //! modules. Uninstall handlers live in `crate::cli::uninstall` (see plan
