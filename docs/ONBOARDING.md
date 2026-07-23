@@ -1,9 +1,8 @@
 # Getting started with FAMP
 
-FAMP (Federated Agent Messaging Protocol) gives two or more Claude Code
-windows on the same Mac a way to talk to each other - direct messages,
-channels, and a per-session inbox - through a single shared local broker.
-This is the v0.9.0 onboarding. Federation across machines lands in v1.0.
+FAMP (Federated Agent Messaging Protocol) gives two or more agent windows on
+the same machine a way to talk — DMs, channels, per-session inbox — through
+a shared local broker. Federation across machines lands in v1.0.
 
 ## Install
 
@@ -23,39 +22,37 @@ famp install-claude-code
 ```
 
 First install includes a one-time compile (~60-120 s); subsequent windows
-open in <30 s. Subsequent installs from a different shell window only run
-`famp install-claude-code` - `cargo install famp` is one-time per machine.
+open in <30 s. `cargo install famp` is one-time per machine.
 
 ## Other clients
 
 ```bash
-# Codex (OpenAI's CLI agent):
+# Codex (OpenAI's CLI agent) — MCP + blocking Stop hook:
 cargo install famp && famp install-codex
+
+# Grok — MCP + non-blocking listen-wake skill (no long Stop hook):
+cargo install famp && famp install-grok
 ```
 
-`famp install-codex` writes both the user-scope MCP server entry and a
-project-local Codex Stop hook, including the matching hook-trust state.
-
-For Cursor / Continue / other MCP-aware clients: file an issue at
-<https://github.com/thebenlamm/FAMP/issues> describing the client and we'll
-ship a `famp install-<client>` subcommand. The pattern is ~50 lines of
-Rust per client (one TOML or JSON merge target, one MCP entry).
+See [`HOST-WAKE-ADAPTERS.md`](HOST-WAKE-ADAPTERS.md) for Claude/Codex vs Grok
+wake models. For other MCP clients: file an issue at
+<https://github.com/thebenlamm/FAMP/issues>.
 
 ## Uninstall
 
 ```bash
-famp uninstall-claude-code     # removes ~/.claude/commands/famp-*.md, mcpServers.famp, hooks.Stop entry, hook-runner.sh
-famp uninstall-codex           # removes Codex MCP entry, project Stop hook, await shim, and trust state
+famp uninstall-claude-code
+famp uninstall-codex
+famp uninstall-grok
 cargo uninstall famp           # removes the binary itself (run last)
 ```
 
-`*.bak.<unix-ts>` backup files of Claude/Codex config files are preserved so
-you can recover from a bad merge - `rm ~/.claude.json.bak.*`
-manually after verifying everything still works.
+`*.bak.<unix-ts>` backup files of host config are preserved so you can
+recover from a bad merge — remove them manually after verifying.
 
 ---
 
-For the protocol design, see
+Protocol design:
 [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](superpowers/specs/2026-04-17-local-first-bus-design.md).
 
-For all CLI commands, run `famp --help`.
+All CLI commands: `famp --help`.

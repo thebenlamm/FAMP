@@ -125,11 +125,25 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // position, so the reset must live here too, not only in
             // `set_active_identity`.
             guard.inbox_offset = None;
-            Ok(serde_json::json!({
-                "active": active,
+            guard.listen_mode = Some(listen);
+            // Base surface stays `{ active, drained, peers }`. When listen
+            // is true, add host-wake hints so Grok can arm a non-blocking
+            // monitor without Claude-style long Stop hooks.
+            let mut body = serde_json::json!({
+                "active": &active,
                 "drained": drained.len(),
                 "peers": peers,
-            }))
+            });
+            if listen {
+                body["listen_mode"] = serde_json::json!(true);
+                // MCP mechanically arms the singleton listen-wake daemon;
+                // Grok inject still needs a monitor on --follow (wake file).
+                body["wake_hint"] = serde_json::json!({
+                    "grok_monitor": format!("famp listen-wake --as {active} --follow"),
+                    "note": "Claude/Codex auto-wake via Stop hook; Grok: MCP arms listen-wake daemon; start monitor with grok_monitor (--follow) to inject agent turns"
+                });
+            }
+            Ok((body, active, listen))
         }
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         // `BusReply` is open-coded with many ok-shaped variants. A non-Err,
@@ -141,7 +155,22 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         )),
     };
     drop(guard);
-    result
+
+    match result {
+        Ok((body, active, listen_flag)) => {
+            // Arm/disarm outside the session mutex — spawn/kill must not
+            // hold the bus lock.
+            if listen_flag {
+                // Force restart on (re)register so a prior daemon cannot
+                // strand a double-proxy race if the old process is wedged.
+                crate::cli::listen_wake::ensure_supervised(&active, true);
+            } else {
+                crate::cli::listen_wake::stop_supervised(&active);
+            }
+            Ok(body)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Validate the identity name. Mirrors the bash regex AND length cap from

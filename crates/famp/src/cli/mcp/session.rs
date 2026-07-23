@@ -111,6 +111,9 @@ pub struct SessionState {
     pub active_identity: Option<String>,
     pub last_send: Option<LastSend>,
     pub inbox_offset: Option<u64>,
+    /// Last listen flag set by `famp_register` / `famp_set_listen`.
+    /// `None` until the first successful register.
+    pub listen_mode: Option<bool>,
 }
 
 /// Module-scope storage for the session state.
@@ -135,6 +138,7 @@ pub fn state() -> &'static Mutex<SessionState> {
             active_identity: None,
             last_send: None,
             inbox_offset: None,
+            listen_mode: None,
         })
     })
 }
@@ -300,6 +304,7 @@ pub async fn clear() {
     guard.active_identity = None;
     guard.last_send = None;
     guard.inbox_offset = None;
+    guard.listen_mode = None;
 }
 
 #[cfg(test)]

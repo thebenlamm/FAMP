@@ -16,6 +16,7 @@ pub mod inspect;
 pub mod install;
 pub mod join;
 pub mod leave;
+pub mod listen_wake;
 pub mod mcp;
 pub mod paths;
 pub mod perms;
@@ -64,6 +65,15 @@ pub enum Commands {
     /// Uninstall Codex integration: removes FAMP's MCP entry, project Stop hook,
     /// await shim, and matching hook trust while preserving unrelated config.
     UninstallCodex(uninstall::codex::UninstallCodexArgs),
+    /// Install Grok integration: writes `[mcp_servers.famp]` to
+    /// `~/.grok/config.toml` and installs the non-blocking `famp-listen`
+    /// skill. Does **not** install a long Stop hook — Grok auto-wake uses
+    /// `famp listen-wake` via a persistent monitor. Idempotent (D-02).
+    InstallGrok(install::grok::InstallGrokArgs),
+    /// Uninstall Grok integration: removes FAMP's MCP entry from
+    /// `~/.grok/config.toml` and the FAMP-owned `famp-listen` skill file
+    /// (preserves user-modified skills and sibling files).
+    UninstallGrok(uninstall::grok::UninstallGrokArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),
     /// Send an envelope to a peer — new task, deliver, or terminal.
@@ -71,6 +81,14 @@ pub enum Commands {
     /// Block until a new inbox entry arrives past the cursor.
     #[command(name = "await")]
     Await(await_cmd::AwaitArgs),
+    /// Host-neutral wake signal for non-blocking hosts (Grok monitor).
+    /// Parks on `famp await` off the agent turn and prints one scrubbed
+    /// `FAMP_WAKE identity=… sender=… count=…` line per event (also
+    /// appended to `~/.famp/listen-wake-<id>.wake`). Never prints peer
+    /// message body. Pidfile singleton; `--loop` / `--daemon` / `--follow`
+    /// / `--force` control lifecycle (see docs/HOST-WAKE-ADAPTERS.md).
+    #[command(name = "listen-wake")]
+    ListenWake(listen_wake::ListenWakeArgs),
     /// Wait for a task reply: check existing inbox entries first, then block.
     ///
     /// Surfaces ONLY replies (deliver / audit_log) whose `causality.ref`
@@ -165,12 +183,15 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::UninstallClaudeCode(args) => uninstall::claude_code::run(args),
         Commands::InstallCodex(args) => install::codex::run(args),
         Commands::UninstallCodex(args) => uninstall::codex::run(args),
+        Commands::InstallGrok(args) => install::grok::run(args),
+        Commands::UninstallGrok(args) => uninstall::grok::run(args),
         Commands::Info(args) => info::run(&args).map(|_| ()),
         // Async arms: each boots a multi-thread tokio runtime via
         // `block_on_async` and dispatches into the subcommand's
         // `async fn run`. Only async-required arms pay the runtime cost.
         Commands::Send(args) => block_on_async(send::run(args)),
         Commands::Await(args) => block_on_async(await_cmd::run(args)),
+        Commands::ListenWake(args) => block_on_async(listen_wake::run(args)),
         Commands::WaitReply(args) => block_on_async(wait_reply::run(args)),
         Commands::Inbox(args) => block_on_async(inbox::run(args)),
         Commands::Mcp(args) => block_on_async(mcp::run(args)),

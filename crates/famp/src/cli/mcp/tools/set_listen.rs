@@ -60,9 +60,26 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         )
     })?;
     match reply {
-        BusReply::SetListenOk { listen_mode } => Ok(serde_json::json!({
-            "listen_mode": listen_mode,
-        })),
+        BusReply::SetListenOk { listen_mode } => {
+            // Mirror the flag on session state and arm/disarm the
+            // host-neutral listen-wake singleton.
+            {
+                let mut guard = session::state().lock().await;
+                guard.listen_mode = Some(listen_mode);
+                let identity = guard.active_identity.clone();
+                drop(guard);
+                if let Some(id) = identity {
+                    if listen_mode {
+                        crate::cli::listen_wake::ensure_supervised(&id, true);
+                    } else {
+                        crate::cli::listen_wake::stop_supervised(&id);
+                    }
+                }
+            }
+            Ok(serde_json::json!({
+                "listen_mode": listen_mode,
+            }))
+        }
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         other => Err(ToolError::new(
             BusErrorKind::Internal,

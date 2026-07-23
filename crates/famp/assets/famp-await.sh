@@ -98,20 +98,25 @@ if codex_home:
     fi
 fi
 
-# --- Transcript gate ---------------------------------------------------
+# --- Identity resolution -----------------------------------------------
+# Prefer transcript/rollout extraction when a path is available. When the
+# host omits transcript_path (some Codex/Grok Stop payloads), fall through
+# to the PID-correlated fallback below instead of immediately no-op'ing.
+# Fail-open exit 0 always: never trap the host in a session.
+ACTIVE_IDENTITY=""
+FAMP_BIN="$(command -v famp 2>/dev/null || echo "${HOME:-}/.cargo/bin/famp")"
+
 if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
-    log "no transcript_path; exiting no-op"
-    exit 0
-fi
+    log "no transcript_path; trying pid-correlated fallback"
+else
 
 # --- Write identity-extraction Python to a temp file -------------------
 # Avoids heredoc-in-$() which bash 3.2 (macOS) cannot parse from script files.
 # Uses cat with a bare (non-subshell) heredoc, which bash 3.2 handles fine.
 PY_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/famp-extract-XXXXXX")" || PY_SCRIPT=""
 if [ -z "$PY_SCRIPT" ]; then
-    log "mktemp failed for python script; exiting no-op"
-    exit 0
-fi
+    log "mktemp failed for python script; trying pid-correlated fallback"
+else
 
 cat > "$PY_SCRIPT" << 'PYEOF'
 import json, os, sys
@@ -239,20 +244,23 @@ PYEOF
 # --- Extract identity from transcript ---------------------------------
 ACTIVE_IDENTITY="$(python3 "$PY_SCRIPT" "$TRANSCRIPT" 2>/dev/null || true)"
 rm -f "$PY_SCRIPT"
-
-FAMP_BIN="$(command -v famp 2>/dev/null || echo "$HOME/.cargo/bin/famp")"
+fi # PY_SCRIPT created
+fi # TRANSCRIPT present
 
 if [ -z "$ACTIVE_IDENTITY" ]; then
-    # --- Broker fallback (compaction resilience, 260721) ---------------
-    # A long session whose transcript was compacted (Claude Code /compact)
-    # can lose its famp_register marker out of the 2 MB scan tail above,
-    # leaving no identity even though THIS window's MCP server still holds
-    # a live listen=true registration. Recover it WITHOUT guessing from the
-    # cwd (a cwd match would hijack an innocent, never-registered window
-    # that merely shares the checkout — it would start awaiting on another
-    # agent's identity). Instead correlate by process ancestry:
+    # --- Broker fallback (compaction resilience + missing transcript) --
+    # Two cases land here:
+    #  1. Transcript/rollout present but no successful famp_register in the
+    #     2 MB scan tail (compaction, or listen never armed).
+    #  2. Host omitted transcript_path entirely (some Codex/Grok Stop
+    #     payloads) — we already logged and fell through above.
     #
-    #   this hook  ── spawned by ──>  the Claude Code process  <── spawns ── `famp mcp`
+    # Recover WITHOUT guessing from the cwd (a cwd match would hijack an
+    # innocent, never-registered window that merely shares the checkout —
+    # it would start awaiting on another agent's identity). Instead
+    # correlate by process ancestry:
+    #
+    #   this hook  ── spawned by ──>  the host process  <── spawns ── `famp mcp`
     #
     # So THIS window's `famp mcp` server is the one whose parent pid appears
     # in this hook's ancestor chain. `famp sessions` maps that mcp pid to the
@@ -260,7 +268,7 @@ if [ -z "$ACTIVE_IDENTITY" ]; then
     # adopt ONLY that identity — never one merely co-located by cwd. If the
     # process model doesn't cooperate (nothing resolves), we no-op exactly
     # as before: fail-open, and strictly never a hijack. Runs only when the
-    # transcript yielded nothing, so normal Stops pay no cost.
+    # transcript path failed to yield an identity, so normal Stops pay no cost.
     #
     # Hermetic tests set FAMP_DISABLE_PID_FALLBACK=1 so a live `famp mcp`
     # elsewhere on the host (same IDE parent chain) cannot turn a deliberate

@@ -52,6 +52,8 @@ fn onboarding_md_includes_install_codex_one_liner() {
     assert!(body.contains("famp uninstall-codex"));
     assert!(body.contains("famp install-claude-code"));
     assert!(body.contains("famp uninstall-claude-code"));
+    assert!(body.contains("famp install-grok"));
+    assert!(body.contains("famp uninstall-grok"));
 }
 
 #[test]

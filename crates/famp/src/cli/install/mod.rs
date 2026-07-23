@@ -1,8 +1,9 @@
 //! `famp install-*` subcommands.
 //!
-//! Phase 3 ships four install/uninstall pairs:
-//!  - `install-claude-code` / `uninstall-claude-code` (D-04 symmetric pair)
+//! Install/uninstall pairs:
+//!  - `install-claude-code` / `uninstall-claude-code` (MCP + Stop hook pair)
 //!  - `install-codex`        / `uninstall-codex`       (MCP + Stop hook pair)
+//!  - `install-grok`         / `uninstall-grok`        (MCP + skill; no Stop hook)
 //!
 //! This module hosts the install-side handlers and the shared helper
 //! modules. Uninstall handlers live in `crate::cli::uninstall` (see plan
@@ -11,6 +12,7 @@
 pub mod await_hook;
 pub mod claude_code;
 pub mod codex;
+pub mod grok;
 pub mod hook_runner;
 pub mod json_merge;
 pub mod slash_commands;

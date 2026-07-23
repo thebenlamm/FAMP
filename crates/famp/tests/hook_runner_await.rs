@@ -1353,3 +1353,108 @@ fn hook_reports_disk_ack_unread_not_await_batch_size() {
         "log should show the reduced count; log:\n{log}"
     );
 }
+
+/// Missing `transcript_path` → PID-correlated fallback resolves identity
+/// from a sibling `famp mcp` in the process tree (asset hook; PID fallback
+/// ENABLED — do NOT set FAMP_DISABLE_PID_FALLBACK).
+///
+/// Process tree:
+/// ```text
+/// supervisor (S)
+///   ├── fake "famp mcp" (M)   — argv contains "famp mcp", ppid=S
+///   └── bash famp-await.sh (H) — ancestors include S
+/// ```
+#[test]
+fn missing_transcript_path_uses_pid_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("famp.log");
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+
+    // Mock famp: sessions / inspect identities / await — log argv always.
+    let famp = bin_dir.join("famp");
+    let mock = format!(
+        r#"#!/usr/bin/env bash
+printf '%s\n' "$*" >> "{log}"
+case "$1" in
+  sessions)
+    # JSONL row for the sibling mcp pid (injected via FAMP_TEST_MCP_PID).
+    printf '%s\n' "{{\"pid\":${{FAMP_TEST_MCP_PID:-0}},\"name\":\"pid-fb-test\"}}"
+    exit 0
+    ;;
+  inspect)
+    if [ "$2" = "identities" ]; then
+      printf '%s\n' '{{"rows":[{{"name":"pid-fb-test","listen_mode":true}}]}}'
+      exit 0
+    fi
+    exit 0
+    ;;
+  await)
+    # Immediate timeout so the hook does not park for 23h.
+    printf '%s\n' '{{"timeout":true}}'
+    exit 0
+    ;;
+esac
+exit 0
+"#,
+        log = log.display()
+    );
+    std::fs::write(&famp, mock).unwrap();
+    std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let supervisor = dir.path().join("supervisor.sh");
+    let hook = asset_hook_path();
+    let host_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{host_path}", bin_dir.display());
+    // Supervisor parents both the fake mcp and the hook.
+    let script = format!(
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+# Child whose argv contains the literal substring "famp mcp".
+bash -c 'exec -a "famp mcp" sleep 120' &
+MCP_PID=$!
+export FAMP_TEST_MCP_PID="$MCP_PID"
+# Give the exec a moment to rewrite argv.
+sleep 0.15
+# Run the asset hook with NO transcript_path; PID fallback enabled.
+printf '%s' '{{"hook_event_name":"Stop"}}' | \
+  env -u FAMP_DISABLE_PID_FALLBACK \
+      PATH="{path}" \
+      XDG_STATE_HOME="{xdg}" \
+      FAMP_TEST_MCP_PID="$MCP_PID" \
+      bash "{hook}"
+STATUS=$?
+kill "$MCP_PID" 2>/dev/null || true
+wait "$MCP_PID" 2>/dev/null || true
+exit "$STATUS"
+"#,
+        path = new_path,
+        xdg = xdg.display(),
+        hook = hook.display(),
+    );
+    std::fs::write(&supervisor, script).unwrap();
+    std::fs::set_permissions(&supervisor, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let out = Command::new("bash")
+        .arg(&supervisor)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+
+    assert!(
+        out.status.success(),
+        "supervisor/hook failed: status={:?}\nstderr={}\nstdout={}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+
+    let argv = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        argv.contains("await --as pid-fb-test"),
+        "expected famp await --as pid-fb-test via PID fallback; mock log:\n{argv}\nhook log:\n{}",
+        await_hook_log(&xdg)
+    );
+}

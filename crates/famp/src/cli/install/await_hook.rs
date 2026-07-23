@@ -136,6 +136,21 @@ mod tests {
         );
     }
 
+    /// Hosts that omit transcript_path (some Codex/Grok Stop payloads) must
+    /// still try the PID-correlated fallback instead of immediate no-op.
+    #[test]
+    fn shim_tries_pid_fallback_when_transcript_missing() {
+        assert!(
+            FAMP_AWAIT_SH.contains("no transcript_path; trying pid-correlated fallback"),
+            "missing transcript_path must fall through to pid-correlated fallback"
+        );
+        // Guard against regressing to the old immediate exit.
+        assert!(
+            !FAMP_AWAIT_SH.contains("no transcript_path; exiting no-op"),
+            "must not immediately no-op on missing transcript_path"
+        );
+    }
+
     #[test]
     fn install_shim_creates_file_at_mode_0755() {
         let dir = tempfile::tempdir().unwrap();
