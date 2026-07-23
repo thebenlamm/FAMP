@@ -415,8 +415,30 @@ if ! mkdir "$STOP_LOCK_DIR" 2>/dev/null; then
         OLD_PID="$(cat "$STOP_LOCK_DIR/pid" 2>/dev/null || true)"
     fi
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-        log "stop-await singleton: $ACTIVE_IDENTITY already parked by pid=$OLD_PID; exiting no-op"
-        exit 0
+        # kill -0 only proves SOME process owns this pid. After a SIGKILL the
+        # EXIT trap never fires, leaving a stale pid file; the number can be
+        # reused by an unrelated process, which would latch listen mode OFF
+        # for this identity until that process exits. Confirm the holder is
+        # actually a famp process (mirrors the Rust is_listen_wake_alive argv
+        # check) before backing off.
+        OLD_CMD="$(ps -o command= -p "$OLD_PID" 2>/dev/null || true)"
+        case "$OLD_CMD" in
+            *famp*)
+                log "stop-await singleton: $ACTIVE_IDENTITY already parked by pid=$OLD_PID; exiting no-op"
+                exit 0
+                ;;
+            "")
+                # ps returned nothing: cannot classify. Preserve the singleton
+                # guard (avoid two parked awaiters) — back off conservatively.
+                log "stop-await singleton: $ACTIVE_IDENTITY holder pid=$OLD_PID unclassifiable (ps empty); exiting no-op"
+                exit 0
+                ;;
+            *)
+                # kill -0 succeeded but pid was reused by a non-famp process
+                # (SIGKILLed holder + pid reuse). Do NOT latch OFF; reclaim.
+                log "stop-await singleton: pid=$OLD_PID reused by non-famp process; reclaiming $ACTIVE_IDENTITY"
+                ;;
+        esac
     fi
     # Stale lock: holder dead. Reclaim.
     rm -rf "$STOP_LOCK_DIR" 2>/dev/null || true
@@ -692,6 +714,14 @@ AWAIT_BATCH_COUNT="$COUNT"
 # cursor) + last_sender so "N new" means N actionable. Fail-open to the
 # await batch count if inspect is unavailable. Channel wakes keep the
 # await-batch count (channel_log is the recovery surface, not famp_inbox).
+# KNOWN RACE (accepted, LOW): mailbox_unread is a point-in-time disk-cursor
+# read. Between `await` returning and this `inspect identities` call, a
+# CONCURRENT same-identity holder that re-registers (register advances the disk
+# cursor to its drained next_offset) or reads famp_inbox can drive unread to 0.
+# Those messages were delivered to that other holder, so suppressing this wake
+# avoids a spurious empty-inbox wake. Single-window listen mode (the primary
+# mode) never hits this — the blocked agent is not reading. A cross-window fix
+# needs broker-side cursor unification (Scope B), out of scope here.
 if [ "$MAILBOX_KIND" != "channel" ]; then
     ACTIONABLE="$("$FAMP_BIN" inspect identities --json 2>/dev/null \
         | python3 -c 'import json, sys

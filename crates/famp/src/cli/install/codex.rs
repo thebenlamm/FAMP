@@ -451,6 +451,18 @@ pub(crate) fn remove_stale_codex_hook_trust(
     trusted_hashes: &[String],
 ) -> Result<Vec<String>, CliError> {
     let prefix = format!("{}:{}:", hooks_path.display(), CODEX_STOP_EVENT_LABEL);
+    // Match famp-owned entries by (this hooks.json's stop prefix) AND
+    // trusted_hash, NOT by prefix alone: the same project hooks.json may hold
+    // a user's own Stop-hook trust entries we must never remove. KNOWN
+    // LIMITATION (accepted, harmless): the trust key is position-based
+    // (`hooks_path:stop:<group>:<handler>`, see codex_hook_key). A reinstall
+    // that BOTH moves famp's hook to a new position AND resolves a different
+    // famp binary path leaves the prior entry behind (its key != keep_key and
+    // its hash is absent from the current set). Codex matches trust by
+    // key+hash against the live hook at that position, so a stale key pointing
+    // at no live hook is inert — a config leak, not a functional break.
+    // Broadening removal to the bare prefix would risk deleting the user's
+    // unrelated Stop-hook trust, so we accept the leak.
     let hashes = trusted_hashes
         .iter()
         .map(String::as_str)

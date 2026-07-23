@@ -3,6 +3,8 @@
 use serde_json::Value;
 use std::io::Read;
 
+use super::log::log;
+
 /// Fields extracted from a Stop-hook stdin payload.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StopHookInput {
@@ -15,7 +17,13 @@ pub struct StopHookInput {
 /// Read stdin fully and parse as Stop-hook JSON. Fail-open: empty/malformed → default.
 pub fn read_stop_hook_input() -> StopHookInput {
     let mut buf = String::new();
-    let _ = std::io::stdin().read_to_string(&mut buf);
+    if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
+        // Fail-open (empty payload → default), but do NOT swallow silently:
+        // record context so a genuinely broken stdin is diagnosable.
+        log(&format!(
+            "read_stop_hook_input: stdin read error: {e}; proceeding with empty payload"
+        ));
+    }
     parse_stop_hook_json(&buf)
 }
 

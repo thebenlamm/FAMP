@@ -23,9 +23,13 @@
 //! appended to `listen-wake-<identity>.wake` so `--follow` (and Grok
 //! monitors) can inject without a second awaiter.
 //!
-//! MCP `famp_register(listen=true)` arms a supervised daemon via
-//! [`ensure_supervised`]; `set_listen(false)` / listen-false register calls
-//! [`stop_supervised`].
+//! The default MCP wake path does NOT go through this module: the blocking
+//! Stop hook (`famp-await.sh` → `famp await` → `decision:block`) is what
+//! parks and wakes the agent for `famp_register(listen=true)` /
+//! `set_listen`. [`ensure_supervised`] / [`stop_supervised`] are an
+//! alternate, host-neutral supervision surface (a detached `listen-wake`
+//! daemon) that register.rs / set_listen.rs deliberately do NOT call — a
+//! second bus waiter alongside the blocked Stop hook would race it.
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -617,10 +621,21 @@ fn ensure_supervised_inner(identity: &str, force: bool) -> Result<(), CliError> 
 /// Kill the supervised listen-wake for `identity` (if any) and remove pidfile.
 pub fn stop_supervised(identity: &str) {
     let Some(id) = scrub_token(identity) else {
+        let _ = writeln!(
+            std::io::stderr(),
+            "listen-wake stop_supervised: invalid identity {identity:?}"
+        );
         return;
     };
-    let Ok(famp_home) = home::resolve_famp_home() else {
-        return;
+    let famp_home = match home::resolve_famp_home() {
+        Ok(h) => h,
+        Err(e) => {
+            let _ = writeln!(
+                std::io::stderr(),
+                "listen-wake stop_supervised({id}): resolve_famp_home failed: {e}"
+            );
+            return;
+        }
     };
     let pid_path = pidfile_path(&famp_home, &id);
     if let Some(pid) = read_pidfile(&pid_path) {

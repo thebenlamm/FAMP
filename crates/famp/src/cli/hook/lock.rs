@@ -3,6 +3,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use super::log::log;
 
@@ -33,15 +34,36 @@ impl StopAwaitLock {
             return Some(Self { path });
         }
 
-        let old_pid = fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok());
-        if let Some(pid) = old_pid {
-            if pid_alive(pid) {
-                log(&format!(
-                    "stop-await singleton: {identity} already parked by pid={pid}; exiting no-op"
-                ));
-                return None;
+        // The lock file exists; classify the holder by its contents. A
+        // parseable pid tells us whether the holder is alive. An EMPTY or
+        // unparseable file means the holder created it (O_EXCL) but has not
+        // yet written its pid — `create_and_claim` does `create_new` and
+        // `writeln!(pid)` as two syscalls, and that nanosecond window is a
+        // JUST-BORN lock, not a stale one. Stealing it would double-park
+        // (the exact race this singleton exists to prevent). Distinguish by
+        // mtime: a file that crashed between the two syscalls ages out of the
+        // grace window and becomes reclaimable, so listen mode self-heals.
+        match fs::read_to_string(&path).ok().map(|s| s.trim().to_owned()) {
+            Some(s) if !s.is_empty() => match s.parse::<u32>() {
+                Ok(pid) if pid_alive(pid) => {
+                    log(&format!(
+                        "stop-await singleton: {identity} already parked by pid={pid}; exiting no-op"
+                    ));
+                    return None;
+                }
+                // Parseable but dead pid, or garbage contents: genuinely
+                // stale — fall through to reclaim.
+                _ => {}
+            },
+            // Empty file (or unreadable): a just-born holder within the grace
+            // window must not be stolen. Aged-out empties are orphans → reclaim.
+            _ => {
+                if lock_is_within_grace(&path) {
+                    log(&format!(
+                        "stop-await singleton: {identity} lock is just-born (empty, fresh); exiting no-op"
+                    ));
+                    return None;
+                }
             }
         }
 
@@ -62,12 +84,35 @@ impl StopAwaitLock {
     }
 
     /// Atomically create the lock file (`O_EXCL`) and write this process's
-    /// pid into it on the same handle, so the pid is visible the instant the
-    /// file exists — no window where the file exists but is unclaimed.
+    /// pid on the same handle. There is a nanosecond window between the
+    /// `create_new` and the `writeln!` where the file exists but is empty;
+    /// `try_acquire_in` treats such an empty-but-fresh lock as a live
+    /// just-born holder (mtime grace), not a stale one, so it is never stolen.
     fn create_and_claim(path: &Path) -> std::io::Result<()> {
         let mut f = OpenOptions::new().write(true).create_new(true).open(path)?;
         writeln!(f, "{}", std::process::id())?;
         Ok(())
+    }
+}
+
+/// Grace window during which an empty/unparseable lock file is presumed to be
+/// a live just-born holder (created via `O_EXCL` but pid not yet written)
+/// rather than a stale orphan. Far larger than the real inter-syscall gap
+/// (nanoseconds) so a live holder is never stolen, yet bounded so a holder
+/// that crashed in that window self-heals on a later hook firing.
+const LOCK_JUST_BORN_GRACE: Duration = Duration::from_secs(30);
+
+fn lock_is_within_grace(path: &Path) -> bool {
+    let Ok(meta) = fs::metadata(path) else {
+        return false;
+    };
+    let Ok(mtime) = meta.modified() else {
+        return false;
+    };
+    match SystemTime::now().duration_since(mtime) {
+        Ok(age) => age < LOCK_JUST_BORN_GRACE,
+        // mtime in the future (clock skew): treat as fresh, do not steal.
+        Err(_) => true,
     }
 }
 
@@ -133,6 +178,23 @@ mod tests {
         assert!(
             second.is_some(),
             "acquire must succeed again once the first guard is dropped"
+        );
+    }
+
+    #[test]
+    fn empty_fresh_lock_is_not_stolen() {
+        // Regression for the just-born double-park: an existing lock file that
+        // is EMPTY (holder created it via O_EXCL but has not written its pid
+        // yet) must be treated as a live holder, not stolen.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("stop-await-locks");
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("dk.lock");
+        std::fs::write(&path, "").unwrap(); // empty, fresh mtime
+        let guard = StopAwaitLock::try_acquire_in(&root, "dk");
+        assert!(
+            guard.is_none(),
+            "an empty, freshly-created lock must be treated as a live just-born holder"
         );
     }
 }
