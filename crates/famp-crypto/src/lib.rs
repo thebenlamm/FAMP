@@ -69,7 +69,7 @@ pub mod verify;
 
 pub use error::CryptoError;
 pub use hash::{sha256_artifact_id, sha256_digest};
-pub use keys::{FampSignature, FampSigningKey, TrustedVerifyingKey};
+pub use keys::{key_id, FampSignature, FampSigningKey, TrustedVerifyingKey};
 pub use prefix::{canonicalize_for_signature, DOMAIN_PREFIX};
 pub use sign::{sign_canonical_bytes, sign_value};
 pub use verify::{verify_canonical_bytes, verify_value};

@@ -6,6 +6,7 @@
 //! `ed25519_dalek::VerifyingKey::verify` (non-strict).
 
 use crate::error::CryptoError;
+use crate::hash::sha256_digest;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use subtle::ConstantTimeEq;
@@ -174,8 +175,26 @@ impl core::fmt::Debug for TrustedVerifyingKey {
     }
 }
 
-// RED marker (task 2, added in its own GREEN commit): key_id() intentionally
-// absent here until task 2's failing test proves the RED state.
+/// Stable, human-comparable fingerprint of an Ed25519 verifying key
+/// (WIRE-02 `sender_key_id`, D-03).
+///
+/// Derivation: `SHA-256(raw 32-byte pubkey)` -> `base64url` (unpadded) ->
+/// first 16 characters (~96 bits of the 256-bit digest). This length is
+/// locked by Phase 8 D-03 / RESEARCH Assumption A1.
+///
+/// # Non-anchor contract
+///
+/// `key_id` is diagnostic/UX metadata ONLY — an eyeball-verification aid for
+/// `famp peer export`/`import` (D-05) and a wire-carried label
+/// (`sender_key_id`). It is NOT a trust anchor: no code may make a trust
+/// decision on `key_id` alone. The sole trust anchor is the full 32-byte
+/// pinned verifying key in the keyring (T-08-05).
+#[must_use]
+pub fn key_id(vk: &TrustedVerifyingKey) -> String {
+    let digest = sha256_digest(vk.as_bytes());
+    let full = URL_SAFE_NO_PAD.encode(digest);
+    full.chars().take(16).collect()
+}
 
 impl FampSignature {
     #[must_use]
