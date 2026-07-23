@@ -12,8 +12,10 @@ description = "FAMP v0.5.2 — famp-gateway crate (Layer 2 skeleton)"
 workspace = true
 
 [dependencies]
-famp-bus  = { path = "../famp-bus", version = "0.11.0" }
-famp      = { path = "../famp", version = "0.11.0" }
+famp-bus     = { path = "../famp-bus", version = "0.11.0" }
+famp         = { path = "../famp", version = "0.11.0" }
+famp-keyring = { path = "../famp-keyring", version = "0.11.0" }
+famp-envelope = { path = "../famp-envelope", version = "0.11.0" }
 tokio     = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
 thiserror = { workspace = true }
 

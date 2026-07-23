@@ -17,6 +17,14 @@ use famp_gateway::GatewayRegistry;
 use famp_bus as _;
 use thiserror as _;
 
+// Silencer: `famp-keyring` and `famp-envelope` are direct deps added for
+// `verify_inbound` (08-03 Task 2, used only inside the lib's `verify.rs`);
+// this bin target doesn't reference them directly. Removed once Task 2's
+// `verify_inbound` (or a caller of it) is used here, or moved to a
+// lib-only dependency if the bin never needs them.
+use famp_envelope as _;
+use famp_keyring as _;
+
 // Silencer for dev-only dependencies: these are used exclusively by the
 // `tests/liveness.rs` / `tests/no_cross_talk.rs` integration test
 // binaries (07-03), separate compilation units from this bin's own

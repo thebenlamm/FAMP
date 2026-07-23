@@ -13,6 +13,14 @@
 // (async/await here is plain language syntax, not a tokio API call).
 use tokio as _;
 
+// Silencer: `famp-keyring` and `famp-envelope` are direct deps added for
+// `verify_inbound` (08-03 Task 2); this commit (Task 1) only adds the
+// `RejectReason` enum + a placeholder `verify` module, so the crates are
+// not referenced yet. Removed in Task 2's commit once `verify.rs` uses
+// both.
+use famp_envelope as _;
+use famp_keyring as _;
+
 // Silencer for dev-only dependencies: these are used exclusively by the
 // `tests/liveness.rs` / `tests/no_cross_talk.rs` integration test
 // binaries (07-03), which are separate compilation units from this lib
@@ -32,7 +40,8 @@ use uuid as _;
 pub mod error;
 pub mod principal;
 pub mod registry;
+pub mod verify;
 
-pub use error::GatewayError;
+pub use error::{GatewayError, RejectReason};
 pub use principal::ProxiedPrincipal;
 pub use registry::GatewayRegistry;

@@ -44,3 +44,28 @@ pub enum GatewayError {
     #[error("principal '{0}' is already backed by this gateway")]
     DuplicatePrincipal(String),
 }
+
+/// Ingress-verification rejection reason (WIRE-01 / TRUST-02, D-08).
+///
+/// Exactly two variants, deliberately never collapsed into one flat
+/// "rejected" — an operator (and the Phase 9 E2E) must be able to tell
+/// "the bytes were tampered / unsigned" apart from "I never imported that
+/// peer." `verify_inbound` performs zero local-bus writes and zero
+/// pinned/registry state mutation on either path.
+#[derive(Debug, thiserror::Error)]
+pub enum RejectReason {
+    /// Bad crypto or unsigned: the envelope failed strict-parse, failed
+    /// `verify_strict` against the sender's pinned key, or carried no
+    /// signature at all. Never implies anything about whether the sender
+    /// principal is known — a tampered envelope from a KNOWN peer maps
+    /// here too.
+    #[error("invalid or missing signature")]
+    InvalidSignature,
+
+    /// The sender principal is not present in the pinned keyring
+    /// (TRUST-02: no auto-pin at receive time, no implicit trust). The
+    /// peeked-but-unverified principal is carried for operator diagnosis
+    /// only — it has NOT been cryptographically confirmed.
+    #[error("sender principal '{principal}' has no pinned key")]
+    UnpinnedKey { principal: famp::Principal },
+}
