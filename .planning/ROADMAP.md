@@ -22,7 +22,7 @@
 - [x] **Phase 5: Daemon Service Management & Version Safety** — completed 2026-06-04 — `famp daemon install/uninstall/status/restart` cross-platform service lifecycle (launchd macOS, systemd `--user` Linux) plus version handshake at connect and `famp -V` banner reconciliation. 9/9 requirements; DAEMON-06 Linux behavioral deferred to a Linux host (05-HUMAN-UAT.md).
 - [x] **Phase 6: Onboarding & Cross-Platform Docs** — completed 2026-06-06 — README rewritten daemon-first: `famp daemon install` quickstart (Claude Code + Codex), `famp broker --no-idle-exit` no-install bridge, dedicated `## Platform support` boundary, five reconciled downstream sections, v0.9→v0.11 refresh. DOC-01/02/03 verified live against the installed binary (human-verify E2E: fresh-clone Claude+Codex delivery + daemon lifecycle). Accuracy gate caught a stale-binary idempotency failure (fixed via `just install`) and one status exit-code drift (corrected).
 - [x] **Phase 7: Broker-Liveness Fork + Gateway Skeleton** - Resolve the same-host `kill(pid,0)` liveness fork (Design A local-proxy) and stand up the `famp-gateway` crate skeleton backing remote principals on the local bus. (completed 2026-07-23)
-- [ ] **Phase 8: Signed Cross-Host Envelope + Trust Bootstrap** - Ed25519-signed, forward-compatible cross-host envelope format plus two-machine TOFU key export/import.
+- [x] **Phase 8: Signed Cross-Host Envelope + Trust Bootstrap** - Ed25519-signed, forward-compatible cross-host envelope format plus two-machine TOFU key export/import. (completed 2026-07-23)
 - [ ] **Phase 9: End-to-End Cross-Host Delivery** - Full bidirectional `request → commit → deliver → ack` task cycle across two machines through the gateway.
 - [ ] **Phase 10: Test Reactivation + Setup Docs** - Deferred federation tests triaged and green, a live two-process E2E in `just ci`, and a two-machine setup guide.
 
@@ -188,16 +188,16 @@ Plans:
   3. A user runs a peer-export command on machine A, moves the output out-of-band (e.g. copy/paste, Signal), and runs a peer-import command on machine B (and the reverse, B→A); after both imports, each gateway trusts the other's signing key via TOFU pin — no manual key material is exchanged over FAMP itself (TRUST-01).
   4. A cross-host envelope signed by a key that was never exported/imported/pinned is rejected by the receiving gateway with no state created and no implicit trust granted (TRUST-02).
 
-**Plans:** 4 plans
+**Plans:** 4/4 plans complete
 **Wave 1**
 
-- [ ] 08-01-PLAN.md — Extend famp-envelope with 7 forward-compatible federation fields, byte-exact round-trip + local byte-identity (WIRE-02)
-- [ ] 08-02-PLAN.md — famp-crypto keygen (FampSigningKey::generate) + key_id fingerprint (WIRE-02, TRUST-01 prereq)
-- [ ] 08-03-PLAN.md — famp-gateway verify_inbound pure function + RejectReason (WIRE-01, TRUST-02)
+- [x] 08-01-PLAN.md — Extend famp-envelope with 7 forward-compatible federation fields, byte-exact round-trip + local byte-identity (WIRE-02)
+- [x] 08-02-PLAN.md — famp-crypto keygen (FampSigningKey::generate) + key_id fingerprint (WIRE-02, TRUST-01 prereq)
+- [x] 08-03-PLAN.md — famp-gateway verify_inbound pure function + RejectReason (WIRE-01, TRUST-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08-04-PLAN.md — famp peer export/import CLI + gateway keypair persistence + TOFU round-trip (TRUST-01)
+- [x] 08-04-PLAN.md — famp peer export/import CLI + gateway keypair persistence + TOFU round-trip (TRUST-01)
 
 ### Phase 9: End-to-End Cross-Host Delivery
 
@@ -391,7 +391,7 @@ Rough ordering inside v1.0+ (not committed):
 | 5. Daemon Service Management & Version Safety | v0.11 | 5/5 | Complete | 2026-06-04 |
 | 6. Onboarding & Cross-Platform Docs | v0.11 | 3/3 | Complete | 2026-06-06 |
 | 7. Broker-Liveness Fork + Gateway Skeleton | v1.0 | 3/3 | Complete    | 2026-07-23 |
-| 8. Signed Cross-Host Envelope + Trust Bootstrap | v1.0 | 0/TBD | Not started | - |
+| 8. Signed Cross-Host Envelope + Trust Bootstrap | v1.0 | 4/4 | Complete    | 2026-07-23 |
 | 9. End-to-End Cross-Host Delivery | v1.0 | 0/TBD | Not started | - |
 | 10. Test Reactivation + Setup Docs | v1.0 | 0/TBD | Not started | - |
 

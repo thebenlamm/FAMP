@@ -23,13 +23,13 @@
 
 ### Wire (WIRE) — signed cross-host envelope
 
-- [ ] **WIRE-01**: Every envelope crossing between machines is Ed25519-signed under the `FAMP-sig-v1\0` domain prefix; an unsigned or signature-invalid envelope is rejected at the receiving gateway before it touches the local bus (INV-10 on the cross-host path).
-- [ ] **WIRE-02**: The cross-host envelope carries sender/receiver domain + key_id, a nonce, and an expiry, with capability/approval fields omitted when empty — forward-compatible with v1.1/v2.0 without a wire break.
+- [x] **WIRE-01**: Every envelope crossing between machines is Ed25519-signed under the `FAMP-sig-v1\0` domain prefix; an unsigned or signature-invalid envelope is rejected at the receiving gateway before it touches the local bus (INV-10 on the cross-host path).
+- [x] **WIRE-02**: The cross-host envelope carries sender/receiver domain + key_id, a nonce, and an expiry, with capability/approval fields omitted when empty — forward-compatible with v1.1/v2.0 without a wire break.
 
 ### Trust (TRUST) — two-machine key bootstrap
 
-- [ ] **TRUST-01**: A user can export an agent's peer identity on machine A and import it on machine B (and vice versa), establishing mutual Ed25519 key trust via TOFU pinning.
-- [ ] **TRUST-02**: A message signed by an unknown/unpinned peer key is rejected — no implicit trust.
+- [x] **TRUST-01**: A user can export an agent's peer identity on machine A and import it on machine B (and vice versa), establishing mutual Ed25519 key trust via TOFU pinning.
+- [x] **TRUST-02**: A message signed by an unknown/unpinned peer key is rejected — no implicit trust.
 
 ### Test (TEST) — reactivation & E2E
 
@@ -81,10 +81,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | GW-04 | Phase 7 | Complete |
 | LIVE-01 | Phase 7 | Complete |
 | LIVE-02 | Phase 7 | Complete |
-| WIRE-01 | Phase 8 | Pending |
-| WIRE-02 | Phase 8 | Pending |
-| TRUST-01 | Phase 8 | Pending |
-| TRUST-02 | Phase 8 | Pending |
+| WIRE-01 | Phase 8 | Complete |
+| WIRE-02 | Phase 8 | Complete |
+| TRUST-01 | Phase 8 | Complete |
+| TRUST-02 | Phase 8 | Complete |
 | TEST-01 | Phase 10 | Pending |
 | TEST-02 | Phase 10 | Pending |
 | DOC-04 | Phase 10 | Pending |

@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: Federation Profile)
 current_phase: 999.1
 current_phase_name: BACKLOG
-status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-07-23T20:50:41.509Z"
+status: verifying
+stopped_at: Completed 08-04-PLAN.md
+last_updated: "2026-07-23T21:37:53.057Z"
 last_activity: 2026-07-23
-last_activity_desc: Phase 07 complete, transitioned to Phase 999.1
+last_activity_desc: Phase 08 complete, transitioned to Phase 999.1
 progress:
   total_phases: 7
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 14
+  completed_phases: 2
+  total_plans: 7
+  completed_plans: 7
+  percent: 29
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extends that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 07 — Broker-Liveness Fork + Gateway Skeleton
+**Current focus:** Phase 08 — signed-cross-host-envelope-trust-bootstrap
 
 ## Current Position
 
 Phase: 999.1 — `famp await` crash safety — cursor advance vs flush ordering (BACKLOG)
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-23 — Phase 07 complete, transitioned to Phase 999.1
+Status: Phase complete — ready for verification
+Last activity: 2026-07-23 — Phase 08 complete, transitioned to Phase 999.1
 
 ## v1.0 Phase Map
 
@@ -112,6 +112,13 @@ Last activity: 2026-07-23 — Phase 07 complete, transitioned to Phase 999.1
 - [Phase 07-broker-liveness-fork-gateway-skeleton]: Combined survive+reap into a single pure-broker LIVE-01 test rather than splitting; pins register()'s no-pid-uniqueness fact deterministically
 - [07-03]: GW-04 test uses a D-10 bind_as proxy connection as the sender instead of a third spawned process
 - [07-03]: Cross-package Command::cargo_bin(famp) needs an explicit cargo build -p famp --bin famp prebuild step -- CARGO_BIN_EXE_famp is not propagated across package boundaries by Cargo
+- [Phase 08]: federation_format_ok() lives on SignedEnvelope; expiry-vs-ts ordering uses lexical string comparison of byte-preserving RFC 3339 strings, no new dependency
+- [Phase 08]: key_id truncated to 16 b64url chars (~96 bits) per D-03/RESEARCH A1; non-anchor diagnostic metadata only
+- [Phase 08]: FampSigningKey::generate() is OsRng-only; no fixed-seed/time/PID production path
+- [Phase 08-03]: RejectReason kept as its own enum in error.rs (not folded into GatewayError) — matches per-variant doc discipline, keeps D-08's two-reason contract visually distinct from broker-connection errors
+- [Phase 08-03]: verify_inbound never constructs a raw ed25519_dalek::VerifyingKey — routes exclusively through TrustedVerifyingKey / SignedEnvelope::decode (verify_strict internally)
+- [Phase 08]: famp-keyring promoted to a real dependency; export blob uses a new CLI-layer 3-field parser distinct from famp-keyring's strict 2-field on-disk format
+- [Phase 08]: Gateway signing key persists at ~/.famp/gateway/identity.ed25519 (fresh identity concept, not the stale IdentityLayout::key_ed25519 name), mode 0600
 
 ## Issues / Blockers
 
@@ -213,12 +220,16 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 07 P01 | 45min | 2 tasks | 6 files |
 | Phase 07-broker-liveness-fork-gateway-skeleton P02 | 15min | 1 tasks | 1 files |
 | Phase 07-broker-liveness-fork-gateway-skeleton P03 | 70min | 2 tasks | 7 files |
+| Phase 08 P01 | 20min | 2 tasks | 3 files |
+| Phase 08 P02 | 12min | 2 tasks | 9 files |
+| Phase 08 P03 | 8min | 2 tasks | 5 files |
+| Phase 08 P04 | 20min | 3 tasks | 12 files |
 
 ## Session
 
-**Last session:** 2026-07-23T20:15:29.938Z
-**Stopped At:** Phase 8 context gathered
-**Resume File:** .planning/phases/08-signed-cross-host-envelope-trust-bootstrap/08-CONTEXT.md
+**Last session:** 2026-07-23T21:32:10.000Z
+**Stopped At:** Completed 08-04-PLAN.md
+**Resume File:** None
 
 ## Operator Next Steps
 
