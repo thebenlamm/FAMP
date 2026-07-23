@@ -682,4 +682,124 @@ mod tests {
             "expected UnknownEnvelopeField {{ x_future }}, got {err:?}"
         );
     }
+
+    fn federation_test_unsigned() -> UnsignedEnvelope<AckBody> {
+        let id: MessageId = "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a6b".parse().unwrap();
+        let from: Principal = "agent:example.test/alice".parse().unwrap();
+        let to: Principal = "agent:example.test/bob".parse().unwrap();
+        let ts = Timestamp("2026-04-13T00:00:00Z".to_string());
+        let body = AckBody {
+            disposition: crate::body::AckDisposition::Accepted,
+            reason: None,
+        };
+        UnsignedEnvelope::<AckBody>::new(id, from, to, AuthorityScope::Advisory, ts, body)
+    }
+
+    #[test]
+    fn federation_fields_roundtrip() {
+        // WIRE-02: all 7 federation fields survive sign -> encode -> decode.
+        let (sk, _vk) = test1_keys();
+        let vk = sk.verifying_key();
+        let unsigned = federation_test_unsigned()
+            .with_from_domain("example.test".to_string())
+            .with_to_domain("other.test".to_string())
+            .with_sender_key_id("a1b2c3d4e5f6a7b8".to_string())
+            .with_nonce("nonce-abc123".to_string())
+            .with_expiry(Timestamp("2026-04-13T01:00:00Z".to_string()));
+
+        let signed = unsigned.sign(&sk).unwrap();
+        let bytes = signed.encode().unwrap();
+        let decoded = SignedEnvelope::<AckBody>::decode(&bytes, &vk).unwrap();
+
+        let inner = decoded.inner();
+        assert_eq!(inner.from_domain.as_deref(), Some("example.test"));
+        assert_eq!(inner.to_domain.as_deref(), Some("other.test"));
+        assert_eq!(inner.sender_key_id.as_deref(), Some("a1b2c3d4e5f6a7b8"));
+        assert_eq!(inner.nonce.as_deref(), Some("nonce-abc123"));
+        assert_eq!(
+            inner.expiry,
+            Some(Timestamp("2026-04-13T01:00:00Z".to_string()))
+        );
+        assert_eq!(inner.capability, None);
+        assert_eq!(inner.approval, None);
+    }
+
+    #[test]
+    fn local_bus_byte_identical() {
+        // D-02: an envelope with NONE of the 7 federation fields set encodes
+        // without any new field key present — the local-bus wire is
+        // byte-identical to pre-Phase-8 output (omit-when-empty).
+        let (sk, _vk) = test1_keys();
+        let unsigned = federation_test_unsigned();
+        let signed = unsigned.sign(&sk).unwrap();
+        let bytes = signed.encode().unwrap();
+        let json = String::from_utf8(bytes).unwrap();
+
+        for field in [
+            "from_domain",
+            "to_domain",
+            "sender_key_id",
+            "nonce",
+            "expiry",
+            "capability",
+            "approval",
+        ] {
+            assert!(
+                !json.contains(field),
+                "local-bus envelope must not contain federation field `{field}`: {json}"
+            );
+        }
+    }
+
+    #[test]
+    fn federation_format_well_formed() {
+        // D-04: format-validate ONLY. Well-formed nonce/expiry accepted;
+        // empty nonce and expiry <= ts flagged; a PAST-but-parseable expiry
+        // (still after the envelope's own ts) is NOT rejected — active
+        // enforcement is v1.1.
+        let (sk, _vk) = test1_keys();
+
+        // Well-formed: non-empty nonce, expiry strictly after ts.
+        let ok = federation_test_unsigned()
+            .with_nonce("nonce-abc123".to_string())
+            .with_expiry(Timestamp("2026-04-13T01:00:00Z".to_string()))
+            .sign(&sk)
+            .unwrap();
+        assert!(ok.federation_format_ok());
+
+        // Empty nonce is flagged.
+        let empty_nonce = federation_test_unsigned()
+            .with_nonce(String::new())
+            .sign(&sk)
+            .unwrap();
+        assert!(!empty_nonce.federation_format_ok());
+
+        // expiry == ts is flagged (must be strictly after).
+        let expiry_eq_ts = federation_test_unsigned()
+            .with_expiry(Timestamp("2026-04-13T00:00:00Z".to_string()))
+            .sign(&sk)
+            .unwrap();
+        assert!(!expiry_eq_ts.federation_format_ok());
+
+        // expiry before ts is flagged.
+        let expiry_before_ts = federation_test_unsigned()
+            .with_expiry(Timestamp("2026-04-12T23:00:00Z".to_string()))
+            .sign(&sk)
+            .unwrap();
+        assert!(!expiry_before_ts.federation_format_ok());
+
+        // A PAST-but-parseable expiry (before "now", i.e. 2026-07-23, but
+        // still strictly after the envelope's own ts of 2026-04-13) is NOT
+        // rejected by this well-formedness-only helper — no active
+        // expiry-rejection this phase (D-04).
+        let past_but_after_ts = federation_test_unsigned()
+            .with_expiry(Timestamp("2026-05-01T00:00:00Z".to_string()))
+            .sign(&sk)
+            .unwrap();
+        assert!(past_but_after_ts.federation_format_ok());
+
+        // No nonce/expiry set at all is trivially well-formed.
+        let none_set = federation_test_unsigned().sign(&sk).unwrap();
+        assert!(none_set.federation_format_ok());
+    }
 }
