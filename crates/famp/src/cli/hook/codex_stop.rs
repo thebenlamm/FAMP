@@ -63,6 +63,10 @@ fn run_inner(args: CodexStopArgs) -> Result<(), CliError> {
     rt.block_on(run_async(args, input))
 }
 
+// `future_not_send`: awaits `emit_block_decision` (holds stdout `&mut dyn
+// Write` across an await). Driven by `rt.block_on` above, never spawned, so
+// the future is polled on one thread and never sent between threads.
+#[allow(clippy::future_not_send)]
 async fn run_async(args: CodexStopArgs, input: StopHookInput) -> Result<(), CliError> {
     let transcript = resolve_transcript(&input);
     let mut identity = None;
@@ -241,7 +245,10 @@ fn backup_outcome(outcome: &await_cmd::AwaitOutcome) {
 }
 
 /// Testable entry that takes pre-parsed input and writes to `out`.
+// `future_not_send`: same as `run_async` — holds `out: &mut dyn Write` across
+// the await, driven by `block_on` in tests, never spawned across threads.
 #[cfg(test)]
+#[allow(clippy::future_not_send)]
 pub async fn run_with_input_for_test(
     input: StopHookInput,
     timeout: Duration,

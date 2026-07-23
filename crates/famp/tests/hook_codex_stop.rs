@@ -359,7 +359,7 @@ fn uninstall_removes_legacy_shim_and_native_entries() {
     let shim = home.join(".codex/hooks/famp-await.sh");
     std::fs::write(&shim, "#!/bin/sh\n").unwrap();
     std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let abs_shim = std::fs::canonicalize(&shim).unwrap_or(shim.clone());
+    let abs_shim = std::fs::canonicalize(&shim).unwrap_or_else(|_| shim.clone());
     std::fs::write(
         home.join(".codex/hooks.json"),
         serde_json::to_string_pretty(&serde_json::json!({

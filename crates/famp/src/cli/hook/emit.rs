@@ -18,6 +18,11 @@ use super::transcript::validate_sender;
 ///
 /// Resolves the broker socket from the environment; see
 /// [`emit_block_decision_at`] for the injectable-socket variant.
+// `future_not_send`: this future holds `out: &mut dyn Write` (stdout) across
+// the `#26` await. It is only ever driven by `rt.block_on` in the codex-stop
+// hook (never `tokio::spawn`), so it is polled on one thread and never sent
+// between threads — Send is irrelevant here.
+#[allow(clippy::future_not_send)]
 pub async fn emit_block_decision(
     outcome: &AwaitOutcome,
     identity: &str,
@@ -32,6 +37,9 @@ pub async fn emit_block_decision(
 /// Tests must use this: the `#26` unread check below otherwise talks to
 /// whatever broker the developer happens to have running, so a live session
 /// under the same identity would flip the result.
+// `future_not_send`: holds `out: &mut dyn Write` across the `#26` await;
+// driven by `block_on` only (never spawned), so never sent across threads.
+#[allow(clippy::future_not_send)]
 pub async fn emit_block_decision_at(
     sock: &Path,
     outcome: &AwaitOutcome,

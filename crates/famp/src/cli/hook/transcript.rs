@@ -101,7 +101,7 @@ fn parse_args(raw: &Value) -> Value {
     match raw {
         Value::Object(_) => raw.clone(),
         Value::String(s) => {
-            serde_json::from_str(s).unwrap_or(Value::Object(serde_json::Map::new()))
+            serde_json::from_str(s).unwrap_or_else(|_| Value::Object(serde_json::Map::new()))
         }
         _ => Value::Object(serde_json::Map::new()),
     }
@@ -243,7 +243,7 @@ fn parse_codex_format(
             .get("invocation")
             .filter(|v| v.is_object())
             .cloned()
-            .unwrap_or(Value::Object(serde_json::Map::new()));
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
         let mut tool = inv
             .get("tool")
             .and_then(Value::as_str)
@@ -270,7 +270,7 @@ fn parse_codex_format(
             .get("result")
             .filter(|v| v.is_object())
             .cloned()
-            .unwrap_or(Value::Object(serde_json::Map::new()));
+            .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
         let ok_payload = result.get("Ok").filter(|v| v.is_object());
         let ok = ok_payload.is_some_and(|o| o.get("isError") != Some(&Value::Bool(true)));
         let uid = payload

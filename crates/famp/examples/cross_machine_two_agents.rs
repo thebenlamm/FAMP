@@ -56,6 +56,7 @@ use insta as _;
 use nix as _;
 use regex as _;
 use reqwest as _;
+use rusqlite as _;
 use serde as _;
 use sha2 as _;
 use temp_env as _;
