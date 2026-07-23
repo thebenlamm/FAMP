@@ -402,6 +402,33 @@ fi
 
 log "listen mode active: identity=$ACTIVE_IDENTITY bin=$FAMP_BIN"
 
+# --- Per-identity Stop-await singleton (B2 dual-hook guard) ------------
+# Grok may load both ~/.grok/hooks Stop JSON and Claude-compat settings
+# Stop entries. Two shims must not both park `famp await` on the same
+# identity. mkdir-lock (portable; no flock(1) on macOS default).
+STOP_LOCK_ROOT="${STATE_DIR}/stop-await-locks"
+STOP_LOCK_DIR="${STOP_LOCK_ROOT}/${ACTIVE_IDENTITY}"
+mkdir -p "$STOP_LOCK_ROOT" 2>/dev/null || true
+if ! mkdir "$STOP_LOCK_DIR" 2>/dev/null; then
+    OLD_PID=""
+    if [ -f "$STOP_LOCK_DIR/pid" ]; then
+        OLD_PID="$(cat "$STOP_LOCK_DIR/pid" 2>/dev/null || true)"
+    fi
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        log "stop-await singleton: $ACTIVE_IDENTITY already parked by pid=$OLD_PID; exiting no-op"
+        exit 0
+    fi
+    # Stale lock: holder dead. Reclaim.
+    rm -rf "$STOP_LOCK_DIR" 2>/dev/null || true
+    if ! mkdir "$STOP_LOCK_DIR" 2>/dev/null; then
+        log "stop-await singleton: could not reclaim lock for $ACTIVE_IDENTITY; exiting no-op"
+        exit 0
+    fi
+fi
+printf '%s\n' "$$" >"$STOP_LOCK_DIR/pid" 2>/dev/null || true
+# shellcheck disable=SC2064
+trap 'rm -rf "$STOP_LOCK_DIR" 2>/dev/null || true' EXIT
+
 # --- Cancellation seam for issue #21 (host input-queue watcher) --------
 # A blocked Stop hook keeps the turn alive so an inbound FAMP message can
 # wake the agent — that block is the wake mechanism and must stay. The bug

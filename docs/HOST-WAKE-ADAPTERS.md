@@ -54,18 +54,27 @@ tries the PID-correlated fallback before no-op'ing (fail-open exit 0).
 
 **Grok specifics:**
 
-- `famp install-grok` writes `[mcp_servers.famp]` (absolute `famp` path),
-  `~/.grok/hooks/famp-await.sh`, `~/.grok/hooks/famp-listen-stop.json`,
-  refreshes `~/.claude/hooks/famp-await.sh` (compat path), and the
-  `famp-listen` skill.
+- `famp install-grok` writes **only** under `~/.grok/`:
+  `[mcp_servers.famp]` (absolute `famp` path), `hooks/famp-await.sh`,
+  `hooks/famp-listen-stop.json` (timeout 86400), and the `famp-listen`
+  skill. It does **not** touch `~/.claude/` (single Stop arming path).
 - Grok stdin is camelCase (`sessionId`, `transcriptPath`); the await shim
   accepts both snake_case and camelCase.
 - Grok also fires Stop at session end (`reason: channel_closed` /
   `shutdown`); the shim exits 0 without parking on those observe fires.
 - **Host limit:** Grok caps Stop continuations at **8 per turn**. After
-  that the turn ends; the next user prompt re-arms the Stop hook.
-- Optional fallback only: `famp listen-wake --as <id> --follow` if Stop is
+  that the turn ends; the next user prompt re-arms the Stop hook. Not
+  “infinite foolproof” across a long agent↔agent loop without a human
+  re-prompt.
+- **Dual-host:** if you also ran `install-claude-code`, Grok’s Claude-compat
+  hook scan may load Claude’s Stop entry too. The await shim
+  **singleton-locks** per identity so only one await parks. To load only
+  native Grok hooks: `[compat.claude] hooks = false` in `~/.grok/config.toml`.
+- Optional fallback: `famp listen-wake --as <id> --follow` if Stop is
   unavailable. Prefer Stop.
+- **Verification status:** Stop `decision:block` re-entry is the documented
+  Grok contract (host docs). Live capture of a full Grok session re-prompt
+  should be re-run after each major Grok Build upgrade.
 
 ### Residual / optional
 

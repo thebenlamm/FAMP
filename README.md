@@ -222,8 +222,8 @@ Full CLI:
 | `famp broker --no-idle-exit` | Run the broker in the foreground with no 300s idle exit (no-install bridge) |
 | `famp install-claude-code` / `famp uninstall-claude-code` | Install or remove Claude Code MCP/slash-command integration |
 | `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP plus project Stop-hook integration |
-| `famp install-grok` / `famp uninstall-grok` | Install or remove Grok MCP plus non-blocking listen-wake skill |
-| `famp listen-wake --as <id> [--loop]` | Host-neutral wake line for monitors (Grok); no peer body |
+| `famp install-grok` / `famp uninstall-grok` | Install or remove Grok MCP + Stop-hook listen (same model as Claude) |
+| `famp listen-wake --as <id> [--loop]` | Host-neutral wake line for monitors / future hosts; no peer body |
 
 The v0.8 `famp-local` wrapper has moved into history at
 [`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).

@@ -121,8 +121,8 @@ mod tests {
 
         assert!(home.join(".grok/hooks/famp-listen-stop.json").exists());
         assert!(home.join(".grok/hooks/famp-await.sh").exists());
-        // install always writes claude await shim — uninstall must leave it.
-        assert!(home.join(".claude/hooks/famp-await.sh").exists());
+        // B2: install-grok never creates ~/.claude/
+        assert!(!home.join(".claude").exists());
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();
@@ -144,8 +144,7 @@ mod tests {
         assert!(!home.join(".grok/skills/famp-listen").exists());
         assert!(!home.join(".grok/hooks/famp-listen-stop.json").exists());
         assert!(!home.join(".grok/hooks/famp-await.sh").exists());
-        // Claude tree untouched by uninstall-grok.
-        assert!(home.join(".claude/hooks/famp-await.sh").exists());
+        assert!(!home.join(".claude").exists());
     }
 
     #[test]

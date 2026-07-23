@@ -30,11 +30,12 @@ open in <30 s. `cargo install famp` is one-time per machine.
 # Codex (OpenAI's CLI agent) — MCP + blocking Stop hook:
 cargo install famp && famp install-codex
 
-# Grok — MCP + non-blocking listen-wake skill (no long Stop hook):
+# Grok — MCP + blocking Stop hook (same wake model as Claude):
 cargo install famp && famp install-grok
+# Then: "register with famp" → famp_register only; Stop auto-wakes.
 ```
 
-See [`HOST-WAKE-ADAPTERS.md`](HOST-WAKE-ADAPTERS.md) for Claude/Codex vs Grok
+See [`HOST-WAKE-ADAPTERS.md`](HOST-WAKE-ADAPTERS.md) for Claude/Codex/Grok
 wake models. For other MCP clients: file an issue at
 <https://github.com/thebenlamm/FAMP/issues>.
 

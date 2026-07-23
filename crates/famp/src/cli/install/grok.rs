@@ -1,28 +1,31 @@
 //! `famp install-grok` subcommand handler.
 //!
-//! Installs Grok integration surfaces:
+//! Installs Grok integration surfaces under `~/.grok/` only (single Stop
+//! arming path — adversarial B2):
 //!  1. `~/.grok/config.toml :: [mcp_servers.famp]` (absolute `famp` path)
-//!  2. Await shim via `await_hook::install_shim` to:
-//!     - `~/.grok/hooks/famp-await.sh`
-//!     - `~/.claude/hooks/famp-await.sh` (always refresh so Grok's Claude
-//!       compat path is never stale)
-//!  3. Stop hook JSON at `~/.grok/hooks/famp-listen-stop.json` (timeout 86400)
-//!     plus merge of the same Stop entry into `~/.claude/settings.json` when
-//!     that file already exists (compat-loaded by Grok).
+//!  2. `~/.grok/hooks/famp-await.sh` (listen-mode Stop shim)
+//!  3. `~/.grok/hooks/famp-listen-stop.json` (Stop timeout 86400)
 //!  4. `~/.grok/skills/famp-listen/SKILL.md` ("just register" docs)
 //!
-//! Auto-wake is the long Stop hook (`decision: block`) — same as Claude/Codex.
+//! Does **not** touch `~/.claude/` — Grok native hooks only. Dual-host
+//! machines that also ran `install-claude-code` may still load Claude Stop
+//! via Grok's Claude-compat hook scan; the await shim holds a per-identity
+//! singleton lock so only one Stop await parks. Optionally set
+//! `[compat.claude] hooks = false` in `~/.grok/config.toml` to disable
+//! Claude hook discovery entirely.
+//!
+//! Auto-wake: long Stop hook (`decision: block`) — same as Claude/Codex.
 //! Grok host limit: 8 Stop continuations per turn.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::Args;
-use serde_json::{json, Value};
+use serde_json::json;
 use toml::Value as TomlValue;
 
 use crate::cli::error::CliError;
-use crate::cli::install::{await_hook, json_merge, stop_entry, toml_merge};
+use crate::cli::install::{await_hook, toml_merge};
 
 /// Embedded Grok skill body ("just register" + Stop auto-wake).
 pub const FAMP_LISTEN_SKILL_MD: &str =
@@ -62,12 +65,10 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         .join("famp-listen")
         .join("SKILL.md");
     let grok_await_shim = home.join(".grok").join("hooks").join("famp-await.sh");
-    let claude_await_shim = home.join(".claude").join("hooks").join("famp-await.sh");
     let stop_json_path = home
         .join(".grok")
         .join("hooks")
         .join("famp-listen-stop.json");
-    let claude_settings = home.join(".claude").join("settings.json");
     // Absolute path only. Grok's MCP spawn env often lacks ~/.cargo/bin on
     // PATH, so bare `command = "famp"` fails with ENOENT (live smoke 2026-07-23).
     // Re-run `famp install-grok` after moving the binary.
@@ -99,14 +100,12 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     )
     .ok();
 
-    // Always refresh both shims so Grok Claude-compat path is never stale.
+    // Native Grok await shim only (B2: do not write ~/.claude/).
     await_hook::install_shim(&grok_await_shim)?;
-    await_hook::install_shim(&claude_await_shim)?;
     writeln!(
         err,
-        "  [2/4] await shim -> {} and {}",
-        grok_await_shim.display(),
-        claude_await_shim.display()
+        "  [2/4] {} :: await shim installed",
+        grok_await_shim.display()
     )
     .ok();
 
@@ -117,19 +116,6 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         stop_json_path.display()
     )
     .ok();
-
-    // Merge Stop into Claude settings only when the file already exists so
-    // Grok's compat loader picks up a fresh path + timeout without creating
-    // a Claude-only tree from nothing.
-    if claude_settings.exists() {
-        merge_claude_stop_await(&claude_settings, &claude_await_shim)?;
-        writeln!(
-            err,
-            "  [3b] {} :: hooks.Stop await entry refreshed",
-            claude_settings.display()
-        )
-        .ok();
-    }
 
     install_skill(&skill_path)?;
     writeln!(
@@ -144,13 +130,24 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         err,
         "install-grok complete. Restart Grok sessions to pick up MCP/hook changes. \
          User says \"register with famp\" → famp_register only; Stop hook auto-wakes \
-         (same as Claude; Grok cap: 8 continuations/turn)."
+         (Grok cap: 8 continuations/turn). Does not touch ~/.claude/."
     )
     .ok();
     if which::which("famp").is_err() {
         writeln!(
             err,
             "  hint: famp binary not on PATH; run `cargo install famp` to install it."
+        )
+        .ok();
+    }
+    if home.join(".claude").join("settings.json").exists() {
+        writeln!(
+            err,
+            "  note: ~/.claude/settings.json exists (Claude install). Grok may also \
+             load those Stop hooks via compat. The await shim singleton-locks per \
+             identity. To load only native Grok hooks, set in ~/.grok/config.toml:\n\
+             \x20   [compat.claude]\n\
+             \x20   hooks = false"
         )
         .ok();
     }
@@ -203,58 +200,6 @@ fn install_stop_hook_json(path: &Path, await_shim: &Path) -> Result<(), CliError
     Ok(())
 }
 
-/// Ensure `hooks.Stop` in Claude settings has a famp-await entry (timeout 86400).
-/// Strips stale famp-await commands (claude + grok shim paths) then appends fresh.
-fn merge_claude_stop_await(settings_path: &Path, await_shim: &Path) -> Result<(), CliError> {
-    let existing: Value = match std::fs::read_to_string(settings_path) {
-        Ok(s) if s.trim().is_empty() => Value::Object(serde_json::Map::new()),
-        Ok(s) => serde_json::from_str(&s).map_err(|source| CliError::JsonMergeParse {
-            path: settings_path.to_path_buf(),
-            source,
-        })?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(());
-        }
-        Err(source) => {
-            return Err(CliError::JsonMergeRead {
-                path: settings_path.to_path_buf(),
-                source,
-            });
-        }
-    };
-
-    let prior_stop: &[Value] = existing
-        .get("hooks")
-        .and_then(|h| h.get("Stop"))
-        .and_then(Value::as_array)
-        .map_or(&[], Vec::as_slice);
-
-    // Only strip await-shim paths (not hook-runner) so Claude's other FAMP
-    // Stop entries stay intact.
-    let shims = [await_shim.display().to_string()];
-    let mut new_stop: Vec<Value> = prior_stop
-        .iter()
-        .filter_map(|elem| stop_entry::remove_famp_hook_from_stop_entry(elem, &shims))
-        .collect();
-
-    new_stop.push(json!({
-        "matcher": "",
-        "hooks": [{
-            "type": "command",
-            "command": await_shim.display().to_string(),
-            "timeout": 86400,
-        }],
-    }));
-
-    let _ = json_merge::upsert_user_json(
-        settings_path,
-        "hooks",
-        "Stop",
-        Value::Array(new_stop),
-    )?;
-    Ok(())
-}
-
 fn install_skill(path: &Path) -> Result<(), CliError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|source| CliError::Io {
@@ -281,12 +226,6 @@ fn install_skill(path: &Path) -> Result<(), CliError> {
 
 /// Remove only the skill file FAMP owns. Never `remove_dir_all` when the
 /// directory contains extra user files.
-///
-/// - If `SKILL.md` matches our embedded asset (or is missing), delete it.
-/// - If the skill dir then has only that file (now empty) or only our
-///   file was present, remove the empty dir.
-/// - If `SKILL.md` was modified by the user (content differs), leave it.
-/// - Never deletes sibling user files.
 pub(crate) fn remove_skill_dir(skill_dir: &Path) -> Result<(), CliError> {
     let skill_md = skill_dir.join("SKILL.md");
     match std::fs::read_to_string(&skill_md) {
@@ -297,7 +236,6 @@ pub(crate) fn remove_skill_dir(skill_dir: &Path) -> Result<(), CliError> {
             })?;
         }
         Ok(_) => {
-            // User-modified skill — leave in place.
             return Ok(());
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -309,7 +247,6 @@ pub(crate) fn remove_skill_dir(skill_dir: &Path) -> Result<(), CliError> {
         }
     }
 
-    // Remove the skill dir only when empty (or missing).
     match std::fs::read_dir(skill_dir) {
         Ok(mut entries) => {
             if entries.next().is_none() {
@@ -318,7 +255,6 @@ pub(crate) fn remove_skill_dir(skill_dir: &Path) -> Result<(), CliError> {
                     source,
                 })?;
             }
-            // Non-empty: leave user files alone.
             Ok(())
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -333,6 +269,7 @@ pub(crate) fn remove_skill_dir(skill_dir: &Path) -> Result<(), CliError> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn install_grok_writes_mcp_skill_shim_and_stop_json() {
@@ -352,7 +289,6 @@ mod tests {
         );
         assert_eq!(famp_t["startup_timeout_sec"].as_integer().unwrap(), 10);
         let cmd = famp_t["command"].as_str().unwrap();
-        // Absolute path required — Grok MCP spawn has a minimal PATH.
         assert!(
             cmd.ends_with("/famp") || Path::new(cmd).is_absolute(),
             "expected absolute famp path, got: {cmd}"
@@ -362,18 +298,19 @@ mod tests {
         assert!(skill.exists());
         let body = std::fs::read_to_string(&skill).unwrap();
         assert!(body.contains("famp_register"));
-        assert!(body.contains("register with famp") || body.contains("just register"));
 
-        // Await shims + Stop JSON.
         let grok_shim = home.join(".grok/hooks/famp-await.sh");
-        let claude_shim = home.join(".claude/hooks/famp-await.sh");
         assert!(grok_shim.exists(), "grok await shim missing");
-        assert!(claude_shim.exists(), "claude await shim must be refreshed");
         assert!(
             std::fs::read_to_string(&grok_shim)
                 .unwrap()
                 .contains("trying pid-correlated"),
             "shim must carry pid-correlated fallback"
+        );
+        // B2: never touch Claude tree.
+        assert!(
+            !home.join(".claude").exists(),
+            "install-grok must not create ~/.claude/"
         );
 
         let stop_json = home.join(".grok/hooks/famp-listen-stop.json");
@@ -387,55 +324,34 @@ mod tests {
             grok_shim.display().to_string()
         );
 
-        // Must not pollute Codex trees or write Claude hook-runner.
         assert!(!home.join(".codex").exists());
         assert!(!home.join(".famp/hook-runner.sh").exists());
-        // Without a pre-existing Claude settings.json we do not create one.
-        assert!(!home.join(".claude/settings.json").exists());
     }
 
     #[test]
-    fn install_grok_merges_stop_into_existing_claude_settings() {
+    fn install_grok_does_not_merge_existing_claude_settings() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let settings = home.join(".claude/settings.json");
         std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
-        std::fs::write(
-            &settings,
-            r#"{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"/other/hook.sh","timeout":5}]}]}}"#,
-        )
-        .unwrap();
+        let prior = r#"{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"/other/hook.sh","timeout":5}]}]}}"#;
+        std::fs::write(&settings, prior).unwrap();
 
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
         run_at(home, &mut out, &mut err).unwrap();
 
-        let post: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
-        let stop = post["hooks"]["Stop"].as_array().unwrap();
-        assert!(
-            stop.iter().any(|e| {
-                e["hooks"].as_array().is_some_and(|hs| {
-                    hs.iter().any(|h| h["command"] == "/other/hook.sh")
-                })
-            }),
-            "unrelated Stop hooks must be preserved"
-        );
-        let await_shim = home
-            .join(".claude")
-            .join("hooks")
-            .join("famp-await.sh")
-            .display()
-            .to_string();
-        let await_entry = stop.iter().find(|e| {
-            e["hooks"]
-                .as_array()
-                .is_some_and(|hs| hs.iter().any(|h| h["command"] == await_shim))
-        });
-        assert!(await_entry.is_some(), "await Stop entry missing: {stop:#?}");
+        let post = std::fs::read_to_string(&settings).unwrap();
         assert_eq!(
-            await_entry.unwrap()["hooks"][0]["timeout"],
-            json!(86400)
+            post, prior,
+            "install-grok must not mutate Claude settings (B2 single Stop path)"
         );
+        assert!(
+            !home.join(".claude/hooks/famp-await.sh").exists(),
+            "must not write Claude await shim"
+        );
+        // Native Grok Stop still installed.
+        assert!(home.join(".grok/hooks/famp-listen-stop.json").exists());
     }
 
     #[test]
@@ -495,7 +411,6 @@ mod tests {
                 || FAMP_LISTEN_SKILL_MD.contains("just register")
         );
         assert!(FAMP_LISTEN_SKILL_MD.contains("Stop"));
-        // Monitor is optional fallback only — not the primary path.
         assert!(
             FAMP_LISTEN_SKILL_MD.to_lowercase().contains("optional")
                 || FAMP_LISTEN_SKILL_MD.contains("fallback")

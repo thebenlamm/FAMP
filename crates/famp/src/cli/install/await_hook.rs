@@ -136,6 +136,17 @@ mod tests {
         );
     }
 
+    /// Dual-hook guard (B2): only one Stop await per identity when both
+    /// Grok native and Claude-compat Stop entries fire.
+    #[test]
+    fn shim_has_stop_await_singleton_lock() {
+        assert!(
+            FAMP_AWAIT_SH.contains("stop-await-locks")
+                || FAMP_AWAIT_SH.contains("stop-await singleton"),
+            "hook must singleton-lock per-identity Stop await"
+        );
+    }
+
     /// Hosts that omit transcript_path (some Codex/Grok Stop payloads) must
     /// still try the PID-correlated fallback instead of immediate no-op.
     #[test]

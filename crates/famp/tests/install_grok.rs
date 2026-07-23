@@ -1,6 +1,5 @@
-//! install-grok writes MCP, await shim, Stop hook json, and skill.
-//! Refreshes ~/.claude/hooks/famp-await.sh; merges Claude settings only
-//! when that file already exists.
+//! install-grok writes MCP, native Grok await shim, Stop hook json, and skill.
+//! Does not touch ~/.claude/ (single Stop arming path — adversarial B2).
 
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
@@ -30,15 +29,18 @@ fn install_grok_writes_mcp_servers_famp_table_under_tempdir_home() {
     let skill_body = std::fs::read_to_string(&skill).unwrap();
     assert!(skill_body.contains("famp_register"));
 
-    // Await shims + Stop JSON with timeout 86400.
     let grok_shim = home.join(".grok/hooks/famp-await.sh");
-    let claude_shim = home.join(".claude/hooks/famp-await.sh");
     assert!(grok_shim.exists(), "grok await shim missing");
-    assert!(claude_shim.exists(), "claude await shim must be refreshed");
     assert!(
         std::fs::read_to_string(&grok_shim)
             .unwrap()
             .contains("trying pid-correlated")
+    );
+    assert!(
+        std::fs::read_to_string(&grok_shim)
+            .unwrap()
+            .contains("stop-await-locks"),
+        "shim must singleton-lock Stop await"
     );
 
     let stop_json = home.join(".grok/hooks/famp-listen-stop.json");
@@ -52,19 +54,17 @@ fn install_grok_writes_mcp_servers_famp_table_under_tempdir_home() {
         grok_shim.display().to_string()
     );
 
-    // Must not pollute Codex or write Claude hook-runner.
     assert!(
         !home.join(".codex").exists(),
         "Grok install must not touch ~/.codex/"
     );
     assert!(
+        !home.join(".claude").exists(),
+        "Grok install must not touch ~/.claude/ (B2 single Stop path)"
+    );
+    assert!(
         !home.join(".famp/hook-runner.sh").exists(),
         "Grok install must not write the Claude hook-runner shim"
-    );
-    // Without pre-existing settings.json, do not create one.
-    assert!(
-        !home.join(".claude/settings.json").exists(),
-        "must not create Claude settings from scratch"
     );
 }
 
