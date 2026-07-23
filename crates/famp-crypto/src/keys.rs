@@ -6,6 +6,7 @@
 //! `ed25519_dalek::VerifyingKey::verify` (non-strict).
 
 use crate::error::CryptoError;
+use crate::hash::sha256_digest;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use subtle::ConstantTimeEq;
@@ -97,6 +98,9 @@ impl FampSigningKey {
         Self(SigningKey::from_bytes(&bytes))
     }
 
+    // RED marker (removed in GREEN commit): generate() intentionally absent
+    // here so the failing test below proves the RED state.
+
     pub fn from_b64url(input: &str) -> Result<Self, CryptoError> {
         let v = URL_SAFE_NO_PAD
             .decode(input)
@@ -159,6 +163,9 @@ impl core::fmt::Debug for TrustedVerifyingKey {
     }
 }
 
+// RED marker (task 2, added in its own GREEN commit): key_id() intentionally
+// absent here until task 2's failing test proves the RED state.
+
 impl FampSignature {
     #[must_use]
     pub fn from_bytes(bytes: [u8; 64]) -> Self {
@@ -219,6 +226,30 @@ mod tests {
         // Contains '/' — STANDARD alphabet, not URL_SAFE
         let bad = "aaaa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         assert!(TrustedVerifyingKey::from_b64url(bad).is_err());
+    }
+
+    #[test]
+    fn generate_produces_distinct_keys() {
+        let a = FampSigningKey::generate();
+        let b = FampSigningKey::generate();
+        assert_ne!(
+            a.verifying_key().to_b64url(),
+            b.verifying_key().to_b64url(),
+            "two generate() calls must not yield the same key"
+        );
+    }
+
+    #[test]
+    fn generated_key_signs_and_verifies() {
+        use crate::sign::sign_value;
+        use crate::verify::verify_value;
+        use serde_json::json;
+
+        let sk = FampSigningKey::generate();
+        let vk = sk.verifying_key();
+        let v = json!({"hello": "generated"});
+        let sig = sign_value(&sk, &v).expect("sign_value should succeed");
+        verify_value(&vk, &v, &sig).expect("verify_value should succeed for generated key");
     }
 
     #[test]
