@@ -21,6 +21,7 @@
 use crate::error::RejectReason;
 use famp::SignedEnvelope;
 use famp_envelope::body::BodySchema;
+use famp_envelope::peek_sender;
 use famp_keyring::Keyring;
 
 /// Verify inbound cross-host envelope bytes against the pinned keyring.
@@ -33,13 +34,14 @@ use famp_keyring::Keyring;
 /// [`RejectReason`]s (D-08) on failure. Performs no I/O and mutates no
 /// state on any path.
 pub fn verify_inbound<B: BodySchema>(
-    _bytes: &[u8],
-    _keyring: &Keyring,
+    bytes: &[u8],
+    keyring: &Keyring,
 ) -> Result<SignedEnvelope<B>, RejectReason> {
-    // RED phase placeholder (08-03 Task 2 TDD): always rejects. Task 2's
-    // GREEN commit replaces this with the real peek -> lookup -> decode
-    // composition described above.
-    Err(RejectReason::InvalidSignature)
+    let from = peek_sender(bytes).map_err(|_| RejectReason::InvalidSignature)?;
+    let Some(vk) = keyring.get(&from) else {
+        return Err(RejectReason::UnpinnedKey { principal: from });
+    };
+    SignedEnvelope::decode(bytes, vk).map_err(|_| RejectReason::InvalidSignature)
 }
 
 #[cfg(test)]
@@ -107,7 +109,7 @@ mod tests {
         let unsigned_bytes = strip_signature(&bytes);
 
         let mut keyring = Keyring::new();
-        keyring.pin_tofu(from.clone(), vk).unwrap();
+        keyring.pin_tofu(from, vk).unwrap();
         let len_before = keyring.len();
 
         let result = verify_inbound::<AckBody>(&unsigned_bytes, &keyring);
@@ -131,7 +133,7 @@ mod tests {
         // Sender is pinned to a DIFFERENT key than the one that signed —
         // decode-verify must fail against the pinned (wrong) key.
         let mut keyring = Keyring::new();
-        keyring.pin_tofu(from.clone(), wrong_vk).unwrap();
+        keyring.pin_tofu(from, wrong_vk).unwrap();
         let len_before = keyring.len();
 
         let result = verify_inbound::<AckBody>(&bytes, &keyring);
