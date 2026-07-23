@@ -1354,6 +1354,58 @@ fn hook_reports_disk_ack_unread_not_await_batch_size() {
     );
 }
 
+/// Mock `famp` for the delimiter-injection regression: `await` returns one
+/// agent-mailbox envelope whose `from` carries a literal `|` (`evil|channel`),
+/// and `inspect identities` reports a clean actionable unread from a normal
+/// sender. Models a non-conformant/malicious peer on the shared bus.
+fn stage_pipe_injection_mock_famp(bin_dir: &Path) {
+    std::fs::create_dir_all(bin_dir).unwrap();
+    let famp = bin_dir.join("famp");
+    let script = r#"#!/usr/bin/env bash
+if [ "$1" = "await" ]; then
+  printf '%s\n' '{"mailbox":{"kind":"agent","name":"dk"},"envelopes":[{"from":"evil|channel","body":"x"}],"next_offset":5}'
+  exit 0
+fi
+if [ "$1" = "inspect" ] && [ "$2" = "identities" ]; then
+  printf '%s\n' '{"rows":[{"name":"dk","listen_mode":true,"mailbox_unread":1,"mailbox_total":1,"last_sender":"worker-2"}]}'
+  exit 0
+fi
+exit 0
+"#;
+    std::fs::write(&famp, script).unwrap();
+    std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// SECURITY (#2 review): a peer-controlled `from` containing a literal `|`
+/// must not shift the shim's positional `count|sender|kind|name` META parse
+/// and flip MAILBOX_KIND to "channel". Flipping it would bypass the #26
+/// disk-ack gate and misdirect the wake to `famp_channel_log`. Falsification
+/// control: WITHOUT the `_clean()` fix this test routes to channel_log and
+/// fails; WITH it the agent mailbox stays an agent mailbox → famp_inbox.
+#[test]
+fn hook_rejects_pipe_injection_in_sender() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_pipe_injection_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_listen_transcript(&transcript, "dk", "");
+
+    let out = spawn_asset_hook(&transcript, &bin_dir, &xdg)
+        .wait_with_output()
+        .unwrap();
+    assert!(out.status.success(), "hook must exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Call famp_inbox"),
+        "agent mailbox must route to famp_inbox; stdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("famp_channel_log"),
+        "a `|` in `from` must not flip the mailbox kind to channel; stdout:\n{stdout}"
+    );
+}
+
 /// Missing `transcript_path` → PID-correlated fallback resolves identity
 /// from a sibling `famp mcp` in the process tree (asset hook; PID fallback
 /// ENABLED — do NOT set FAMP_DISABLE_PID_FALLBACK).

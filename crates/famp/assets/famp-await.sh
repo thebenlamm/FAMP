@@ -658,7 +658,15 @@ for line in sys.argv[1].splitlines():
     sender = env.get("from", env.get("sender", "unknown"))
     mailbox_kind = "agent"
     mailbox_name = ""
-print(f"{count}|{sender}|{mailbox_kind}|{mailbox_name}")
+# SECURITY: sender/mailbox_name are peer-controlled. A literal "|" in any of
+# them would shift the positional fields the bash split below reads, letting a
+# malicious `from="x|channel"` flip MAILBOX_KIND to "channel" — which bypasses
+# the #26 disk-ack reconciliation gate and misdirects the wake to
+# famp_channel_log. Strip the delimiter (and newlines) so the emitted line has
+# exactly three separators. Valid kinds ("agent"/"channel") never contain "|".
+def _clean(v):
+    return str(v).replace("|", "").replace("\n", "").replace("\r", "")
+print(f"{count}|{_clean(sender)}|{_clean(mailbox_kind)}|{_clean(mailbox_name)}")
 ' "$MSG" 2>/dev/null || printf '1|unknown|agent|\n')"
 COUNT="${META%%|*}"
 _REST="${META#*|}"
