@@ -418,12 +418,18 @@ if ! mkdir "$STOP_LOCK_DIR" 2>/dev/null; then
         # kill -0 only proves SOME process owns this pid. After a SIGKILL the
         # EXIT trap never fires, leaving a stale pid file; the number can be
         # reused by an unrelated process, which would latch listen mode OFF
-        # for this identity until that process exits. Confirm the holder is
-        # actually a famp process (mirrors the Rust is_listen_wake_alive argv
-        # check) before backing off.
+        # for this identity until that process exits. The pid recorded here is
+        # the await-shim SHELL ($$), whose `ps` command is this script's path
+        # (`.../famp-await.sh`), so confirm the holder is a famp-await shim
+        # before backing off. Match the shim specifically (NOT a bare "famp",
+        # which would also match famp mcp / the broker / famp inspect and
+        # re-wedge on their pid reuse). This intentionally does not
+        # distinguish between identities — an unlikely reuse by a *different*
+        # identity's shim still backs off, which is the safe (no double-park)
+        # direction.
         OLD_CMD="$(ps -o command= -p "$OLD_PID" 2>/dev/null || true)"
         case "$OLD_CMD" in
-            *famp*)
+            *famp-await*)
                 log "stop-await singleton: $ACTIVE_IDENTITY already parked by pid=$OLD_PID; exiting no-op"
                 exit 0
                 ;;
@@ -434,9 +440,10 @@ if ! mkdir "$STOP_LOCK_DIR" 2>/dev/null; then
                 exit 0
                 ;;
             *)
-                # kill -0 succeeded but pid was reused by a non-famp process
-                # (SIGKILLed holder + pid reuse). Do NOT latch OFF; reclaim.
-                log "stop-await singleton: pid=$OLD_PID reused by non-famp process; reclaiming $ACTIVE_IDENTITY"
+                # kill -0 succeeded but pid was reused by a process that is not
+                # a famp-await shim (SIGKILLed holder + pid reuse). Do NOT latch
+                # OFF; reclaim.
+                log "stop-await singleton: pid=$OLD_PID reused by non-await process; reclaiming $ACTIVE_IDENTITY"
                 ;;
         esac
     fi
