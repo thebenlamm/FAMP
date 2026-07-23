@@ -13,12 +13,21 @@
 // (async/await here is plain language syntax, not a tokio API call).
 use tokio as _;
 
-// Silencer for the dev-only dependency: no test file in this crate uses
-// it yet (lands in a later plan in this phase). Remove once wired.
-// `#[cfg(test)]` because assert_cmd is a dev-dependency, unavailable to
-// non-test builds.
+// Silencer for dev-only dependencies: these are used exclusively by the
+// `tests/liveness.rs` / `tests/no_cross_talk.rs` integration test
+// binaries (07-03), which are separate compilation units from this lib
+// target. `#[cfg(test)]` because they are dev-dependencies, unavailable
+// to non-test builds.
 #[cfg(test)]
 use assert_cmd as _;
+#[cfg(test)]
+use famp_inspect_proto as _;
+#[cfg(test)]
+use serde_json as _;
+#[cfg(test)]
+use tempfile as _;
+#[cfg(test)]
+use uuid as _;
 
 pub mod error;
 pub mod principal;

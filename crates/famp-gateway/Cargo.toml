@@ -19,6 +19,10 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = "2.0"
+tempfile = "3"
+serde_json = { workspace = true }
+uuid = { workspace = true }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "0.11.0" }
 
 [[bin]]
 name = "famp-gateway"

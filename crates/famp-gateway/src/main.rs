@@ -17,10 +17,20 @@ use famp_gateway::GatewayRegistry;
 use famp_bus as _;
 use thiserror as _;
 
-// Silencer for the dev-only dependency: no test file in this crate uses
-// it yet (lands in a later plan in this phase). Remove once wired.
+// Silencer for dev-only dependencies: these are used exclusively by the
+// `tests/liveness.rs` / `tests/no_cross_talk.rs` integration test
+// binaries (07-03), separate compilation units from this bin's own
+// unittest build.
 #[cfg(test)]
 use assert_cmd as _;
+#[cfg(test)]
+use famp_inspect_proto as _;
+#[cfg(test)]
+use serde_json as _;
+#[cfg(test)]
+use tempfile as _;
+#[cfg(test)]
+use uuid as _;
 
 /// Parse `--socket <path>` plus one-or-more positional principal names.
 /// Extracted as a pure function so argument handling is testable without
