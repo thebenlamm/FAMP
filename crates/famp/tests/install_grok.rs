@@ -31,11 +31,9 @@ fn install_grok_writes_mcp_servers_famp_table_under_tempdir_home() {
 
     let grok_shim = home.join(".grok/hooks/famp-await.sh");
     assert!(grok_shim.exists(), "grok await shim missing");
-    assert!(
-        std::fs::read_to_string(&grok_shim)
-            .unwrap()
-            .contains("trying pid-correlated")
-    );
+    assert!(std::fs::read_to_string(&grok_shim)
+        .unwrap()
+        .contains("trying pid-correlated"));
     assert!(
         std::fs::read_to_string(&grok_shim)
             .unwrap()

@@ -211,11 +211,10 @@ async fn follow_wake_file(identity: &str) -> Result<(), CliError> {
         source,
     })?;
     // Start at EOF — only new wakes after --follow starts.
-    file.seek(SeekFrom::End(0))
-        .map_err(|source| CliError::Io {
-            path: wake_path.clone(),
-            source,
-        })?;
+    file.seek(SeekFrom::End(0)).map_err(|source| CliError::Io {
+        path: wake_path.clone(),
+        source,
+    })?;
 
     let mut buf = String::new();
     let mut stdout = std::io::stdout();
@@ -228,25 +227,26 @@ async fn follow_wake_file(identity: &str) -> Result<(), CliError> {
                 source,
             })?;
         if n > 0 {
-            stdout.write_all(buf.as_bytes()).map_err(|source| CliError::Io {
-                path: PathBuf::new(),
-                source,
-            })?;
+            stdout
+                .write_all(buf.as_bytes())
+                .map_err(|source| CliError::Io {
+                    path: PathBuf::new(),
+                    source,
+                })?;
             stdout.flush().map_err(|source| CliError::Io {
                 path: PathBuf::new(),
                 source,
             })?;
         } else {
             // Truncation / rotation: if file shrank, rewind.
-            let meta_len = std::fs::metadata(&wake_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let meta_len = std::fs::metadata(&wake_path).map(|m| m.len()).unwrap_or(0);
             let pos = file.stream_position().unwrap_or(0);
             if pos > meta_len {
-                file.seek(SeekFrom::Start(0)).map_err(|source| CliError::Io {
-                    path: wake_path.clone(),
-                    source,
-                })?;
+                file.seek(SeekFrom::Start(0))
+                    .map_err(|source| CliError::Io {
+                        path: wake_path.clone(),
+                        source,
+                    })?;
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
@@ -425,10 +425,7 @@ pub(crate) fn acquire_pidfile(path: &Path, force: bool) -> Result<PidfileGuard, 
     if let Some(old_pid) = read_pidfile(path) {
         if is_listen_wake_alive(old_pid) {
             if !force {
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "ALREADY_RUNNING pid={old_pid}"
-                );
+                let _ = writeln!(std::io::stderr(), "ALREADY_RUNNING pid={old_pid}");
                 return Err(CliError::Exit(1));
             }
             force_kill_pid(old_pid);
@@ -675,12 +672,7 @@ fn spawn_detached_listen_wake(
 
 #[cfg(unix)]
 #[allow(unsafe_code)] // setsid-before-exec; same Q1 pattern as bus_client::spawn.
-fn spawn_detached(
-    exe: &Path,
-    args: &[String],
-    stdout: File,
-    stderr: File,
-) -> Result<(), CliError> {
+fn spawn_detached(exe: &Path, args: &[String], stdout: File, stderr: File) -> Result<(), CliError> {
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
@@ -709,12 +701,7 @@ fn spawn_detached(
 }
 
 #[cfg(not(unix))]
-fn spawn_detached(
-    exe: &Path,
-    args: &[String],
-    stdout: File,
-    stderr: File,
-) -> Result<(), CliError> {
+fn spawn_detached(exe: &Path, args: &[String], stdout: File, stderr: File) -> Result<(), CliError> {
     use std::process::{Command, Stdio};
     let child = Command::new(exe)
         .args(args)
@@ -859,8 +846,7 @@ mod tests {
         };
         let mut out = Vec::new();
         let mut err = Vec::new();
-        let action =
-            write_wake_outcome(&outcome, "alice", true, None, &mut out, &mut err).unwrap();
+        let action = write_wake_outcome(&outcome, "alice", true, None, &mut out, &mut err).unwrap();
         assert_eq!(action, WakeAction::Continue);
         assert!(out.is_empty());
         assert!(err.is_empty());

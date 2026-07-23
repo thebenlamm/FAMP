@@ -28,8 +28,7 @@ use crate::cli::error::CliError;
 use crate::cli::install::{await_hook, toml_merge};
 
 /// Embedded Grok skill body ("just register" + Stop auto-wake).
-pub const FAMP_LISTEN_SKILL_MD: &str =
-    include_str!("../../../assets/skills/famp-listen/SKILL.md");
+pub const FAMP_LISTEN_SKILL_MD: &str = include_str!("../../../assets/skills/famp-listen/SKILL.md");
 
 #[derive(Debug, Args)]
 pub struct InstallGrokArgs {
@@ -177,12 +176,11 @@ fn install_stop_hook_json(path: &Path, await_shim: &Path) -> Result<(), CliError
             ]
         }
     });
-    let serialized = serde_json::to_string_pretty(&body).map_err(|source| {
-        CliError::JsonMergeParse {
+    let serialized =
+        serde_json::to_string_pretty(&body).map_err(|source| CliError::JsonMergeParse {
             path: path.to_path_buf(),
             source,
-        }
-    })?;
+        })?;
     std::fs::write(path, format!("{serialized}\n")).map_err(|source| CliError::Io {
         path: path.to_path_buf(),
         source,

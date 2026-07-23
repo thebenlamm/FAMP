@@ -97,11 +97,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     .ok();
 
     writeln!(err).ok();
-    writeln!(
-        err,
-        "uninstall-grok complete. (~/.claude left untouched.)"
-    )
-    .ok();
+    writeln!(err, "uninstall-grok complete. (~/.claude left untouched.)").ok();
     Ok(())
 }
 

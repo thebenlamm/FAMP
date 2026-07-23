@@ -41,7 +41,9 @@ fn famp_help_omits_deleted_federation_verbs() {
     }
     // Positive: host-neutral wake command is advertised.
     assert!(
-        stdout.lines().any(|l| l.trim_start().starts_with("listen-wake")),
+        stdout
+            .lines()
+            .any(|l| l.trim_start().starts_with("listen-wake")),
         "famp --help must advertise listen-wake; got:\n{stdout}"
     );
 }
