@@ -188,7 +188,16 @@ Plans:
   3. A user runs a peer-export command on machine A, moves the output out-of-band (e.g. copy/paste, Signal), and runs a peer-import command on machine B (and the reverse, B→A); after both imports, each gateway trusts the other's signing key via TOFU pin — no manual key material is exchanged over FAMP itself (TRUST-01).
   4. A cross-host envelope signed by a key that was never exported/imported/pinned is rejected by the receiving gateway with no state created and no implicit trust granted (TRUST-02).
 
-**Plans:** TBD
+**Plans:** 4 plans
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — Extend famp-envelope with 7 forward-compatible federation fields, byte-exact round-trip + local byte-identity (WIRE-02)
+- [ ] 08-02-PLAN.md — famp-crypto keygen (FampSigningKey::generate) + key_id fingerprint (WIRE-02, TRUST-01 prereq)
+- [ ] 08-03-PLAN.md — famp-gateway verify_inbound pure function + RejectReason (WIRE-01, TRUST-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-04-PLAN.md — famp peer export/import CLI + gateway keypair persistence + TOFU round-trip (TRUST-01)
 
 ### Phase 9: End-to-End Cross-Host Delivery
 
