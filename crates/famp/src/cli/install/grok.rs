@@ -54,27 +54,21 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         .join("skills")
         .join("famp-listen")
         .join("SKILL.md");
-    // Prefer bare `famp` when on PATH so shell/env moves stay portable;
-    // fall back to absolute path only when `which` fails.
-    let (command, command_note) = match which::which("famp") {
-        Ok(p) => (
-            "famp".to_string(),
-            format!("famp (on PATH; resolved {})", p.display()),
-        ),
-        Err(_) => {
-            let abs = home.join(".cargo").join("bin").join("famp");
-            (
-                abs.display().to_string(),
-                format!("{} (famp not on PATH)", abs.display()),
-            )
-        }
-    };
+    // Absolute path only. Grok's MCP spawn env often lacks ~/.cargo/bin on
+    // PATH, so bare `command = "famp"` fails with ENOENT (live smoke 2026-07-23).
+    // Re-run `famp install-grok` after moving the binary.
+    let famp_bin = which::which("famp")
+        .ok()
+        .unwrap_or_else(|| home.join(".cargo").join("bin").join("famp"));
 
     writeln!(err, "Installing Grok MCP entry into {}", home.display()).ok();
-    writeln!(err, "  resolved famp command: {command_note}").ok();
+    writeln!(err, "  resolved famp binary: {}", famp_bin.display()).ok();
 
     let mut famp_table = toml::Table::new();
-    famp_table.insert("command".into(), TomlValue::String(command));
+    famp_table.insert(
+        "command".into(),
+        TomlValue::String(famp_bin.display().to_string()),
+    );
     famp_table.insert(
         "args".into(),
         TomlValue::Array(vec![TomlValue::String("mcp".into())]),
@@ -214,10 +208,10 @@ mod tests {
         );
         assert_eq!(famp_t["startup_timeout_sec"].as_integer().unwrap(), 10);
         let cmd = famp_t["command"].as_str().unwrap();
-        // Prefer bare `famp` when on PATH; otherwise absolute path ending in famp.
+        // Absolute path required — Grok MCP spawn has a minimal PATH.
         assert!(
-            cmd == "famp" || cmd.ends_with("/famp") || cmd.ends_with("famp"),
-            "unexpected command: {cmd}"
+            cmd.ends_with("/famp") || Path::new(cmd).is_absolute(),
+            "expected absolute famp path, got: {cmd}"
         );
 
         let skill = home.join(".grok/skills/famp-listen/SKILL.md");

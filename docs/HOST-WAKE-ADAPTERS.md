@@ -53,8 +53,8 @@ PID-correlated fallback before no-op'ing (fail-open exit 0).
 
 ### Grok (non-blocking monitor)
 
-1. `famp install-grok` writes `[mcp_servers.famp]` (prefers bare `command =
-   "famp"` when on PATH) and the `famp-listen` skill.
+1. `famp install-grok` writes `[mcp_servers.famp]` with an **absolute** `famp`
+   path (Grok's MCP spawn PATH is minimal) and the `famp-listen` skill.
 2. `famp_register` (listen true) **mechanically arms** a supervised
    `famp listen-wake --as <id> --loop` daemon (pidfile; force-restart on
    re-register). Wake lines go to stdout/log **and**
