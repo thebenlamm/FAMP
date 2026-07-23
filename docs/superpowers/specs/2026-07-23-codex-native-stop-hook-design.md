@@ -210,6 +210,96 @@ The helper should replace the parts that are brittle:
 - shell JSON templating
 - PATH-dependent helper execution
 
+### Listen-state decision table
+
+Port of the shell/Python semantics. **Successful tool results only** — a failed
+tool result is ignored entirely. Replay successful control actions in transcript
+order:
+
+| Event | Success? | Effect on `active` / `last_identity` |
+|---|---|---|
+| `famp_register` with identity I, `listen` absent or not JSON false | yes | `last_identity = I`, `active = I` |
+| `famp_register` with identity I, `listen: false` | yes | `last_identity = I`, `active = ""` |
+| `famp_set_listen` with `listen: false` | yes | `active = ""` |
+| `famp_set_listen` with `listen: true` | yes | `active = last_identity` if `last_identity` non-empty |
+| Any of the above with failed tool result | — | ignore |
+
+Transcript scan: last **2 MB**, discarding the partial first line after seek
+(parity with shell).
+
+Formats accepted:
+
+- Claude: `message.content[]` `tool_use` / `tool_result`
+- Codex: `payload.type` `function_call` / `function_call_output`
+  (namespace `mcp__famp` when present)
+- Codex: `payload.type` `mcp_tool_call_end` with `invocation` / `result.Ok`
+  (`invocation.server` must be `famp` or absent)
+
+Tool name match is a suffix match: `name.ends_with("famp_register")` /
+`famp_set_listen`.
+
+**Emptiness is not an off-signal.** A successful `set_listen(true)` that
+replays with no resolvable identity (e.g. the `famp_register` scrolled out of
+the 2 MB tail after compaction) classifies as `Unresolved`, not
+`ExplicitlyOff`, so the PID-correlated fallback still runs.
+
+#### PID-correlated fallback
+
+When the transcript yields no active identity:
+
+1. Walk ancestor PIDs of the hook process (depth ≤ 6; skip 0/1).
+2. Find `famp mcp` children whose parent is an ancestor.
+3. Map unique name via `famp sessions` (or in-process equivalent).
+4. Adopt only if `inspect identities` shows `listen_mode == true` for that name.
+5. Never adopt by cwd alone (anti-hijack).
+6. Honor `FAMP_DISABLE_PID_FALLBACK=1` for hermetic tests.
+
+#### Codex rollout fallback
+
+When `transcript_path` is missing or not a file, and `session_id` is present:
+
+1. Read-only open of `state_5.sqlite` under `CODEX_SQLITE_HOME` / `CODEX_HOME`.
+2. `select rollout_path from threads where id = ?`.
+3. Allow only paths under realpath(`$CODEX_HOME/sessions`).
+4. Else glob `sessions/**/rollout-*<session_id>.jsonl`, newest mtime wins
+   (bounded recursion depth; symlinked directories skipped).
+
+### Parity matrix (shell → native)
+
+Source of truth for the shell side: `crates/famp/assets/famp-await.sh` plus the
+install/uninstall tests.
+
+**Any Keep row omitted from implementation is a regression.** The Status column
+records where the native implementation actually landed.
+
+| # | Behavior | Decision | Status | Notes |
+|---|---|---|---|---|
+| P01 | Fail-open exit 0 always for host trap avoidance | **Keep** | done | |
+| P02 | Stdin JSON → transcript_path / session_id | **Keep** | done | Native parse |
+| P03 | Disconnect stdin after read | **Keep** | done | fd 0 reopened on `/dev/null` after read |
+| P04 | Hook log under state dir / `FAMP_HOOK_LOG` | **Keep** | done | RFC3339 timestamps; size-capped with `.1` rollover |
+| P05 | Codex session_id → rollout (sqlite + glob) | **Keep** | done | |
+| P06 | 2 MB transcript tail scan | **Keep** | done | |
+| P07 | Claude + Codex multi-format tool parse | **Keep** | done | |
+| P08 | Success-only action replay; listen default on | **Keep** | done | |
+| P09 | `set_listen(false)` clears active | **Keep** | done | |
+| P10 | PID-correlated fallback + anti-hijack | **Keep** | done | Compaction resilience |
+| P11 | `FAMP_DISABLE_PID_FALLBACK` | **Keep** | done | |
+| P12 | Identity regex + newline reject | **Keep** | done | |
+| P13 | In-process / same-binary await 23h | **Keep** (form changes) | done | Not a shell-out to PATH `famp` |
+| P14 | Issue #21 queue-watch + abort-on-fd | **Defer for Codex** | deferred | See § Deferred Parity |
+| P15 | Await exit 3 → no block, exit 0 | **Keep** when abort armed | n/a | Unreachable while P14 deferred; `outcome.aborted` branch kept defensively |
+| P16 | 64KB envelope cap / UTF-8 sanitize before meta | **Keep** if meta still parses await output | superseded | Native reads typed `AwaitOutcome` fields; no string parse to cap or sanitize |
+| P17 | Envelope backup under state `received/` | **Keep** | done | |
+| P18 | Wrapper JSON envelopes + legacy line fallback | **Keep** | superseded | Structured `AwaitOutcome` replaces both wire shapes |
+| P19 | #26 agent `mailbox_unread` / last_sender | **Keep** | done | Channel uses batch count |
+| P20 | Unread 0 suppresses wake | **Keep** | done | |
+| P21 | Sender validation | **Keep** | done | |
+| P22 | Channel vs agent reason templates | **Keep** | done | Notification-only |
+| P23 | Final block JSON via `jq` | **Replace** | done | `serde_json` only |
+| P24 | Python for extraction / meta | **Replace** | done | Rust ports |
+| P25 | Shell as critical path | **Remove** after Phase 2 | done | `install-codex` wires the native command |
+
 ---
 
 ## Migration Plan

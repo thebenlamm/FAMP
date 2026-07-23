@@ -15,7 +15,25 @@ use super::transcript::validate_sender;
 
 /// Shape + emit `{"decision":"block","reason":"..."}` for a successful wake.
 /// Returns `true` if a block decision was written to `out`.
+///
+/// Resolves the broker socket from the environment; see
+/// [`emit_block_decision_at`] for the injectable-socket variant.
 pub async fn emit_block_decision(
+    outcome: &AwaitOutcome,
+    identity: &str,
+    out: &mut dyn Write,
+) -> bool {
+    let sock = resolve_sock_path();
+    emit_block_decision_at(&sock, outcome, identity, out).await
+}
+
+/// [`emit_block_decision`] against an explicit broker socket path.
+///
+/// Tests must use this: the `#26` unread check below otherwise talks to
+/// whatever broker the developer happens to have running, so a live session
+/// under the same identity would flip the result.
+pub async fn emit_block_decision_at(
+    sock: &Path,
     outcome: &AwaitOutcome,
     identity: &str,
     out: &mut dyn Write,
@@ -33,7 +51,7 @@ pub async fn emit_block_decision(
 
     // #26: for agent mailboxes, prefer disk-ack unread over await-batch length.
     if mailbox_kind != "channel" {
-        if let Some((unread, last_sender)) = actionable_unread(identity).await {
+        if let Some((unread, last_sender)) = actionable_unread_at(sock, identity).await {
             if unread == 0 {
                 log(&format!(
                     "await batch had {await_batch_count} envelopes but disk-ack unread=0 for {identity}; no actionable wake (#26)"
@@ -133,11 +151,6 @@ fn build_reason(count: u64, sender: &str, mailbox_kind: &str, mailbox_name: &str
     }
 }
 
-async fn actionable_unread(identity: &str) -> Option<(u64, String)> {
-    let sock = resolve_sock_path();
-    actionable_unread_at(&sock, identity).await
-}
-
 async fn actionable_unread_at(sock: &Path, identity: &str) -> Option<(u64, String)> {
     let ProbeOutcome::Healthy { mut stream } = raw_connect_probe(sock).await else {
         return None;
@@ -173,6 +186,13 @@ async fn actionable_unread_at(sock: &Path, identity: &str) -> Option<(u64, Strin
 mod tests {
     use super::*;
     use crate::cli::await_cmd::AwaitOutcome;
+    use std::path::PathBuf;
+
+    /// A path with no listener, so `actionable_unread_at` fails open.
+    /// Hermetic: never touches the developer's live broker.
+    fn dead_sock() -> PathBuf {
+        std::env::temp_dir().join("famp-hook-emit-test-no-listener.sock")
+    }
 
     #[test]
     fn agent_reason_single() {
@@ -201,7 +221,7 @@ mod tests {
             aborted: false,
         };
         let mut buf = Vec::new();
-        assert!(!emit_block_decision(&outcome, "dk", &mut buf).await);
+        assert!(!emit_block_decision_at(&dead_sock(), &outcome, "dk", &mut buf).await);
         assert!(buf.is_empty());
     }
 
@@ -215,9 +235,10 @@ mod tests {
             diagnostic: None,
             aborted: false,
         };
-        // Without a live broker, #26 inspect fails open and keeps batch count.
+        // No listener on this socket, so the #26 inspect probe fails open and
+        // the await-batch count is kept.
         let mut buf = Vec::new();
-        let emitted = emit_block_decision(&outcome, "dk", &mut buf).await;
+        let emitted = emit_block_decision_at(&dead_sock(), &outcome, "dk", &mut buf).await;
         assert!(emitted);
         let s = String::from_utf8(buf).unwrap();
         let v: Value = serde_json::from_str(s.trim()).unwrap();

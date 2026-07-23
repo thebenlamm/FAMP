@@ -42,7 +42,7 @@ pub fn run(args: CodexStopArgs) -> Result<(), CliError> {
 fn run_inner(args: CodexStopArgs) -> Result<(), CliError> {
     log("hook invoked (native codex-stop)");
     let input = stdin::read_stop_hook_input();
-    // Disconnect-equivalent: we already consumed stdin fully.
+    disconnect_stdin();
 
     if let Some(reason) = input.reason.as_deref() {
         if !reason.is_empty() && reason != "end_turn" {
@@ -159,6 +159,25 @@ async fn run_async(args: CodexStopArgs, input: StopHookInput) -> Result<(), CliE
     let _ = stdout.flush();
     Ok(())
 }
+
+/// Point fd 0 at `/dev/null`, parity with the shell adapter's `exec 0</dev/null`.
+///
+/// Reading stdin to EOF is *not* equivalent: the fd stays open, so the hook
+/// would hold the host's pipe across a park of up to 23h. Best-effort — any
+/// failure leaves the original fd in place and is logged, never fatal (P03).
+#[cfg(unix)]
+fn disconnect_stdin() {
+    let Ok(devnull) = std::fs::File::open("/dev/null") else {
+        log("could not open /dev/null; leaving stdin connected");
+        return;
+    };
+    if let Err(e) = nix::unistd::dup2_stdin(&devnull) {
+        log(&format!("could not disconnect stdin: {e}"));
+    }
+}
+
+#[cfg(not(unix))]
+fn disconnect_stdin() {}
 
 fn resolve_transcript(input: &StopHookInput) -> Option<PathBuf> {
     if let Some(ref p) = input.transcript_path {

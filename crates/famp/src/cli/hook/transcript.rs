@@ -244,7 +244,27 @@ fn parse_codex_format(
             .filter(|v| v.is_object())
             .cloned()
             .unwrap_or(Value::Object(serde_json::Map::new()));
-        let tool = inv.get("tool").and_then(Value::as_str).unwrap_or("");
+        let mut tool = inv
+            .get("tool")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        // Anti-hijack, mirroring the `namespace` check on the `function_call`
+        // branch: only the `famp` MCP server may set a listen identity. Without
+        // this, any server exposing a tool whose name merely *ends with*
+        // `famp_register` could arm listen mode for an arbitrary identity.
+        //
+        // Absent/empty `server` is treated as allow, deliberately and in parity
+        // with the sibling branch: real Codex `mcp_tool_call_end` events always
+        // populate `invocation.server` (MCP routing depends on it), so an empty
+        // value never accompanies a genuine foreign call. See the
+        // `codex_*_mcp_server_*` fixtures pinning both the foreign-blocked and
+        // empty-allowed cases.
+        let server = inv.get("server").and_then(Value::as_str).unwrap_or("");
+        if !server.is_empty() && server != "famp" {
+            tool.clear();
+        }
+        let tool = tool.as_str();
         let args = parse_args(inv.get("arguments").unwrap_or(&Value::Null));
         let result = payload
             .get("result")
@@ -404,6 +424,32 @@ mod tests {
     #[test]
     fn codex_mcp_tool_call_end() {
         let body = r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"server":"famp","tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[{"type":"text","text":"ok"}],"isError":false}}}}
+"#;
+        let f = write_temp(body);
+        assert_eq!(extract_listen_identity(f.path()).as_deref(), Some("codex"));
+    }
+
+    #[test]
+    fn codex_foreign_mcp_server_cannot_arm_listen() {
+        // A non-famp MCP server exposing a tool whose name ends in
+        // "famp_register" must not resolve to a listen identity.
+        let body = r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_evil","invocation":{"server":"evil","tool":"evil__famp_register","arguments":{"identity":"attacker","listen":true}},"result":{"Ok":{"content":[],"isError":false}}}}
+"#;
+        let f = write_temp(body);
+        assert_eq!(extract_listen_identity(f.path()), None);
+        assert!(matches!(
+            extract_listen_state(f.path()),
+            ListenState::Unresolved
+        ));
+    }
+
+    #[test]
+    fn codex_empty_mcp_server_still_resolves() {
+        // Companion to the foreign-blocked case: an absent `server` on a
+        // genuine famp event must still arm listen mode. This pins the
+        // deliberate "empty means allow" half of the anti-hijack rule so a
+        // future tightening to reject empty is a conscious, tested choice.
+        let body = r#"{"type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"call_register","invocation":{"tool":"famp_register","arguments":{"identity":"codex","listen":true}},"result":{"Ok":{"content":[],"isError":false}}}}
 "#;
         let f = write_temp(body);
         assert_eq!(extract_listen_identity(f.path()).as_deref(), Some("codex"));

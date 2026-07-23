@@ -9,6 +9,10 @@ blocker and functional bug found in the same review *was* fixed and shipped.
 Nothing here is a known-broken wake path; these are hardening, hermeticity, and
 documentation debt.
 
+> **Status 2026-07-23:** §1–§7 are all **RESOLVED**; each section below carries
+> its resolution note. §8 (`famp_local_wire_migration`) remains red and remains
+> not ours. Nothing in this file is outstanding work.
+
 ---
 
 ## 0. State you are inheriting
@@ -39,7 +43,7 @@ deployed binary, not the build tree.
 
 ---
 
-## 1. The deleted `-amended` spec took the parity matrix with it
+## 1. The deleted `-amended` spec took the parity matrix with it — RESOLVED
 
 **Severity: highest of the items here — this is the one that loses information.**
 
@@ -61,9 +65,18 @@ the surviving design doc:
 git show ca7cbee:docs/superpowers/specs/2026-07-23-codex-native-stop-hook-design-amended.md
 ```
 
+**Resolved.** Both artifacts are folded into
+[`2026-07-23-codex-native-stop-hook-design.md`](2026-07-23-codex-native-stop-hook-design.md)
+under § Behavior Parity, as *Listen-state decision table* (with the PID and
+Codex-rollout fallback rules) and *Parity matrix (shell → native)*. The matrix
+gained a **Status** column recording where the native implementation landed:
+P01–P13 and P17–P25 done, P14 deferred, P15 unreachable while P14 is deferred,
+P16/P18 superseded — the native path reads typed `AwaitOutcome` fields, so
+there is no serialized string to cap, sanitize, or fall back on.
+
 ---
 
-## 2. `emit.rs` unit test reaches the real user broker
+## 2. `emit.rs` unit test reaches the real user broker — RESOLVED
 
 `crates/famp/src/cli/hook/emit.rs:209` — `emits_native_json_without_jq` calls
 `emit_block_decision`, which for agent mailboxes calls `actionable_unread` →
@@ -78,9 +91,15 @@ Fix: give `emit_block_decision` an injectable socket path (there is already an
 `actionable_unread_at(sock, identity)` seam directly beneath it), and have the
 test point at a temp path with no listener so the inspect probe fails open.
 
+**Resolved** as described. `emit_block_decision_at(sock, ...)` carries the
+logic; `emit_block_decision` is now a thin wrapper that resolves the socket
+from the environment (production callers are unchanged). Both `emit.rs` tests
+pass a `dead_sock()` temp path with no listener, so they no longer touch the
+developer's broker.
+
 ---
 
-## 3. `walk_sessions` follows symlinks with no depth cap
+## 3. `walk_sessions` follows symlinks with no depth cap — RESOLVED
 
 `crates/famp/src/cli/hook/codex_rollout.rs:125-131` — recursion is gated on
 `path.is_dir()`, which follows symlinks. A symlink cycle anywhere under
@@ -90,9 +109,16 @@ per Stop.
 Fix: cap recursion depth (rollouts live at `sessions/YYYY/MM/DD/`, so 4–6 is
 generous) and/or skip symlinked directories via `symlink_metadata`.
 
+**Resolved — both.** `walk_sessions` takes a `depth` parameter seeded from
+`MAX_WALK_DEPTH = 6`, and uses `symlink_metadata` to refuse to *descend into* a
+symlinked directory (symlinked rollout *files* are still matched — they carry
+no cycle risk). Both bounds log when they fire. Tests:
+`symlink_cycle_terminates` (a `sessions/loop -> sessions` cycle) and
+`depth_cap_stops_recursion`.
+
 ---
 
-## 4. SQLite URI is built without escaping
+## 4. SQLite URI is built without escaping — RESOLVED
 
 `crates/famp/src/cli/hook/codex_rollout.rs:83` —
 `format!("file:{}?mode=ro", db.display())`. A `CODEX_HOME` containing `?`, `#`,
@@ -103,9 +129,14 @@ a log line saying so.
 Fix: percent-encode the path, or open by `Path` with
 `SQLITE_OPEN_READ_ONLY` and drop the URI form entirely.
 
+**Resolved** via the second option — `Connection::open_with_flags(db,
+SQLITE_OPEN_READ_ONLY)`, no `SQLITE_OPEN_URI`, no URI string. Regression test
+`sqlite_opens_when_path_has_uri_metacharacters` uses a Codex home named
+`cod ex?home#1`.
+
 ---
 
-## 5. `mcp_tool_call_end` ignores `invocation.server`
+## 5. `mcp_tool_call_end` ignores `invocation.server` — RESOLVED
 
 `crates/famp/src/cli/hook/transcript.rs:241-247` — the `function_call` branch
 checks `payload.namespace` against `mcp__famp` (line 208), but the
@@ -121,9 +152,15 @@ Fix: require `invocation.server == "famp"` (or empty) in the
 `mcp_tool_call_end` branch. Add a fixture with a foreign server name asserting
 `ListenState::Unresolved`.
 
+**Resolved** as described — the branch now clears `tool` when
+`invocation.server` is non-empty and not `famp`, mirroring the `namespace`
+check on the `function_call` sibling. Fixture:
+`codex_foreign_mcp_server_cannot_arm_listen` (server `evil`, tool
+`evil__famp_register`) asserts `ListenState::Unresolved`.
+
 ---
 
-## 6. P03: stdin is not actually disconnected
+## 6. P03: stdin is not actually disconnected — RESOLVED
 
 `crates/famp/src/cli/hook/codex_stop.rs:45` carries the comment
 `// Disconnect-equivalent: we already consumed stdin fully.` The shell adapter
@@ -135,9 +172,15 @@ Reading to EOF is not equivalent — the fd stays open. Practical impact is low
 recorded as an honesty fix: either close fd 0 after the read, or replace the
 comment with what actually happens and why it is acceptable.
 
+**Resolved** with the real disconnect, not the comment. `disconnect_stdin()`
+points fd 0 at `/dev/null` via `nix::unistd::dup2_stdin` immediately after
+`read_stop_hook_input()` — the direct analogue of the shell adapter's
+`exec 0</dev/null`. Best-effort and logged on failure, never fatal;
+`#[cfg(not(unix))]` is a no-op.
+
 ---
 
-## 7. Hook log: format change and unbounded growth
+## 7. Hook log: format change and unbounded growth — RESOLVED
 
 `crates/famp/src/cli/hook/log.rs:29-35` emits raw epoch seconds. The shell
 adapter emitted `date -Iseconds`. Anything grepping
@@ -149,6 +192,16 @@ that writes several lines per turn per identity indefinitely.
 
 Fix: emit RFC3339 (`humantime::format_rfc3339_seconds` is already in the tree,
 no new dependency), and add a size check with a single `.1` rollover.
+
+**Resolved — both.** `timestamp()` now returns
+`humantime::format_rfc3339_seconds(SystemTime::now())`, matching the shell
+adapter's `date -Iseconds`. `rotate_if_needed` renames the live log to
+`<log>.1` once it passes `MAX_LOG_BYTES` (4 MiB), one generation, best-effort.
+Tests: `timestamp_is_rfc3339_seconds`, `rotates_once_past_cap`,
+`rotate_tolerates_missing_file`.
+
+Note the migration-window caveat still holds for lines already written: epoch
+and RFC3339 lines coexist in any pre-existing `await-hook.log` until it rolls.
 
 ---
 
@@ -164,6 +217,9 @@ Do not let it mask a real regression — baseline before assuming.
 
 ## Suggested order
 
+*(Historical — this was the plan; §1–§7 were worked in this order and are all
+resolved.)*
+
 1. **§1** — restore the parity matrix before anything else; it is the checklist
    the remaining items are measured against, and it is only recoverable from
    git history.
@@ -171,3 +227,22 @@ Do not let it mask a real regression — baseline before assuming.
    injection).
 3. **§2** — unblocks trustworthy CI on the hook module.
 4. **§4**, **§6**, **§7** — cleanup.
+
+---
+
+## Verification of the follow-up changeset
+
+- `cargo clippy --workspace --all-targets` — **0 errors**. Warning counts are
+  unchanged from `9fc1454` except `future cannot be sent between threads
+  safely`, which went 3 → 4: `emit_block_decision_at` inherits the same
+  pre-existing `&mut dyn Write`-across-await shape as its wrapper.
+- `cargo test -p famp` — green except the two §8 failures, which reproduce
+  identically on `9fc1454`.
+- `cargo fmt` reformats five files untouched by this work
+  (`cli/install/grok.rs`, `cli/listen_wake.rs`, `cli/uninstall/grok.rs`,
+  `tests/cli_help_invariant.rs`, `tests/install_grok.rs`). That churn was
+  reverted to keep this diff surgical — the crate is **not** `fmt`-clean on
+  `main`, and cleaning it is its own commit.
+- Not run: the end-to-end check (`just install` + `famp install-codex` in a
+  real project + a live wake). No behavior here is proven against a running
+  Codex host.
