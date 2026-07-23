@@ -51,6 +51,8 @@ use url as _;
 // dependency declared so workspace consumers and integration tests can
 // reach `uuid::Uuid` parsing helpers without re-adding the dep.
 use uuid as _;
+// Used by native Codex Stop-hook rollout resolution (`cli::hook::codex_rollout`).
+use rusqlite as _;
 // `assert_cmd` is a dev-dependency consumed by integration tests
 // (`crates/famp/tests/*`); silence it in the library test compile unit.
 #[cfg(test)]

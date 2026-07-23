@@ -9,6 +9,7 @@ pub mod config;
 pub mod daemon;
 pub mod error;
 pub mod home;
+pub mod hook;
 pub mod identity;
 pub mod inbox;
 pub mod info;
@@ -150,6 +151,10 @@ pub enum Commands {
     /// systemd --user on Linux. DAEMON-02 guardian plist review gate is
     /// blocking: the service must not be loaded until guardian signs off.
     Daemon(daemon::DaemonArgs),
+    /// Host Stop-hook helpers (native). `famp hook codex-stop` owns the
+    /// full Codex listen-mode lifecycle: transcript resolve, await, and
+    /// block-decision JSON — no jq/python on the critical path.
+    Hook(hook::HookArgs),
 }
 
 /// Build a multi-thread tokio runtime and block on `fut`. Shared by every
@@ -186,6 +191,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::UninstallCodex(args) => uninstall::codex::run(args),
         Commands::InstallGrok(args) => install::grok::run(args),
         Commands::UninstallGrok(args) => uninstall::grok::run(args),
+        Commands::Hook(args) => hook::run(args),
         Commands::Info(args) => info::run(&args).map(|_| ()),
         // Async arms: each boots a multi-thread tokio runtime via
         // `block_on_async` and dispatches into the subcommand's

@@ -69,6 +69,7 @@ nix = { version = "0.31", features = ["process", "fs", "signal", "user"] }
 dirs = "5"
 regex = { workspace = true }
 which = "7"
+rusqlite = { version = "0.32", features = ["bundled"] }
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).

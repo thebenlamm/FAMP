@@ -79,7 +79,17 @@ pub(crate) fn is_famp_command(command: &str, shims: &[String]) -> bool {
             return true;
         }
     }
-    false
+    // Native helper regardless of famp binary location: consecutive tokens
+    // `hook` + `codex-stop` identify FAMP-owned Codex Stop entries after a
+    // reinstall to a different path. Do NOT match bare `famp-await.sh`
+    // basenames — that would hijack unrelated same-named scripts.
+    let tokens: Vec<&str> = command
+        .split_whitespace()
+        .map(|t| t.trim_matches(['\'', '"']))
+        .collect();
+    tokens
+        .windows(2)
+        .any(|w| w[0] == "hook" && w[1] == "codex-stop")
 }
 
 #[cfg(test)]

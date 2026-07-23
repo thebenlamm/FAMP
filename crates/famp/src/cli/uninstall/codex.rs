@@ -2,8 +2,8 @@
 //!
 //! Reverses the `install-codex` mutations:
 //!  1. removes `~/.codex/config.toml :: [mcp_servers.famp]`
-//!  2. removes `<project>/.codex/hooks/famp-await.sh`
-//!  3. surgically removes FAMP-owned Codex Stop hook entries
+//!  2. removes legacy `<project>/.codex/hooks/famp-await.sh` if present
+//!  3. surgically removes FAMP-owned Codex Stop hook entries (native + legacy)
 //!  4. removes the matching Codex hook-trust state entries
 
 use std::io::Write;
@@ -64,6 +64,7 @@ pub fn run_at_project(
     let config_path = home.join(".codex").join("config.toml");
     let hooks_path = project.join(".codex").join("hooks.json");
     let await_shim_path = project.join(".codex").join("hooks").join("famp-await.sh");
+    let famp_bin = install_codex::resolve_famp_bin(&home);
 
     writeln!(err, "Uninstalling Codex MCP entry from {}", home.display()).ok();
     let outcome = toml_merge::remove_codex_table(&config_path, "mcp_servers", "famp")?;
@@ -78,12 +79,13 @@ pub fn run_at_project(
     await_hook::remove_shim(&await_shim_path)?;
     writeln!(
         err,
-        "  [2/4] {} :: await shim removed",
+        "  [2/4] {} :: legacy await shim removed",
         await_shim_path.display()
     )
     .ok();
 
-    let removed_trust_keys = surgical_remove_codex_stop_entry(&hooks_path, &await_shim_path, err)?;
+    let removed_trust_keys =
+        surgical_remove_codex_stop_entry(&hooks_path, &famp_bin, &await_shim_path, err)?;
     let mut removed_any_trust = false;
     for trust_key in &removed_trust_keys {
         let outcome =
@@ -100,7 +102,7 @@ pub fn run_at_project(
             removed_any_trust = true;
         }
     }
-    let trusted_hashes = install_codex::famp_trusted_hashes("stop", &await_shim_path);
+    let trusted_hashes = install_codex::famp_trusted_hashes("stop", &famp_bin, &await_shim_path);
     let stale_removed = install_codex::remove_stale_codex_hook_trust(
         &config_path,
         &hooks_path,
@@ -135,6 +137,7 @@ pub fn run_at_project(
 
 fn surgical_remove_codex_stop_entry(
     hooks_path: &Path,
+    famp_bin: &Path,
     await_shim_path: &Path,
     err: &mut dyn Write,
 ) -> Result<Vec<String>, CliError> {
@@ -186,7 +189,7 @@ fn surgical_remove_codex_stop_entry(
         return Ok(Vec::new());
     }
 
-    let famp_paths = install_codex::famp_hook_command_patterns(await_shim_path);
+    let famp_paths = install_codex::famp_hook_command_patterns(famp_bin, await_shim_path);
     let mut removed_trust_keys = Vec::new();
     let mut filtered = Vec::new();
     for (group_index, entry) in prior_stop.iter().enumerate() {
