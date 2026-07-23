@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: Federation Profile)
 current_phase: 07
 current_phase_name: Broker-Liveness Fork + Gateway Skeleton
-status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-07-23T19:17:57.999Z"
+status: verifying
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-07-23T19:43:42.307Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 17
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 Phase: 07 (Broker-Liveness Fork + Gateway Skeleton) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-23 — Phase 07 execution started
 
 ## v1.0 Phase Map
@@ -110,6 +110,8 @@ Last activity: 2026-07-23 — Phase 07 execution started
 - [05-04]: integration test cleanup-before-assert — launchctl bootout/uninstall runs before any assert!/expect! call so a panic cannot leave a persistent LaunchAgent on the machine.
 - [07-01]: GatewayError connect-failure mapping collapses to BrokerUnreachable; famp-gateway reuses BusClient via path dep on famp rather than a minimal hand-rolled UDS client
 - [Phase 07-broker-liveness-fork-gateway-skeleton]: Combined survive+reap into a single pure-broker LIVE-01 test rather than splitting; pins register()'s no-pid-uniqueness fact deterministically
+- [07-03]: GW-04 test uses a D-10 bind_as proxy connection as the sender instead of a third spawned process
+- [07-03]: Cross-package Command::cargo_bin(famp) needs an explicit cargo build -p famp --bin famp prebuild step -- CARGO_BIN_EXE_famp is not propagated across package boundaries by Cargo
 
 ## Issues / Blockers
 
@@ -210,11 +212,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 05-daemon-service-management-version-safety P04 | 35min | 2 tasks | 4 files |
 | Phase 07 P01 | 45min | 2 tasks | 6 files |
 | Phase 07-broker-liveness-fork-gateway-skeleton P02 | 15min | 1 tasks | 1 files |
+| Phase 07-broker-liveness-fork-gateway-skeleton P03 | 70min | 2 tasks | 7 files |
 
 ## Session
 
-**Last session:** 2026-07-23T19:16:59.158Z
-**Stopped At:** Completed 07-01-PLAN.md
+**Last session:** 2026-07-23T19:43:42.300Z
+**Stopped At:** Completed 07-03-PLAN.md
 **Resume File:** None
 
 ## Operator Next Steps
