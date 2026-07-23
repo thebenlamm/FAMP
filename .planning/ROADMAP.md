@@ -170,7 +170,7 @@ Plans:
 **Wave 1**
 
 - [x] 07-01-PLAN.md — famp-gateway crate scaffold + connect-with-own-PID mechanism (ProxiedPrincipal/GatewayRegistry/bin) + no-spawn BusClient constructor (LIVE-01, LIVE-02, GW-04)
-- [ ] 07-02-PLAN.md — pure-broker LIVE-01 test: N clients sharing one PID survive the sweep and reap together (LIVE-01)
+- [x] 07-02-PLAN.md — pure-broker LIVE-01 test: N clients sharing one PID survive the sweep and reap together (LIVE-01)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -381,7 +381,7 @@ Rough ordering inside v1.0+ (not committed):
 | 4. Broker Lifecycle & Bootstrap Diagnostics | v0.11 | 3/3 | Complete | 2026-06-04 |
 | 5. Daemon Service Management & Version Safety | v0.11 | 5/5 | Complete | 2026-06-04 |
 | 6. Onboarding & Cross-Platform Docs | v0.11 | 3/3 | Complete | 2026-06-06 |
-| 7. Broker-Liveness Fork + Gateway Skeleton | v1.0 | 1/3 | In Progress|  |
+| 7. Broker-Liveness Fork + Gateway Skeleton | v1.0 | 2/3 | In Progress|  |
 | 8. Signed Cross-Host Envelope + Trust Bootstrap | v1.0 | 0/TBD | Not started | - |
 | 9. End-to-End Cross-Host Delivery | v1.0 | 0/TBD | Not started | - |
 | 10. Test Reactivation + Setup Docs | v1.0 | 0/TBD | Not started | - |

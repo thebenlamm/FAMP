@@ -114,3 +114,9 @@ None - no external service configuration required.
 ---
 *Phase: 07-broker-liveness-fork-gateway-skeleton*
 *Completed: 2026-07-23*
+
+## Self-Check: PASSED
+- FOUND: .planning/phases/07-broker-liveness-fork-gateway-skeleton/07-02-SUMMARY.md
+- FOUND: live01_shared_pid_clients_survive_sweep_and_reap_together in crates/famp-bus/src/broker/handle/tests.rs
+- FOUND: commit d6e25bb (test)
+- FOUND: commit 546d82d (docs/summary)

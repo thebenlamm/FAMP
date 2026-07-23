@@ -6,14 +6,14 @@ current_phase: 07
 current_phase_name: Broker-Liveness Fork + Gateway Skeleton
 status: executing
 stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-07-23T19:13:19.673Z"
+last_updated: "2026-07-23T19:17:57.999Z"
 last_activity: 2026-07-23
 last_activity_desc: Phase 07 execution started
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 ## Current Position
 
 Phase: 07 (Broker-Liveness Fork + Gateway Skeleton) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-23 — Phase 07 execution started
 
@@ -109,6 +109,7 @@ Last activity: 2026-07-23 — Phase 07 execution started
 - [05-04]: check_not_sandboxed creates bus_dir before probe — preflight_bind_probe returns Ok on ENOENT (not EPERM/EACCES), so a missing bus_dir would silently pass the probe even in a sandbox. create_dir_all before the probe ensures a real permission answer (BOOT-02 correctness).
 - [05-04]: integration test cleanup-before-assert — launchctl bootout/uninstall runs before any assert!/expect! call so a panic cannot leave a persistent LaunchAgent on the machine.
 - [07-01]: GatewayError connect-failure mapping collapses to BrokerUnreachable; famp-gateway reuses BusClient via path dep on famp rather than a minimal hand-rolled UDS client
+- [Phase 07-broker-liveness-fork-gateway-skeleton]: Combined survive+reap into a single pure-broker LIVE-01 test rather than splitting; pins register()'s no-pid-uniqueness fact deterministically
 
 ## Issues / Blockers
 
@@ -208,10 +209,11 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 05-daemon-service-management-version-safety P05 | 45min | 2 tasks | 4 files |
 | Phase 05-daemon-service-management-version-safety P04 | 35min | 2 tasks | 4 files |
 | Phase 07 P01 | 45min | 2 tasks | 6 files |
+| Phase 07-broker-liveness-fork-gateway-skeleton P02 | 15min | 1 tasks | 1 files |
 
 ## Session
 
-**Last session:** 2026-07-23T19:13:19.664Z
+**Last session:** 2026-07-23T19:16:59.158Z
 **Stopped At:** Completed 07-01-PLAN.md
 **Resume File:** None
 
