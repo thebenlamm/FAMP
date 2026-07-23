@@ -1,15 +1,19 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: Federation Profile — Gateway Core
-status: planning
-last_updated: "2026-07-23T18:14:54.412Z"
+milestone_name: Federation Profile)
+current_phase: 07
+current_phase_name: Broker-Liveness Fork + Gateway Skeleton
+status: executing
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-07-23T19:13:19.673Z"
 last_activity: 2026-07-23
+last_activity_desc: Phase 07 execution started
 progress:
-  total_phases: 4
+  total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -23,14 +27,14 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extends that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Ready for `/gsd-plan-phase 7` (Broker-Liveness Fork + Gateway Skeleton — the gating spine).
+**Current focus:** Phase 07 — Broker-Liveness Fork + Gateway Skeleton
 
 ## Current Position
 
-Phase: Not started — Phase 7 is next
-Plan: —
-Status: Roadmap created, awaiting phase planning
-Last activity: 2026-07-23 — ROADMAP.md + REQUIREMENTS.md traceability written for v1.0 Phases 7–10
+Phase: 07 (Broker-Liveness Fork + Gateway Skeleton) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-07-23 — Phase 07 execution started
 
 ## v1.0 Phase Map
 
@@ -104,6 +108,7 @@ Last activity: 2026-07-23 — ROADMAP.md + REQUIREMENTS.md traceability written 
 - [05-02]: Tasks 1+2 implemented together in a single commit: DaemonError and generate_plist both live in install.rs; splitting into separate commits would have required a partial install.rs that doesn't compile until Task 2. sample_fixture_matches_generate_plist test added for byte-exact guardian artifact invariant via include_str!.
 - [05-04]: check_not_sandboxed creates bus_dir before probe — preflight_bind_probe returns Ok on ENOENT (not EPERM/EACCES), so a missing bus_dir would silently pass the probe even in a sandbox. create_dir_all before the probe ensures a real permission answer (BOOT-02 correctness).
 - [05-04]: integration test cleanup-before-assert — launchctl bootout/uninstall runs before any assert!/expect! call so a panic cannot leave a persistent LaunchAgent on the machine.
+- [07-01]: GatewayError connect-failure mapping collapses to BrokerUnreachable; famp-gateway reuses BusClient via path dep on famp rather than a minimal hand-rolled UDS client
 
 ## Issues / Blockers
 
@@ -202,12 +207,13 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 05 P01 | 35 min | 2 tasks | 18 files |
 | Phase 05-daemon-service-management-version-safety P05 | 45min | 2 tasks | 4 files |
 | Phase 05-daemon-service-management-version-safety P04 | 35min | 2 tasks | 4 files |
+| Phase 07 P01 | 45min | 2 tasks | 6 files |
 
 ## Session
 
-**Last session:** 2026-06-04T23:33:02.655Z
-**Stopped At:** Phase 6 context gathered
-**Resume File:** .planning/phases/06-onboarding-cross-platform-docs/06-CONTEXT.md
+**Last session:** 2026-07-23T19:13:19.664Z
+**Stopped At:** Completed 07-01-PLAN.md
+**Resume File:** None
 
 ## Operator Next Steps
 
