@@ -2637,3 +2637,112 @@ fn await_u64_max_timeout_parks_without_overflow_panic() {
         "a u64::MAX timeout must still park (clamped by WR-05), not panic: {outs:?}"
     );
 }
+
+/// LIVE-01 (07-02): pins the load-bearing fact behind Design A —
+/// `register()` puts no pid-uniqueness constraint on clients. N clients
+/// (`alice`, `bob`) share one PID (standing in for one gateway process
+/// backing multiple proxied remote principals). Falsification order
+/// matters: a mistaken pid-uniqueness guard in `register()` would make
+/// the SECOND `register` call fail before the sweep is ever reached, so
+/// this test asserts BOTH registrations succeed first, THEN drives a
+/// live-PID Tick (both survive), THEN kills the shared PID and drives
+/// another Tick (both reap together, no orphan).
+#[test]
+fn live01_shared_pid_clients_survive_sweep_and_reap_together() {
+    const SHARED_PID: u32 = 4242;
+
+    let env = TestEnv::default();
+    let liveness_handle = Rc::clone(&env.liveness);
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    // Two distinct principals, same PID — the Design A shape.
+    hello_canonical(&mut broker, 1, "alice", now);
+    let alice_reg = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Register {
+                name: "alice".into(),
+                pid: SHARED_PID,
+                cwd: None,
+                listen: false,
+            },
+        },
+        now,
+    );
+    assert!(
+        alice_reg
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::RegisterOk { .. }))),
+        "alice's register (shared pid) must succeed: {alice_reg:?}"
+    );
+
+    hello_canonical(&mut broker, 2, "bob", now);
+    let bob_reg = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Register {
+                name: "bob".into(),
+                pid: SHARED_PID,
+                cwd: None,
+                listen: false,
+            },
+        },
+        now,
+    );
+    assert!(
+        bob_reg
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::RegisterOk { .. }))),
+        "bob's register with the SAME pid as alice must also succeed — \
+         register() must impose no pid-uniqueness constraint: {bob_reg:?}"
+    );
+
+    // Both present before any sweep.
+    assert!(broker.state.clients.contains_key(&ClientId::from(1_u64)));
+    assert!(broker.state.clients.contains_key(&ClientId::from(2_u64)));
+
+    // Shared PID is alive: a Tick sweep must leave both clients in place.
+    let live_tick_outs = broker.handle(BrokerInput::Tick, now);
+    assert!(
+        !live_tick_outs
+            .iter()
+            .any(|o| matches!(o, Out::ReleaseClient(_))),
+        "no client should be released while the shared pid is alive: {live_tick_outs:?}"
+    );
+    assert!(
+        broker.state.clients.contains_key(&ClientId::from(1_u64)),
+        "alice must survive the live-pid sweep"
+    );
+    assert!(
+        broker.state.clients.contains_key(&ClientId::from(2_u64)),
+        "bob must survive the live-pid sweep"
+    );
+
+    // Kill the shared pid; the next Tick must reap BOTH clients together.
+    liveness_handle.borrow_mut().mark_dead(SHARED_PID);
+    let dead_tick_outs = broker.handle(BrokerInput::Tick, now);
+    let released: std::collections::HashSet<ClientId> = dead_tick_outs
+        .iter()
+        .filter_map(|o| match o {
+            Out::ReleaseClient(client) => Some(*client),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        released,
+        [ClientId::from(1_u64), ClientId::from(2_u64)]
+            .into_iter()
+            .collect(),
+        "both shared-pid clients must be released together on the dead-pid sweep: \
+         {dead_tick_outs:?}"
+    );
+    assert!(
+        !broker.state.clients.contains_key(&ClientId::from(1_u64)),
+        "alice must be gone after the dead-pid sweep — no orphan holder"
+    );
+    assert!(
+        !broker.state.clients.contains_key(&ClientId::from(2_u64)),
+        "bob must be gone after the dead-pid sweep — no orphan holder"
+    );
+}
