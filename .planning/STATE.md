@@ -1,38 +1,47 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: Federation Profile — Gate A
+milestone_name: Federation Profile — Gateway Core
 status: planning
-last_updated: "2026-06-08T17:55:14.698Z"
-last_activity: 2026-06-08
+last_updated: "2026-07-23T18:14:54.412Z"
+last_activity: 2026-07-23
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
 ---
 
-# STATE: FAMP — v0.11 Broker Daemon & Cross-Tool Bootstrap
+# STATE: FAMP — v1.0 Federation Profile — Gateway Core
 
-**Last Updated:** 2026-06-06 — v0.11 milestone shipped and archived. 3 phases (4–6), 11 plans, 15/15 requirements. Awaiting next milestone.
+**Last Updated:** 2026-07-23 — Roadmap created. 4 phases (7–10), 13/13 requirements mapped, 100% coverage. Awaiting plan-phase.
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v0.11 Broker Daemon & Cross-Tool Bootstrap is **COMPLETE** (shipped 2026-06-06). v1.0 Federation Profile is the next milestone (trigger-gated, two independent ship gates).
+See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the current milestone (roadmap created 2026-07-23, not yet started). Closes Gate A: an agent on one of Ben's machines exchanges a signed FAMP envelope with an agent on a second machine he controls, bidirectionally and reliably, over a network he fully controls (direct or a VPN he already runs — no public relay). Tags `v1.0.0` on completion.
 
-**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v0.11 made that substrate *reliably reachable* — a service-managed daemon restores broker presence so any local client, sandboxed or not, always finds a broker.
+**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extends that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Planning next milestone (`/gsd-new-milestone`).
+**Current focus:** Ready for `/gsd-plan-phase 7` (Broker-Liveness Fork + Gateway Skeleton — the gating spine).
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started — Phase 7 is next
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-21 - Review harden #14/#26: InboxOk encode-before-commit for channel cursors; hermetic hook no-op tests (FAMP_DISABLE_PID_FALLBACK + asset path). Deploy: just install + broker restart.
+Status: Roadmap created, awaiting phase planning
+Last activity: 2026-07-23 — ROADMAP.md + REQUIREMENTS.md traceability written for v1.0 Phases 7–10
 
-## v0.11 Phase Map
+## v1.0 Phase Map
+
+- **Phase 7: Broker-Liveness Fork + Gateway Skeleton** (3 reqs: LIVE-01, LIVE-02, GW-04). Resolves the same-host `kill(pid,0)` liveness fork — a naively-proxied cross-host principal is reaped by the broker today. Design A (local-proxy: the gateway backs each remote principal with a `bind_as` connection reporting the gateway's own live local PID, zero `famp-bus` change) is the recommended resolution; Design B (heartbeat/lease) is the fallback. Stands up the `famp-gateway` crate skeleton backing multiple remote principals concurrently with no cross-talk. This is the spine every later phase depends on — the whole milestone gates on this decision landing correctly.
+- **Phase 8: Signed Cross-Host Envelope + Trust Bootstrap** (4 reqs: WIRE-01, WIRE-02, TRUST-01, TRUST-02). Every cross-host envelope Ed25519-signed under `FAMP-sig-v1\0` (INV-10) and rejected if unsigned/invalid before touching the local bus; envelope schema extended with sender/receiver domain + key_id, nonce, expiry, capability/approval fields omitted when empty (forward-compat for v1.1/v2.0, no wire break). Two-machine peer export/import with TOFU pinning; unpinned keys rejected, no implicit trust. Reuses `famp-crypto`, `famp-canonical`, and the preserved `famp-keyring` (tag `v0.8.1-federation-preserved`) — none of this is rebuilt.
+- **Phase 9: End-to-End Cross-Host Delivery** (3 reqs: GW-01, GW-02, GW-03). Proves Phases 7+8 compose: a user on machine A addresses an agent on machine B by name/principal, the message delivers to B's local bus, B replies within the same task, the reply delivers back to A, and a full `request → commit → deliver → ack` cycle completes with the task FSM advancing correctly on both sides (observable via `famp inspect tasks`).
+- **Phase 10: Test Reactivation + Setup Docs** (3 reqs: TEST-01, TEST-02, DOC-04). Triages the ~27 parked tests in `crates/famp/tests/_deferred_v1/` — reactivate what's still valid, document why anything obsolete is removed. Lands a live two-process E2E in `just ci` (not manual, not `#[ignore]`'d). Ships the two-machine setup guide (bind address, out-of-band key exchange from Phase 8, connect/verify).
+
+**Scope discipline (locked at roadmap time):** own-two-machines only — direct network or a VPN Ben already runs, no public relay, no cross-person trust, no signed directory, no capability/approval/tool-admission plane. All deferred to v1.1/v2.0 per REQUIREMENTS.md v2 Requirements section. Gate B (conformance vector pack, 2nd implementer) stays independent and out of this milestone.
+
+## v0.11 Phase Map (complete)
 
 - **Phase 4: Broker Lifecycle & Bootstrap Diagnostics** (3 reqs: BLC-01, BLC-02, BOOT-01). `famp broker --no-idle-exit` flag disabling the 300s idle self-terminate (hard prerequisite for the daemon — a service-managed broker must never self-terminate on idle); regression guard confirming default idle-exit behavior is unchanged; actionable EPERM-on-bind error in `spawn.rs:92` replacing the swallowed `let _ =` with a message that names the sandbox constraint and the remedy. Changes land in `crates/famp/src/cli/broker/mod.rs` and `crates/famp/src/bus_client/spawn.rs`. Run `just install` before closing any PR that changes the spawn-error surface.
 - **Phase 5: Daemon Service Management & Version Safety** (9 reqs: DAEMON-01..06, BOOT-02, VER-01, VER-02). `famp daemon install/uninstall/status/restart` cross-platform service lifecycle (launchd LaunchAgent on macOS, systemd `--user` unit on Linux); sandbox-detect refusal at install time; version handshake at connect so a long-lived daemon and a freshly-upgraded client fail loud on skew; `famp -V` / banner / handshake reconciled to a single source of truth. **DAEMON-02 guardian plist review gate is blocking: do not load the service until the literal plist XML has guardian sign-off.** Socket activation and spawn-lock explicitly deferred.
@@ -52,6 +61,13 @@ Last activity: 2026-07-21 - Review harden #14/#26: InboxOk encode-before-commit 
 4. **No double-print counter (INSP-IDENT-03 + Out of Scope)** — broker-side counter for the wake-up-notification + inbox-fetch double-billing failure mode was rejected as wrong instrument. Right surface is per-message token attribution at the model boundary, or a static audit of the `famp_await` notification payload — both are separate investigations from the inspector.
 5. **Wire shape (INSP-RPC-01)** — `famp.inspect.*` rides the existing UDS via a new `BusMessage::Inspect { kind, ... }` enum variant in `famp-bus`. Single dispatch path in `Broker::handle()` gains one new arm. No second socket. `InspectKind` sub-enum carries the four operations (broker, identities — Phase 1; tasks, messages — Phase 2). `famp-bus` stays tokio-free; budget enforcement lives at the tokio wrapper layer (`crates/famp/src/cli/broker/`), only for I/O-bound handlers (none in Phase 1).
 
+## v1.0 Architectural Invariants Locked at Roadmap Time
+
+1. **Reuse, do not rebuild, the existing signing/canonical substrate.** `famp-crypto` (Ed25519/INV-10, `FAMP-sig-v1\0` domain prefix), `famp-canonical` (RFC 8785 JCS), and the v0.8-preserved `famp-transport-http` + `famp-keyring` (tag `v0.8.1-federation-preserved`) are the load-bearing crates Phase 8 wires into the gateway's cross-host path. `famp-envelope` is extended (forward-compat fields), not replaced.
+2. **Liveness fix must not require a `famp-bus` change (Design A preference).** The recommended resolution backs each gateway-proxied principal with a `bind_as` connection reporting the gateway's own live local PID, so the broker's existing same-host `kill(pid,0)` check just works without modification. Design B (heartbeat/lease) is the fallback if Design A proves infeasible during Phase 7 implementation — falling back is a Phase 7 in-flight decision, not a re-plan.
+3. **Reachability scope is fixed at own-two-machines.** No public relay, no NAT traversal, no cross-person trust, no signed peer directory. Trust is hand-copied keys via out-of-band export/import (Phase 8) with TOFU pinning — this is deliberately rough; bootstrap-UX polish is out of scope until v1.1.
+4. **Phase ordering is a hard dependency chain, not parallelizable at the phase level.** Phase 7 (liveness + gateway skeleton) gates Phase 8 (wire + trust) gates Phase 9 (E2E delivery) gates Phase 10 (tests + docs) — each phase proves the previous one's foundation before building on it.
+
 ## v0.11 Architectural Invariants
 
 1. **Primitive crates stay untouched** — `famp-bus`, `famp-canonical`, `famp-crypto`, `famp-core`, `famp-envelope`, `famp-fsm` are transport-neutral protocol primitives. All v0.11 changes are CLI-layer (`crates/famp/src/cli/`, `crates/famp/src/bus_client/spawn.rs`).
@@ -60,13 +76,13 @@ Last activity: 2026-07-21 - Review harden #14/#26: InboxOk encode-before-commit 
 4. **Guardian plist review is a blocking pre-load gate** — DAEMON-02 requires guardian to approve the literal plist XML before the service is first loaded. This is not an advisory review; the service must not be loaded until sign-off is received.
 5. **Socket activation + spawn-lock stay deferred** — do not create phases or plan items for launchd/systemd socket activation or for the `bind_exclusive` stale-branch spawn-lock. Both are explicitly out of v0.11 scope.
 
-## Carry-Forward from v0.10
+## Carry-Forward from v0.11 into v1.0
 
-- v0.9 broker (`famp-bus`, `~/.famp/bus.sock`, posix_spawn+setsid lifecycle, bind()-IS-the-lock single-broker exclusion) is the substrate v0.11 builds on. No broker-side rewrites planned.
-- 8-tool stable MCP surface (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) carried forward unchanged. v0.11 does **not** add MCP tools.
-- `FAMP_SPEC_VERSION = "0.5.2"` unchanged; v0.11 does not require a spec amendment.
-- `just check-no-tokio-in-bus` and `just check-inspect-readonly` permanent CI gates remain intact.
-- The broker-unreachable connect/spawn-stage disambiguation (commits `4da30a3`/`ebbf1d3`) is the direct ancestor of BOOT-01's EPERM handling. Phase 4 extends, not replaces, that work.
+- v0.11 daemon (`famp daemon install`, launchd/systemd `--user`, version-skew detection) is the runtime v1.0 builds on. `famp-gateway` is a new process that connects to the existing local bus, not a replacement for it.
+- 8-tool stable MCP surface (`famp_register`, `famp_send`, `famp_inbox`, `famp_await`, `famp_peers`, `famp_join`, `famp_leave`, `famp_whoami`) carried forward unchanged. v1.0 does not require new MCP tools for the core gateway to function (any gateway-management MCP surface is a Phase 7–10 implementation detail, not a roadmap requirement).
+- `famp-transport-http` + `famp-keyring` — preserved since v0.9 (tag `v0.8.1-federation-preserved`) specifically for this milestone — are the transport and trust substrate Phase 7/8 build on. Not rebuilt.
+- `crates/famp/tests/_deferred_v1/` (~27 parked federation tests, parked at v0.9 Phase 4) is Phase 10's triage target.
+- `just check-no-tokio-in-bus` and `just check-inspect-readonly` permanent CI gates remain intact; `famp-bus` stays untouched by v1.0 if Design A (local-proxy) holds.
 
 ## Open Items Inherited (not v0.11-blocking, just persistent)
 
@@ -76,6 +92,9 @@ Last activity: 2026-07-21 - Review harden #14/#26: InboxOk encode-before-commit 
 
 ## Decisions
 
+- [Roadmap v1.0]: Four-phase structure (Phases 7–10) derived from a hard dependency chain, not natural-category grouping alone: Phase 7 resolves the liveness fork before any gateway work can be trusted (the gating spine — every later phase assumes proxied principals behave correctly); Phase 8 lands the wire format + trust bootstrap once the gateway skeleton exists to carry it; Phase 9 proves the two compose into the actual product promise (full bidirectional task cycle); Phase 10 closes with test reactivation + docs once real behavior exists to test and document. Rejected an alternative that merged Phase 7+8 (liveness fix is high-risk and independently verifiable; bundling it with wire/trust work would make failures ambiguous — which layer broke?).
+- [Roadmap v1.0]: Phase numbering continues from v0.11's Phase 6 (starts at Phase 7) rather than resetting to Phase 1, per instruction to avoid colliding with the existing duplicate v0.7-era `### Phase 1..4` archived block and the parked `### Phase 999.1..999.8` backlog placeholders already in ROADMAP.md. Those blocks were left untouched.
+- [Roadmap v1.0]: GW-04 (single gateway backs multiple principals, no cross-talk) placed in Phase 7 alongside the liveness reqs, not Phase 9, because multi-principal correctness is a property of the gateway skeleton itself (how it demuxes proxied connections), not of the end-to-end task-cycle behavior Phase 9 proves.
 - [Roadmap v0.11]: Three-phase structure (Phases 4–6) derived from natural delivery boundaries: Phase 4 lands the `--no-idle-exit` prerequisite + EPERM diagnostics before any daemon work begins; Phase 5 delivers the full daemon lifecycle + version safety once the flag exists; Phase 6 lands docs after the commands exist so docs describe real behavior. VER-01/VER-02 placed in Phase 5 (not a separate phase) because they are most valuable once the daemon keeps a broker alive, and two reqs are too thin for their own phase at standard granularity.
 - [Roadmap v0.11]: Phase numbering continues from v0.10 (4/5/6) rather than resetting to 1. Reason: v0.10 phase dirs `01/02/03` are still present under `.planning/phases/`; resetting would collide. New phase dirs: `04-broker-lifecycle-bootstrap/`, `05-daemon-service-version/`, `06-onboarding-docs/`.
 - [Roadmap v0.10]: Three-phase structure recut after matt-essentialist + zed-velocity-engineer review (2026-05-10): Phase 1 closes orphan-listener incident class end-to-end (broker + identities, RPC + CLI both); Phase 2 ships the I/O-bound enrichment (tasks + messages) and is where budget+cancel finally have something to enforce against; Phase 3 unchanged. **Rejected the original cut** (Phase 1 = RPC foundation with stub handlers; Phase 2 = all CLI) as yak-shaving — Phase 1's success criteria around budget+cancel were testing synthetic test-only handlers, not real work. The v0.10 user-visible win is closing the orphan-listener incident class; the recut ships that in one merge.
@@ -88,7 +107,7 @@ Last activity: 2026-07-21 - Review harden #14/#26: InboxOk encode-before-commit 
 
 ## Issues / Blockers
 
-- None at roadmap time. DAEMON-02 guardian plist review is a known external dependency, not a current blocker — it becomes blocking when Phase 5 is ready to load the service for the first time.
+- None at roadmap time. Phase 7's liveness-fork resolution (Design A vs Design B) is a known in-phase decision point, not a current blocker — it becomes actionable when `/gsd-plan-phase 7` runs.
 
 ## Deferred Items
 
@@ -130,7 +149,7 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | seed | SEED-002-harness-adapter-push-notifications | dormant (gate assignment deferred — re-read seed when surfaced) |
 | uat_gap | 05 (05-HUMAN-UAT.md, 1 pending scenario) | DAEMON-06 Linux behavioral — deferred to a Linux host |
 
-**Notes:** The 45 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint + v0.10 work; no completion artifacts but no active obligations); the rows above are a representative sample, not the full set (full count is recorded in MILESTONES.md v0.11 entry). SEED-001 (vector-pack interop) is unambiguously **Gate B** (2nd implementer commits to interop). SEED-002 (push-notification harness) is gate-assignment-deferred. The Phase-05 UAT gap is the DAEMON-06 systemd `--user` behavioral acceptance, intentionally deferred to a real Linux host.
+**Notes:** The 45 quick_tasks are orphan slugs (drift residue from federation-era + v0.9 prep-sprint + v0.10 work; no completion artifacts but no active obligations); the rows above are a representative sample, not the full set (full count is recorded in MILESTONES.md v0.11 entry). SEED-001 (vector-pack interop) is unambiguously **Gate B** (2nd implementer commits to interop). SEED-002 (push-notification harness) is gate-assignment-deferred. The Phase-05 UAT gap is the DAEMON-06 systemd `--user` behavioral acceptance, intentionally deferred to a real Linux host. **999.5** (spec-by-path tracking, backlog) was reviewed against the new v1.0 Gateway Core scope at roadmap time and found NOT covered — Phases 7–10 carry name/principal addressing but no portable content-addressable artifact reference; remains open for v1.1+ (see ROADMAP.md Backlog Phase 999.5).
 
 ## Quick Tasks Completed
 
@@ -192,4 +211,4 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Run `/gsd-plan-phase 7` to plan Phase 7 (Broker-Liveness Fork + Gateway Skeleton) — the gating spine for v1.0.
