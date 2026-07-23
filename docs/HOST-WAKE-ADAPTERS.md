@@ -79,9 +79,9 @@ tries the PID-correlated fallback before no-op'ing (fail-open exit 0).
 ### Residual / optional
 
 `famp listen-wake` remains available as a host-neutral inject primitive for
-future hosts (or as a Grok fallback). MCP register no longer arms
-`ensure_supervised` by default — Stop is the foolproof path and a second
-bus waiter would double with it.
+future hosts (or as a Grok fallback). MCP register never arms a `listen-wake`
+supervisor — Stop is the foolproof path and a second bus waiter would double
+with it.
 
 ## Future hosts
 

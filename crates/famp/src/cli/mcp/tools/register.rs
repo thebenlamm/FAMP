@@ -156,7 +156,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     };
     drop(guard);
     // Stop hook is the foolproof wake path (Claude/Codex/Grok). Do not arm
-    // ensure_supervised here — a second bus waiter races the Stop await.
+    // a listen-wake supervisor here — a second bus waiter races the Stop await.
     result
 }
 

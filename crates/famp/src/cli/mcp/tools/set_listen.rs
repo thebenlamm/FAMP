@@ -62,7 +62,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     match reply {
         BusReply::SetListenOk { listen_mode } => {
             // Mirror the flag on session state. Stop hook is the wake path;
-            // do not arm/disarm ensure_supervised (doubles waiters with Stop).
+            // do not arm/disarm a listen-wake supervisor (doubles waiters with Stop).
             {
                 let mut guard = session::state().lock().await;
                 guard.listen_mode = Some(listen_mode);

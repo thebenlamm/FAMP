@@ -26,10 +26,10 @@
 //! The default MCP wake path does NOT go through this module: the blocking
 //! Stop hook (`famp-await.sh` → `famp await` → `decision:block`) is what
 //! parks and wakes the agent for `famp_register(listen=true)` /
-//! `set_listen`. [`ensure_supervised`] / [`stop_supervised`] are an
-//! alternate, host-neutral supervision surface (a detached `listen-wake`
-//! daemon) that register.rs / set_listen.rs deliberately do NOT call — a
-//! second bus waiter alongside the blocked Stop hook would race it.
+//! `set_listen`. The detached `--daemon` supervisor here is a CLI-only,
+//! host-neutral fallback (`famp listen-wake --daemon`) that register.rs /
+//! set_listen.rs deliberately do NOT arm — a second bus waiter alongside the
+//! blocked Stop hook would race it.
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -577,31 +577,13 @@ fn force_kill_pid(pid: u32) {
     }
 }
 
-// ── MCP supervision ─────────────────────────────────────────────────────────
+// ── listen-wake --daemon supervision (CLI-only; never armed by MCP) ──────────
 
-/// Ensure a detached `listen-wake --loop` is running for `identity`.
-///
-/// No-op when the pidfile already points at a live listen-wake. When
-/// `force` is true, kill any live waiter first (re-register path).
-///
-/// Errors from spawn are logged to stderr but do not fail the MCP tool —
-/// register itself already succeeded on the bus.
-pub fn ensure_supervised(identity: &str, force: bool) {
-    let Some(id) = scrub_token(identity) else {
-        let _ = writeln!(
-            std::io::stderr(),
-            "listen-wake ensure_supervised: invalid identity {identity:?}"
-        );
-        return;
-    };
-    if let Err(e) = ensure_supervised_inner(&id, force) {
-        let _ = writeln!(
-            std::io::stderr(),
-            "listen-wake ensure_supervised({id}): {e}"
-        );
-    }
-}
-
+/// Ensure a detached `listen-wake --loop` is running for `identity`. Reached
+/// only via `famp listen-wake --daemon`; the MCP register / set_listen path
+/// uses the blocking Stop hook instead (see the module docs). No-op when the
+/// pidfile already points at a live listen-wake; when `force` is true, kill
+/// any live waiter first.
 fn ensure_supervised_inner(identity: &str, force: bool) -> Result<(), CliError> {
     let famp_home = home::resolve_famp_home()?;
     ensure_famp_home_dir(&famp_home)?;
@@ -616,34 +598,6 @@ fn ensure_supervised_inner(identity: &str, force: bool) -> Result<(), CliError> 
     }
 
     spawn_detached_listen_wake(identity, force, &famp_home)
-}
-
-/// Kill the supervised listen-wake for `identity` (if any) and remove pidfile.
-pub fn stop_supervised(identity: &str) {
-    let Some(id) = scrub_token(identity) else {
-        let _ = writeln!(
-            std::io::stderr(),
-            "listen-wake stop_supervised: invalid identity {identity:?}"
-        );
-        return;
-    };
-    let famp_home = match home::resolve_famp_home() {
-        Ok(h) => h,
-        Err(e) => {
-            let _ = writeln!(
-                std::io::stderr(),
-                "listen-wake stop_supervised({id}): resolve_famp_home failed: {e}"
-            );
-            return;
-        }
-    };
-    let pid_path = pidfile_path(&famp_home, &id);
-    if let Some(pid) = read_pidfile(&pid_path) {
-        if is_listen_wake_alive(pid) {
-            force_kill_pid(pid);
-        }
-        let _ = std::fs::remove_file(&pid_path);
-    }
 }
 
 /// Spawn `current_exe listen-wake --as <id> --loop [--force]` detached
