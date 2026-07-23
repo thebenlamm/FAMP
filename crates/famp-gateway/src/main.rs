@@ -2,23 +2,80 @@
 //! local UDS bus (LIVE-02: a real OS process the broker's `kill(pid,0)`
 //! liveness sweep can observe alive or dead).
 //!
-//! Skeleton only in this task: the real CLI-arg parsing, `GatewayRegistry`
-//! wiring, and parking loop land in Task 2 of this plan.
+//! Usage: `famp-gateway [--socket <path>] <principal-name>...`
+//! `--socket` defaults to `$FAMP_BUS_SOCKET` or `~/.famp/bus.sock`
+//! (`famp::bus_client::resolve_sock_path`).
 
-// Silencers for dependencies not yet wired by this task (this binary crate
-// is a separate compilation unit from lib.rs and needs its own). Remove
-// each line as Task 2 wires the real registry/connect/parking logic.
-use famp as _;
+use std::path::PathBuf;
+
+use famp_gateway::GatewayRegistry;
+
+// Silencer: this bin doesn't reference famp-bus or thiserror types
+// directly — those are used inside the famp-gateway lib (principal.rs /
+// error.rs), not here. `famp` and `tokio` and `famp_gateway` ARE used
+// below (resolve_sock_path, #[tokio::main]/signal::ctrl_c, GatewayRegistry).
 use famp_bus as _;
-use famp_gateway as _;
 use thiserror as _;
-use tokio as _;
 
 // Silencer for the dev-only dependency: no test file in this crate uses
 // it yet (lands in a later plan in this phase). Remove once wired.
 #[cfg(test)]
 use assert_cmd as _;
 
-fn main() {
-    println!("famp-gateway: skeleton binary (backing logic lands in Task 2)");
+/// Parse `--socket <path>` plus one-or-more positional principal names.
+/// Extracted as a pure function so argument handling is testable without
+/// a live broker socket.
+fn parse_args(mut args: impl Iterator<Item = String>) -> Result<(PathBuf, Vec<String>), String> {
+    let _bin = args.next();
+    let mut sock: Option<PathBuf> = None;
+    let mut names = Vec::new();
+    while let Some(arg) = args.next() {
+        if arg == "--socket" {
+            match args.next() {
+                Some(path) => sock = Some(PathBuf::from(path)),
+                None => return Err("--socket requires a path argument".to_owned()),
+            }
+        } else {
+            names.push(arg);
+        }
+    }
+    if names.is_empty() {
+        return Err("usage: famp-gateway [--socket <path>] <principal-name>...".to_owned());
+    }
+    let sock = sock.unwrap_or_else(famp::bus_client::resolve_sock_path);
+    Ok((sock, names))
+}
+
+#[tokio::main]
+async fn main() {
+    let (sock, names) = match parse_args(std::env::args()) {
+        Ok(parsed) => parsed,
+        Err(msg) => {
+            eprintln!("famp-gateway: {msg}");
+            std::process::exit(1);
+        }
+    };
+
+    let mut registry = GatewayRegistry::default();
+    for name in names {
+        if let Err(e) = registry.back(&sock, name.clone()).await {
+            eprintln!("famp-gateway: failed to back principal '{name}': {e}");
+            std::process::exit(1);
+        }
+    }
+
+    {
+        let backed: Vec<&str> = registry.names().collect();
+        println!(
+            "famp-gateway: ready, backing {} principal(s): {}",
+            backed.len(),
+            backed.join(", ")
+        );
+    }
+
+    // Park until signalled/killed. Holding `registry` in scope keeps every
+    // ProxiedPrincipal's UDS connection open — that is what keeps the
+    // broker reporting this gateway's own PID as each principal's live
+    // registration (Design A — LIVE-01/LIVE-02).
+    let _ = tokio::signal::ctrl_c().await;
 }

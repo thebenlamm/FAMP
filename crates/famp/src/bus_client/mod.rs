@@ -153,6 +153,39 @@ impl BusClient {
         classify_hello_reply(reply).map(|()| client)
     }
 
+    /// Connect to `sock_path` performing the Hello handshake, WITHOUT
+    /// spawning a broker if one is absent. Byte-for-byte the same
+    /// handshake as [`connect`](Self::connect), minus the
+    /// `spawn::spawn_broker_if_absent` call and its retry-to-ride-out-the-
+    /// spawn-race loop.
+    ///
+    /// A long-running Layer-2 service (`famp-gateway`) must fail loud
+    /// when the v0.11 daemon is down, not auto-spawn one — auto-spawn is
+    /// a CLI/MCP convenience for interactive, session-scoped use, not
+    /// appropriate for a service process that outlives any one caller
+    /// (07-RESEARCH.md Anti-Patterns: "Gateway auto-spawning a broker").
+    /// A single connect attempt that fails with `NotFound` or
+    /// `ConnectionRefused` returns `BusClientError::Io` immediately —
+    /// there is no spawn race to ride out here since nothing spawned
+    /// anything.
+    pub async fn connect_no_spawn(
+        sock_path: &Path,
+        bind_as: Option<String>,
+    ) -> Result<Self, BusClientError> {
+        let stream = UnixStream::connect(sock_path)
+            .await
+            .map_err(BusClientError::Io)?;
+
+        let mut client = Self { stream, bind_as };
+        let hello = BusMessage::Hello {
+            bus_proto: BUS_PROTO_VERSION,
+            client: format!("famp-gateway/{}", env!("CARGO_PKG_VERSION")),
+            bind_as: client.bind_as.clone(),
+        };
+        let reply = client.send_recv(hello).await?;
+        classify_hello_reply(reply).map(|()| client)
+    }
+
     /// The optional D-10 proxy identity supplied at `connect` time.
     /// `None` for canonical-holder connections (`famp register`, MCP).
     /// `Some(name)` for one-shot CLI proxies (`send`, `inbox`, `await`, …).

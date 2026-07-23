@@ -8,11 +8,9 @@
 
 #![forbid(unsafe_code)]
 
-// Silencers for dependencies not yet wired by this task. `famp`/`famp-bus`/
-// `tokio` land in Task 2 (principal.rs register flow + parking bin); remove
-// each line as the matching module starts using it.
-use famp as _;
-use famp_bus as _;
+// Silencer: `tokio` is only used by the `[[bin]]` (main.rs is a separate
+// compilation unit); the lib target itself has no direct tokio reference
+// (async/await here is plain language syntax, not a tokio API call).
 use tokio as _;
 
 // Silencer for the dev-only dependency: no test file in this crate uses
