@@ -9,6 +9,7 @@ use ed25519_dalek as _;
 use famp_canonical as _;
 use hex as _;
 use insta as _;
+use rand as _;
 use serde as _;
 use serde_json as _;
 use sha2 as _;

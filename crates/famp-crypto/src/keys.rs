@@ -6,7 +6,6 @@
 //! `ed25519_dalek::VerifyingKey::verify` (non-strict).
 
 use crate::error::CryptoError;
-use crate::hash::sha256_digest;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use subtle::ConstantTimeEq;
@@ -98,8 +97,20 @@ impl FampSigningKey {
         Self(SigningKey::from_bytes(&bytes))
     }
 
-    // RED marker (removed in GREEN commit): generate() intentionally absent
-    // here so the failing test below proves the RED state.
+    /// Generates a fresh signing key from the OS CSPRNG (`OsRng`).
+    ///
+    /// # Security contract
+    ///
+    /// This is the ONLY sanctioned way to create a signing key outside of
+    /// test fixtures (see the `from_bytes` pitfall note above). Every call
+    /// draws fresh entropy from the operating system's CSPRNG — there is no
+    /// fixed-seed, time-based, or PID-based path in production code
+    /// (TRUST-01 prerequisite, T-08-04).
+    #[must_use]
+    pub fn generate() -> Self {
+        use rand::rngs::OsRng;
+        Self(SigningKey::generate(&mut OsRng))
+    }
 
     pub fn from_b64url(input: &str) -> Result<Self, CryptoError> {
         let v = URL_SAFE_NO_PAD

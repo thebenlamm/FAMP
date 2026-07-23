@@ -15,6 +15,7 @@ use ed25519_dalek as _;
 use famp_canonical as _;
 use insta as _;
 use proptest as _;
+use rand as _;
 use sha2 as _;
 use subtle as _;
 use thiserror as _;
