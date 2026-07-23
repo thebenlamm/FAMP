@@ -1,0 +1,25 @@
+[package]
+name = "famp-gateway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FAMP v0.5.2 — famp-gateway crate (Layer 2 skeleton)"
+
+[lints]
+workspace = true
+
+[dependencies]
+famp-bus  = { path = "../famp-bus", version = "0.11.0" }
+famp      = { path = "../famp", version = "0.11.0" }
+tokio     = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+
+[[bin]]
+name = "famp-gateway"
+path = "src/main.rs"
