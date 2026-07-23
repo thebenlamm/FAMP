@@ -50,6 +50,18 @@ pub struct ListenWakeArgs {
     #[arg(long, default_value = "23h")]
     pub timeout: humantime::Duration,
 
+    /// Loop/force behavior flags, grouped to avoid `struct_excessive_bools`.
+    #[command(flatten)]
+    pub run_flags: ListenWakeRunFlags,
+
+    /// Daemon/follow mode flags, grouped to avoid `struct_excessive_bools`.
+    #[command(flatten)]
+    pub mode_flags: ListenWakeModeFlags,
+}
+
+/// Loop/force behavior flags for `famp listen-wake`.
+#[derive(Args, Debug, Clone)]
+pub struct ListenWakeRunFlags {
     /// After each wake line, flush and await again. Timeouts re-await silently.
     #[arg(long)]
     pub r#loop: bool,
@@ -59,7 +71,11 @@ pub struct ListenWakeArgs {
     /// alive. Use only when intentionally replacing a supervised waiter.
     #[arg(long)]
     pub force: bool,
+}
 
+/// Daemon/follow mode flags for `famp listen-wake`.
+#[derive(Args, Debug, Clone)]
+pub struct ListenWakeModeFlags {
     /// Background: spawn a detached `--loop` waiter (log + wake file +
     /// pidfile), then exit 0. Mutually exclusive with `--follow`.
     #[arg(long)]
@@ -93,19 +109,19 @@ pub async fn run_at(sock: &Path, args: ListenWakeArgs) -> Result<(), CliError> {
         ))
     })?;
 
-    if args.daemon && args.follow {
+    if args.mode_flags.daemon && args.mode_flags.follow {
         return Err(CliError::Generic(
             "--daemon and --follow are mutually exclusive".into(),
         ));
     }
 
-    if args.follow {
+    if args.mode_flags.follow {
         return follow_wake_file(&identity).await;
     }
 
-    if args.daemon {
+    if args.mode_flags.daemon {
         // Detach a --loop waiter; this process exits after spawn.
-        ensure_supervised_inner(&identity, args.force)?;
+        ensure_supervised_inner(&identity, args.run_flags.force)?;
         return Ok(());
     }
 
@@ -114,7 +130,7 @@ pub async fn run_at(sock: &Path, args: ListenWakeArgs) -> Result<(), CliError> {
     let pid_path = pidfile_path(&famp_home, &identity);
     let wake_path = wake_file_path(&famp_home, &identity);
 
-    let _guard = acquire_pidfile(&pid_path, args.force)?;
+    let _guard = acquire_pidfile(&pid_path, args.run_flags.force)?;
 
     run_await_loop(sock, &identity, &args, &wake_path).await
 }
@@ -142,7 +158,7 @@ async fn run_await_loop(
                 match write_wake_outcome(
                     &outcome,
                     identity,
-                    args.r#loop,
+                    args.run_flags.r#loop,
                     Some(wake_path),
                     &mut std::io::stdout(),
                     &mut std::io::stderr(),
@@ -153,7 +169,7 @@ async fn run_await_loop(
                 }
             }
             Err(e) => {
-                if !args.r#loop {
+                if !args.run_flags.r#loop {
                     return Err(e);
                 }
                 consecutive_failures = consecutive_failures.saturating_add(1);
@@ -453,7 +469,7 @@ fn write_pidfile(path: &Path, pid: u32) -> Result<(), CliError> {
             path: path.to_path_buf(),
             source,
         })?;
-    write!(f, "{pid}\n").map_err(|source| CliError::Io {
+    writeln!(f, "{pid}").map_err(|source| CliError::Io {
         path: path.to_path_buf(),
         source,
     })?;
