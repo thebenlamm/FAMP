@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Federation Profile)
-current_phase: 07
-current_phase_name: Broker-Liveness Fork + Gateway Skeleton
+current_phase: 999.1
+current_phase_name: BACKLOG
 status: verifying
 stopped_at: Completed 07-03-PLAN.md
-last_updated: "2026-07-23T19:43:42.307Z"
+last_updated: "2026-07-23T19:47:49.973Z"
 last_activity: 2026-07-23
-last_activity_desc: Phase 07 execution started
+last_activity_desc: Phase 07 complete, transitioned to Phase 999.1
 progress:
   total_phases: 6
   completed_phases: 1
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 ## Current Position
 
-Phase: 07 (Broker-Liveness Fork + Gateway Skeleton) — EXECUTING
-Plan: 3 of 3
+Phase: 999.1 — `famp await` crash safety — cursor advance vs flush ordering (BACKLOG)
+Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-07-23 — Phase 07 execution started
+Last activity: 2026-07-23 — Phase 07 complete, transitioned to Phase 999.1
 
 ## v1.0 Phase Map
 

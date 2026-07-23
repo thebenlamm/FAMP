@@ -21,7 +21,7 @@
 - [x] **Phase 4: Broker Lifecycle & Bootstrap Diagnostics** — completed 2026-06-04 — `famp broker --no-idle-exit` flag (hard prerequisite for daemon — a daemon-managed broker must not self-terminate), its regression guard, and actionable EPERM-on-bind error surfacing the sandbox-constraint explanation.
 - [x] **Phase 5: Daemon Service Management & Version Safety** — completed 2026-06-04 — `famp daemon install/uninstall/status/restart` cross-platform service lifecycle (launchd macOS, systemd `--user` Linux) plus version handshake at connect and `famp -V` banner reconciliation. 9/9 requirements; DAEMON-06 Linux behavioral deferred to a Linux host (05-HUMAN-UAT.md).
 - [x] **Phase 6: Onboarding & Cross-Platform Docs** — completed 2026-06-06 — README rewritten daemon-first: `famp daemon install` quickstart (Claude Code + Codex), `famp broker --no-idle-exit` no-install bridge, dedicated `## Platform support` boundary, five reconciled downstream sections, v0.9→v0.11 refresh. DOC-01/02/03 verified live against the installed binary (human-verify E2E: fresh-clone Claude+Codex delivery + daemon lifecycle). Accuracy gate caught a stale-binary idempotency failure (fixed via `just install`) and one status exit-code drift (corrected).
-- [ ] **Phase 7: Broker-Liveness Fork + Gateway Skeleton** - Resolve the same-host `kill(pid,0)` liveness fork (Design A local-proxy) and stand up the `famp-gateway` crate skeleton backing remote principals on the local bus.
+- [x] **Phase 7: Broker-Liveness Fork + Gateway Skeleton** - Resolve the same-host `kill(pid,0)` liveness fork (Design A local-proxy) and stand up the `famp-gateway` crate skeleton backing remote principals on the local bus. (completed 2026-07-23)
 - [ ] **Phase 8: Signed Cross-Host Envelope + Trust Bootstrap** - Ed25519-signed, forward-compatible cross-host envelope format plus two-machine TOFU key export/import.
 - [ ] **Phase 9: End-to-End Cross-Host Delivery** - Full bidirectional `request → commit → deliver → ack` task cycle across two machines through the gateway.
 - [ ] **Phase 10: Test Reactivation + Setup Docs** - Deferred federation tests triaged and green, a live two-process E2E in `just ci`, and a two-machine setup guide.
@@ -166,7 +166,7 @@ Plans:
   2. When the `famp-gateway` process exits, every principal it was proxying is reaped cleanly within one liveness-sweep interval — `famp inspect identities` / `famp inspect broker` show no orphan holders left behind (LIVE-02).
   3. A single `famp-gateway` process backs two or more remote principals concurrently; a message addressed to one proxied principal is never delivered into, or visible in, another proxied principal's mailbox (GW-04).
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 **Wave 1**
 
 - [x] 07-01-PLAN.md — famp-gateway crate scaffold + connect-with-own-PID mechanism (ProxiedPrincipal/GatewayRegistry/bin) + no-spawn BusClient constructor (LIVE-01, LIVE-02, GW-04)
@@ -381,7 +381,7 @@ Rough ordering inside v1.0+ (not committed):
 | 4. Broker Lifecycle & Bootstrap Diagnostics | v0.11 | 3/3 | Complete | 2026-06-04 |
 | 5. Daemon Service Management & Version Safety | v0.11 | 5/5 | Complete | 2026-06-04 |
 | 6. Onboarding & Cross-Platform Docs | v0.11 | 3/3 | Complete | 2026-06-06 |
-| 7. Broker-Liveness Fork + Gateway Skeleton | v1.0 | 3/3 | Complete   | 2026-07-23 |
+| 7. Broker-Liveness Fork + Gateway Skeleton | v1.0 | 3/3 | Complete    | 2026-07-23 |
 | 8. Signed Cross-Host Envelope + Trust Bootstrap | v1.0 | 0/TBD | Not started | - |
 | 9. End-to-End Cross-Host Delivery | v1.0 | 0/TBD | Not started | - |
 | 10. Test Reactivation + Setup Docs | v1.0 | 0/TBD | Not started | - |
