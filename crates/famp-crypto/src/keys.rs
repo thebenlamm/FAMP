@@ -264,6 +264,24 @@ mod tests {
     }
 
     #[test]
+    fn key_id_is_deterministic_and_16_chars() {
+        use super::key_id;
+
+        let sk1 = FampSigningKey::from_bytes([3u8; 32]);
+        let vk1 = sk1.verifying_key();
+        let sk2 = FampSigningKey::from_bytes([9u8; 32]);
+        let vk2 = sk2.verifying_key();
+
+        let id1a = key_id(&vk1);
+        let id1b = key_id(&vk1);
+        let id2 = key_id(&vk2);
+
+        assert_eq!(id1a.len(), 16, "key_id must be exactly 16 characters");
+        assert_eq!(id1a, id1b, "key_id must be deterministic for the same key");
+        assert_ne!(id1a, id2, "key_id must differ for distinct keys");
+    }
+
+    #[test]
     fn base64_padded_rejected() {
         let bad = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
         assert!(TrustedVerifyingKey::from_b64url(bad).is_err());
