@@ -7,15 +7,15 @@
 //!
 //! ## Topology (09-RESEARCH.md D-01/D-05, 09-05-PLAN.md)
 //!
-//! Side A: broker A + the REAL `alice` identity (`famp register alice`) +
-//! gateway A, which backs the bare name `bob` as a local stand-in/proxy for
-//! the remote `bob`. Side B is symmetric: broker B + the REAL `bob` identity
-//! + gateway B backing `alice`. A message `alice` addresses "to bob" lands
-//! in gateway A's own `bob`-proxy mailbox on bus A; gateway A's egress loop
-//! drains, federation-signs, and POSTs it to gateway B; gateway B's ingress
-//! verifies it and delivers it via its own `alice`-proxy connection onto
-//! bus B, landing in the REAL `bob`'s mailbox. The reverse path is
-//! symmetric (bob -> alice).
+//! Side A runs broker A, the REAL `alice` identity (`famp register alice`),
+//! and gateway A, which backs the bare name `bob` as a local stand-in/proxy
+//! for the remote `bob`. Side B is symmetric: broker B, the REAL `bob`
+//! identity, and gateway B backing `alice`. A message `alice` addresses "to
+//! bob" lands in gateway A's own `bob`-proxy mailbox on bus A; gateway A's
+//! egress loop drains, federation-signs, and POSTs it to gateway B; gateway
+//! B's ingress verifies it and delivers it via its own `alice`-proxy
+//! connection onto bus B, landing in the REAL `bob`'s mailbox. The reverse
+//! path is symmetric (bob to alice).
 //!
 //! Principals are domain-qualified (`agent:hosta.test/alice`,
 //! `agent:hostb.test/bob`) so `--peer <domain>=<url>` (keyed by the
