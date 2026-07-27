@@ -787,15 +787,23 @@ name = "famp-gateway"
 version = "0.11.0"
 dependencies = [
  "assert_cmd",
+ "axum",
  "famp",
  "famp-bus",
+ "famp-crypto",
  "famp-envelope",
  "famp-inspect-proto",
  "famp-keyring",
+ "famp-transport",
+ "famp-transport-http",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "time",
  "tokio",
+ "tower",
+ "tower-http",
+ "url",
  "uuid",
 ]
 
