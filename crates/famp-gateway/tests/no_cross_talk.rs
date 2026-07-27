@@ -27,7 +27,7 @@
 // reading message bodies (`famp inspect messages` never exposes body
 // content, INSP-MSG-01).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -70,15 +70,53 @@ fn spawn_broker_subprocess(sock: &Path) -> ChildGuard {
     )
 }
 
-/// Spawn ONE `famp-gateway --socket <path> alice bob` subprocess backing
-/// BOTH principals (GW-04 requires a single gateway process backing 2+
-/// principals), ChildGuard-wrapped.
-fn spawn_gateway_subprocess(sock: &Path, names: &[&str]) -> ChildGuard {
+/// `crates/famp/tests/fixtures/cross_machine/{alice,bob}.{crt,key}` — the
+/// shared TLS fixture cert pair every cross-host gateway test reuses
+/// (09-PATTERNS.md). This test never dials the listener, so any valid
+/// PEM pair satisfies `--tls-cert`/`--tls-key`'s startup load.
+fn cross_machine_fixture_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("famp")
+        .join("tests")
+        .join("fixtures")
+        .join("cross_machine")
+}
+
+/// Spawn ONE `famp-gateway --socket <path> --listen 127.0.0.1:0
+/// --tls-cert ... --tls-key ... alice bob` subprocess backing BOTH
+/// principals (GW-04 requires a single gateway process backing 2+
+/// principals), ChildGuard-wrapped. Since 09-04, `--listen`/`--tls-cert`/
+/// `--tls-key` are required flags; `127.0.0.1:0` (OS-assigned ephemeral
+/// port, never dialed by this test) plus the shared fixture certs are
+/// sufficient since this test only exercises the local-bus routing
+/// isolation, never the HTTPS listener.
+///
+/// `home` is set as `FAMP_HOME` (09-RESEARCH.md §7's second isolation
+/// axis, alongside `--socket`) so the gateway's identity/peers-keyring
+/// load never touches the real `$HOME/.famp` — an empty `peers.keyring`
+/// is pre-created there since `Keyring::load_from_file` requires the
+/// file to exist (no peers needed: this test never relays anything).
+fn spawn_gateway_subprocess(sock: &Path, home: &Path, names: &[&str]) -> ChildGuard {
+    let fixtures = cross_machine_fixture_dir();
+    let gateway_dir = home.join("gateway");
+    std::fs::create_dir_all(&gateway_dir).unwrap();
+    let peers_keyring = gateway_dir.join("peers.keyring");
+    if !peers_keyring.exists() {
+        std::fs::write(&peers_keyring, "").unwrap();
+    }
     ChildGuard::new(
         Command::cargo_bin("famp-gateway")
             .unwrap()
             .arg("--socket")
             .arg(sock)
+            .arg("--listen")
+            .arg("127.0.0.1:0")
+            .arg("--tls-cert")
+            .arg(fixtures.join("alice.crt"))
+            .arg("--tls-key")
+            .arg(fixtures.join("alice.key"))
+            .env("FAMP_HOME", home)
             .args(names)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -190,7 +228,7 @@ async fn gw04_no_cross_talk_between_proxied_principals() {
     let _broker = spawn_broker_subprocess(&sock);
     wait_for_broker_socket(&sock, Duration::from_secs(5));
     // ONE gateway process backs BOTH alice and bob.
-    let _gateway = spawn_gateway_subprocess(&sock, &["alice", "bob"]);
+    let _gateway = spawn_gateway_subprocess(&sock, tmp.path(), &["alice", "bob"]);
     poll_until_all_live(&sock, &["alice", "bob"], Duration::from_secs(5));
 
     // Sender: a D-10 `bind_as = Some("bob")` proxy connection onto the

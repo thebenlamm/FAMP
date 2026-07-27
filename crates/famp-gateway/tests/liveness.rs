@@ -21,7 +21,7 @@
 // poll-with-deadline (NEVER a fixed `sleep()`-then-assert — 07-RESEARCH.md
 // Pitfall 4).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -91,14 +91,53 @@ fn wait_for_broker_socket(sock: &Path, deadline: Duration) {
     }
 }
 
-/// Spawn a `famp-gateway --socket <path> <name>...` subprocess backing
-/// every name in `names`, ChildGuard-wrapped.
-fn spawn_gateway_subprocess(sock: &Path, names: &[&str]) -> ChildGuard {
+/// `crates/famp/tests/fixtures/cross_machine/{alice,bob}.{crt,key}` — the
+/// shared TLS fixture cert pair every cross-host gateway test reuses
+/// (09-PATTERNS.md). This test never dials the listener, so any valid
+/// PEM pair satisfies `--tls-cert`/`--tls-key`'s startup load.
+fn cross_machine_fixture_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("famp")
+        .join("tests")
+        .join("fixtures")
+        .join("cross_machine")
+}
+
+/// Spawn a `famp-gateway --socket <path> --listen 127.0.0.1:0 --tls-cert
+/// ... --tls-key ... <name>...` subprocess backing every name in `names`,
+/// ChildGuard-wrapped. Since 09-04, `--listen`/`--tls-cert`/`--tls-key`
+/// are required flags (a gateway with no inbound listener has no way to
+/// relay) — this test only exercises LIVE-02 (PID-carrying registration
+/// and broker reap), never the HTTPS listener itself, so `127.0.0.1:0`
+/// (OS-assigned ephemeral port, never dialed) plus the shared fixture
+/// certs are sufficient.
+///
+/// `home` is set as `FAMP_HOME` (09-RESEARCH.md §7's second isolation
+/// axis, alongside `--socket`) so the gateway's identity/peers-keyring
+/// load never touches the real `$HOME/.famp` — an empty `peers.keyring`
+/// is pre-created there since `Keyring::load_from_file` requires the
+/// file to exist (no peers needed: this test never relays anything).
+fn spawn_gateway_subprocess(sock: &Path, home: &Path, names: &[&str]) -> ChildGuard {
+    let fixtures = cross_machine_fixture_dir();
+    let gateway_dir = home.join("gateway");
+    std::fs::create_dir_all(&gateway_dir).unwrap();
+    let peers_keyring = gateway_dir.join("peers.keyring");
+    if !peers_keyring.exists() {
+        std::fs::write(&peers_keyring, "").unwrap();
+    }
     ChildGuard::new(
         Command::cargo_bin("famp-gateway")
             .unwrap()
             .arg("--socket")
             .arg(sock)
+            .arg("--listen")
+            .arg("127.0.0.1:0")
+            .arg("--tls-cert")
+            .arg(fixtures.join("alice.crt"))
+            .arg("--tls-key")
+            .arg(fixtures.join("alice.key"))
+            .env("FAMP_HOME", home)
             .args(names)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -177,7 +216,7 @@ fn live02_gateway_exit_reaps_all_principals() {
 
     let _broker = spawn_broker_subprocess(&sock);
     wait_for_broker_socket(&sock, Duration::from_secs(5));
-    let mut gateway = spawn_gateway_subprocess(&sock, &["alice", "bob"]);
+    let mut gateway = spawn_gateway_subprocess(&sock, tmp.path(), &["alice", "bob"]);
 
     // Falsification control: BOTH principals must be observed live
     // BEFORE we ever touch the gateway process. A test that skipped

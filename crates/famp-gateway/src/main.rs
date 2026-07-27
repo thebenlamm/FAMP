@@ -24,8 +24,15 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use famp::{FampSigningKey, Principal, TrustedVerifyingKey};
+use famp_gateway::egress::run_egress;
+use famp_gateway::ingress::run_ingress;
 use famp_gateway::GatewayRegistry;
+use famp_keyring::Keyring;
+use famp_transport_http::HttpTransport;
+use tokio::sync::Mutex;
 use url::Url;
 
 // Silencer: this bin doesn't reference famp-bus or thiserror types
@@ -39,16 +46,13 @@ use thiserror as _;
 // this bin target doesn't reference it directly.
 use famp_envelope as _;
 
-// Silencer: `axum`/`famp-crypto`/`famp-keyring`/`famp-transport`/
-// `famp-transport-http`/`serde_json`/`time`/`tower`/`tower-http`/`uuid`
-// back the relay implementation inside the lib's `egress.rs`/`ingress.rs`
-// modules (09-02/09-03) — until Task 2 wires `run_egress`/`run_ingress`
-// into `main()`, this bin target consumes none of them directly.
+// Silencer: `axum`/`famp-crypto`/`famp-transport`/`serde_json`/`time`/
+// `tower`/`tower-http`/`uuid` back the relay implementation inside the
+// lib's `egress.rs`/`ingress.rs` modules (09-02/09-03) — this bin target
+// consumes those modules' public functions, not these crates, directly.
 use axum as _;
 use famp_crypto as _;
-use famp_keyring as _;
 use famp_transport as _;
-use famp_transport_http as _;
 use serde_json as _;
 use time as _;
 use tower as _;
@@ -200,22 +204,102 @@ async fn main() {
         backed_names.join(", ")
     );
 
-    // TODO(09-04 Task 2): load identity + peers keyring, populate the
-    // outbound peer map, and replace this park loop with a concurrent
-    // run_ingress + per-principal run_egress select!. `args.listen` /
-    // `args.tls_cert` / `args.tls_key` / `args.peers` / `args.trust_cert`
-    // are parsed above and are wired in by that task.
-    let _ = &args.listen;
-    let _ = &args.tls_cert;
-    let _ = &args.tls_key;
-    let _ = &args.peers;
-    let _ = &args.trust_cert;
+    let home = match famp::cli::home::resolve_famp_home() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("famp-gateway: failed to resolve FAMP_HOME: {e}");
+            std::process::exit(1);
+        }
+    };
+    let identity_path = famp::cli::peer::identity::gateway_identity_path(&home);
+    let peers_path = famp::cli::peer::identity::gateway_peers_keyring_path(&home);
 
-    // Park until signalled/killed. Holding `registry` in scope keeps every
-    // ProxiedPrincipal's UDS connection open — that is what keeps the
-    // broker reporting this gateway's own PID as each principal's live
-    // registration (Design A — LIVE-01/LIVE-02).
-    let _ = tokio::signal::ctrl_c().await;
+    // Fail fast on a corrupt/unreadable identity file before any relay
+    // task spawns. `FampSigningKey` deliberately does not implement
+    // `Clone` (secret-key hygiene, famp-crypto), so per-egress-task keys
+    // below are obtained via a fresh `load_or_generate` call each rather
+    // than cloning this one — `load_or_generate` is idempotent (T-08-12:
+    // the same path always yields the byte-identical key), so this is
+    // behaviorally equivalent to loading once and sharing it.
+    if let Err(e) = famp::cli::peer::identity::load_or_generate(&identity_path) {
+        eprintln!("famp-gateway: failed to load gateway signing key: {e}");
+        std::process::exit(1);
+    }
+
+    let keyring = match Keyring::load_from_file(&peers_path) {
+        Ok(k) => Arc::new(k),
+        Err(e) => {
+            eprintln!(
+                "famp-gateway: failed to load peers keyring at {}: {e}",
+                peers_path.display()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let transport = match HttpTransport::new_client_only(args.trust_cert.as_deref()) {
+        Ok(t) => Arc::new(t),
+        Err(e) => {
+            eprintln!("famp-gateway: failed to build outbound HTTPS client: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // D-02: resolve every backed principal's federation address
+    // (`agent:{domain}/{name}`, for each `--peer` domain) to that peer
+    // gateway's base URL. A backed name whose domain has no matching
+    // `--peer` entry is simply never added to the transport's address
+    // map — the resulting egress relay attempt then surfaces as a
+    // transport `UnknownRecipient` error (logged, drain loop continues),
+    // never a silent drop.
+    for (domain, url) in &args.peers {
+        for name in &backed_names {
+            if let Ok(principal) = format!("agent:{domain}/{name}").parse::<Principal>() {
+                transport.add_peer(principal, url.clone()).await;
+            }
+        }
+    }
+
+    // SHARED-CONNECTION CONTRACT (load-bearing for GW-02): exactly ONE
+    // `Arc<Mutex<GatewayRegistry>>` is cloned into `run_ingress` and every
+    // `run_egress` task below. See `egress.rs`/`ingress.rs`'s module docs
+    // for why neither side ever holds this lock across a long await.
+    let registry = Arc::new(Mutex::new(registry));
+
+    let mut egress_tasks = tokio::task::JoinSet::new();
+    for name in &backed_names {
+        let sk: FampSigningKey = match famp::cli::peer::identity::load_or_generate(&identity_path) {
+            Ok(k) => k,
+            Err(e) => {
+                eprintln!("famp-gateway: failed to load signing key for egress[{name}]: {e}");
+                std::process::exit(1);
+            }
+        };
+        let vk: TrustedVerifyingKey = sk.verifying_key();
+        egress_tasks.spawn(run_egress(
+            name.clone(),
+            Arc::clone(&registry),
+            Arc::clone(&transport),
+            sk,
+            vk,
+        ));
+    }
+
+    tokio::select! {
+        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring)) => {
+            if let Err(e) = result {
+                eprintln!("famp-gateway: ingress server exited: {e}");
+            }
+        }
+        () = async {
+            while egress_tasks.join_next().await.is_some() {}
+        } => {
+            eprintln!("famp-gateway: all egress drain tasks exited");
+        }
+        _ = tokio::signal::ctrl_c() => {
+            println!("famp-gateway: shutting down (ctrl_c)");
+        }
+    }
 }
 
 #[cfg(test)]
