@@ -210,7 +210,14 @@ Plans:
   2. The agent on machine B replies within the same task/conversation, and the reply is delivered back into A's local bus mailbox (GW-02).
   3. A full `request → commit → deliver → ack` task cycle completes across the two machines, with the task FSM advancing correctly on both sides to a terminal state — observable via `famp inspect tasks` on each machine (GW-03).
 
-**Plans:** TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Gateway relay primitives: ProxiedPrincipal::send_recv, GatewayRegistry::get_mut, verify_inbound_any + module/dep scaffolding (Wave 1)
+- [ ] 09-02-PLAN.md — Egress: outbound drain loop + federation-field Value-mutation sign + HTTPS POST (Wave 2)
+- [ ] 09-03-PLAN.md — Ingress: gateway-owned axum/rustls router, verify_inbound_any as sole trust decision, deliver via backed sender stand-in (Wave 2)
+- [ ] 09-04-PLAN.md — Wire into famp-gateway bin: cross-host flags, identity/keyring load, concurrent ingress + per-principal egress (Wave 3)
+- [ ] 09-05-PLAN.md — Two-process loopback E2E: full request→commit→deliver→ack cycle, terminal FSM on both sides (Wave 4)
 
 ### Phase 10: Test Reactivation + Setup Docs
 
