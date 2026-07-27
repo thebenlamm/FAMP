@@ -186,7 +186,7 @@ pub struct TaskEnvelopeSummary {
     pub envelope_id: String,
     pub sender: String,
     pub recipient: String,
-    /// One of `REQUESTED | COMMITTED | COMPLETED | FAILED | CANCELLED`.
+    /// Task FSM state AFTER applying this envelope to the task's transition fold (mirrors `famp-fsm::TaskFsm`). One of `REQUESTED | COMMITTED | COMPLETED | FAILED | CANCELLED`, or `UNKNOWN` for envelopes outside the task FSM (e.g. `audit_log`, malformed class, or an `ack` preceding any FSM-class envelope).
     pub fsm_transition: String,
     pub timestamp: String,
     pub sig_verified: bool,

@@ -32,16 +32,17 @@
 //! `deliver`/`control` (confirmed empirically: a `famp send`-driven
 //! conversation always shows `fsm_transition: "UNKNOWN"`). This test
 //! instead builds real typed envelopes (`RequestBody`/`CommitBody`/
-//! `DeliverBody`/`AckBody`/`ControlBody`) directly via
+//! `DeliverBody`/`AckBody`) directly via
 //! `UnsignedEnvelope<B>`, sent unsigned onto the local bus (BUS-11) via
 //! the sanctioned "sign-then-strip" pattern already used by
 //! `famp-gateway`'s own `egress.rs` unit tests and
 //! `famp/tests/common/cycle_driver.rs`. These are federation-crossable
 //! (their bodies satisfy each class's strict `deny_unknown_fields` schema,
 //! so `verify_inbound_any`'s typed decode at gateway ingress accepts
-//! them) — see the SUMMARY's Deviations section for the full rationale,
-//! including why a closing `control`/`cancel` envelope (not `deliver` or
-//! `ack`) is the terminal signal GW-03 asserts on.
+//! them). GW-03 now asserts that the inspector mirrors `famp-fsm::TaskFsm`
+//! exactly: the terminal state comes from the deliver envelope's top-level
+//! `terminal_status` header (completed/failed), not from control/cancel
+//! envelopes.
 //!
 //! ## Harness patterns reused
 //!
@@ -72,8 +73,7 @@ use assert_cmd::cargo::CommandCargoExt;
 use famp::{AuthorityScope, FampSigningKey, MessageId, Principal, TerminalStatus, Timestamp};
 use famp_bus::{BusMessage, BusReply, Target};
 use famp_envelope::body::{
-    AckBody, AckDisposition, Bounds, Budget, CommitBody, ControlAction, ControlBody, ControlTarget,
-    DeliverBody, RequestBody,
+    AckBody, AckDisposition, Bounds, Budget, CommitBody, DeliverBody, RequestBody,
 };
 use famp_envelope::{BodySchema, Causality, Relation, UnsignedEnvelope};
 use famp_inspect_proto::IdentityListReply;
@@ -508,36 +508,6 @@ fn build_ack(task_id: MessageId, from: &Principal, to: &Principal) -> serde_json
     unsigned_value(env)
 }
 
-/// `control`/`cancel` closing envelope. Not part of the plan's literal
-/// request/commit/deliver/ack wording — see module doc + SUMMARY
-/// Deviations for why this is the envelope GW-03 asserts a terminal
-/// `fsm_transition` against (`derive_fsm_state`'s unconditional
-/// `("control", _, _, _) => "CANCELLED"` catch-all is the only class
-/// this CLI view maps to a genuine terminal state for a federation-
-/// crossable, strictly-typed body).
-fn build_cancel(task_id: MessageId, from: &Principal, to: &Principal) -> serde_json::Value {
-    let body = ControlBody {
-        target: ControlTarget::Task,
-        action: ControlAction::Cancel,
-        disposition: None,
-        reason: Some("e2e cycle complete".to_string()),
-        affected_ids: None,
-    };
-    let env = UnsignedEnvelope::<ControlBody>::new(
-        MessageId::new_v7(),
-        from.clone(),
-        to.clone(),
-        AuthorityScope::Advisory,
-        ts(),
-        body,
-    )
-    .with_causality(Causality {
-        rel: Relation::Cancels,
-        referenced: task_id,
-    });
-    unsigned_value(env)
-}
-
 /// Send `envelope` onto the local bus at `sock`, proxying through the
 /// `bind_as` canonical holder's connection (D-10 — matches exactly what
 /// `famp send`'s CLI does, just with a real typed envelope instead of an
@@ -788,22 +758,18 @@ fn gw01_gw02_gw03_two_process_cross_host_delivery() {
         POLL_DEADLINE,
     );
 
-    // 5/6. Close the task in BOTH directions so each side's real mailbox
-    //      carries an envelope `famp inspect tasks --id --json` maps to a
-    //      genuine terminal state (see build_cancel's doc comment).
-    let cancel_to_bob = build_cancel(task_id, &alice, &bob);
-    send_bus_envelope(&side_a.sock(), "alice", "bob", cancel_to_bob);
-    let cancel_to_alice = build_cancel(task_id, &bob, &alice);
-    send_bus_envelope(&side_b.sock(), "bob", "alice", cancel_to_alice);
-
     // GW-03: a full cycle completed across both machines and BOTH sides
     // converge on the SAME terminal FSM state via `famp inspect tasks
-    // --id <task_id> --json`.
+    // --id <task_id> --json`. The terminal state comes from the deliver
+    // envelope's top-level `terminal_status` header (set via
+    // `with_terminal_status(TerminalStatus::Completed)` in build_deliver),
+    // not from any appended control/cancel envelope — the inspector now
+    // mirrors `famp-fsm::TaskFsm::step` exactly.
     let state_b = poll_terminal_state(&side_b.sock(), side_b.home(), &task_id_str, POLL_DEADLINE);
     let state_a = poll_terminal_state(&side_a.sock(), side_a.home(), &task_id_str, POLL_DEADLINE);
     assert_eq!(
         state_a, state_b,
         "both sides must converge on the same terminal FSM state"
     );
-    assert_eq!(state_a, "CANCELLED");
+    assert_eq!(state_a, "COMPLETED");
 }

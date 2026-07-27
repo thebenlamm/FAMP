@@ -12,7 +12,7 @@ use famp_inspect_proto::{
 
 use famp_envelope::EnvelopeView;
 
-use crate::parse::{derive_fsm_state, parse_rfc3339_to_epoch};
+use crate::parse::{parse_rfc3339_to_epoch, FsmFold};
 use crate::BrokerCtx;
 
 fn inspect_tasks_by_id(
@@ -20,11 +20,19 @@ fn inspect_tasks_by_id(
     id_str: String,
     full: bool,
 ) -> InspectTasksReply {
-    let envelopes_for_task: Vec<&serde_json::Value> = all_envs
+    let mut envelopes_for_task: Vec<&serde_json::Value> = all_envs
         .iter()
         .copied()
         .filter(|env| EnvelopeView::new(env).task_id().as_deref() == Some(id_str.as_str()))
         .collect();
+
+    // Sort by timestamp ascending (stable sort preserves mailbox order for ties).
+    envelopes_for_task.sort_by_key(|env| {
+        env.get("ts")
+            .and_then(serde_json::Value::as_str)
+            .and_then(parse_rfc3339_to_epoch)
+            .unwrap_or(0)
+    });
 
     if full {
         let envelopes = envelopes_for_task
@@ -47,23 +55,26 @@ fn inspect_tasks_by_id(
         });
     }
 
+    let mut fold = FsmFold::new();
     let envelopes = envelopes_for_task
         .iter()
-        .map(|env| TaskEnvelopeSummary {
-            envelope_id: env
-                .get("id")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            sender: EnvelopeView::new(env).from_str().unwrap_or("").to_string(),
-            recipient: EnvelopeView::new(env).to_str().unwrap_or("").to_string(),
-            fsm_transition: derive_fsm_state(env),
-            timestamp: env
-                .get("ts")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            sig_verified: true, // TODO(INSP-SIG-VERIFY): hardcoded; signatures are not actually verified here
+        .map(|env| {
+            TaskEnvelopeSummary {
+                envelope_id: env
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                sender: EnvelopeView::new(env).from_str().unwrap_or("").to_string(),
+                recipient: EnvelopeView::new(env).to_str().unwrap_or("").to_string(),
+                fsm_transition: fold.apply(env),
+                timestamp: env
+                    .get("ts")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                sig_verified: true, // TODO(INSP-SIG-VERIFY): hardcoded; signatures are not actually verified here
+            }
         })
         .collect();
 
@@ -148,7 +159,15 @@ pub fn inspect_tasks(
         by_task.remove(task_id);
     }
 
-    rows.extend(by_task.into_iter().map(|(task_id, envelopes)| {
+    rows.extend(by_task.into_iter().map(|(task_id, mut envelopes)| {
+        // Sort by timestamp ascending (stable sort preserves mailbox order for ties).
+        envelopes.sort_by_key(|env| {
+            env.get("ts")
+                .and_then(serde_json::Value::as_str)
+                .and_then(parse_rfc3339_to_epoch)
+                .unwrap_or(0)
+        });
+
         let last_transition = envelopes
             .iter()
             .filter_map(|env| {
@@ -162,12 +181,16 @@ pub fn inspect_tasks(
             .first()
             .copied()
             .unwrap_or(&serde_json::Value::Null);
+
+        // Run the FSM fold over all sorted envelopes to derive the terminal state.
+        let mut fold = FsmFold::new();
+        for env in &envelopes {
+            fold.apply(env);
+        }
+
         TaskRow {
             task_id: task_id.clone(),
-            state: envelopes
-                .last()
-                .copied()
-                .map_or_else(|| "REQUESTED".to_string(), derive_fsm_state),
+            state: fold.final_label(),
             // Value-level fallback (to-field present-but-non-string falls
             // through to from), which EnvelopeView's str-level to_str()/from_str()
             // do not replicate — kept raw to preserve exact semantics.

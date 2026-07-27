@@ -636,7 +636,7 @@ mod tests {
     fn derive_fsm_state_maps_completed_correctly() {
         let env = serde_json::json!({
             "class": "deliver",
-            "body": { "details": { "mode": "completed", "terminal": true } }
+            "terminal_status": "completed"
         });
         assert_eq!(derive_fsm_state(&env), "COMPLETED");
     }
@@ -645,7 +645,7 @@ mod tests {
     fn derive_fsm_state_maps_failed_correctly() {
         let env = serde_json::json!({
             "class": "deliver",
-            "body": { "details": { "mode": "failed", "terminal": true } }
+            "terminal_status": "failed"
         });
         assert_eq!(derive_fsm_state(&env), "FAILED");
     }
@@ -653,8 +653,7 @@ mod tests {
     #[test]
     fn derive_fsm_state_maps_cancelled_correctly() {
         let env = serde_json::json!({
-            "class": "control",
-            "body": { "details": { "mode": "cancelled" } }
+            "class": "control"
         });
         assert_eq!(derive_fsm_state(&env), "CANCELLED");
     }
@@ -663,9 +662,202 @@ mod tests {
     fn derive_fsm_state_maps_committed_for_non_terminal_deliver() {
         let env = serde_json::json!({
             "class": "deliver",
-            "body": { "details": { "mode": "in_progress", "terminal": false } }
+            "body": { "interim": true }
         });
         assert_eq!(derive_fsm_state(&env), "COMMITTED");
+    }
+
+    #[test]
+    fn derive_fsm_state_ack_is_unknown_context_free() {
+        let env = serde_json::json!({
+            "class": "ack",
+            "body": { "disposition": "completed" }
+        });
+        assert_eq!(derive_fsm_state(&env), "UNKNOWN");
+    }
+
+    #[test]
+    fn derive_fsm_state_deliver_cancelled_is_unknown() {
+        let env = serde_json::json!({
+            "class": "deliver",
+            "terminal_status": "cancelled"
+        });
+        assert_eq!(derive_fsm_state(&env), "UNKNOWN");
+    }
+
+    #[test]
+    fn fsm_fold_real_cycle_reaches_completed() {
+        use crate::parse::FsmFold;
+        let mut fold = FsmFold::new();
+        let request = serde_json::json!({"class": "request", "ts": "2026-01-01T00:00:00Z"});
+        let commit = serde_json::json!({"class": "commit", "ts": "2026-01-01T00:00:01Z"});
+        let deliver = serde_json::json!({"class": "deliver", "terminal_status": "completed", "ts": "2026-01-01T00:00:02Z"});
+        let ack = serde_json::json!({"class": "ack", "ts": "2026-01-01T00:00:03Z"});
+
+        assert_eq!(fold.apply(&request), "REQUESTED");
+        assert_eq!(fold.apply(&commit), "COMMITTED");
+        assert_eq!(fold.apply(&deliver), "COMPLETED");
+        assert_eq!(fold.apply(&ack), "COMPLETED");
+        assert_eq!(fold.final_label(), "COMPLETED");
+    }
+
+    #[test]
+    fn fsm_fold_failed_deliver_reaches_failed() {
+        use crate::parse::FsmFold;
+        let mut fold = FsmFold::new();
+        let request = serde_json::json!({"class": "request"});
+        let commit = serde_json::json!({"class": "commit"});
+        let deliver = serde_json::json!({"class": "deliver", "terminal_status": "failed"});
+
+        assert_eq!(fold.apply(&request), "REQUESTED");
+        assert_eq!(fold.apply(&commit), "COMMITTED");
+        assert_eq!(fold.apply(&deliver), "FAILED");
+        assert_eq!(fold.final_label(), "FAILED");
+    }
+
+    #[test]
+    fn fsm_fold_control_cancels() {
+        use crate::parse::FsmFold;
+        let mut fold = FsmFold::new();
+        let request = serde_json::json!({"class": "request"});
+        let control = serde_json::json!({"class": "control"});
+
+        assert_eq!(fold.apply(&request), "REQUESTED");
+        assert_eq!(fold.apply(&control), "CANCELLED");
+        assert_eq!(fold.final_label(), "CANCELLED");
+    }
+
+    #[test]
+    fn fsm_fold_illegal_transition_ignored() {
+        use crate::parse::FsmFold;
+        let mut fold = FsmFold::new();
+        let request = serde_json::json!({"class": "request"});
+        let deliver = serde_json::json!({"class": "deliver", "terminal_status": "completed"});
+
+        assert_eq!(fold.apply(&request), "REQUESTED");
+        // Deliver without Commit is illegal; state unchanged
+        assert_eq!(fold.apply(&deliver), "REQUESTED");
+        assert_eq!(fold.final_label(), "REQUESTED");
+    }
+
+    #[test]
+    fn fsm_fold_terminal_absorbing() {
+        use crate::parse::FsmFold;
+        let mut fold = FsmFold::new();
+        let request = serde_json::json!({"class": "request"});
+        let commit = serde_json::json!({"class": "commit"});
+        let deliver = serde_json::json!({"class": "deliver", "terminal_status": "completed"});
+        let control = serde_json::json!({"class": "control"});
+
+        assert_eq!(fold.apply(&request), "REQUESTED");
+        assert_eq!(fold.apply(&commit), "COMMITTED");
+        assert_eq!(fold.apply(&deliver), "COMPLETED");
+        // Control after terminal is illegal; state remains COMPLETED (absorbing)
+        assert_eq!(fold.apply(&control), "COMPLETED");
+        assert_eq!(fold.final_label(), "COMPLETED");
+    }
+
+    #[test]
+    fn fsm_fold_audit_log_only_is_unknown() {
+        use crate::parse::FsmFold;
+        let mut fold = FsmFold::new();
+        let audit1 = serde_json::json!({"class": "audit_log"});
+        let audit2 = serde_json::json!({"class": "audit_log"});
+
+        assert_eq!(fold.apply(&audit1), "UNKNOWN");
+        assert_eq!(fold.apply(&audit2), "UNKNOWN");
+        assert_eq!(fold.final_label(), "UNKNOWN");
+    }
+
+    #[test]
+    fn dispatch_tasks_fsm_fold_converges_on_terminal_completed_across_split_mailboxes() {
+        // Test 9: dispatch-level task FSM fold with the 4-class cycle split
+        // across TWO recipient mailboxes (mimicking the E2E's proxy split),
+        // each with identical timestamps — fold order-robust on ties.
+        let state = empty_state();
+        let task_id_str = "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7";
+        let task_id = task_id_str.parse().unwrap();
+        let ts = "2026-05-10T18:00:00Z";
+
+        // Split cycle: alice's mailbox gets request and ack; bob's gets commit and deliver.
+        let request = serde_json::json!({
+            "id": "env-request",
+            "from": "agent:hosta.test/alice",
+            "to": "agent:hosta.test/bob",
+            "class": "request",
+            "ts": ts,
+            "causality": { "ref": task_id_str },
+        });
+        let ack = serde_json::json!({
+            "id": "env-ack",
+            "from": "agent:hosta.test/bob",
+            "to": "agent:hosta.test/alice",
+            "class": "ack",
+            "ts": ts,
+            "causality": { "ref": task_id_str },
+        });
+        let commit = serde_json::json!({
+            "id": "env-commit",
+            "from": "agent:hostb.test/bob",
+            "to": "agent:hostb.test/alice",
+            "class": "commit",
+            "ts": ts,
+            "causality": { "ref": task_id_str },
+        });
+        let deliver = serde_json::json!({
+            "id": "env-deliver",
+            "from": "agent:hostb.test/bob",
+            "to": "agent:hostb.test/alice",
+            "class": "deliver",
+            "terminal_status": "completed",
+            "ts": ts,
+            "causality": { "ref": task_id_str },
+        });
+
+        let mut by_recipient = BTreeMap::new();
+        by_recipient.insert("alice".to_string(), vec![request, ack]);
+        by_recipient.insert("bob".to_string(), vec![commit, deliver]);
+
+        let ctx = BrokerCtx {
+            task_data: Some(TaskSnapshot::default()),
+            message_data: Some(MessageSnapshot { by_recipient }),
+            ..ctx_with(1, "/tmp/x")
+        };
+
+        // Query by task ID to get the detail reply (not full).
+        let detail = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest {
+                id: Some(task_id),
+                full: false,
+            }),
+        );
+
+        // Detail reply has the envelopes in timestamp order with fold-computed fsm_transition.
+        let envelopes = detail["envelopes"].as_array().unwrap();
+        assert_eq!(envelopes.len(), 4);
+        // The fold processes in sorted (timestamp) order, combining both mailboxes.
+        // All have the same ts, so mailbox order breaks ties (BTreeMap order).
+        // The cycle yields final state COMPLETED.
+        let last_fsm_transition = &envelopes[envelopes.len() - 1]["fsm_transition"];
+        assert_eq!(last_fsm_transition, "COMPLETED");
+
+        // Query the list view (no ID) to check the by-row final state from the fold.
+        let list = dispatch(
+            &state,
+            &ctx,
+            &InspectKind::Tasks(famp_inspect_proto::InspectTasksRequest::default()),
+        );
+        let rows = list["rows"].as_array().unwrap();
+        // Envelopes without a task record go into the by_task map (after the snapshot rows).
+        // Find the row for this task_id.
+        #[allow(clippy::expect_used)]
+        let task_row = rows
+            .iter()
+            .find(|r| r["task_id"] == task_id_str)
+            .expect("task_id row not found");
+        assert_eq!(task_row["state"], "COMPLETED");
     }
 
     #[test]
