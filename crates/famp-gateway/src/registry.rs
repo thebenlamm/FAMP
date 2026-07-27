@@ -40,6 +40,13 @@ impl GatewayRegistry {
         self.principals.get(name)
     }
 
+    /// Mutable access to the `ProxiedPrincipal` backing `name`, if this
+    /// gateway backs it. Phase 9: outbound drain and inbound deliver both
+    /// need `&mut ProxiedPrincipal` to call `send_recv`.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut ProxiedPrincipal> {
+        self.principals.get_mut(name)
+    }
+
     /// Names of every principal currently backed by this gateway.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.principals.keys().map(String::as_str)

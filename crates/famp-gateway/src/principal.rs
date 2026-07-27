@@ -17,7 +17,10 @@ pub struct ProxiedPrincipal {
     /// registration under `name` — alive for as long as this value
     /// lives. The broker's `kill(pid,0)` liveness sweep only sees this
     /// principal as alive while the underlying socket stays open.
-    _client: BusClient,
+    /// Phase 9: also the drain/send channel — [`Self::send_recv`] issues
+    /// `Send`/`Await`/`Inbox` ops directly on this same connection, so
+    /// liveness and relay traffic share one UDS socket, never two.
+    client: BusClient,
     name: String,
 }
 
@@ -47,10 +50,7 @@ impl ProxiedPrincipal {
             .await
             .map_err(map_bus_client_err)?
         {
-            BusReply::RegisterOk { .. } => Ok(Self {
-                _client: client,
-                name,
-            }),
+            BusReply::RegisterOk { .. } => Ok(Self { client, name }),
             BusReply::Err { kind, message } => Err(GatewayError::RegisterFailed { kind, message }),
             other => Err(GatewayError::UnexpectedReply(format!("{other:?}"))),
         }
@@ -60,6 +60,18 @@ impl ProxiedPrincipal {
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Issue any `BusMessage` on this principal's own UDS connection and
+    /// return the raw `BusReply` (Phase 9 D-01/D-03/D-05: the same
+    /// connection that keeps this principal live also drains/sends on
+    /// its behalf — no second connection, no envelope `from`-vs-name
+    /// cross-check here; the broker's `send()` handler trusts the
+    /// connection's registration, not the envelope's own `from` field
+    /// (09-RESEARCH.md §2), so the gateway's `verify_inbound_any` step
+    /// remains the sole authorization boundary).
+    pub async fn send_recv(&mut self, msg: BusMessage) -> Result<BusReply, GatewayError> {
+        self.client.send_recv(msg).await.map_err(map_bus_client_err)
     }
 }
 
