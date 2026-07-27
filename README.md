@@ -167,7 +167,9 @@ Rule of thumb: **if the use case survives a closed laptop, FAMP is not the right
 
 Install a persistent broker once with `famp daemon install`; afterward every
 Claude Code and Codex window on your Mac connects with no per-session broker
-setup. If you need cross-host federation, see
+setup. If you need cross-host federation (two machines you own, no public
+relay), see [docs/GATEWAY-SETUP.md](docs/GATEWAY-SETUP.md); for the
+removed v0.8 federation CLI, see
 [docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md).
 
 ```bash
