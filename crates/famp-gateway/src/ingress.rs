@@ -16,6 +16,7 @@
 //! shared-connection contract so neither direction starves the other on
 //! the same backed principal's UDS connection.
 
+use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -196,6 +197,53 @@ async fn inbox_handler(
             eprintln!("famp-gateway: ingress: delivery failed: {e}");
             IngressError::Internal.into_response()
         }
+    }
+}
+
+/// Bind a rustls-terminated inbox listener on `listen_addr` and serve the
+/// gateway-owned router (see [`build_gateway_router`]) until the listener
+/// task exits.
+///
+/// TLS here is channel encryption only, not a peer-authorization boundary
+/// (D-08, 09-RESEARCH.md §7 Pattern B): [`inbox_handler`]'s
+/// `verify_inbound_any` call remains the sole trust decision. This function
+/// deliberately adds no cert-based peer authorization on top of rustls'
+/// standard server handshake.
+///
+/// Binds a std `TcpListener` first (so the caller could read `local_addr()`
+/// for ephemeral-port scenarios, mirroring the deferred v1 e2e fixture
+/// pattern), sets it non-blocking, then hands it to
+/// [`famp_transport_http::tls_server::serve_std_listener`]. Intended to be
+/// raced inside `main.rs`'s `tokio::select!` alongside the egress drain loop
+/// and shutdown signal — this future does not resolve until the underlying
+/// server task exits (bind error, accept-loop error, or panic).
+pub async fn run_ingress(
+    listen_addr: SocketAddr,
+    tls_cert_path: &std::path::Path,
+    tls_key_path: &std::path::Path,
+    registry: Arc<Mutex<GatewayRegistry>>,
+    keyring: Arc<Keyring>,
+) -> std::io::Result<()> {
+    let cert =
+        famp_transport_http::tls::load_pem_cert(tls_cert_path).map_err(std::io::Error::other)?;
+    let key =
+        famp_transport_http::tls::load_pem_key(tls_key_path).map_err(std::io::Error::other)?;
+    let server_config =
+        famp_transport_http::tls::build_server_config(cert, key).map_err(std::io::Error::other)?;
+
+    let listener = std::net::TcpListener::bind(listen_addr)?;
+    listener.set_nonblocking(true)?;
+
+    let router = build_gateway_router(registry, keyring);
+    let handle = famp_transport_http::tls_server::serve_std_listener(
+        listener,
+        router,
+        Arc::new(server_config),
+    );
+
+    match handle.await {
+        Ok(serve_result) => serve_result,
+        Err(join_err) => Err(std::io::Error::other(join_err)),
     }
 }
 
