@@ -88,6 +88,37 @@ fn envelope_sender(env: &AnySignedEnvelope) -> &Principal {
     }
 }
 
+/// Field names `sign_federation_fields` (09-02 egress) adds to a plain
+/// drained local-bus `Value` on its way out: the federation wrapper
+/// (`from_domain`/`to_domain`/`sender_key_id`/`nonce`/`expiry`,
+/// `capability`/`approval` reserved v2.0+ real-estate per
+/// `WireEnvelope<B>`) plus the Ed25519 `signature` itself. None of these
+/// are local-bus-legal (BUS-11) — remove them all before any local
+/// `Send`.
+const RELAY_WRAPPER_FIELDS: [&str; 8] = [
+    "signature",
+    "from_domain",
+    "to_domain",
+    "sender_key_id",
+    "nonce",
+    "expiry",
+    "capability",
+    "approval",
+];
+
+/// Strip the outer federation/signature wrapper fields before an
+/// ingress-verified envelope is delivered onto the local bus. See the
+/// call site's comment for the BUS-11 rationale. A no-op on any field
+/// that is absent — most inbound envelopes will not carry the two
+/// reserved-but-unused `capability`/`approval` keys at all.
+fn strip_relay_fields(value: &mut Value) {
+    if let Some(obj) = value.as_object_mut() {
+        for key in RELAY_WRAPPER_FIELDS {
+            obj.remove(key);
+        }
+    }
+}
+
 /// Rejections this ingress handler can produce. Deliberately distinct
 /// from `famp-transport-http::MiddlewareError` (a different trust
 /// boundary) even though the shapes rhyme — D-08's two-reason split
@@ -156,13 +187,26 @@ async fn inbox_handler(
     // that just verified were somehow not valid JSON, which
     // `verify_inbound_any`'s `AnySignedEnvelope::decode` already ruled
     // out via `from_slice_strict` internally.
-    let value: Value = match serde_json::from_slice(&body) {
+    let mut value: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("famp-gateway: ingress: verified bytes failed to re-parse as JSON: {e}");
             return IngressError::Internal.into_response();
         }
     };
+    // BUS-11 fix: the verified bytes still carry the outer federation
+    // wrapper (`signature`, `from_domain`, `to_domain`, `sender_key_id`,
+    // `nonce`, `expiry`) egress's `sign_federation_fields` (09-02) added
+    // on the way out. Content-transparency (D-03) covers `task_id` /
+    // `class` / `body` — never touched, above or below — but these
+    // relay-internal wrapper fields are NOT part of that content and
+    // MUST be stripped before the onward local `Send`: `BusEnvelope::
+    // decode` hard-rejects any local-bus line carrying a `signature`
+    // key (BUS-11, famp-envelope/src/bus.rs), so forwarding them
+    // verbatim would silently make every cross-host-relayed envelope
+    // permanently undecodable by `famp inbox`/`famp inspect` on the
+    // receiving side once it lands on the local bus.
+    strip_relay_fields(&mut value);
 
     // Registry lock held ONLY for this single delivery `send_recv` —
     // acquired after verification succeeds, dropped immediately after,
@@ -362,5 +406,75 @@ mod tests {
         let resp =
             post_inbox_raw(router, "/famp/v0.5.1/inbox/not-a-principal", b"x".to_vec()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    /// BUS-11 regression lock: `strip_relay_fields` removes every field
+    /// `sign_federation_fields` (egress.rs) adds — `signature` plus the
+    /// full federation wrapper — while leaving `task_id`/`class`/`body`
+    /// (content-transparency, D-03) byte-identical. A local-bus line
+    /// still carrying `signature` is permanently undecodable
+    /// (`BusEnvelope::decode` -> `EnvelopeDecodeError::UnexpectedSignature`,
+    /// famp-envelope/src/bus.rs), so this is the exact shape ingress
+    /// MUST hand to `BusMessage::Send`.
+    #[test]
+    fn strip_relay_fields_removes_wrapper_keeps_content() {
+        let mut value = serde_json::json!({
+            "famp": "0.5.2",
+            "id": "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a71",
+            "from": "agent:hosta.test/alice",
+            "to": "agent:hostb.test/bob",
+            "scope": "standalone",
+            "class": "request",
+            "authority": "advisory",
+            "ts": "2026-07-27T00:00:00Z",
+            "from_domain": "hosta.test",
+            "to_domain": "hostb.test",
+            "sender_key_id": "abc123",
+            "nonce": "def456",
+            "expiry": "2026-07-27T00:05:00Z",
+            "signature": "some-signature-b64url",
+            "body": {"scope": {}, "bounds": {"deadline": "2026-12-31T00:00:00Z", "budget": {"amount": "10", "unit": "usd"}}},
+        });
+        let before_body = value["body"].clone();
+        let before_id = value["id"].clone();
+        let before_class = value["class"].clone();
+
+        strip_relay_fields(&mut value);
+
+        for key in RELAY_WRAPPER_FIELDS {
+            assert!(
+                value.get(key).is_none(),
+                "relay wrapper field '{key}' must be stripped, got {value}"
+            );
+        }
+        assert_eq!(value["body"], before_body, "content-transparency: body");
+        assert_eq!(value["id"], before_id, "content-transparency: id");
+        assert_eq!(value["class"], before_class, "content-transparency: class");
+
+        // The stripped Value must now be local-bus-legal per BUS-11.
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert!(
+            famp_envelope::AnyBusEnvelope::decode(&bytes).is_ok(),
+            "post-strip Value must decode as a local BusEnvelope"
+        );
+    }
+
+    /// Absence of the reserved `capability`/`approval` keys (never
+    /// populated this phase) must not make `strip_relay_fields` panic or
+    /// otherwise misbehave — `Map::remove` on a missing key is already a
+    /// no-op, this locks that expectation explicitly.
+    #[test]
+    fn strip_relay_fields_is_a_noop_on_already_plain_value() {
+        let mut value = serde_json::json!({
+            "famp": "0.5.2",
+            "id": "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a71",
+            "from": "agent:hosta.test/alice",
+            "to": "agent:hostb.test/bob",
+            "class": "ack",
+            "body": {"disposition": "accepted"},
+        });
+        let before = value.clone();
+        strip_relay_fields(&mut value);
+        assert_eq!(value, before, "no wrapper fields present -> no-op");
     }
 }
