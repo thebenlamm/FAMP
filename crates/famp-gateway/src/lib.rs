@@ -13,6 +13,25 @@
 // (async/await here is plain language syntax, not a tokio API call).
 use tokio as _;
 
+// Silencer: Phase 9 relay dependencies (09-01 Task 3) added to
+// `Cargo.toml` for the `egress`/`ingress` modules (09-02/09-03) to
+// consume. Both modules are still empty stubs as of this plan, so the
+// lib target has no direct reference yet — `serde_json`/`uuid` are also
+// exercised under `#[cfg(test)]` in `verify.rs`'s test module, but that
+// cfg-gated use doesn't satisfy the lint for a plain (non-test) build,
+// hence the unconditional silencer here too. Remove each line as its
+// consumer module lands.
+use axum as _;
+use famp_crypto as _;
+use famp_transport as _;
+use famp_transport_http as _;
+use serde_json as _;
+use time as _;
+use tower as _;
+use tower_http as _;
+use url as _;
+use uuid as _;
+
 // Silencer for dev-only dependencies: these are used exclusively by the
 // `tests/liveness.rs` / `tests/no_cross_talk.rs` integration test
 // binaries (07-03), which are separate compilation units from this lib
@@ -23,13 +42,11 @@ use assert_cmd as _;
 #[cfg(test)]
 use famp_inspect_proto as _;
 #[cfg(test)]
-use serde_json as _;
-#[cfg(test)]
 use tempfile as _;
-#[cfg(test)]
-use uuid as _;
 
+pub mod egress;
 pub mod error;
+pub mod ingress;
 pub mod principal;
 pub mod registry;
 pub mod verify;

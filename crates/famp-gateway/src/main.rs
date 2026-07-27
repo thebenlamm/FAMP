@@ -25,6 +25,21 @@ use thiserror as _;
 use famp_envelope as _;
 use famp_keyring as _;
 
+// Silencer: Phase 9 relay dependencies (09-01 Task 3) — the outbound
+// drain loop(s) + inbound HTTP listener this bin will spawn land in
+// 09-02/09-03; until then this bin target has no direct reference to
+// any of these.
+use axum as _;
+use famp_crypto as _;
+use famp_transport as _;
+use famp_transport_http as _;
+use serde_json as _;
+use time as _;
+use tower as _;
+use tower_http as _;
+use url as _;
+use uuid as _;
+
 // Silencer for dev-only dependencies: these are used exclusively by the
 // `tests/liveness.rs` / `tests/no_cross_talk.rs` integration test
 // binaries (07-03), separate compilation units from this bin's own
@@ -34,11 +49,7 @@ use assert_cmd as _;
 #[cfg(test)]
 use famp_inspect_proto as _;
 #[cfg(test)]
-use serde_json as _;
-#[cfg(test)]
 use tempfile as _;
-#[cfg(test)]
-use uuid as _;
 
 /// Parse `--socket <path>` plus one-or-more positional principal names.
 /// Extracted as a pure function so argument handling is testable without

@@ -12,18 +12,26 @@ description = "FAMP v0.5.2 — famp-gateway crate (Layer 2 skeleton)"
 workspace = true
 
 [dependencies]
-famp-bus     = { path = "../famp-bus", version = "0.11.0" }
-famp         = { path = "../famp", version = "0.11.0" }
-famp-keyring = { path = "../famp-keyring", version = "0.11.0" }
-famp-envelope = { path = "../famp-envelope", version = "0.11.0" }
-tokio     = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
-thiserror = { workspace = true }
+famp-bus            = { path = "../famp-bus", version = "0.11.0" }
+famp                = { path = "../famp", version = "0.11.0" }
+famp-keyring        = { path = "../famp-keyring", version = "0.11.0" }
+famp-envelope       = { path = "../famp-envelope", version = "0.11.0" }
+famp-crypto         = { path = "../famp-crypto", version = "0.11.0" }
+famp-transport      = { path = "../famp-transport", version = "0.11.0" }
+famp-transport-http = { path = "../famp-transport-http", version = "0.11.0" }
+tokio      = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
+thiserror  = { workspace = true }
+serde_json = { workspace = true }
+uuid       = { workspace = true }
+axum       = "0.8"
+tower      = "0.5"
+tower-http = { version = "0.6", features = ["limit"] }
+url        = "2"
+time       = { version = "0.3", features = ["formatting", "parsing"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"
 tempfile = "3"
-serde_json = { workspace = true }
-uuid = { workspace = true }
 famp-inspect-proto = { path = "../famp-inspect-proto", version = "0.11.0" }
 
 [[bin]]
