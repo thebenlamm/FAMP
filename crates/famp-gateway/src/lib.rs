@@ -37,4 +37,4 @@ pub mod verify;
 pub use error::{GatewayError, RejectReason};
 pub use principal::ProxiedPrincipal;
 pub use registry::GatewayRegistry;
-pub use verify::verify_inbound;
+pub use verify::{verify_inbound, verify_inbound_any};
