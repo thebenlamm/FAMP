@@ -656,6 +656,10 @@ fi
 # `famp await` now prints a single wrapper JSON object:
 #   {"mailbox": {"kind": "channel"/"agent", "name": "..."}, "envelopes": [...]}
 # Fallback branch handles legacy raw-envelope lines for backward compat.
+# Single-quoted python3 heredoc is intentional: the shell must NOT expand $ or
+# variables inside the Python source (it reads only sys.argv). SC2016 is a
+# false positive here — see the SC2064 disable above for the same convention.
+# shellcheck disable=SC2016
 META="$(python3 -c '
 import json, sys
 count = 0
