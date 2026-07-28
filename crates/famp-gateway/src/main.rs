@@ -10,17 +10,25 @@
 //! Usage:
 //! ```text
 //! famp-gateway [--socket <path>] --listen <addr> --tls-cert <path>
-//!              --tls-key <path> [--peer <domain>=<url>]... [--trust-cert <path>]
+//!              --tls-key <path> [--peer <domain>=<url>]...
+//!              [--backs agent:<domain>/<name>]... [--trust-cert <path>]
 //!              <principal-name>...
 //! ```
 //! `--socket` defaults to `$FAMP_BUS_SOCKET` or `~/.famp/bus.sock`
 //! (`famp::bus_client::resolve_sock_path`). `--listen`/`--tls-cert`/
 //! `--tls-key` are required — a gateway with no inbound listener has no
-//! way to relay. `--peer <domain>=<url>` (repeatable) is the D-02
-//! `to_domain` -> remote gateway base URL map. The gateway's own signing
-//! identity and pinned peers keyring are loaded from `$FAMP_HOME` (or
-//! `$HOME/.famp` — `famp::cli::home::resolve_famp_home`), isolated per
-//! process from `--socket`'s bus/mailbox isolation (09-RESEARCH.md §7).
+//! way to relay. `--peer <domain>=<url>` (repeatable, no duplicate
+//! domains — T-11-28) is the D-02 `to_domain` -> remote gateway base URL
+//! map. `--backs agent:<domain>/<name>` (repeatable, F-3/T-11-27)
+//! explicitly binds one locally-backed principal to its route; with
+//! exactly one `--peer` configured, bare positional principal names may
+//! still be used instead (the unambiguous single-peer topology this
+//! milestone's two-machine UAT depends on) — with two or more `--peer`
+//! entries, bare names are a startup-fatal ambiguity and `--backs` is
+//! required. The gateway's own signing identity and pinned peers keyring
+//! are loaded from `$FAMP_HOME` (or `$HOME/.famp` —
+//! `famp::cli::home::resolve_famp_home`), isolated per process from
+//! `--socket`'s bus/mailbox isolation (09-RESEARCH.md §7).
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -83,21 +91,29 @@ struct GatewayArgs {
     tls_cert: PathBuf,
     tls_key: PathBuf,
     /// D-02: `to_domain` -> remote gateway base URL, one entry per
-    /// `--peer <domain>=<url>` flag (repeatable).
+    /// `--peer <domain>=<url>` flag (repeatable, no duplicate domains —
+    /// T-11-28).
     peers: Vec<(String, Url)>,
+    /// F-3/T-11-27: explicit `agent:<domain>/<name>` route bindings, one
+    /// per `--backs` flag (repeatable, no duplicate principals). Empty
+    /// when the operator relies on the bare-positional-names + single-peer
+    /// fallback instead.
+    backs: Vec<Principal>,
     trust_cert: Option<PathBuf>,
 }
 
 /// Parse `--socket <path>`, `--listen <addr>`, `--tls-cert <path>`,
-/// `--tls-key <path>`, `--peer <domain>=<url>` (repeatable),
-/// `--trust-cert <path>`, plus one-or-more positional principal names.
+/// `--tls-key <path>`, `--peer <domain>=<url>` (repeatable, no duplicate
+/// domains), `--backs agent:<domain>/<name>` (repeatable, no duplicate
+/// principals), `--trust-cert <path>`, plus one-or-more positional
+/// principal names.
 ///
 /// `--listen`/`--tls-cert`/`--tls-key` are required: a gateway with no
 /// cross-host flags can back principals but has no way to relay them
 /// anywhere, so positional-name-only invocations error clearly rather
-/// than silently parking. A malformed `--peer` value (missing `=`, or an
-/// empty domain) is a parse error naming the expected `<domain>=<url>`
-/// shape.
+/// than silently parking. A malformed `--peer` value (missing `=`, an
+/// empty domain, or a DUPLICATE domain — T-11-28) is a parse error. A
+/// malformed or duplicate `--backs` value is likewise a parse error.
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, String> {
     let _bin = args.next();
     let mut sock: Option<PathBuf> = None;
@@ -106,6 +122,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     let mut tls_cert: Option<PathBuf> = None;
     let mut tls_key: Option<PathBuf> = None;
     let mut peers: Vec<(String, Url)> = Vec::new();
+    let mut backs: Vec<Principal> = Vec::new();
     let mut trust_cert: Option<PathBuf> = None;
 
     while let Some(arg) = args.next() {
@@ -145,7 +162,32 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
                 }
                 let url = Url::parse(url_str)
                     .map_err(|e| format!("--peer: invalid url in '{raw}': {e}"))?;
+                // T-11-28: mirror `KeyringError::KeyConflict`'s
+                // fail-closed shape — a repeated domain is a startup
+                // error naming both URLs, never last-write-wins.
+                if let Some((_, existing_url)) = peers.iter().find(|(d, _)| d == domain) {
+                    return Err(format!(
+                        "--peer: duplicate domain '{domain}': already mapped to \
+                         '{existing_url}', now given '{url}' — remove one (ambiguous route \
+                         configuration must fail closed, never last-write-wins)"
+                    ));
+                }
                 peers.push((domain.to_owned(), url));
+            }
+            "--backs" => {
+                let raw = args
+                    .next()
+                    .ok_or("--backs requires a <principal> argument, e.g. agent:hostb.test/bob")?;
+                let principal: Principal = raw
+                    .parse()
+                    .map_err(|e| format!("--backs: invalid principal '{raw}': {e}"))?;
+                if backs.contains(&principal) {
+                    return Err(format!(
+                        "--backs: duplicate principal '{principal}' — each --backs binding \
+                         must be unique"
+                    ));
+                }
+                backs.push(principal);
             }
             "--trust-cert" => {
                 let path = args.next().ok_or("--trust-cert requires a path argument")?;
@@ -175,6 +217,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
         tls_cert,
         tls_key,
         peers,
+        backs,
         trust_cert,
     })
 }
@@ -198,6 +241,62 @@ fn resolve_own_domain_or_exit(home: &std::path::Path) -> Option<String> {
         Err(e) => {
             eprintln!("famp-gateway: invalid own-domain configuration: {e}");
             std::process::exit(1);
+        }
+    }
+}
+
+/// F-3/F-4 (T-11-27/T-11-28): populate `transport`'s route map from ONLY
+/// explicit operator-declared bindings — the peer x backed-name
+/// cross-product that used to manufacture fabricated principal->route
+/// bindings is gone. Extracted from `main()` solely to satisfy
+/// `clippy::too_many_lines`, mirroring 11-07's `resolve_own_domain_or_exit`
+/// extraction precedent.
+///
+/// Two paths:
+///
+///   1. `--backs agent:<domain>/<name>` given: register EXACTLY those
+///      bindings, resolved against the matching `--peer` domain's URL. A
+///      `--backs` principal whose authority has no matching `--peer` is
+///      startup-fatal.
+///   2. No `--backs` given: fall back to bare positional names, but ONLY
+///      when exactly one `--peer` is configured (the unambiguous
+///      single-peer topology this milestone's two-machine UAT depends on
+///      — `e2e_cross_host_delivery.rs`/`no_cross_talk.rs` keep working
+///      unchanged). Two or more peers with bare names is a startup-fatal
+///      ambiguity naming the actionable fix. Zero peers is a no-op
+///      (matches the legacy cross-product's behavior over an empty
+///      `--peer` list — nothing to route yet).
+async fn build_route_map(args: &GatewayArgs, backed_names: &[String], transport: &HttpTransport) {
+    if args.backs.is_empty() {
+        match args.peers.len() {
+            0 => {}
+            1 => {
+                let (domain, url) = &args.peers[0];
+                for name in backed_names {
+                    if let Ok(principal) = format!("agent:{domain}/{name}").parse::<Principal>() {
+                        transport.add_peer(principal, url.clone()).await;
+                    }
+                }
+            }
+            n => {
+                eprintln!(
+                    "famp-gateway: {n} --peer domains configured but bare positional \
+                     principal names are ambiguous with more than one peer — use \
+                     --backs agent:<domain>/<name> to bind each principal explicitly"
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        for principal in &args.backs {
+            let domain = principal.authority();
+            let Some((_, url)) = args.peers.iter().find(|(d, _)| d == domain) else {
+                eprintln!(
+                    "famp-gateway: --backs {principal} has no matching --peer domain '{domain}'"
+                );
+                std::process::exit(1);
+            };
+            transport.add_peer(principal.clone(), url.clone()).await;
         }
     }
 }
@@ -273,20 +372,7 @@ async fn main() {
         }
     };
 
-    // D-02: resolve every backed principal's federation address
-    // (`agent:{domain}/{name}`, for each `--peer` domain) to that peer
-    // gateway's base URL. A backed name whose domain has no matching
-    // `--peer` entry is simply never added to the transport's address
-    // map — the resulting egress relay attempt then surfaces as a
-    // transport `UnknownRecipient` error (logged, drain loop continues),
-    // never a silent drop.
-    for (domain, url) in &args.peers {
-        for name in &backed_names {
-            if let Ok(principal) = format!("agent:{domain}/{name}").parse::<Principal>() {
-                transport.add_peer(principal, url.clone()).await;
-            }
-        }
-    }
+    build_route_map(&args, &backed_names, &transport).await;
 
     // T-11-21: "ready" is printed here — AFTER home resolve, own-domain
     // resolve/validate, signing-key load, keyring load, transport build,
@@ -326,8 +412,16 @@ async fn main() {
         ));
     }
 
+    // T-11-23/T-11-24: same resolved value threaded into egress above,
+    // reused here for ingress's to-authority check — ONE resolution
+    // site, two boundaries (11-08's prohibition on a second config
+    // source). Converted to `Arc<str>` only at this call site so
+    // `own_domain` itself stays an owned `Option<String>` local, per
+    // 11-07's forward-compat note.
+    let ingress_own_domain: Option<Arc<str>> = own_domain.clone().map(Arc::from);
+
     tokio::select! {
-        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring)) => {
+        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), ingress_own_domain) => {
             if let Err(e) = result {
                 eprintln!("famp-gateway: ingress server exited: {e}");
             }
@@ -550,6 +644,106 @@ mod tests {
         ]))
         .unwrap_err();
         assert!(err.contains("usage:"), "got: {err}");
+    }
+
+    #[test]
+    fn duplicate_peer_domain_is_a_parse_error() {
+        let err = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "--peer",
+            "hostb.test=https://127.0.0.1:9443",
+            "--peer",
+            "hostb.test=https://127.0.0.1:9444",
+            "alice",
+        ]))
+        .unwrap_err();
+        assert!(err.contains("duplicate domain"), "got: {err}");
+        assert!(err.contains("hostb.test"), "got: {err}");
+        assert!(err.contains("9443"), "got: {err}");
+        assert!(err.contains("9444"), "got: {err}");
+    }
+
+    #[test]
+    fn backs_flag_parses_and_is_repeatable() {
+        let parsed = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "--backs",
+            "agent:hostb.test/bob",
+            "--backs",
+            "agent:hostc.test/carol",
+            "alice",
+        ]))
+        .expect("repeated --backs must parse");
+        assert_eq!(parsed.backs.len(), 2);
+        assert_eq!(
+            parsed.backs[0],
+            "agent:hostb.test/bob".parse::<Principal>().unwrap()
+        );
+        assert_eq!(
+            parsed.backs[1],
+            "agent:hostc.test/carol".parse::<Principal>().unwrap()
+        );
+    }
+
+    #[test]
+    fn backs_defaults_to_empty() {
+        let parsed = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "alice",
+        ]))
+        .expect("must parse without --backs");
+        assert!(parsed.backs.is_empty());
+    }
+
+    #[test]
+    fn duplicate_backs_principal_is_a_parse_error() {
+        let err = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "--backs",
+            "agent:hostb.test/bob",
+            "--backs",
+            "agent:hostb.test/bob",
+            "alice",
+        ]))
+        .unwrap_err();
+        assert!(err.contains("duplicate principal"), "got: {err}");
+    }
+
+    #[test]
+    fn malformed_backs_value_is_a_parse_error() {
+        let err = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "--backs",
+            "not-a-principal",
+            "alice",
+        ]))
+        .unwrap_err();
+        assert!(err.contains("invalid principal"), "got: {err}");
     }
 
     #[test]
