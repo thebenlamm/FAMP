@@ -271,7 +271,7 @@ Plans:
 **Wave 1**
 
 - [x] 11-01-PLAN.md — D-06 transport error-chain un-swallow (typed RelayError source, force-multiplier, sequenced first) [OBS-01]
-- [ ] 11-02-PLAN.md — D-05 single-source own-domain resolver + peer-export label coupling + MCP error_kind mappings (closes from==pinned-label) [ADDR-03]
+- [x] 11-02-PLAN.md — D-05 single-source own-domain resolver + peer-export label coupling + MCP error_kind mappings (closes from==pinned-label) [ADDR-03]
 
 **Wave 2** *(depends on Wave 1)*
 
