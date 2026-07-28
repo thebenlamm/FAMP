@@ -457,15 +457,14 @@ fn build_inner_payload(args: &SendArgs) -> Result<serde_json::Value, CliError> {
     Ok(serde_json::Value::Object(obj))
 }
 
-/// Fresh `UUIDv7` message id + RFC 3339 (second-precision, `Z`-suffixed)
-/// timestamp, shared by both the local and remote envelope-build paths.
+/// RFC 3339 (second-precision, `Z`-suffixed) timestamp, shared by both the
+/// local and remote envelope-build paths.
 ///
 /// Shallow format match for `Timestamp::shallow_validate` (≥20 bytes,
 /// `-`/`T`/`:` at fixed offsets, ends with `Z`): subsecond components (if
 /// `time` emits one) are stripped so the trimmed `YYYY-MM-DDTHH:MM:SSZ`
 /// form matches the fixture used by `audit_log_dispatch.rs`.
-fn fresh_id_and_ts() -> Result<(String, String), CliError> {
-    let id = uuid::Uuid::now_v7().to_string();
+fn fresh_ts() -> Result<String, CliError> {
     let ts = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .map_err(|e| CliError::SendArgsInvalid {
@@ -483,6 +482,16 @@ fn fresh_id_and_ts() -> Result<(String, String), CliError> {
     } else {
         ts
     };
+    Ok(ts)
+}
+
+/// Fresh `UUIDv7` message id (string form, local/audit_log envelope
+/// shape), paired with [`fresh_ts`]. Used by the local (bare-name)
+/// envelope path only — the remote (typed) path generates its own
+/// `MessageId` directly via `MessageId::new_v7()`.
+fn fresh_id_and_ts() -> Result<(String, String), CliError> {
+    let id = uuid::Uuid::now_v7().to_string();
+    let ts = fresh_ts()?;
     Ok((id, ts))
 }
 
@@ -580,12 +589,82 @@ fn build_envelope_value(
     Ok(envelope)
 }
 
-/// Build the domain-qualified remote-send envelope (D-01/D-02): `to` is
-/// the full principal verbatim, `from` is `agent:{own_domain}/{identity}`
-/// resolved via [`resolve_own_domain`] (own-domain plan 02). Still wraps
-/// the mode-tagged `audit_log` shape used by the local path — Task 2 of
-/// this plan upgrades this to a mode-branched typed class
-/// (request/commit/deliver-terminal).
+/// Throwaway signing key used ONLY to produce the exact `WireEnvelope`-
+/// shaped bytes `UnsignedEnvelope::sign` -> `SignedEnvelope::encode`
+/// requires, then immediately stripped (BUS-11: the local bus never
+/// carries a `signature`). Mirrors the sanctioned "sign-then-strip"
+/// pattern already used by `famp-gateway/src/egress.rs`'s own
+/// `plain_request_value` unit-test helper and
+/// `crates/famp-gateway/tests/e2e_cross_host_delivery.rs`'s
+/// `unsigned_value`. There is no separate "encode unsigned" accessor.
+const THROWAWAY_SIGN_SEED: [u8; 32] = [42u8; 32];
+
+/// §9.3 `Bounds` shape carrying exactly 2 of the 8 optional keys (the
+/// minimum the spec requires for enforceable bounds). Mirrors
+/// `egress.rs`'s / the e2e test's own `two_key_bounds()` helper.
+fn two_key_bounds() -> famp_envelope::body::Bounds {
+    famp_envelope::body::Bounds {
+        deadline: None,
+        budget: Some(famp_envelope::body::Budget {
+            amount: "0".to_string(),
+            unit: "usd".to_string(),
+        }),
+        hop_limit: Some(8),
+        policy_domain: None,
+        authority_scope: None,
+        max_artifact_size: None,
+        confidence_floor: None,
+        recursion_depth: None,
+    }
+}
+
+/// Sign `env` with the throwaway key then strip the `signature` field —
+/// the only path to wire bytes is `sign()` -> `encode()`; there is no
+/// public "unsigned-to-value" accessor (BUS-11).
+fn sign_then_strip<B: famp_envelope::BodySchema>(
+    env: famp_envelope::UnsignedEnvelope<B>,
+) -> Result<serde_json::Value, CliError> {
+    let sk = famp_crypto::FampSigningKey::from_bytes(THROWAWAY_SIGN_SEED);
+    let signed = env.sign(&sk).map_err(|e| CliError::Envelope(Box::new(e)))?;
+    let bytes = signed
+        .encode()
+        .map_err(|e| CliError::Envelope(Box::new(e)))?;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| CliError::Envelope(Box::new(e)))?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("signature");
+    }
+    Ok(value)
+}
+
+/// Parse `args.task` (the `--task <uuid>` continuation id) into a typed
+/// `MessageId`, surfacing a typed `SendArgsInvalid` on a malformed value
+/// rather than panicking.
+fn parse_task_id(task: &str) -> Result<famp_core::MessageId, CliError> {
+    task.parse().map_err(|_| CliError::SendArgsInvalid {
+        reason: format!("invalid --task id '{task}': expected a UUIDv7"),
+    })
+}
+
+/// Build the domain-qualified remote-send envelope (D-01/D-02/D-03): `to`
+/// is the full principal verbatim, `from` is
+/// `agent:{own_domain}/{identity}` resolved via [`resolve_own_domain`]
+/// (own-domain plan 02). The envelope CLASS is branched on send mode
+/// (review HIGH #1) so the FSM can reach a terminal state
+/// (`famp-fsm::engine::TaskFsm::step` only legalizes
+/// `Requested -(Commit)-> Committed -(Deliver+terminal_status)->
+/// terminal`; emitting `request` for every remote send would leave the
+/// FSM stuck at REQUESTED forever):
+///
+/// - `--new-task` -> typed `RequestBody` (class `request`).
+/// - `--task` (non-terminal) -> typed `CommitBody` (class `commit`) with
+///   `Causality { rel: Commits, referenced: task_id }`.
+/// - `--task --terminal` -> typed `DeliverBody` (class `deliver`) with
+///   `Causality { rel: Delivers, referenced: task_id }` +
+///   `terminal_status: Completed`.
+///
+/// Every shape is produced unsigned via [`sign_then_strip`] (BUS-11 — no
+/// `signature` key ever reaches the bus).
 fn build_remote_envelope_value(
     args: &SendArgs,
     identity: &str,
@@ -593,51 +672,93 @@ fn build_remote_envelope_value(
     home: &Path,
 ) -> Result<serde_json::Value, CliError> {
     let own_domain = resolve_own_domain(args.domain.as_deref(), home)?;
-    let from = format!("agent:{own_domain}/{identity}");
-    let to = principal.to_string();
+    let from: Principal = format!("agent:{own_domain}/{identity}")
+        .parse()
+        .map_err(|e| CliError::SendArgsInvalid {
+            reason: format!("failed to build a valid `from` principal: {e}"),
+        })?;
+    let to = principal.clone();
 
-    let inner = build_inner_payload(args)?;
-    let (id, ts) = fresh_id_and_ts()?;
+    let ts = famp_envelope::Timestamp(fresh_ts()?);
 
-    let event = match (
-        args.new_task.is_some(),
-        args.task.is_some(),
+    match (
+        args.new_task.as_deref(),
+        args.task.as_deref(),
         args.terminal,
-        args.channel.is_some(),
     ) {
-        (true, false, false, _) => "famp.send.new_task",
-        (false, true, true, _) => "famp.send.deliver_terminal",
-        (false, true, false, _) => "famp.send.deliver",
-        (false, false, false, true) => "famp.send.channel_post",
-        _ => "famp.send", // unreachable: build_inner_payload would have errored.
-    };
-
-    let mut envelope = serde_json::json!({
-        "famp": "0.5.2",
-        "class": "audit_log",
-        "scope": "standalone",
-        "id": id,
-        "from": from,
-        "to": to,
-        "authority": "advisory",
-        "ts": ts,
-        "body": {
-            "event": event,
-            "details": inner,
+        (Some(summary), None, false) => {
+            let body = famp_envelope::body::RequestBody {
+                scope: serde_json::json!({}),
+                bounds: two_key_bounds(),
+                natural_language_summary: Some(summary.to_string()),
+            };
+            let env = famp_envelope::UnsignedEnvelope::<famp_envelope::body::RequestBody>::new(
+                famp_core::MessageId::new_v7(),
+                from,
+                to,
+                famp_core::AuthorityScope::Advisory,
+                ts,
+                body,
+            );
+            sign_then_strip(env)
         }
-    });
-
-    if let (Some(task_uuid), Some(obj)) = (args.task.as_deref(), envelope.as_object_mut()) {
-        obj.insert(
-            "causality".to_string(),
-            serde_json::json!({
-                "rel": "delivers",
-                "ref": task_uuid,
-            }),
-        );
+        (None, Some(task), false) => {
+            let task_id = parse_task_id(task)?;
+            let body = famp_envelope::body::CommitBody {
+                scope: serde_json::json!({}),
+                scope_subset: None,
+                bounds: two_key_bounds(),
+                accepted_policies: Vec::new(),
+                delegation_permissions: None,
+                reporting_obligations: None,
+                terminal_condition: serde_json::json!({"type": "final_delivery"}),
+                conditions: None,
+                natural_language_summary: args.body.clone(),
+            };
+            let env = famp_envelope::UnsignedEnvelope::<famp_envelope::body::CommitBody>::new(
+                famp_core::MessageId::new_v7(),
+                from,
+                to,
+                famp_core::AuthorityScope::CommitLocal,
+                ts,
+                body,
+            )
+            .with_causality(famp_envelope::Causality {
+                rel: famp_envelope::Relation::Commits,
+                referenced: task_id,
+            });
+            sign_then_strip(env)
+        }
+        (None, Some(task), true) => {
+            let task_id = parse_task_id(task)?;
+            let body = famp_envelope::body::DeliverBody {
+                interim: false,
+                artifacts: None,
+                result: args.body.as_deref().map(|b| serde_json::json!({"text": b})),
+                usage_metrics: None,
+                error_detail: None,
+                provenance: Some(serde_json::json!({"signer": from.to_string()})),
+                natural_language_summary: None,
+            };
+            let env = famp_envelope::UnsignedEnvelope::<famp_envelope::body::DeliverBody>::new(
+                famp_core::MessageId::new_v7(),
+                from,
+                to,
+                famp_core::AuthorityScope::Advisory,
+                ts,
+                body,
+            )
+            .with_causality(famp_envelope::Causality {
+                rel: famp_envelope::Relation::Delivers,
+                referenced: task_id,
+            })
+            .with_terminal_status(famp_core::TerminalStatus::Completed);
+            sign_then_strip(env)
+        }
+        _ => Err(CliError::SendArgsInvalid {
+            reason: "exactly one of --new-task / --task is required for a remote send".to_string(),
+        }),
     }
-
-    Ok(envelope)
 }
 
 #[cfg(test)]
@@ -1048,5 +1169,133 @@ mod tests {
             }
             other => panic!("expected SendArgsInvalid, got {other:?}"),
         }
+    }
+
+    // --- mode-branched typed class tests (D-03, review HIGH #1) ---
+
+    fn remote_target() -> Principal {
+        "agent:hostb.test/bob".parse().unwrap()
+    }
+
+    fn remote_args(new_task: Option<&str>, task: Option<&str>, terminal: bool) -> SendArgs {
+        SendArgs {
+            to: Some("agent:hostb.test/bob".to_string()),
+            channel: None,
+            new_task: new_task.map(str::to_string),
+            task: task.map(str::to_string),
+            terminal,
+            body: Some("ok".to_string()),
+            more_coming: false,
+            act_as: None,
+            domain: Some("hosta.test".to_string()),
+        }
+    }
+
+    /// `--new-task` on a remote send must produce a typed `RequestBody`
+    /// (class `request`), unsigned (no `signature` key on the bus Value),
+    /// so the FSM starts at REQUESTED.
+    #[test]
+    fn remote_new_task_emits_typed_request_no_signature() {
+        let args = remote_args(Some("ping"), None, false);
+        let principal = remote_target();
+        let env = build_remote_envelope_value(
+            &args,
+            "alice",
+            &principal,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
+        assert_eq!(env["class"], serde_json::Value::String("request".into()));
+        assert_eq!(
+            env["body"]["natural_language_summary"],
+            serde_json::Value::String("ping".into())
+        );
+        assert!(env.get("signature").is_none(), "unsigned: {env}");
+    }
+
+    /// `--task` (non-terminal) on a remote send must produce a typed
+    /// `CommitBody` (class `commit`) with `Causality{rel:Commits,ref:task}`
+    /// — the transition that advances REQUESTED -> COMMITTED
+    /// (`famp-fsm::engine.rs:29`), unsigned.
+    #[test]
+    fn remote_task_non_terminal_emits_typed_commit_with_commits_causality() {
+        let task_id = "0193abcd-ef01-7000-8000-000000000003";
+        let args = remote_args(None, Some(task_id), false);
+        let principal = remote_target();
+        let env = build_remote_envelope_value(
+            &args,
+            "alice",
+            &principal,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
+        assert_eq!(env["class"], serde_json::Value::String("commit".into()));
+        assert_eq!(
+            env["causality"]["rel"],
+            serde_json::Value::String("commits".into())
+        );
+        assert_eq!(
+            env["causality"]["ref"],
+            serde_json::Value::String(task_id.into())
+        );
+        assert!(env.get("signature").is_none(), "unsigned: {env}");
+    }
+
+    /// `--task --terminal` on a remote send must produce a typed
+    /// `DeliverBody` (class `deliver`) with `Causality{rel:Delivers,...}`
+    /// AND `terminal_status: completed` — the transition that advances
+    /// COMMITTED -> COMPLETED (terminal), unsigned.
+    #[test]
+    fn remote_task_terminal_emits_typed_deliver_with_terminal_status() {
+        let task_id = "0193abcd-ef01-7000-8000-000000000004";
+        let args = remote_args(None, Some(task_id), true);
+        let principal = remote_target();
+        let env = build_remote_envelope_value(
+            &args,
+            "alice",
+            &principal,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
+        assert_eq!(env["class"], serde_json::Value::String("deliver".into()));
+        assert_eq!(
+            env["causality"]["rel"],
+            serde_json::Value::String("delivers".into())
+        );
+        assert_eq!(
+            env["terminal_status"],
+            serde_json::Value::String("completed".into())
+        );
+        assert!(env.get("signature").is_none(), "unsigned: {env}");
+    }
+
+    /// Regression: the bare-name local branch is byte-unchanged (modulo
+    /// id/ts) by Task 2's remote-class branching — still the `audit_log`
+    /// shape, `class` untouched by send mode.
+    #[test]
+    fn local_branch_still_audit_log_after_typed_class_branching() {
+        let args = SendArgs {
+            to: Some("bob".to_string()),
+            channel: None,
+            new_task: None,
+            task: Some("0193abcd-ef01-7000-8000-000000000005".to_string()),
+            terminal: true,
+            body: None,
+            more_coming: false,
+            act_as: None,
+            domain: None,
+        };
+        let target = Target::Agent {
+            name: "bob".to_string(),
+        };
+        let env = build_envelope_value(
+            &args,
+            "alice",
+            &target,
+            None,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
+        assert_eq!(env["class"], serde_json::Value::String("audit_log".into()));
     }
 }
