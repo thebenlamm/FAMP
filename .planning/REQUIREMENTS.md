@@ -48,7 +48,7 @@
 
 ### Observability (OBS) — Phase 11
 
-- [ ] **OBS-01**: Transport egress logs the full error source chain, not the opaque `"reqwest failure"` Display string — every transport fault (EkuError, CaUsedAsEndEntity, connect-refused, timeout, DNS) is distinguishable in the log (Gate A finding #7).
+- [x] **OBS-01**: Transport egress logs the full error source chain, not the opaque `"reqwest failure"` Display string — every transport fault (EkuError, CaUsedAsEndEntity, connect-refused, timeout, DNS) is distinguishable in the log (Gate A finding #7).
 
 ### Docs (DOC) — Phase 11
 
@@ -58,9 +58,18 @@
 
 - [ ] **TEST-03**: Committed cross-machine fixtures regenerated to CA:FALSE+serverAuth EKU; a macOS CI leg exercises the previously Linux-only-green path; a shipping-surface integration test drives the real `famp send` cross-host (replacing the throwaway injector); a negative test asserts a `local.bus`-authority envelope through the federated path yields a typed error, not a silent drop.
 
+### Security (SEC) — Phase 11 gateway trust boundary
+
+Added 2026-07-28 from the third external design review ("FAMP v1.0 Remote Addressing: Final Design Review", archived at `.planning/phases/11-.../DESIGN-REVIEW-C-final.pdf`). Each item was verified against source before being written down — see `11-REVIEW-C-FINDINGS.md` for the file:line evidence. All four are on the review's own required-before-v1.0.0 list.
+
+- [x] **SEC-01**: The envelope `from` is bound to the authenticated local identity at both boundaries — the broker rejects a Send whose `from` leaf-name != the connection's effective identity, and gateway egress rejects a `from` whose authority != the configured own-domain. A local agent cannot make the bus carry, nor the gateway sign, another agent's or another domain's `from`. *(Delivered by plan 11-07.)*
+- [ ] **SEC-02**: The receiving gateway is authoritative only for what it owns — after signature verification, ingress rejects any envelope whose `to` authority != its configured own-domain, and any envelope whose `to` != the URL-path recipient. Inbound federation fields are format-checked (`federation_format_ok`). Closes the open-relay and arbitrary-mailbox-placement paths (INV-H).
+- [ ] **SEC-03**: Federation-owned fields have exactly one writer — a locally-originated envelope arriving at egress carrying any of `from_domain`, `to_domain`, `sender_key_id`, `nonce`, `expiry`, `capability`, `approval` is rejected with a typed error, never signed. The gateway's derived values are authoritative by construction (INV-F).
+- [ ] **SEC-04**: Route configuration is explicit and fails closed — the route map contains only operator-declared principal→URL bindings (no peer-domain × backed-name cross-product), and duplicate or ambiguous configuration fails at startup rather than resolving last-write-wins (INV-J).
+
 ### UAT — Phase 11
 
-- [ ] **UAT-01**: The Gate A two-machine dogfood is re-run with the fixed `famp send` (no injector) and reaches a terminal task state on both sides — the final human gate before tagging v1.0.0.
+- [ ] **UAT-01**: The Gate A two-machine dogfood is re-run with the fixed `famp send` (no injector) and reaches a terminal task state on both sides — the final human gate before tagging v1.0.0. Per the design review's §16 release ruling, this gates a `v1.0.0-rc.1` tag; `v1.0.0` follows only once the review's 9-item checklist is satisfied.
 
 ## v2 Requirements (deferred — v1.1 / v2.0+)
 
@@ -110,11 +119,22 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TEST-01 | Phase 10 | Complete |
 | TEST-02 | Phase 10 | Complete |
 | DOC-04 | Phase 10 | Complete |
+| ADDR-01 | Phase 11 | Complete |
+| ADDR-02 | Phase 11 | Complete |
+| ADDR-03 | Phase 11 | Complete |
+| OBS-01 | Phase 11 | Complete |
+| SEC-01 | Phase 11 | Complete |
+| SEC-02 | Phase 11 | In Progress |
+| SEC-03 | Phase 11 | In Progress |
+| SEC-04 | Phase 11 | In Progress |
+| DOC-05 | Phase 11 | Pending |
+| TEST-03 | Phase 11 | Pending |
+| UAT-01 | Phase 11 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 13 total
-- Mapped to phases: 13 (100%)
+- v1 requirements: 24 total
+- Mapped to phases: 24 (100%)
 - Unmapped: 0
 
 **Phase summary:**
