@@ -25,6 +25,7 @@
 - [x] **Phase 8: Signed Cross-Host Envelope + Trust Bootstrap** - Ed25519-signed, forward-compatible cross-host envelope format plus two-machine TOFU key export/import. (completed 2026-07-23)
 - [ ] **Phase 9: End-to-End Cross-Host Delivery** - Full bidirectional `request → commit → deliver → ack` task cycle across two machines through the gateway.
 - [ ] **Phase 10: Test Reactivation + Setup Docs** - Deferred federation tests triaged and green, a live two-process E2E in `just ci`, and a two-machine setup guide.
+- [ ] **Phase 11: Shipping-Client Remote Addressing + Setup Hardening** - Make `famp send` able to address a remote principal (C2/C5 sender-side split-addressing) so a real client — not just a hand-written injector — drives a cross-host delivery; fix the 8 Gate A dogfood findings (GATEWAY-SETUP.md wiring/cert/firewall, the transport error-chain swallow, platform-conditional fixtures); replace the throwaway injector with a shipping-surface test; re-run the two-machine dogfood with the real client as the final v1.0.0 gate.
 
 ## Phase Details
 
@@ -213,11 +214,22 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Gateway relay primitives: ProxiedPrincipal::send_recv, GatewayRegistry::get_mut, verify_inbound_any + module/dep scaffolding (Wave 1)
-- [ ] 09-02-PLAN.md — Egress: outbound drain loop + federation-field Value-mutation sign + HTTPS POST (Wave 2)
-- [ ] 09-03-PLAN.md — Ingress: gateway-owned axum/rustls router, verify_inbound_any as sole trust decision, deliver via backed sender stand-in (Wave 2)
-- [ ] 09-04-PLAN.md — Wire into famp-gateway bin: cross-host flags, identity/keyring load, concurrent ingress + per-principal egress (Wave 3)
-- [ ] 09-05-PLAN.md — Two-process loopback E2E: full request→commit→deliver→ack cycle, terminal FSM on both sides (Wave 4)
+**Wave 1**
+
+- [x] 09-01-PLAN.md — Gateway relay primitives: ProxiedPrincipal::send_recv, GatewayRegistry::get_mut, verify_inbound_any + module/dep scaffolding (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 09-02-PLAN.md — Egress: outbound drain loop + federation-field Value-mutation sign + HTTPS POST (Wave 2)
+- [x] 09-03-PLAN.md — Ingress: gateway-owned axum/rustls router, verify_inbound_any as sole trust decision, deliver via backed sender stand-in (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 09-04-PLAN.md — Wire into famp-gateway bin: cross-host flags, identity/keyring load, concurrent ingress + per-principal egress (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 09-05-PLAN.md — Two-process loopback E2E: full request→commit→deliver→ack cycle, terminal FSM on both sides (Wave 4)
 
 ### Phase 10: Test Reactivation + Setup Docs
 
@@ -230,7 +242,49 @@ Plans:
   2. A live two-process end-to-end test exercises the full signed cross-host task cycle (two gateway-backed processes, real signed envelopes over the wire) and runs as part of `just ci` on every commit — not gated behind a manual or `#[ignore]`'d path (TEST-02).
   3. A setup guide documents standing up the gateway on two machines — bind address, out-of-band key exchange (peer export/import from Phase 8), and connect/verify — and a developer following it unassisted successfully reaches a working cross-host connection (DOC-04).
 
-**Plans:** TBD
+**Plans:** 3 plans (Wave 1, fully parallel — zero file overlap)
+
+- [x] 10-01-PLAN.md — TEST-01: triage ledger + delete 27 dead `_deferred_v1/` tests (27/27 RETIRE, 0 reactivate)
+- [x] 10-02-PLAN.md — TEST-02: CI-gate regression guard for the already-green two-process cross-host E2E + D-05 hermetic/CI-safety property guard
+- [x] 10-03-PLAN.md — DOC-04: `docs/GATEWAY-SETUP.md` two-machine runbook + binary-accuracy gates + `10-HUMAN-UAT.md`
+
+### Phase 11: Shipping-Client Remote Addressing + Setup Hardening
+
+**Goal:** A real shipping client (`famp send` / `famp_send`), not a hand-written injector, can address a remote principal and drive a signed cross-host delivery to a terminal task state; the two-machine setup guide is correct and followable on both macOS and Linux; and the 8 defects the Gate A dogfood surfaced (2026-07-28, see `.planning/phases/10-test-reactivation-setup-docs/10-HUMAN-UAT.md`) are fixed with regression coverage — closing the last gap between "the wire is proven" and "v1.0.0 is tagged."
+**Depends on:** Phase 10 (the gateway wire + setup guide exist; this phase makes them driveable from a shipping client and corrects the guide). Design settled by an external design pass — see `.planning/DESIGN-BRIEF-v1-remote-addressing.md` (C2/C5 sender-side split-addressing).
+**Requirements:** ADDR-01, ADDR-02, ADDR-03, OBS-01, DOC-05, TEST-03, UAT-01 (7 requirements)
+**Success Criteria** (what must be TRUE):
+
+  1. `famp send --to agent:<peer-domain>/<name>` (or `--to <name> --domain <domain>`) from machine A emits an envelope whose `from` AND `to` are domain-qualified while the local bus target stays the bare proxy name, and it delivers into the real remote agent's mailbox on machine B (ADDR-01).
+  2. Remote sends emit a typed, FSM-driving envelope constructed unsigned on the local bus (sign-then-strip / BUS-11) — the local bus stays unsigned, no local crypto — while bare-name local chat is unchanged (`audit_log`) (ADDR-02).
+  3. The gateway/CLI has a defined own-domain source for stamping the envelope `from`, resolving the `--as`/`bind_as` charset collision (ADDR-03).
+  4. Transport egress logs the full error source chain, not the opaque "reqwest failure" string (OBS-01, Gate A finding #7).
+  5. `docs/GATEWAY-SETUP.md` is corrected for all 8 Gate A findings — wiring direction, pin label, keyring pin-before-launch + duplicate-pubkey brick + ready-line ordering, the CA:FALSE+serverAuth cert recipe that works on both macOS and Linux, and macOS host-firewall pre-auth (DOC-05).
+  6. The committed cross-machine fixtures are regenerated to CA:FALSE+serverAuth EKU, a macOS CI leg exercises the previously Linux-only-green path, and a shipping-surface integration test drives the real `famp send` cross-host (replacing the throwaway injector), plus a negative test that a `local.bus`-authority envelope through the federated path yields a typed error (TEST-03).
+  7. The Gate A two-machine dogfood is re-run with the fixed `famp send` (NO injector) and reaches a terminal task state on both sides — the final human gate before tagging v1.0.0 (UAT-01).
+
+**Hard constraints:** INV-10 / RFC-8785 canonical + `FAMP-sig-v1\0`; the local bus stays UNSIGNED (do not reopen the v0.9 decision); `crates/famp-gateway/tests/e2e_cross_host_delivery.rs` stays green; no CI-gate weakening; spec authority v0.5.2.
+
+**Plans:** 6 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 11-01-PLAN.md — D-06 transport error-chain un-swallow (force-multiplier, sequenced first) [OBS-01]
+- [ ] 11-02-PLAN.md — D-05 single-source own-domain resolver + peer-export label coupling (closes from==pinned-label) [ADDR-03]
+
+**Wave 2** *(depends on Wave 1)*
+
+- [ ] 11-03-PLAN.md — D-01..D-04 addressing core: split-addressing + domain-qualified from/to + typed unsigned request + `--domain` flag [ADDR-01, ADDR-02] (depends 11-02)
+
+**Wave 3** *(depends on Wave 2)*
+
+- [ ] 11-04-PLAN.md — D-08/D-09 cross-platform fixtures regen + shipping-surface e2e (happy + negative), retire injector [TEST-03] (depends 11-01, 11-03)
+- [ ] 11-05-PLAN.md — D-07 GATEWAY-SETUP.md 8-finding correction + semantic doc-accuracy gate [DOC-05] (depends 11-02, 11-03)
+
+**Wave 4** *(depends on Wave 3)*
+
+- [ ] 11-06-PLAN.md — UAT-01 live two-machine dogfood with the fixed `famp send` (no injector) — final v1.0.0 gate [UAT-01] (depends 11-03, 11-04, 11-05, autonomous: false)
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
@@ -399,8 +453,8 @@ Rough ordering inside v1.0+ (not committed):
 | 6. Onboarding & Cross-Platform Docs | v0.11 | 3/3 | Complete | 2026-06-06 |
 | 7. Broker-Liveness Fork + Gateway Skeleton | v1.0 | 3/3 | Complete    | 2026-07-23 |
 | 8. Signed Cross-Host Envelope + Trust Bootstrap | v1.0 | 4/4 | Complete    | 2026-07-23 |
-| 9. End-to-End Cross-Host Delivery | v1.0 | 0/TBD | Not started | - |
-| 10. Test Reactivation + Setup Docs | v1.0 | 0/TBD | Not started | - |
+| 9. End-to-End Cross-Host Delivery | v1.0 | 5/5 | Complete   | 2026-07-27 |
+| 10. Test Reactivation + Setup Docs | v1.0 | 3/3 | Complete   | 2026-07-27 |
 
 ## Backlog
 
