@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Federation Profile)
-current_phase: 999.1
-current_phase_name: BACKLOG
-status: verifying
-stopped_at: Completed 08-04-PLAN.md
-last_updated: "2026-07-23T21:37:53.057Z"
-last_activity: 2026-07-23
-last_activity_desc: Phase 08 complete, transitioned to Phase 999.1
+current_phase: 10
+current_phase_name: Test Reactivation + Setup Docs
+status: executing
+stopped_at: Phase 11 scaffolded + 11-CONTEXT.md written; ready for /gsd-plan-phase 11 (pause before execute)
+last_updated: "2026-07-28T12:18:54.102Z"
+last_activity: 2026-07-27
+last_activity_desc: Phase 10 execution started
 progress:
-  total_phases: 7
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
-  percent: 29
+  total_phases: 10
+  completed_phases: 3
+  total_plans: 16
+  completed_plans: 15
+  percent: 30
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extends that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 08 — signed-cross-host-envelope-trust-bootstrap
+**Current focus:** Phase 10 — Test Reactivation + Setup Docs
 
 ## Current Position
 
-Phase: 999.1 — `famp await` crash safety — cursor advance vs flush ordering (BACKLOG)
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-23 — Phase 08 complete, transitioned to Phase 999.1
+Phase: 10 (Test Reactivation + Setup Docs) — EXECUTING
+Plan: 3 of 3
+Status: Ready to execute
+Last activity: 2026-07-27 — Phase 10 execution started
 
 ## v1.0 Phase Map
 
@@ -119,6 +119,23 @@ Last activity: 2026-07-23 — Phase 08 complete, transitioned to Phase 999.1
 - [Phase 08-03]: verify_inbound never constructs a raw ed25519_dalek::VerifyingKey — routes exclusively through TrustedVerifyingKey / SignedEnvelope::decode (verify_strict internally)
 - [Phase 08]: famp-keyring promoted to a real dependency; export blob uses a new CLI-layer 3-field parser distinct from famp-keyring's strict 2-field on-disk format
 - [Phase 08]: Gateway signing key persists at ~/.famp/gateway/identity.ed25519 (fresh identity concept, not the stale IdentityLayout::key_ed25519 name), mode 0600
+- [Phase ?]: verify_inbound<B> kept unchanged; verify_inbound_any added as a purely additive class-dispatching companion (09-01)
+- [Phase ?]: egress.rs/ingress.rs are doc-comment-only stubs this plan so 09-02/09-03 build in parallel on disjoint files (09-01)
+- [Phase 09-02]: Used uuid::now_v7() for egress nonce (only v7 feature enabled in workspace)
+- [Phase 09-02]: sign_federation_fields idempotent guard checks for existing signature key and returns early
+- [Phase 09-02]: run_egress drops the registry MutexGuard explicitly before matching the Await reply (clippy significant_drop_tightening)
+- [Phase ?]: run_ingress binds a std::net::TcpListener (non-blocking) then hands it to famp_transport_http::tls_server::serve_std_listener; no new rustls/axum-server dependency needed since types flow via inference through famp_transport_http::tls
+- [Phase ?]: TLS in run_ingress is channel encryption only -- no cert-based peer authorization added; verify_inbound_any inside inbox_handler remains the sole trust decision (D-08)
+- [Phase 09-04]: GatewayArgs.peers resolves to add_peer via cross product of backed names x --peer domains (agent:{domain}/{name}) since HttpTransport's addr_map is keyed by full recipient Principal, not bare domain
+- [Phase 09-04]: Per-egress-task FampSigningKey obtained via fresh load_or_generate() call instead of Clone (FampSigningKey deliberately non-Clone for secret-key hygiene); idempotent per T-08-12
+- [Phase 09-end-to-end-cross-host-delivery]: GW-03's terminal-state proof uses a closing control/cancel envelope, not deliver/ack, because famp-inspect-server::derive_fsm_state only recognizes literal request/commit/deliver/control classes and a strict DeliverBody has no body.details.terminal field to reach a terminal state — empirically confirmed via live broker session: famp send-driven envelopes always report fsm_transition UNKNOWN
+- [Phase 09-end-to-end-cross-host-delivery]: Fixed a BUS-11 violation in famp-gateway ingress.rs: relayed envelopes carried signature/federation fields onto the local bus, making them permanently undecodable by famp inbox/inspect; added strip_relay_fields before the onward local Send — was the sole blocker preventing GW-01/GW-02/GW-03 from being provable through any test construction
+- [Phase ?]: TEST-01: 27/27 RETIRE, 0 REACTIVATE — every deferred test depends on a v0.9 Phase 4-deleted CLI symbol with no live famp-bus/famp-gateway rewrite target
+- [Phase ?]: Both CONTEXT.md-flagged salvage candidates (send_principal_fallback.rs, conversation_restart_safety.rs) confirmed to have no rewrite target
+- [Phase ?]: TEST-02 satisfied via two compiled regression guards (presence + D-05 hermeticity) over the existing Phase 9 E2E — no new E2E, no nextest test-group needed
+- [Phase ?]: Ignore-attribute needle in the presence guard is built at runtime (not a literal #[ignore] token) so it cannot false-trip a future repo-wide grep of its own source
+- [Phase ?]: Gateway accuracy gate extracts flags dynamically from the guide's fenced command examples (not a fixed whitelist), verified non-vacuous via manual falsification (bogus flag -> FAIL -> revert -> PASS)
+- [Phase ?]: 10-HUMAN-UAT.md carries DOC-04's unassisted-success clause as PENDING (Gate A dogfood) per D-07 - not claimed done on the grep-gate alone
 
 ## Issues / Blockers
 
@@ -224,12 +241,20 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 08 P02 | 12min | 2 tasks | 9 files |
 | Phase 08 P03 | 8min | 2 tasks | 5 files |
 | Phase 08 P04 | 20min | 3 tasks | 12 files |
+| Phase 09-end-to-end-cross-host-delivery P01 | 25min | 3 tasks | 9 files |
+| Phase 09 P02 | 20min | 2 tasks | 1 files |
+| Phase 09-end-to-end-cross-host-delivery P03 | 56min | 2 tasks | 1 files |
+| Phase 09-end-to-end-cross-host-delivery P04 | ~20min | 2 tasks | 3 files |
+| Phase 09-end-to-end-cross-host-delivery P05 | 45min | 2 tasks | 2 files |
+| Phase 10 P01 | 12min | 2 tasks | 3 files |
+| Phase 10-test-reactivation-setup-docs P02 | 18min | 2 tasks | 1 files |
+| Phase 10-test-reactivation-setup-docs P03 | 45min | 3 tasks | 5 files |
 
 ## Session
 
-**Last session:** 2026-07-23T21:32:10.000Z
-**Stopped At:** Completed 08-04-PLAN.md
-**Resume File:** None
+**Last session:** 2026-07-28T03:11:51.153Z
+**Stopped At:** Phase 11 scaffolded + 11-CONTEXT.md written; ready for /gsd-plan-phase 11 (pause before execute)
+**Resume File:** .planning/phases/11-shipping-client-remote-addressing-setup-hardening/11-CONTEXT.md
 
 ## Operator Next Steps
 
