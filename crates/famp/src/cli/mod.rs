@@ -19,6 +19,7 @@ pub mod join;
 pub mod leave;
 pub mod listen_wake;
 pub mod mcp;
+pub mod own_domain;
 pub mod paths;
 pub mod peer;
 pub mod perms;

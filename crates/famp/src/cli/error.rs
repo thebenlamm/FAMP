@@ -299,6 +299,24 @@ pub enum CliError {
     /// silently overwrites a pinned trust anchor.
     #[error("peer key conflict: {principal} is already pinned to a different key")]
     PeerKeyConflict { principal: String },
+
+    /// D-05 / ADDR-03: a remote send (or a `peer export` deriving its
+    /// label) needs this host's own-domain authority, and none of the
+    /// three sources resolved one. Names all three so the operator can
+    /// fix it without reading source. Never falls back to a silent
+    /// `local.bus` authority.
+    #[error(
+        "own-domain not set: a remote send needs this host's federation \
+         authority. Set it via one of: --domain <domain>, the \
+         FAMP_OWN_DOMAIN env var, or a single-line $FAMP_HOME/own-domain file."
+    )]
+    OwnDomainNotSet,
+
+    /// D-05 / ADDR-03: a resolved own-domain value failed the probe
+    /// `Principal` authority parse (`agent:{value}/x`). Surfaced as a
+    /// typed reject rather than a panic or a silent fallback.
+    #[error("invalid own-domain {value:?}: {reason}")]
+    OwnDomainInvalid { value: String, reason: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

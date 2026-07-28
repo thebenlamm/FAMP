@@ -334,6 +334,14 @@ fn variants_c() -> Vec<(&'static str, CliError)> {
                 detail: "io error".to_string(),
             },
         ),
+        ("OwnDomainNotSet", CliError::OwnDomainNotSet),
+        (
+            "OwnDomainInvalid",
+            CliError::OwnDomainInvalid {
+                value: "bad domain!".to_string(),
+                reason: "invalid authority".to_string(),
+            },
+        ),
     ]
 }
 
