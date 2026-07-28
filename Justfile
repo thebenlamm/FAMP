@@ -276,6 +276,18 @@ install:
     cargo install --path crates/famp --locked --force
     famp install-claude-code
 
+# Install famp-gateway to ~/.cargo/bin — the v1.0 federation binary. `just
+# install` (above) never touches this; run this after any change to
+# `crates/famp-gateway` (egress/ingress/CLI surface) so the deployed
+# ~/.cargo/bin/famp-gateway is not stale relative to the source.
+install-gateway:
+    cargo install --path crates/famp-gateway --locked --force
+
+# Install both shipping binaries (famp + famp-gateway). Run this after any
+# change to `famp send`'s build_envelope_value (the famp_send MCP path
+# reads ~/.cargo/bin/famp, not target/release/famp) or to famp-gateway.
+install-all: install install-gateway
+
 # Clean build artifacts
 clean:
     cargo clean
