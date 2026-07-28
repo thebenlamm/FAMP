@@ -276,7 +276,7 @@ Plans:
 **Wave 2** *(depends on Wave 1)*
 
 - [x] 11-03-PLAN.md — D-01..D-04 addressing core: split-addressing + domain-qualified from/to + MODE-BRANCHED typed class (request/commit/deliver-terminal) + `--domain` flag + install-all [ADDR-01, ADDR-02] (depends 11-02)
-- [ ] 11-07-PLAN.md — review HIGH #2 trust-boundary: broker `from`==identity gate + gateway egress `from.authority`==own-domain check + own-domain wiring + ready-line-after-init [ADDR-02, ADDR-03] (depends 11-01, 11-02)
+- [x] 11-07-PLAN.md — review HIGH #2 trust-boundary: broker `from`==identity gate + gateway egress `from.authority`==own-domain check + own-domain wiring + ready-line-after-init [ADDR-02, ADDR-03] (depends 11-01, 11-02)
 
 **Wave 3** *(depends on Wave 2)*
 

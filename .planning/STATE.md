@@ -5,15 +5,15 @@ milestone_name: Federation Profile)
 current_phase: 11
 current_phase_name: shipping-client-remote-addressing-setup-hardening
 status: executing
-stopped_at: Completed 11-03-PLAN.md
-last_updated: "2026-07-28T20:09:31.101Z"
+stopped_at: Completed 11-07-PLAN.md
+last_updated: "2026-07-28T20:53:45.786Z"
 last_activity: 2026-07-28
 last_activity_desc: Phase 11 execution resumed (wave continue)
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 23
-  completed_plans: 18
+  completed_plans: 19
   percent: 30
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 ## Current Position
 
 Phase: 11 (shipping-client-remote-addressing-setup-hardening) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
 
@@ -139,6 +139,8 @@ Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
 - [Phase ?]: [11-03]: home resolved via crate::cli::home::resolve_famp_home() only on the remote-send branch in run_at_structured; local sends never touch FAMP_HOME (D-04 preserved)
 - [Phase ?]: [11-03]: remote-send malformed-agent: target guard lives in run_at_structured before target/envelope build, rejecting via CliError::SendArgsInvalid before any bus connection (no new CliError variant added)
 - [Phase ?]: [11-03]: remote envelope class branches on send mode (new_task->request, task->commit, task+terminal->deliver+terminal_status) via sign-then-strip so famp-fsm can reach a terminal state through the shipping CLI/MCP surface
+- [Phase 11]: [11-07]: Reused BusErrorKind::EnvelopeInvalid for the broker's forged-from reject (no new variant) -- EnvelopeInvalid is already the general reject-bucket for malformed/rejected Send input; a new variant would have required touching the exhaustive mcp_error_kind JSON-RPC code table and its consumer-stub tests.
+- [Phase 11]: [11-07]: own_domain resolved once in main() via resolve_own_domain_or_exit(home), kept as an owned Option<String> local (cloned per egress task, never moved) so 11-08's ingress-side own-domain check can reuse the same resolution site without restructuring it.
 
 ## Issues / Blockers
 
@@ -253,11 +255,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 10-test-reactivation-setup-docs P02 | 18min | 2 tasks | 1 files |
 | Phase 10-test-reactivation-setup-docs P03 | 45min | 3 tasks | 5 files |
 | Phase 11-shipping-client-remote-addressing-setup-hardening P03 | 55min | 3 tasks | 3 files |
+| Phase 11 P07 | 75min | 2 tasks | 9 files |
 
 ## Session
 
-**Last session:** 2026-07-28T20:09:31.088Z
-**Stopped At:** Completed 11-03-PLAN.md
+**Last session:** 2026-07-28T20:53:37.486Z
+**Stopped At:** Completed 11-07-PLAN.md
 **Resume File:** None
 
 ## Operator Next Steps

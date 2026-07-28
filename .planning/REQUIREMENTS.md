@@ -44,7 +44,7 @@
 
 - [x] **ADDR-01**: A shipping client (`famp send` / `famp_send`) can address a remote principal — `--to agent:<domain>/<name>` or `--to <name> --domain <domain>` — emitting an envelope whose `from` AND `to` are domain-qualified while the local bus target stays the bare proxy name, so a real client (not a hand-written injector) drives a cross-host delivery.
 - [x] **ADDR-02**: Remote sends emit a typed, FSM-driving envelope constructed unsigned on the local bus (sign-then-strip / BUS-11 — no local crypto); bare-name local chat stays `audit_log`. The v0.9 unsigned-local-bus decision is NOT reopened.
-- [ ] **ADDR-03**: The gateway/CLI has a defined own-domain source for stamping the envelope `from` (resolving the `--as` / broker `bind_as` charset collision).
+- [x] **ADDR-03**: The gateway/CLI has a defined own-domain source for stamping the envelope `from` (resolving the `--as` / broker `bind_as` charset collision).
 
 ### Observability (OBS) — Phase 11
 
