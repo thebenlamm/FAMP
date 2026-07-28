@@ -177,6 +177,14 @@ enum RelayError {
     Encode(#[from] serde_json::Error),
     #[error("transport send failed: {0}")]
     Transport(#[from] HttpTransportError),
+    /// T-11-19: the drained envelope's `from` authority does not match
+    /// this gateway's configured own-domain. Never signed — a locally-
+    /// registered agent must not make the gateway sign as a domain it
+    /// does not own. Only produced when own-domain IS configured
+    /// (`relay_one`'s `own_domain: Option<&str>` is `Some`); when unset,
+    /// this variant is never constructed and `from` is signed verbatim.
+    #[error("egress 'from' domain mismatch: expected own-domain '{expected}', got '{got}'")]
+    FromDomainMismatch { expected: String, got: String },
 }
 
 fn parse_principal_field(envelope: &Value, field: &'static str) -> Result<Principal, RelayError> {
@@ -189,14 +197,33 @@ fn parse_principal_field(envelope: &Value, field: &'static str) -> Result<Princi
 }
 
 /// Sign one drained envelope and POST it to its recipient's peer gateway.
+///
+/// `own_domain` is this gateway's resolved own-domain (plan 02's single
+/// source), `None` when unset. T-11-19: when `Some(d)`, a `from` whose
+/// authority != `d` is rejected here — BEFORE `sign_federation_fields` —
+/// so the gateway never signs an envelope claiming a domain it does not
+/// own. When `None`, `from` is signed verbatim (current/legacy behavior;
+/// keeps `e2e_cross_host_delivery.rs`'s own-domain-unset spawn green as
+/// the regression control).
 async fn relay_one(
     envelope: &mut Value,
+    own_domain: Option<&str>,
     sk: &FampSigningKey,
     vk: &TrustedVerifyingKey,
     transport: &HttpTransport,
 ) -> Result<(), RelayError> {
     let from = parse_principal_field(envelope, "from")?;
     let to = parse_principal_field(envelope, "to")?;
+
+    if let Some(expected) = own_domain {
+        let got = from.authority();
+        if got != expected {
+            return Err(RelayError::FromDomainMismatch {
+                expected: expected.to_string(),
+                got: got.to_string(),
+            });
+        }
+    }
 
     sign_federation_fields(envelope, &from, &to, sk, vk)?;
     let bytes = serde_json::to_vec(envelope)?;
@@ -228,6 +255,7 @@ async fn relay_one(
 pub async fn run_egress(
     name: String,
     registry: Arc<Mutex<GatewayRegistry>>,
+    own_domain: Option<String>,
     transport: Arc<HttpTransport>,
     sk: FampSigningKey,
     vk: TrustedVerifyingKey,
@@ -269,7 +297,9 @@ pub async fn run_egress(
         };
 
         for mut envelope in envelopes {
-            if let Err(e) = relay_one(&mut envelope, &sk, &vk, &transport).await {
+            if let Err(e) =
+                relay_one(&mut envelope, own_domain.as_deref(), &sk, &vk, &transport).await
+            {
                 // {e:?} (Debug), not {e} (Display) -- the Debug chain walks
                 // every #[source] level, including the TLS/rustls leaf
                 // cause reqwest's own Display can omit (OBS-01).
@@ -434,6 +464,75 @@ mod tests {
         assert!(
             relay_err.source().is_some(),
             "RelayError::Transport must preserve a walkable #[source]"
+        );
+    }
+
+    // --- T-11-19: egress own-domain enforcement ---------------------
+
+    /// When own-domain is configured (`Some`), an envelope whose `from`
+    /// authority does NOT match it is rejected typed
+    /// `RelayError::FromDomainMismatch` BEFORE `sign_federation_fields`
+    /// runs — the drained value must come back byte-identical (no
+    /// `signature`/federation fields ever inserted).
+    #[tokio::test]
+    async fn relay_one_rejects_foreign_from_domain_when_own_domain_configured() {
+        let sk = FampSigningKey::from_bytes([40u8; 32]);
+        let vk = sk.verifying_key();
+        let from: Principal = "agent:otherdomain.test/alice".parse().unwrap();
+        let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let mut value = plain_request_value(&from, &to);
+        let before = value.clone();
+
+        let transport = HttpTransport::new_client_only(None).unwrap();
+
+        let result = relay_one(&mut value, Some("hosta.test"), &sk, &vk, &transport).await;
+
+        match result {
+            Err(RelayError::FromDomainMismatch { expected, got }) => {
+                assert_eq!(expected, "hosta.test");
+                assert_eq!(got, "otherdomain.test");
+            }
+            other => panic!("expected FromDomainMismatch, got {other:?}"),
+        }
+        assert_eq!(
+            value, before,
+            "a rejected foreign-domain envelope must NOT be mutated: no signature, \
+             no federation fields — sign_federation_fields must never have run"
+        );
+    }
+
+    /// When own-domain is unset (`None`), `relay_one` signs the drained
+    /// `from` authority verbatim regardless of its value — the pre-plan
+    /// behavior, kept so `e2e_cross_host_delivery.rs`'s own-domain-unset
+    /// spawn (the regression control) stays green. The subsequent
+    /// transport failure (no peer registered in this unit test) proves
+    /// signing happened BEFORE the unrelated transport-stage error, not
+    /// that signing was skipped.
+    #[tokio::test]
+    async fn relay_one_signs_from_verbatim_when_own_domain_unset() {
+        let sk = FampSigningKey::from_bytes([41u8; 32]);
+        let vk = sk.verifying_key();
+        let from: Principal = "agent:anydomain.test/alice".parse().unwrap();
+        let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let mut value = plain_request_value(&from, &to);
+
+        let transport = HttpTransport::new_client_only(None).unwrap();
+
+        let result = relay_one(&mut value, None, &sk, &vk, &transport).await;
+
+        assert!(
+            matches!(result, Err(RelayError::Transport(_))),
+            "expected a transport-stage failure (no peer registered in this unit \
+             test) -- proving the domain check did NOT reject it, got {result:?}"
+        );
+        assert!(
+            value.get("signature").is_some(),
+            "own-domain unset must sign the drained value verbatim before the \
+             (unrelated) transport failure"
+        );
+        assert_eq!(
+            value["from_domain"],
+            Value::String("anydomain.test".to_string())
         );
     }
 }

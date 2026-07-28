@@ -179,6 +179,29 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     })
 }
 
+/// Resolve this host's own-domain federation authority (plan 02's single
+/// source) at startup. `Ok(None)`-equivalent (returned as plain `None`)
+/// means unset — egress signs the drained `from` authority verbatim
+/// (current/legacy behavior, kept so the e2e's own-domain-unset spawn
+/// stays green as the regression control). `Some(d)` means egress
+/// rejects any `from` whose authority != `d` before signing (T-11-19). A
+/// present-but-invalid domain (fails the probe `Principal` parse) is a
+/// startup-fatal misconfiguration — exits the process rather than
+/// silently falling back to unset (T-11-20).
+fn resolve_own_domain_or_exit(home: &std::path::Path) -> Option<String> {
+    match famp::cli::own_domain::resolve_own_domain(None, home) {
+        Ok(domain) => Some(domain),
+        Err(famp::cli::error::CliError::OwnDomainNotSet) => {
+            eprintln!("famp-gateway: own-domain unset; egress will sign `from` verbatim");
+            None
+        }
+        Err(e) => {
+            eprintln!("famp-gateway: invalid own-domain configuration: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = match parse_args(std::env::args()) {
@@ -198,11 +221,6 @@ async fn main() {
     }
 
     let backed_names: Vec<String> = registry.names().map(str::to_owned).collect();
-    println!(
-        "famp-gateway: ready, backing {} principal(s): {}",
-        backed_names.len(),
-        backed_names.join(", ")
-    );
 
     let home = match famp::cli::home::resolve_famp_home() {
         Ok(h) => h,
@@ -211,6 +229,16 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // T-11-19/T-11-20: resolve this host's own-domain federation authority
+    // ONCE at startup. Kept as an owned `Option<String>` local (not
+    // folded into a one-shot closure) rather than moved-and-consumed
+    // immediately: the per-egress-task loop below only *clones* it, so
+    // the same value is still available afterward for a future
+    // ingress-side check (11-08) to consume without restructuring this
+    // resolution site.
+    let own_domain: Option<String> = resolve_own_domain_or_exit(&home);
+
     let identity_path = famp::cli::peer::identity::gateway_identity_path(&home);
     let peers_path = famp::cli::peer::identity::gateway_peers_keyring_path(&home);
 
@@ -260,6 +288,18 @@ async fn main() {
         }
     }
 
+    // T-11-21: "ready" is printed here — AFTER home resolve, own-domain
+    // resolve/validate, signing-key load, keyring load, transport build,
+    // and the peer route-map, and BEFORE the ingress/egress spawn below —
+    // so a truncated/failed init never prints a false "ready" (review
+    // HIGH finding #5's code half). Previously this printed immediately
+    // after the registry `back()` loop, before any of the above had run.
+    println!(
+        "famp-gateway: ready, backing {} principal(s): {}",
+        backed_names.len(),
+        backed_names.join(", ")
+    );
+
     // SHARED-CONNECTION CONTRACT (load-bearing for GW-02): exactly ONE
     // `Arc<Mutex<GatewayRegistry>>` is cloned into `run_ingress` and every
     // `run_egress` task below. See `egress.rs`/`ingress.rs`'s module docs
@@ -279,6 +319,7 @@ async fn main() {
         egress_tasks.spawn(run_egress(
             name.clone(),
             Arc::clone(&registry),
+            own_domain.clone(),
             Arc::clone(&transport),
             sk,
             vk,
