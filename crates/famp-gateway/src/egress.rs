@@ -27,7 +27,7 @@ use std::sync::Arc;
 use famp::{sign_value, CryptoError, FampSigningKey, Principal, TrustedVerifyingKey};
 use famp_bus::{BusMessage, BusReply};
 use famp_transport::{Transport, TransportMessage};
-use famp_transport_http::HttpTransport;
+use famp_transport_http::{HttpTransport, HttpTransportError};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration as FederationDuration, OffsetDateTime};
@@ -176,7 +176,7 @@ enum RelayError {
     #[error("failed to serialize signed envelope: {0}")]
     Encode(#[from] serde_json::Error),
     #[error("transport send failed: {0}")]
-    Transport(String),
+    Transport(#[from] HttpTransportError),
 }
 
 fn parse_principal_field(envelope: &Value, field: &'static str) -> Result<Principal, RelayError> {
@@ -208,7 +208,7 @@ async fn relay_one(
             bytes,
         })
         .await
-        .map_err(|e| RelayError::Transport(e.to_string()))
+        .map_err(RelayError::Transport)
 }
 
 /// Drain-sign-POST loop for one locally-backed remote principal (D-01/
@@ -270,7 +270,10 @@ pub async fn run_egress(
 
         for mut envelope in envelopes {
             if let Err(e) = relay_one(&mut envelope, &sk, &vk, &transport).await {
-                eprintln!("famp-gateway: egress[{name}]: failed to relay envelope: {e}");
+                // {e:?} (Debug), not {e} (Display) -- the Debug chain walks
+                // every #[source] level, including the TLS/rustls leaf
+                // cause reqwest's own Display can omit (OBS-01).
+                eprintln!("famp-gateway: egress[{name}]: failed to relay envelope: {e:?}");
             }
         }
     }
@@ -397,6 +400,40 @@ mod tests {
         assert_eq!(
             value, signed_once,
             "re-signing an already-signed value must be a no-op"
+        );
+    }
+
+    /// OBS-01: `RelayError::Transport` must hold the typed
+    /// `HttpTransportError` as a preserved `#[source]` (not a flattened
+    /// `String`), and the gateway-visible Display it produces (the text
+    /// `run_egress`'s drain-loop `eprintln!` prints) must name the
+    /// underlying cause, not only the fixed "transport send failed"
+    /// prefix.
+    #[test]
+    fn relay_error_transport_display_names_underlying_cause() {
+        use std::error::Error as _;
+
+        let bad_url_reason = "not a url"
+            .parse::<url::Url>()
+            .expect_err("must fail to parse as a URL");
+        let underlying_text = bad_url_reason.to_string();
+
+        let transport_err = HttpTransportError::InvalidUrl(bad_url_reason);
+        let relay_err: RelayError = transport_err.into();
+
+        let displayed = relay_err.to_string();
+        assert!(
+            displayed.contains(&underlying_text),
+            "RelayError::Transport Display {displayed:?} must contain the \
+             underlying transport reason {underlying_text:?}"
+        );
+
+        // Error::source() must remain walkable -- this is the load-bearing
+        // property the plan's prohibition protects (no e.to_string()
+        // flatten into a String field, which would sever the chain).
+        assert!(
+            relay_err.source().is_some(),
+            "RelayError::Transport must preserve a walkable #[source]"
         );
     }
 }
