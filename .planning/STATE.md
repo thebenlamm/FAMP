@@ -5,15 +5,15 @@ milestone_name: Federation Profile)
 current_phase: 11
 current_phase_name: shipping-client-remote-addressing-setup-hardening
 status: executing
-stopped_at: Phase 11 scaffolded + 11-CONTEXT.md written; ready for /gsd-plan-phase 11 (pause before execute)
-last_updated: "2026-07-28T18:43:19.610Z"
+stopped_at: Completed 11-03-PLAN.md
+last_updated: "2026-07-28T20:09:31.101Z"
 last_activity: 2026-07-28
 last_activity_desc: Phase 11 execution resumed (wave continue)
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 23
-  completed_plans: 16
+  completed_plans: 18
   percent: 30
 ---
 
@@ -32,8 +32,8 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 ## Current Position
 
 Phase: 11 (shipping-client-remote-addressing-setup-hardening) — EXECUTING
-Plan: 1 of 7
-Status: Executing Phase 11
+Plan: 4 of 7
+Status: Ready to execute
 Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
 
 ## v1.0 Phase Map
@@ -136,6 +136,9 @@ Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
 - [Phase ?]: Ignore-attribute needle in the presence guard is built at runtime (not a literal #[ignore] token) so it cannot false-trip a future repo-wide grep of its own source
 - [Phase ?]: Gateway accuracy gate extracts flags dynamically from the guide's fenced command examples (not a fixed whitelist), verified non-vacuous via manual falsification (bogus flag -> FAIL -> revert -> PASS)
 - [Phase ?]: 10-HUMAN-UAT.md carries DOC-04's unassisted-success clause as PENDING (Gate A dogfood) per D-07 - not claimed done on the grep-gate alone
+- [Phase ?]: [11-03]: home resolved via crate::cli::home::resolve_famp_home() only on the remote-send branch in run_at_structured; local sends never touch FAMP_HOME (D-04 preserved)
+- [Phase ?]: [11-03]: remote-send malformed-agent: target guard lives in run_at_structured before target/envelope build, rejecting via CliError::SendArgsInvalid before any bus connection (no new CliError variant added)
+- [Phase ?]: [11-03]: remote envelope class branches on send mode (new_task->request, task->commit, task+terminal->deliver+terminal_status) via sign-then-strip so famp-fsm can reach a terminal state through the shipping CLI/MCP surface
 
 ## Issues / Blockers
 
@@ -249,12 +252,13 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 10 P01 | 12min | 2 tasks | 3 files |
 | Phase 10-test-reactivation-setup-docs P02 | 18min | 2 tasks | 1 files |
 | Phase 10-test-reactivation-setup-docs P03 | 45min | 3 tasks | 5 files |
+| Phase 11-shipping-client-remote-addressing-setup-hardening P03 | 55min | 3 tasks | 3 files |
 
 ## Session
 
-**Last session:** 2026-07-28T03:11:51.153Z
-**Stopped At:** Phase 11 scaffolded + 11-CONTEXT.md written; ready for /gsd-plan-phase 11 (pause before execute)
-**Resume File:** .planning/phases/11-shipping-client-remote-addressing-setup-hardening/11-CONTEXT.md
+**Last session:** 2026-07-28T20:09:31.088Z
+**Stopped At:** Completed 11-03-PLAN.md
+**Resume File:** None
 
 ## Operator Next Steps
 
