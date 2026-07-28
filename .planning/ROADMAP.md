@@ -265,26 +265,27 @@ Plans:
 
 **Hard constraints:** INV-10 / RFC-8785 canonical + `FAMP-sig-v1\0`; the local bus stays UNSIGNED (do not reopen the v0.9 decision); `crates/famp-gateway/tests/e2e_cross_host_delivery.rs` stays green; no CI-gate weakening; spec authority v0.5.2.
 
-**Plans:** 6 plans
+**Plans:** 7 plans (revised via `--reviews` 2026-07-28: +11-07 trust-boundary sender-`from` binding; 11-03 class now mode-branched for terminal FSM)
 
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — D-06 transport error-chain un-swallow (force-multiplier, sequenced first) [OBS-01]
-- [ ] 11-02-PLAN.md — D-05 single-source own-domain resolver + peer-export label coupling (closes from==pinned-label) [ADDR-03]
+- [ ] 11-01-PLAN.md — D-06 transport error-chain un-swallow (typed RelayError source, force-multiplier, sequenced first) [OBS-01]
+- [ ] 11-02-PLAN.md — D-05 single-source own-domain resolver + peer-export label coupling + MCP error_kind mappings (closes from==pinned-label) [ADDR-03]
 
 **Wave 2** *(depends on Wave 1)*
 
-- [ ] 11-03-PLAN.md — D-01..D-04 addressing core: split-addressing + domain-qualified from/to + typed unsigned request + `--domain` flag [ADDR-01, ADDR-02] (depends 11-02)
+- [ ] 11-03-PLAN.md — D-01..D-04 addressing core: split-addressing + domain-qualified from/to + MODE-BRANCHED typed class (request/commit/deliver-terminal) + `--domain` flag + install-all [ADDR-01, ADDR-02] (depends 11-02)
+- [ ] 11-07-PLAN.md — review HIGH #2 trust-boundary: broker `from`==identity gate + gateway egress `from.authority`==own-domain check + own-domain wiring + ready-line-after-init [ADDR-02, ADDR-03] (depends 11-01, 11-02)
 
 **Wave 3** *(depends on Wave 2)*
 
-- [ ] 11-04-PLAN.md — D-08/D-09 cross-platform fixtures regen + shipping-surface e2e (happy + negative), retire injector [TEST-03] (depends 11-01, 11-03)
-- [ ] 11-05-PLAN.md — D-07 GATEWAY-SETUP.md 8-finding correction + semantic doc-accuracy gate [DOC-05] (depends 11-02, 11-03)
+- [ ] 11-04-PLAN.md — D-08/D-09 cross-platform fixtures regen (branched control) + harness extraction + shipping-surface e2e (happy + full-cycle terminal + observable negative), retire injector [TEST-03] (depends 11-01, 11-03, 11-07)
+- [ ] 11-05-PLAN.md — D-07 GATEWAY-SETUP.md 8-finding correction + semantic doc-accuracy gate (scoped pin-label regex, wiring + ready ordering) [DOC-05] (depends 11-02, 11-03)
 
 **Wave 4** *(depends on Wave 3)*
 
-- [ ] 11-06-PLAN.md — UAT-01 live two-machine dogfood with the fixed `famp send` (no injector) — final v1.0.0 gate [UAT-01] (depends 11-03, 11-04, 11-05, autonomous: false)
+- [ ] 11-06-PLAN.md — UAT-01 live two-machine dogfood with the fixed `famp send` (mode flags, no injector) — final v1.0.0 gate [UAT-01] (depends 11-03, 11-04, 11-05, 11-07, autonomous: false)
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
