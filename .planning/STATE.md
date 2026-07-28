@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Federation Profile)
-current_phase: 10
-current_phase_name: Test Reactivation + Setup Docs
+current_phase: 11
+current_phase_name: shipping-client-remote-addressing-setup-hardening
 status: executing
 stopped_at: Phase 11 scaffolded + 11-CONTEXT.md written; ready for /gsd-plan-phase 11 (pause before execute)
-last_updated: "2026-07-28T12:18:54.102Z"
-last_activity: 2026-07-27
-last_activity_desc: Phase 10 execution started
+last_updated: "2026-07-28T14:24:43.723Z"
+last_activity: 2026-07-28
+last_activity_desc: Phase 11 execution started
 progress:
   total_phases: 10
   completed_phases: 3
-  total_plans: 16
+  total_plans: 23
   completed_plans: 15
   percent: 30
 ---
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extends that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 10 — Test Reactivation + Setup Docs
+**Current focus:** Phase 11 — shipping-client-remote-addressing-setup-hardening
 
 ## Current Position
 
-Phase: 10 (Test Reactivation + Setup Docs) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
-Last activity: 2026-07-27 — Phase 10 execution started
+Phase: 11 (shipping-client-remote-addressing-setup-hardening) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 11
+Last activity: 2026-07-28 — Phase 11 execution started
 
 ## v1.0 Phase Map
 

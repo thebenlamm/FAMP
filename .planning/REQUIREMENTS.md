@@ -11,9 +11,9 @@
 
 ### Gateway (GW) — cross-host bridge
 
-- [ ] **GW-01**: A user registers an agent on machine A, addresses an agent on machine B by name/principal, and the message is delivered to B's local bus.
-- [ ] **GW-02**: An agent on machine B can reply within the same task/conversation, and the reply is delivered back to machine A.
-- [ ] **GW-03**: A full task exchange (`request → commit → deliver → ack`) completes across the two machines with the task FSM advancing correctly on both sides.
+- [x] **GW-01**: A user registers an agent on machine A, addresses an agent on machine B by name/principal, and the message is delivered to B's local bus.
+- [x] **GW-02**: An agent on machine B can reply within the same task/conversation, and the reply is delivered back to machine A.
+- [x] **GW-03**: A full task exchange (`request → commit → deliver → ack`) completes across the two machines with the task FSM advancing correctly on both sides.
 - [x] **GW-04**: A single gateway process backs multiple remote principals concurrently with no cross-talk between them.
 
 ### Liveness (LIVE) — proxied-principal liveness (the gating fork)
@@ -33,12 +33,34 @@
 
 ### Test (TEST) — reactivation & E2E
 
-- [ ] **TEST-01**: The ~27 parked federation tests in `crates/famp/tests/_deferred_v1/` are triaged — still-valid tests run green in CI, obsolete tests are removed with documented rationale.
-- [ ] **TEST-02**: A live two-process end-to-end test exercises the full signed cross-host task cycle and runs in `just ci`.
+- [x] **TEST-01**: The ~27 parked federation tests in `crates/famp/tests/_deferred_v1/` are triaged — still-valid tests run green in CI, obsolete tests are removed with documented rationale.
+- [x] **TEST-02**: A live two-process end-to-end test exercises the full signed cross-host task cycle and runs in `just ci`.
 
 ### Docs (DOC)
 
-- [ ] **DOC-04**: A setup guide documents standing up the gateway on two machines — bind address, out-of-band key exchange, and connect/verify.
+- [x] **DOC-04**: A setup guide documents standing up the gateway on two machines — bind address, out-of-band key exchange, and connect/verify.
+
+### Addressing (ADDR) — shipping-client remote addressing (Phase 11; the v1.0.0 blocker found in the Gate A dogfood 2026-07-28)
+
+- [ ] **ADDR-01**: A shipping client (`famp send` / `famp_send`) can address a remote principal — `--to agent:<domain>/<name>` or `--to <name> --domain <domain>` — emitting an envelope whose `from` AND `to` are domain-qualified while the local bus target stays the bare proxy name, so a real client (not a hand-written injector) drives a cross-host delivery.
+- [ ] **ADDR-02**: Remote sends emit a typed, FSM-driving envelope constructed unsigned on the local bus (sign-then-strip / BUS-11 — no local crypto); bare-name local chat stays `audit_log`. The v0.9 unsigned-local-bus decision is NOT reopened.
+- [ ] **ADDR-03**: The gateway/CLI has a defined own-domain source for stamping the envelope `from` (resolving the `--as` / broker `bind_as` charset collision).
+
+### Observability (OBS) — Phase 11
+
+- [ ] **OBS-01**: Transport egress logs the full error source chain, not the opaque `"reqwest failure"` Display string — every transport fault (EkuError, CaUsedAsEndEntity, connect-refused, timeout, DNS) is distinguishable in the log (Gate A finding #7).
+
+### Docs (DOC) — Phase 11
+
+- [ ] **DOC-05**: `docs/GATEWAY-SETUP.md` is corrected for all 8 Gate A dogfood findings — wiring direction (back the remote principal), pin under the sender agent principal, keyring pin-before-launch + duplicate-pubkey brick + ready-line-after-keyring-load, the CA:FALSE+serverAuth cert recipe that works on both macOS and Linux, and macOS host-firewall pre-auth. "self-signed is fine" is replaced.
+
+### Test (TEST) — Phase 11
+
+- [ ] **TEST-03**: Committed cross-machine fixtures regenerated to CA:FALSE+serverAuth EKU; a macOS CI leg exercises the previously Linux-only-green path; a shipping-surface integration test drives the real `famp send` cross-host (replacing the throwaway injector); a negative test asserts a `local.bus`-authority envelope through the federated path yields a typed error, not a silent drop.
+
+### UAT — Phase 11
+
+- [ ] **UAT-01**: The Gate A two-machine dogfood is re-run with the fixed `famp send` (no injector) and reaches a terminal task state on both sides — the final human gate before tagging v1.0.0.
 
 ## v2 Requirements (deferred — v1.1 / v2.0+)
 
@@ -75,9 +97,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GW-01 | Phase 9 | Pending |
-| GW-02 | Phase 9 | Pending |
-| GW-03 | Phase 9 | Pending |
+| GW-01 | Phase 9 | Complete |
+| GW-02 | Phase 9 | Complete |
+| GW-03 | Phase 9 | Complete |
 | GW-04 | Phase 7 | Complete |
 | LIVE-01 | Phase 7 | Complete |
 | LIVE-02 | Phase 7 | Complete |
@@ -85,9 +107,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | WIRE-02 | Phase 8 | Complete |
 | TRUST-01 | Phase 8 | Complete |
 | TRUST-02 | Phase 8 | Complete |
-| TEST-01 | Phase 10 | Pending |
-| TEST-02 | Phase 10 | Pending |
-| DOC-04 | Phase 10 | Pending |
+| TEST-01 | Phase 10 | Complete |
+| TEST-02 | Phase 10 | Complete |
+| DOC-04 | Phase 10 | Complete |
 
 **Coverage:**
 
