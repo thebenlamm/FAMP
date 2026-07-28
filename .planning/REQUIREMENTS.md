@@ -85,7 +85,9 @@ Tracked but not in this milestone's roadmap. See `~/.claude/plans/first-work-out
 
 ### Security plane (v2.0+, demand-gated)
 
-- **SEC-01..N**: FAMP-Sec §5–§9 — typed body + provenance enforcement, capabilities + invocation binding, abstract operations + MCP binding, tool-admission gateway + custodian, approvals + receipts. Built only on real demand for remote-triggered tools. Spec: `~/Downloads/famp-sec-v1-draft-2.md`.
+- **FSEC-01..N**: FAMP-Sec §5–§9 — typed body + provenance enforcement, capabilities + invocation binding, abstract operations + MCP binding, tool-admission gateway + custodian, approvals + receipts. Built only on real demand for remote-triggered tools. Spec: `~/Downloads/famp-sec-v1-draft-2.md`.
+
+  > **ID note (2026-07-28):** this family was previously written as `SEC-01..N`. It was renamed to `FSEC-*` because the v1 Phase 11 gateway trust-boundary requirements now occupy `SEC-01..04` above. Historical references to `SEC-01..N` in `09-RESEARCH.md`, `10-CONTEXT.md`, and `10-RESEARCH.md` predate that and mean **this** (the FAMP-Sec plane), not the Phase 11 items — they are left as written per the project's don't-rewrite-historical-docs convention.
 
 ## Out of Scope
 
