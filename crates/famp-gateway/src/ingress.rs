@@ -51,6 +51,13 @@ const ONE_MIB: usize = 1_048_576;
 struct GatewayIngressState {
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
+    /// T-11-23/T-11-24: this host's own-domain federation authority
+    /// (plan 02's single source, resolved ONCE in `main.rs` and reused —
+    /// see `main.rs::resolve_own_domain_or_exit`/`own_domain`). `Some(d)`
+    /// means ingress rejects any verified envelope whose `to.authority()`
+    /// != `d`; `None` means that check is skipped (T-11-29, mirroring
+    /// 11-07's enforced-when-configured egress posture).
+    own_domain: Option<Arc<str>>,
 }
 
 /// Build the gateway-owned inbound router.
@@ -65,8 +72,13 @@ struct GatewayIngressState {
 pub fn build_gateway_router(
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
+    own_domain: Option<Arc<str>>,
 ) -> Router {
-    let state = GatewayIngressState { registry, keyring };
+    let state = GatewayIngressState {
+        registry,
+        keyring,
+        own_domain,
+    };
     Router::new()
         .route(INBOX_ROUTE, post(inbox_handler))
         .with_state(state)
@@ -85,6 +97,34 @@ fn envelope_sender(env: &AnySignedEnvelope) -> &Principal {
         AnySignedEnvelope::Ack(e) => e.from_principal(),
         AnySignedEnvelope::Control(e) => e.from_principal(),
         AnySignedEnvelope::AuditLog(e) => e.from_principal(),
+    }
+}
+
+/// F-1/T-11-23: the verified envelope's OWN `to` principal — read from the
+/// signed content, never the URL path. Same 6-arm duplication rationale as
+/// `envelope_sender` above.
+fn envelope_recipient(env: &AnySignedEnvelope) -> &Principal {
+    match env {
+        AnySignedEnvelope::Request(e) => e.to_principal(),
+        AnySignedEnvelope::Commit(e) => e.to_principal(),
+        AnySignedEnvelope::Deliver(e) => e.to_principal(),
+        AnySignedEnvelope::Ack(e) => e.to_principal(),
+        AnySignedEnvelope::Control(e) => e.to_principal(),
+        AnySignedEnvelope::AuditLog(e) => e.to_principal(),
+    }
+}
+
+/// F-1/T-11-26: `SignedEnvelope::federation_format_ok` has no dispatch
+/// helper on `AnySignedEnvelope` itself — same 6-arm duplication rationale
+/// as `envelope_sender` above.
+fn envelope_federation_format_ok(env: &AnySignedEnvelope) -> bool {
+    match env {
+        AnySignedEnvelope::Request(e) => e.federation_format_ok(),
+        AnySignedEnvelope::Commit(e) => e.federation_format_ok(),
+        AnySignedEnvelope::Deliver(e) => e.federation_format_ok(),
+        AnySignedEnvelope::Ack(e) => e.federation_format_ok(),
+        AnySignedEnvelope::Control(e) => e.federation_format_ok(),
+        AnySignedEnvelope::AuditLog(e) => e.federation_format_ok(),
     }
 }
 
@@ -134,6 +174,22 @@ enum IngressError {
     UnpinnedKey { principal: Principal },
     #[error("verified sender is not backed by this gateway")]
     SenderNotBacked,
+    /// T-11-23: the envelope's signed `to` does not match the URL-path
+    /// recipient — the sender addressed someone else and the path must
+    /// not override the signature. Distinct from `ForeignDomain` (below)
+    /// so an operator can tell "misrouted to the wrong mailbox on this
+    /// gateway" apart from "this gateway doesn't own that domain at all".
+    #[error("envelope 'to' ({to}) does not match the requested recipient ({recipient})")]
+    MisaddressedRecipient { to: Principal, recipient: Principal },
+    /// T-11-24: this gateway is not authoritative for `to`'s domain. Only
+    /// produced when own-domain IS configured (T-11-29: unset skips this
+    /// check with a one-line warning, mirroring 11-07's egress posture).
+    #[error("this gateway is not authoritative for domain '{got}' (configured own-domain: '{expected}')")]
+    ForeignDomain { expected: String, got: String },
+    /// T-11-26: `federation_format_ok()` returned false — malformed
+    /// inbound `nonce`/`expiry`.
+    #[error("envelope failed federation format validation (nonce/expiry)")]
+    MalformedFederationFields,
     #[error("internal error")]
     Internal,
 }
@@ -145,6 +201,13 @@ impl IntoResponse for IngressError {
             Self::InvalidSignature => (StatusCode::BAD_REQUEST, "invalid_signature"),
             Self::UnpinnedKey { .. } => (StatusCode::FORBIDDEN, "unpinned_key"),
             Self::SenderNotBacked => (StatusCode::BAD_GATEWAY, "sender_not_backed"),
+            Self::MisaddressedRecipient { .. } => {
+                (StatusCode::BAD_REQUEST, "misaddressed_recipient")
+            }
+            Self::ForeignDomain { .. } => (StatusCode::FORBIDDEN, "foreign_domain"),
+            Self::MalformedFederationFields => {
+                (StatusCode::BAD_REQUEST, "malformed_federation_fields")
+            }
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         let body = serde_json::json!({ "error": slug, "detail": self.to_string() });
@@ -179,6 +242,49 @@ async fn inbox_handler(
     };
 
     let sender = envelope_sender(&envelope).clone();
+
+    // F-1 (T-11-23/T-11-24/T-11-26): the gateway is authoritative ONLY for
+    // its own domain and the mailbox the sender actually signed for. All
+    // three checks run BEFORE the registry lock is ever taken (~:218
+    // below) — nothing reaches a mailbox on any of these rejects. Each
+    // gets its own distinct 4xx + log line (operator-facing security
+    // boundary; a single generic 400 is not enough to debug a misrouted
+    // federation).
+    let envelope_to = envelope_recipient(&envelope).clone();
+    if envelope_to != recipient {
+        eprintln!(
+            "famp-gateway: ingress: rejected — envelope 'to' ({envelope_to}) != URL-path \
+             recipient ({recipient})"
+        );
+        return IngressError::MisaddressedRecipient {
+            to: envelope_to,
+            recipient,
+        }
+        .into_response();
+    }
+    if let Some(own_domain) = &state.own_domain {
+        let got = envelope_to.authority();
+        if got != own_domain.as_ref() {
+            eprintln!(
+                "famp-gateway: ingress: rejected — envelope 'to' domain '{got}' != this \
+                 gateway's own-domain '{own_domain}'"
+            );
+            return IngressError::ForeignDomain {
+                expected: own_domain.to_string(),
+                got: got.to_string(),
+            }
+            .into_response();
+        }
+    } else {
+        eprintln!(
+            "famp-gateway: ingress: own-domain unset; skipping to-authority check for '{envelope_to}' \
+             (T-11-29 residual — accepted posture until own-domain is configured)"
+        );
+    }
+    if !envelope_federation_format_ok(&envelope) {
+        eprintln!("famp-gateway: ingress: rejected — federation_format_ok() failed for envelope from {sender}");
+        return IngressError::MalformedFederationFields.into_response();
+    }
 
     // Content-transparent delivery: re-parse the already-verified,
     // already-strict-parsed bytes into a plain `Value` for `Send` — no
@@ -267,6 +373,7 @@ pub async fn run_ingress(
     tls_key_path: &std::path::Path,
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
+    own_domain: Option<Arc<str>>,
 ) -> std::io::Result<()> {
     let cert =
         famp_transport_http::tls::load_pem_cert(tls_cert_path).map_err(std::io::Error::other)?;
@@ -278,7 +385,7 @@ pub async fn run_ingress(
     let listener = std::net::TcpListener::bind(listen_addr)?;
     listener.set_nonblocking(true)?;
 
-    let router = build_gateway_router(registry, keyring);
+    let router = build_gateway_router(registry, keyring, own_domain);
     let handle = famp_transport_http::tls_server::serve_std_listener(
         listener,
         router,
@@ -320,9 +427,20 @@ mod tests {
     }
 
     fn router_with_keyring(keyring: Keyring) -> (Router, Arc<Mutex<GatewayRegistry>>) {
+        router_with_keyring_and_domain(keyring, None)
+    }
+
+    fn router_with_keyring_and_domain(
+        keyring: Keyring,
+        own_domain: Option<&str>,
+    ) -> (Router, Arc<Mutex<GatewayRegistry>>) {
         let registry = Arc::new(Mutex::new(GatewayRegistry::default()));
         (
-            build_gateway_router(registry.clone(), Arc::new(keyring)),
+            build_gateway_router(
+                registry.clone(),
+                Arc::new(keyring),
+                own_domain.map(Arc::from),
+            ),
             registry,
         )
     }
