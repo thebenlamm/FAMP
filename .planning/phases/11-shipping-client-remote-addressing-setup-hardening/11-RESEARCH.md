@@ -278,7 +278,9 @@ For fixtures, use `127.0.0.1`/`localhost` SANs (the E2E binds loopback, `e2e:339
 
 **All other claims are code-traced (`[VERIFIED: codebase grep]`) or cross-checked against the dogfood UAT.**
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Resolved during the `--reviews` replan (2026-07-28). Q1 → config surface picked in plan 11-02 (`--domain` > `FAMP_OWN_DOMAIN` > `$FAMP_HOME/own-domain`, canonical file). Q2 → plan 11-04 Task 1 branches on the pre-regen macOS control outcome (must-fail current fixtures / must-pass regenerated). Q3 → resolved by the entire `--reviews` replan: shipping `famp send` now mode-branches the remote envelope class (11-03: `--new-task`→request, `--task`→commit, `--task --terminal`→deliver+terminal_status), a full-cycle terminal test reaches a terminal state via the shipping surface (11-04 Task 3), and UAT-01 (11-06) uses the corrected mode flags — so the remote path CAN reach a terminal FSM state (the original RequestBody-only design could not).
 
 1. **Exact own-domain config surface (key names, precedence, error UX).**
    - Known: a shared host-level source is required (D-05 option a); `--domain` override + env + file is a natural shape.
