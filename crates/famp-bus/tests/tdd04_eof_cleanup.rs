@@ -84,7 +84,9 @@ fn send_to_live_awaiting_client_produces_awaitok_and_mailbox_append() {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
-                envelope: json!({"body": "ping"}),
+                // T-11-18: client 2 is registered as "bob"; `from` must
+                // match or the broker's from-binding gate rejects.
+                envelope: json!({"from": "agent:example.test/bob", "body": "ping"}),
             },
         },
         now,
@@ -132,7 +134,7 @@ fn send_after_disconnect_routes_to_mailbox_not_dead_await() {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
-                envelope: json!({"body":"still queued"}),
+                envelope: json!({"from": "agent:example.test/bob", "body":"still queued"}),
             },
         },
         now,
@@ -172,7 +174,7 @@ proptest! {
                 client: ClientId::from(2),
                 msg: BusMessage::Send {
                     to: Target::Agent { name: "alice".into() },
-                    envelope: json!({"body": body}),
+                    envelope: json!({"from": "agent:example.test/bob", "body": body}),
                 },
             },
             now,

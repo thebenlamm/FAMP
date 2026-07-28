@@ -81,7 +81,10 @@ proptest! {
                     client: ClientId::from(1),
                     msg: BusMessage::Send {
                         to: Target::Channel { name: channel.clone() },
-                        envelope: json!({"channel_seq": seq}),
+                        // T-11-18: `from` must match client 1's
+                        // registered identity ("sender") or the
+                        // broker's from-binding gate rejects the post.
+                        envelope: json!({"from": "agent:example.test/sender", "channel_seq": seq}),
                     },
                 },
                 now,

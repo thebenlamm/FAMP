@@ -283,7 +283,7 @@ fn test_hello_bind_as_live_holder_succeeds() {
             client: ClientId::from(2_u64),
             msg: BusMessage::Send {
                 to: Target::Agent { name: "bob".into() },
-                envelope: serde_json::json!({"body": "hi"}),
+                envelope: audit_log_envelope(1, "alice"),
             },
         },
         now,
@@ -801,7 +801,7 @@ fn test_send_agent_woken_true_when_waiter_parked() {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
-                envelope: serde_json::json!({"body": "hi"}),
+                envelope: audit_log_envelope(1, "bob"),
             },
         },
         now,
@@ -844,7 +844,7 @@ fn test_send_agent_woken_false_when_no_waiter() {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
-                envelope: serde_json::json!({"body": "hi"}),
+                envelope: audit_log_envelope(1, "bob"),
             },
         },
         now,
@@ -923,7 +923,7 @@ fn test_send_agent_wakes_all_proxy_waiters() {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
-                envelope: serde_json::json!({"body": "hi"}),
+                envelope: audit_log_envelope(1, "bob"),
             },
         },
         now,
@@ -1022,7 +1022,7 @@ fn test_canonical_plus_proxy_both_wake() {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
-                envelope: serde_json::json!({"body": "hi"}),
+                envelope: audit_log_envelope(1, "bob"),
             },
         },
         now,
@@ -1095,7 +1095,7 @@ fn test_dead_proxy_does_not_wake() {
                 to: Target::Agent {
                     name: "alice".into(),
                 },
-                envelope: serde_json::json!({"body": "hi"}),
+                envelope: audit_log_envelope(1, "bob"),
             },
         },
         now,
@@ -1194,7 +1194,7 @@ fn test_send_channel_wakes_all_member_waiters() {
             client: ClientId::from(3_u64),
             msg: BusMessage::Send {
                 to: Target::Channel { name: "#x".into() },
-                envelope: serde_json::json!({"body": "hello channel"}),
+                envelope: audit_log_envelope(1, "carol"),
             },
         },
         now,
@@ -1253,6 +1253,124 @@ fn test_send_channel_wakes_all_member_waiters() {
         "alice must be in delivered"
     );
     assert!(delivered_names.contains("bob"), "bob must be in delivered");
+}
+
+// --- T-11-18: envelope `from` bound to the authenticated identity -----
+
+/// A Send whose envelope `from` leaf matches the connection's registered
+/// (effective) identity is accepted: mailbox insertion happens and a
+/// `SendOk` reply is produced. This is the matching-case control for the
+/// forgery tests below.
+#[test]
+fn send_from_matching_effective_identity_is_accepted() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Send {
+                to: Target::Agent { name: "bob".into() },
+                envelope: audit_log_envelope(1, "alice"),
+            },
+        },
+        now,
+    );
+
+    assert!(
+        outs.iter().any(|o| matches!(o, Out::AppendMailbox { .. })),
+        "matching `from` must be accepted and land in the mailbox"
+    );
+    assert!(
+        outs.iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::SendOk { .. }))),
+        "matching `from` must produce a SendOk"
+    );
+}
+
+/// A registered `alice` connection cannot make an agent Send carry a
+/// forged `from` for a different identity (`mallory`). Rejected typed
+/// `EnvelopeInvalid`, BEFORE any mailbox insertion — the connection's
+/// authenticated identity is `alice`, but the envelope claims to be
+/// authored by `mallory`.
+#[test]
+fn send_agent_with_forged_from_leaf_is_rejected_before_insertion() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Send {
+                to: Target::Agent { name: "bob".into() },
+                envelope: audit_log_envelope(1, "mallory"),
+            },
+        },
+        now,
+    );
+
+    assert!(
+        !outs.iter().any(|o| matches!(o, Out::AppendMailbox { .. })),
+        "forged `from` must NOT produce any mailbox insertion; got {outs:?}"
+    );
+    assert_eq!(
+        find_err_kind(&outs),
+        Some(BusErrorKind::EnvelopeInvalid),
+        "forged `from` must be rejected with a typed EnvelopeInvalid error"
+    );
+}
+
+/// Same forgery, but through the channel-post path: a registered `alice`
+/// connection posting to a channel with a forged `from` (`mallory`) is
+/// also rejected before insertion — the gate in `send` covers BOTH the
+/// `Target::Agent` and `Target::Channel` arms.
+#[test]
+fn send_channel_post_with_forged_from_leaf_is_rejected_before_insertion() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Join {
+                channel: "#x".into(),
+                role: None,
+            },
+        },
+        now,
+    );
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel { name: "#x".into() },
+                envelope: audit_log_envelope(1, "mallory"),
+            },
+        },
+        now,
+    );
+
+    assert!(
+        !outs.iter().any(|o| matches!(o, Out::AppendMailbox { .. })),
+        "forged `from` on a channel post must NOT produce any mailbox insertion; got {outs:?}"
+    );
+    assert_eq!(
+        find_err_kind(&outs),
+        Some(BusErrorKind::EnvelopeInvalid),
+        "forged `from` on a channel post must be rejected with a typed EnvelopeInvalid error"
+    );
 }
 
 // --- task_id_from regression tests ---

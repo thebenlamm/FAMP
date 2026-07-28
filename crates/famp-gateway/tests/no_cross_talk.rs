@@ -239,8 +239,15 @@ async fn gw04_no_cross_talk_between_proxied_principals() {
     let mut sender = BusClient::connect(&sock, Some("bob".into()))
         .await
         .expect("bob proxy connect");
+    // T-11-18: the broker now binds envelope `from` to the sender
+    // connection's authenticated effective identity (here, the proxy's
+    // `bind_as = Some("bob")`) -- an envelope with no `from` at all (or a
+    // mismatched one) is rejected before mailbox insertion. Stamp `from`
+    // to match so this test still exercises GW-04 routing isolation
+    // rather than tripping the from-binding gate.
     let envelope = serde_json::json!({
         "id": tag.to_string(),
+        "from": "agent:local.bus/bob",
         "body": { "event": "famp.send.new_task" },
     });
     let reply = sender

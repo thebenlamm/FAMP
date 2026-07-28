@@ -70,7 +70,11 @@ proptest! {
                         client: ClientId::from(client),
                         msg: BusMessage::Send {
                             to: Target::Agent { name: "alice".into() },
-                            envelope: json!({"sender_idx": sender_idx, "seq": seq}),
+                            // T-11-18: `from` must match the sending
+                            // connection's registered identity or the
+                            // broker's from-binding gate rejects the Send
+                            // before mailbox insertion.
+                            envelope: json!({"from": format!("agent:example.test/{name}"), "sender_idx": sender_idx, "seq": seq}),
                         },
                     },
                     now,

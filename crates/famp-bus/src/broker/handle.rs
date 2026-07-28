@@ -385,18 +385,45 @@ fn send<E: BrokerEnv>(
     // send under the bound canonical holder's name. The from-stamp on
     // the encoded envelope MUST be the resolved identity (NOT the
     // proxy's own None-name). `encode_envelope` operates on the JSON
-    // value as-is; identity is implicit in the broker's state and is
-    // not currently stamped onto the envelope here — that responsibility
-    // is left to the CLI/MCP caller for v0.9 (the envelope already
-    // carries `from` from the higher layer). We still gate the op on
-    // a resolvable + live identity.
-    if resolve_op_identity(broker, client).is_err() {
+    // value as-is; identity is implicit in the broker's state. As of
+    // T-11-18 the `from` the CLI/MCP caller stamped onto the envelope
+    // is no longer trusted verbatim — it is checked against the
+    // resolved identity immediately below, before any mailbox write.
+    let Ok(effective_identity) = resolve_op_identity(broker, client) else {
         return vec![err(
             client,
             BusErrorKind::NotRegistered,
             "client is not registered",
         )];
+    };
+
+    // T-11-18: bind the envelope `from` to the authenticated connection's
+    // effective identity. `resolve_op_identity` proves the connection is
+    // live and registered (canonical or a live-proxy `bind_as`), but does
+    // NOT constrain what `from` string the caller wrote into the envelope
+    // JSON — until now that was left to the CLI/MCP caller (see the
+    // module doc above). A registered `alice` connection could carry
+    // `from = .../mallory` and the bus would happily stamp + relay it,
+    // so a locally-registered agent could forge another agent's `from`
+    // (and, once past the bus, the gateway would sign it as that other
+    // agent's domain — T-11-19). Reuse `is_self_authored`'s leaf-split
+    // convention (`from.rsplit('/').next()`) rather than hand-rolling a
+    // second Principal-leaf parse: `from` is `agent:<domain>/<name>`,
+    // and only the trailing `/<name>` segment is compared.
+    //
+    // This is safe for the gateway relay path: `ingress.rs` inserts each
+    // remote sender's envelope through THAT sender's own backing
+    // connection (`guard.get_mut(sender.name())`), so
+    // `effective_identity == from`'s leaf holds for relayed envelopes
+    // too — `e2e_cross_host_delivery.rs` is the regression control.
+    if !is_self_authored(envelope, Some(&effective_identity)) {
+        return vec![err(
+            client,
+            BusErrorKind::EnvelopeInvalid,
+            "envelope 'from' does not match the authenticated identity",
+        )];
     }
+
     let line = match encode_envelope(envelope, client) {
         Ok(line) => line,
         Err(reply) => return vec![reply],
