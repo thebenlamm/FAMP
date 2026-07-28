@@ -5,15 +5,15 @@ milestone_name: Federation Profile)
 current_phase: 11
 current_phase_name: shipping-client-remote-addressing-setup-hardening
 status: executing
-stopped_at: Completed 11-07-PLAN.md
-last_updated: "2026-07-28T20:53:45.786Z"
+stopped_at: Completed 11-08-PLAN.md
+last_updated: "2026-07-28T23:49:23.758Z"
 last_activity: 2026-07-28
 last_activity_desc: Phase 11 execution resumed (wave continue)
 progress:
   total_phases: 10
   completed_phases: 3
-  total_plans: 23
-  completed_plans: 19
+  total_plans: 24
+  completed_plans: 20
   percent: 30
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 ## Current Position
 
 Phase: 11 (shipping-client-remote-addressing-setup-hardening) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
 
@@ -141,6 +141,10 @@ Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
 - [Phase ?]: [11-03]: remote envelope class branches on send mode (new_task->request, task->commit, task+terminal->deliver+terminal_status) via sign-then-strip so famp-fsm can reach a terminal state through the shipping CLI/MCP surface
 - [Phase 11]: [11-07]: Reused BusErrorKind::EnvelopeInvalid for the broker's forged-from reject (no new variant) -- EnvelopeInvalid is already the general reject-bucket for malformed/rejected Send input; a new variant would have required touching the exhaustive mcp_error_kind JSON-RPC code table and its consumer-stub tests.
 - [Phase 11]: [11-07]: own_domain resolved once in main() via resolve_own_domain_or_exit(home), kept as an owned Option<String> local (cloned per egress task, never moved) so 11-08's ingress-side own-domain check can reuse the same resolution site without restructuring it.
+- [Phase 11]: [11-08]: ingress own-domain threaded into GatewayIngressState as Arc<str> (converted from 11-07's Option<String> local at the run_ingress call site), reusing the SAME resolution site for both egress from-check and ingress to-check -- no second config source
+- [Phase 11]: [11-08]: sign_federation_fields's or_insert_with->insert change left the existing sign_federation_fields_is_idempotent test unmodified -- its already_signed early-return (keyed on the 'signature' field) short-circuits before the entry/insert block on any second call, so the entry-vs-insert change is invisible to that test
+- [Phase 11]: [11-08]: client-supplied-federation-field pre-check placed once in relay_one before sign_federation_fields, not inside a retry wrapper -- the drain loop never re-queues or retries a failed relay (Await permanently advances the mailbox cursor), so there is no legitimate second gateway pass this could ever reject
+- [Phase 11]: [11-08]: route-map --backs binding scoped to route resolution only, not to which principals are locally backed -- backed_names (from positional args) stays the single source for GatewayRegistry.back(), keeping F-5 (bare-name proxy mailbox collision) untouched and out of scope per the plan's prohibition
 
 ## Issues / Blockers
 
@@ -256,11 +260,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 10-test-reactivation-setup-docs P03 | 45min | 3 tasks | 5 files |
 | Phase 11-shipping-client-remote-addressing-setup-hardening P03 | 55min | 3 tasks | 3 files |
 | Phase 11 P07 | 75min | 2 tasks | 9 files |
+| Phase 11 P08 | 70min | 3 tasks | 5 files |
 
 ## Session
 
-**Last session:** 2026-07-28T20:53:37.486Z
-**Stopped At:** Completed 11-07-PLAN.md
+**Last session:** 2026-07-28T23:49:23.746Z
+**Stopped At:** Completed 11-08-PLAN.md
 **Resume File:** None
 
 ## Operator Next Steps
