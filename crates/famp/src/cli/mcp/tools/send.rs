@@ -219,5 +219,10 @@ fn parse_input(input: &Value) -> Result<SendArgs, ToolError> {
         // `parse_input` returns. Left as `None` here so this helper stays
         // pure (no async / no session access).
         act_as: None,
+        // `--domain` is a CLI-only override; the MCP `famp_send` input
+        // shape has no equivalent field. `None` means the remote branch
+        // (when `peer` parses as a full principal) falls through to the
+        // `FAMP_OWN_DOMAIN` env / `$FAMP_HOME/own-domain` file sources.
+        domain: None,
     })
 }

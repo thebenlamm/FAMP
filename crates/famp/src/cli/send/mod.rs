@@ -48,10 +48,13 @@
 use std::path::Path;
 
 use famp_bus::{BusErrorKind, BusMessage, BusReply, Target};
+use famp_core::Principal;
 
 use crate::bus_client::{BusClient, BusClientError};
 use crate::cli::error::CliError;
+use crate::cli::home;
 use crate::cli::identity::resolve_identity;
+use crate::cli::own_domain::resolve_own_domain;
 use crate::cli::util::normalize_channel;
 
 /// CLI arg set for `famp send`.
@@ -96,6 +99,14 @@ pub struct SendArgs {
     /// `as` is a reserved keyword.
     #[arg(long = "as")]
     pub act_as: Option<String>,
+    /// Override this host's federation authority for a remote send
+    /// (highest-precedence source in `own_domain::resolve_own_domain`:
+    /// `--domain` > `FAMP_OWN_DOMAIN` env > `$FAMP_HOME/own-domain` file).
+    /// Only consulted when `--to` parses as a full `agent:<domain>/<name>`
+    /// principal (the remote-send branch, D-02); ignored for a bare-name
+    /// local send (D-04).
+    #[arg(long)]
+    pub domain: Option<String>,
 }
 
 /// Outcome returned by [`run_at_structured`].
@@ -224,10 +235,40 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
         });
     }
 
-    // 3. Build the target.
+    // 3. Parse `--to` as a remote `Principal` up front (D-01/D-02
+    //    split-addressing). `Some(p)` marks the remote branch: the bus
+    //    `Target` routes by the LEAF name only (Pitfall 2 / T-11-09),
+    //    while the envelope `to`/`from` carry the full domain-qualified
+    //    principal (provenance). A string that starts with `agent:` but
+    //    fails to parse is a malformed remote target — reject typed here,
+    //    never fall through to a silent local `agent:local.bus/agent:...`
+    //    shape (review LOW). A bare name (no `agent:` prefix) fails with
+    //    `MissingScheme` and takes the unchanged local path (D-04).
+    let remote_principal: Option<Principal> = match args.to.as_deref() {
+        Some(raw) => match raw.parse::<Principal>() {
+            Ok(p) => Some(p),
+            Err(e) => {
+                if raw.starts_with("agent:") {
+                    return Err(CliError::SendArgsInvalid {
+                        reason: format!(
+                            "'{raw}' looks like a remote principal but failed to parse: {e}"
+                        ),
+                    });
+                }
+                None
+            }
+        },
+        None => None,
+    };
+
+    // 4. Build the target. Remote sends route the bus by the LEAF name —
+    //    the gateway's proxy mailbox for a remote principal is bound
+    //    under the bare leaf, never the full `agent:...` string.
     let target = match (args.to.as_deref(), args.channel.as_deref()) {
         (Some(name), None) => Target::Agent {
-            name: name.to_string(),
+            name: remote_principal
+                .as_ref()
+                .map_or_else(|| name.to_string(), |p| p.name().to_string()),
         },
         (None, Some(ch)) => Target::Channel {
             name: normalize_channel(ch)?,
@@ -257,21 +298,37 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
         }
     }
 
-    // 4. Build the envelope value. Phase 02 wires a minimal mode-tagged
-    //    payload wrapped in a typed `audit_log` BusEnvelope so the broker's
-    //    Phase-1 D-09 typed-decoder (`AnyBusEnvelope::decode`) accepts the
-    //    line on drain. The mode-tagged payload (mode + summary + task +
-    //    body + flags) lives under `body.details`, preserving the v0.8 send
-    //    surface verbatim for downstream readers. The audit_log class is
-    //    chosen because it is fire-and-forget (no FSM-firing on receipt),
-    //    its body schema is the most permissive (event + optional details),
-    //    and BUS-11 forbids signatures on the bus path so an unsigned
-    //    envelope is the correct shape. Phase 4 will graft the full signed
-    //    Request/Deliver envelope construction back in once the federation
-    //    gateway lands and the keyring loader is wired into the bus path.
-    let envelope = build_envelope_value(&args, &identity, &target)?;
+    // 5. Home is only needed for the remote-send branch (own-domain
+    //    resolution, D-02). Local (bare-name) sends never touch it —
+    //    requiring FAMP_HOME/HOME for a purely local send would be a
+    //    regression (D-04).
+    let home_path = if remote_principal.is_some() {
+        home::resolve_famp_home()?
+    } else {
+        std::path::PathBuf::new()
+    };
 
-    // 5. Connect. `Some(identity)` = D-10 proxy shape; broker validates
+    // 6. Build the envelope value. The local (bare-name) branch wires a
+    //    minimal mode-tagged payload wrapped in a typed `audit_log`
+    //    BusEnvelope so the broker's Phase-1 D-09 typed-decoder
+    //    (`AnyBusEnvelope::decode`) accepts the line on drain. The
+    //    mode-tagged payload (mode + summary + task + body + flags)
+    //    lives under `body.details`, preserving the v0.8 send surface
+    //    verbatim for downstream readers. The audit_log class is chosen
+    //    because it is fire-and-forget (no FSM-firing on receipt), its
+    //    body schema is the most permissive (event + optional details),
+    //    and BUS-11 forbids signatures on the bus path so an unsigned
+    //    envelope is the correct shape. The remote (domain-qualified)
+    //    branch is D-01/D-02/D-03 — see `build_remote_envelope_value`.
+    let envelope = build_envelope_value(
+        &args,
+        &identity,
+        &target,
+        remote_principal.as_ref(),
+        &home_path,
+    )?;
+
+    // 7. Connect. `Some(identity)` = D-10 proxy shape; broker validates
     //    at Hello time. Rich-error mapping: HelloErr{NotRegistered} =>
     //    NotRegisteredHint; everything else => BusClient or BrokerUnreachable.
     let mut bus = BusClient::connect(sock, Some(identity.clone()))
@@ -292,7 +349,7 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
             },
         })?;
 
-    // 6. Send. NO act_as field; broker stamps `from` via D-10
+    // 8. Send. NO act_as field; broker stamps `from` via D-10
     //    `effective_identity(state)`.
     let reply = bus
         .send_recv(BusMessage::Send {
@@ -304,7 +361,7 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
             detail: format!("{e:?}"),
         })?;
 
-    // 7. Best-effort shutdown so the broker observes Disconnect.
+    // 9. Best-effort shutdown so the broker observes Disconnect.
     bus.shutdown().await;
 
     match reply {
@@ -400,21 +457,60 @@ fn build_inner_payload(args: &SendArgs) -> Result<serde_json::Value, CliError> {
     Ok(serde_json::Value::Object(obj))
 }
 
+/// Fresh `UUIDv7` message id + RFC 3339 (second-precision, `Z`-suffixed)
+/// timestamp, shared by both the local and remote envelope-build paths.
+///
+/// Shallow format match for `Timestamp::shallow_validate` (≥20 bytes,
+/// `-`/`T`/`:` at fixed offsets, ends with `Z`): subsecond components (if
+/// `time` emits one) are stripped so the trimmed `YYYY-MM-DDTHH:MM:SSZ`
+/// form matches the fixture used by `audit_log_dispatch.rs`.
+fn fresh_id_and_ts() -> Result<(String, String), CliError> {
+    let id = uuid::Uuid::now_v7().to_string();
+    let ts = time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|e| CliError::SendArgsInvalid {
+            reason: format!("failed to format envelope ts: {e}"),
+        })?;
+    let ts = if let Some(dot_idx) = ts.find('.') {
+        // Find tail offset end (the `Z` or +/-HH:MM after subsecs).
+        let tail_idx = ts[dot_idx..]
+            .find(['Z', '+', '-'])
+            .map_or(ts.len(), |i| dot_idx + i);
+        let mut out = String::with_capacity(ts.len() - (tail_idx - dot_idx));
+        out.push_str(&ts[..dot_idx]);
+        out.push_str(&ts[tail_idx..]);
+        out
+    } else {
+        ts
+    };
+    Ok((id, ts))
+}
+
 /// Build the wire envelope sent in `BusMessage::Send.envelope`.
 ///
-/// Wraps the mode-tagged payload from [`build_inner_payload`] in a typed
-/// unsigned `audit_log` `BusEnvelope` shape so the broker's Phase-1 D-09
-/// typed-decoder accepts each drained line. BUS-11 forbids signatures on
-/// the bus path, so the envelope is signature-less and `from`/`to` use
-/// a synthetic `agent:local.bus/<name>` Principal scheme. Channel sends
-/// surface the channel name in `to` as `agent:local.bus/<channel-without-#>`
-/// — pure cosmetic; the broker routes by `BusMessage::Send.to: Target`,
-/// not by the envelope `to` field.
+/// Dispatches on `remote`: `Some(principal)` takes the domain-qualified
+/// remote path (D-01/D-02/D-03, [`build_remote_envelope_value`]); `None`
+/// keeps the local (bare-name) path byte-unchanged modulo id/ts (D-04).
+///
+/// The local path wraps the mode-tagged payload from
+/// [`build_inner_payload`] in a typed unsigned `audit_log` `BusEnvelope`
+/// shape so the broker's Phase-1 D-09 typed-decoder accepts each drained
+/// line. BUS-11 forbids signatures on the bus path, so the envelope is
+/// signature-less and `from`/`to` use a synthetic `agent:local.bus/<name>`
+/// Principal scheme. Channel sends surface the channel name in `to` as
+/// `agent:local.bus/<channel-without-#>` — pure cosmetic; the broker
+/// routes by `BusMessage::Send.to: Target`, not by the envelope `to` field.
 fn build_envelope_value(
     args: &SendArgs,
     identity: &str,
     target: &Target,
+    remote: Option<&Principal>,
+    home: &Path,
 ) -> Result<serde_json::Value, CliError> {
+    if let Some(principal) = remote {
+        return build_remote_envelope_value(args, identity, principal, home);
+    }
+
     let inner = build_inner_payload(args)?;
 
     // Synthesize Principal-shaped `from` / `to` strings. The local bus
@@ -433,32 +529,7 @@ fn build_envelope_value(
         }
     };
 
-    // Synthesize a fresh UUIDv7 message id and the current timestamp.
-    let id = uuid::Uuid::now_v7().to_string();
-    // RFC 3339 UTC timestamp, second precision, trailing `Z`. Shallow
-    // format match for `Timestamp::shallow_validate` (≥20 bytes,
-    // `-`/`T`/`:` at fixed offsets, ends with `Z`).
-    let ts = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .map_err(|e| CliError::SendArgsInvalid {
-            reason: format!("failed to format envelope ts: {e}"),
-        })?;
-    // Strip subsecond component if `time` emitted one — `Timestamp`'s
-    // shallow validator accepts the trimmed `YYYY-MM-DDTHH:MM:SSZ` form
-    // and the fixture used by `audit_log_dispatch.rs`. Find the first
-    // dot or `Z` after the `T` and rebuild as `<HMS>Z`.
-    let ts = if let Some(dot_idx) = ts.find('.') {
-        // Find tail offset end (the `Z` or +/-HH:MM after subsecs).
-        let tail_idx = ts[dot_idx..]
-            .find(['Z', '+', '-'])
-            .map_or(ts.len(), |i| dot_idx + i);
-        let mut out = String::with_capacity(ts.len() - (tail_idx - dot_idx));
-        out.push_str(&ts[..dot_idx]);
-        out.push_str(&ts[tail_idx..]);
-        out
-    } else {
-        ts
-    };
+    let (id, ts) = fresh_id_and_ts()?;
 
     // The audit_log body's only required field is `event`; we encode the
     // mode-tagged payload under `details` for Phase-2 consumers that
@@ -509,6 +580,66 @@ fn build_envelope_value(
     Ok(envelope)
 }
 
+/// Build the domain-qualified remote-send envelope (D-01/D-02): `to` is
+/// the full principal verbatim, `from` is `agent:{own_domain}/{identity}`
+/// resolved via [`resolve_own_domain`] (own-domain plan 02). Still wraps
+/// the mode-tagged `audit_log` shape used by the local path — Task 2 of
+/// this plan upgrades this to a mode-branched typed class
+/// (request/commit/deliver-terminal).
+fn build_remote_envelope_value(
+    args: &SendArgs,
+    identity: &str,
+    principal: &Principal,
+    home: &Path,
+) -> Result<serde_json::Value, CliError> {
+    let own_domain = resolve_own_domain(args.domain.as_deref(), home)?;
+    let from = format!("agent:{own_domain}/{identity}");
+    let to = principal.to_string();
+
+    let inner = build_inner_payload(args)?;
+    let (id, ts) = fresh_id_and_ts()?;
+
+    let event = match (
+        args.new_task.is_some(),
+        args.task.is_some(),
+        args.terminal,
+        args.channel.is_some(),
+    ) {
+        (true, false, false, _) => "famp.send.new_task",
+        (false, true, true, _) => "famp.send.deliver_terminal",
+        (false, true, false, _) => "famp.send.deliver",
+        (false, false, false, true) => "famp.send.channel_post",
+        _ => "famp.send", // unreachable: build_inner_payload would have errored.
+    };
+
+    let mut envelope = serde_json::json!({
+        "famp": "0.5.2",
+        "class": "audit_log",
+        "scope": "standalone",
+        "id": id,
+        "from": from,
+        "to": to,
+        "authority": "advisory",
+        "ts": ts,
+        "body": {
+            "event": event,
+            "details": inner,
+        }
+    });
+
+    if let (Some(task_uuid), Some(obj)) = (args.task.as_deref(), envelope.as_object_mut()) {
+        obj.insert(
+            "causality".to_string(),
+            serde_json::json!({
+                "rel": "delivers",
+                "ref": task_uuid,
+            }),
+        );
+    }
+
+    Ok(envelope)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -525,6 +656,7 @@ mod tests {
             body: Some("prose".to_string()),
             more_coming: true,
             act_as: None,
+            domain: None,
         };
         let v = build_inner_payload(&args).unwrap();
         assert_eq!(v["mode"], serde_json::Value::String("new_task".into()));
@@ -546,6 +678,7 @@ mod tests {
             body: None,
             more_coming: false,
             act_as: None,
+            domain: None,
         };
         let v = build_inner_payload(&args).unwrap();
         assert_eq!(
@@ -566,6 +699,7 @@ mod tests {
             body: None,
             more_coming: false,
             act_as: None,
+            domain: None,
         };
         let err = build_inner_payload(&args).unwrap_err();
         assert!(matches!(err, CliError::SendArgsInvalid { .. }));
@@ -586,11 +720,19 @@ mod tests {
             body: None,
             more_coming: false,
             act_as: None,
+            domain: None,
         };
         let target = Target::Agent {
             name: "bob".to_string(),
         };
-        let envelope = build_envelope_value(&args, "alice", &target).unwrap();
+        let envelope = build_envelope_value(
+            &args,
+            "alice",
+            &target,
+            None,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
         // Top-level keys required by `AnyBusEnvelope::decode`.
         assert_eq!(
             envelope["class"],
@@ -626,6 +768,7 @@ mod tests {
             body: None,
             more_coming: true,
             act_as: Some("bob".to_string()),
+            domain: None,
         };
         let rt = tokio::runtime::Builder::new_current_thread()
             .build()
@@ -656,6 +799,7 @@ mod tests {
             body: None,
             more_coming: false,
             act_as: Some("alice".to_string()),
+            domain: None,
         };
         let rt = tokio::runtime::Builder::new_current_thread()
             .build()
@@ -687,11 +831,19 @@ mod tests {
             body: Some("ok".to_string()),
             more_coming: false,
             act_as: None,
+            domain: None,
         };
         let target = Target::Agent {
             name: "alice".to_string(),
         };
-        let env = build_envelope_value(&args, "bob", &target).unwrap();
+        let env = build_envelope_value(
+            &args,
+            "bob",
+            &target,
+            None,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
         assert_eq!(
             env["causality"]["rel"],
             serde_json::Value::String("delivers".into())
@@ -714,14 +866,187 @@ mod tests {
             body: None,
             more_coming: false,
             act_as: None,
+            domain: None,
         };
         let target = Target::Agent {
             name: "alice".to_string(),
         };
-        let env = build_envelope_value(&args, "bob", &target).unwrap();
+        let env = build_envelope_value(
+            &args,
+            "bob",
+            &target,
+            None,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
         assert!(
             env.get("causality").is_none(),
             "new_task envelopes must not carry causality"
         );
+    }
+
+    // --- remote-target split-addressing tests (D-01/D-02) ---
+
+    /// `--to agent:hostb.test/bob` must qualify both `to` (full principal
+    /// verbatim) and `from` (`agent:{own_domain}/{identity}`). `--domain`
+    /// is the CLI flag — highest-precedence source in
+    /// `own_domain::resolve_own_domain` — so this test injects the
+    /// own-domain value through the args struct rather than touching
+    /// process env (avoids the `FAMP_OWN_DOMAIN` serial-env race with
+    /// `own_domain.rs`'s own test).
+    #[test]
+    fn build_envelope_value_remote_qualifies_from_and_to() {
+        let args = SendArgs {
+            to: Some("agent:hostb.test/bob".to_string()),
+            channel: None,
+            new_task: Some("hi".to_string()),
+            task: None,
+            terminal: false,
+            body: None,
+            more_coming: false,
+            act_as: None,
+            domain: Some("hosta.test".to_string()),
+        };
+        let principal: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let target = Target::Agent {
+            name: principal.name().to_string(),
+        };
+        let env = build_envelope_value(
+            &args,
+            "alice",
+            &target,
+            Some(&principal),
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
+        assert_eq!(
+            env["to"],
+            serde_json::Value::String("agent:hostb.test/bob".into())
+        );
+        assert_eq!(
+            env["from"],
+            serde_json::Value::String("agent:hosta.test/alice".into())
+        );
+    }
+
+    /// `run_at_structured`'s target-build seam must route the bus by the
+    /// LEAF name (`bob`), never the full `agent:hostb.test/bob` string
+    /// (Pitfall 2 / T-11-09) — verified by reproducing the same
+    /// `remote_principal` -> `Target` logic the production seam uses.
+    #[test]
+    fn remote_target_splits_bus_leaf_from_envelope_principal() {
+        let principal: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let target = Target::Agent {
+            name: principal.name().to_string(),
+        };
+        assert_eq!(
+            target,
+            Target::Agent {
+                name: "bob".to_string()
+            }
+        );
+    }
+
+    /// Regression: `--to bob` (bare name) is unaffected by the new
+    /// `--domain` flag or the remote branch — identical `agent:local.bus`
+    /// shape modulo id/ts.
+    #[test]
+    fn build_envelope_value_local_path_unchanged_with_domain_unset() {
+        let args = SendArgs {
+            to: Some("bob".to_string()),
+            channel: None,
+            new_task: Some("hi".to_string()),
+            task: None,
+            terminal: false,
+            body: None,
+            more_coming: false,
+            act_as: None,
+            domain: None,
+        };
+        let target = Target::Agent {
+            name: "bob".to_string(),
+        };
+        let env = build_envelope_value(
+            &args,
+            "alice",
+            &target,
+            None,
+            Path::new("/nonexistent-famp-home"),
+        )
+        .unwrap();
+        assert_eq!(
+            env["to"],
+            serde_json::Value::String("agent:local.bus/bob".into())
+        );
+        assert_eq!(
+            env["from"],
+            serde_json::Value::String("agent:local.bus/alice".into())
+        );
+    }
+
+    /// A remote send with no own-domain source (no `--domain`, no
+    /// `FAMP_OWN_DOMAIN`, no `$FAMP_HOME/own-domain` file) returns the
+    /// typed `OwnDomainNotSet` error rather than a silent local fallback.
+    /// Guarded by `temp_env::with_var_unset` (process-global mutex) so
+    /// this cannot race `own_domain.rs`'s own `FAMP_OWN_DOMAIN`-touching
+    /// test even under cargo's default multi-threaded test runner.
+    #[test]
+    fn remote_send_with_no_own_domain_source_returns_typed_error() {
+        temp_env::with_var_unset("FAMP_OWN_DOMAIN", || {
+            let tmp = tempfile::tempdir().unwrap();
+            let args = SendArgs {
+                to: Some("agent:hostb.test/bob".to_string()),
+                channel: None,
+                new_task: Some("hi".to_string()),
+                task: None,
+                terminal: false,
+                body: None,
+                more_coming: false,
+                act_as: None,
+                domain: None,
+            };
+            let principal: Principal = "agent:hostb.test/bob".parse().unwrap();
+            let target = Target::Agent {
+                name: principal.name().to_string(),
+            };
+            match build_envelope_value(&args, "alice", &target, Some(&principal), tmp.path()) {
+                Err(CliError::OwnDomainNotSet) => {}
+                other => panic!("expected OwnDomainNotSet, got {other:?}"),
+            }
+        });
+    }
+
+    /// `--to agent:garbage` (starts with `agent:` but does not parse as a
+    /// full `agent:<authority>/<name>` principal) must be rejected typed
+    /// by `run_at_structured` BEFORE any bus connection is attempted —
+    /// never silently falls through to a local `agent:local.bus/agent:garbage`
+    /// shape (review LOW). No live broker needed: the guard fires before
+    /// `BusClient::connect`.
+    #[test]
+    fn malformed_agent_prefixed_target_is_rejected_typed_no_local_fallback() {
+        let args = SendArgs {
+            to: Some("agent:garbage".to_string()),
+            channel: None,
+            new_task: Some("hi".to_string()),
+            task: None,
+            terminal: false,
+            body: None,
+            more_coming: false,
+            act_as: Some("alice".to_string()),
+            domain: None,
+        };
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let res = rt.block_on(run_at_structured(
+            std::path::Path::new("/nonexistent-famp-sock"),
+            args,
+        ));
+        match res.unwrap_err() {
+            CliError::SendArgsInvalid { reason } => {
+                assert!(reason.contains("agent:garbage"), "{reason}");
+            }
+            other => panic!("expected SendArgsInvalid, got {other:?}"),
+        }
     }
 }
