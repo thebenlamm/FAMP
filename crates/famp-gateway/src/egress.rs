@@ -46,6 +46,26 @@ const AWAIT_TIMEOUT_MS: u64 = 1_000;
 /// enforced freshness window this phase (INGRESS-01 is v1.1).
 const EXPIRY_WINDOW_MINUTES: i64 = 5;
 
+/// F-2/T-11-25: the seven federation-owned fields — the gateway alone may
+/// write these onto a relayed envelope. A locally-originated drained
+/// envelope carrying ANY of these is rejected in [`relay_one`] BEFORE
+/// [`sign_federation_fields`] runs (never signed), rather than silently
+/// overwritten — the review's stated preference, so a misbehaving local
+/// client learns it did something illegal. `signature` itself is a
+/// separate, narrower defense-in-depth check (`already_signed` below);
+/// it is not included here because `AnyBusEnvelope::decode`
+/// (`famp-envelope/src/bus.rs`, BUS-11) already hard-rejects any local-bus
+/// line carrying `signature` before it can ever reach a drain.
+const FEDERATION_OWNED_FIELDS: [&str; 7] = [
+    "from_domain",
+    "to_domain",
+    "sender_key_id",
+    "nonce",
+    "expiry",
+    "capability",
+    "approval",
+];
+
 /// Errors produced while federation-signing a drained mailbox `Value`
 /// ([`sign_federation_fields`]).
 #[derive(Debug, thiserror::Error)]
@@ -103,18 +123,32 @@ pub fn sign_federation_fields(
 
     let expiry = federation_expiry()?;
 
+    // F-2/T-11-25: unconditional insert, not `entry().or_insert_with()` —
+    // the gateway's own derived values are authoritative by construction.
+    // By the time this runs, `relay_one` has already rejected any
+    // locally-originated envelope that carried one of these keys (see
+    // `FEDERATION_OWNED_FIELDS`), so in practice this never overwrites a
+    // client-supplied value; it is unconditional anyway as defense in
+    // depth for any other future caller of this function.
     {
         let obj = value.as_object_mut().ok_or(EgressError::NotAnObject)?;
-        obj.entry("from_domain".to_string())
-            .or_insert_with(|| Value::String(from.authority().to_string()));
-        obj.entry("to_domain".to_string())
-            .or_insert_with(|| Value::String(to.authority().to_string()));
-        obj.entry("sender_key_id".to_string())
-            .or_insert_with(|| Value::String(famp_crypto::key_id(vk)));
-        obj.entry("nonce".to_string())
-            .or_insert_with(|| Value::String(uuid::Uuid::now_v7().to_string()));
-        obj.entry("expiry".to_string())
-            .or_insert_with(|| Value::String(expiry));
+        obj.insert(
+            "from_domain".to_string(),
+            Value::String(from.authority().to_string()),
+        );
+        obj.insert(
+            "to_domain".to_string(),
+            Value::String(to.authority().to_string()),
+        );
+        obj.insert(
+            "sender_key_id".to_string(),
+            Value::String(famp_crypto::key_id(vk)),
+        );
+        obj.insert(
+            "nonce".to_string(),
+            Value::String(uuid::Uuid::now_v7().to_string()),
+        );
+        obj.insert("expiry".to_string(), Value::String(expiry));
     }
 
     // Sign AFTER inserting the federation fields but BEFORE inserting
@@ -185,6 +219,12 @@ enum RelayError {
     /// this variant is never constructed and `from` is signed verbatim.
     #[error("egress 'from' domain mismatch: expected own-domain '{expected}', got '{got}'")]
     FromDomainMismatch { expected: String, got: String },
+    /// T-11-25: the drained envelope carried one or more federation-owned
+    /// fields (`FEDERATION_OWNED_FIELDS`) — a local client speaking the
+    /// UDS protocol pre-populated metadata only the gateway may write.
+    /// Never signed; rejected before `sign_federation_fields` runs.
+    #[error("drained envelope carries gateway-owned federation field(s): {fields}")]
+    ClientSuppliedFederationField { fields: String },
 }
 
 fn parse_principal_field(envelope: &Value, field: &'static str) -> Result<Principal, RelayError> {
@@ -221,6 +261,26 @@ async fn relay_one(
             return Err(RelayError::FromDomainMismatch {
                 expected: expected.to_string(),
                 got: got.to_string(),
+            });
+        }
+    }
+
+    // T-11-25: reject — never sign — a drained envelope that already
+    // carries one or more federation-owned fields. This runs on every
+    // drained envelope exactly once (the drain loop never re-queues or
+    // retries a failed relay — `run_egress`'s `Await` permanently
+    // advances the mailbox cursor), so this pre-check can never reject a
+    // legitimate second gateway pass; there is no such pass in this
+    // codebase.
+    if let Some(obj) = envelope.as_object() {
+        let present: Vec<&str> = FEDERATION_OWNED_FIELDS
+            .iter()
+            .copied()
+            .filter(|field| obj.contains_key(*field))
+            .collect();
+        if !present.is_empty() {
+            return Err(RelayError::ClientSuppliedFederationField {
+                fields: present.join(", "),
             });
         }
     }
@@ -534,5 +594,83 @@ mod tests {
             value["from_domain"],
             Value::String("anydomain.test".to_string())
         );
+    }
+
+    // --- T-11-25: client-supplied federation-field rejection ----------
+
+    /// Each of the 7 federation-owned fields, when already present on a
+    /// drained (locally-originated) envelope, is rejected by `relay_one`
+    /// with the typed `ClientSuppliedFederationField` error naming it —
+    /// BEFORE `sign_federation_fields` runs, so no signature is ever
+    /// produced and the envelope is left otherwise unmutated.
+    #[tokio::test]
+    async fn relay_one_rejects_each_client_supplied_federation_field() {
+        let sk = FampSigningKey::from_bytes([50u8; 32]);
+        let vk = sk.verifying_key();
+        let from: Principal = "agent:hosta.test/alice".parse().unwrap();
+        let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let transport = HttpTransport::new_client_only(None).unwrap();
+
+        for field in FEDERATION_OWNED_FIELDS {
+            let mut value = plain_request_value(&from, &to);
+            value.as_object_mut().unwrap().insert(
+                field.to_string(),
+                Value::String("attacker-supplied".to_string()),
+            );
+            let before = value.clone();
+
+            let result = relay_one(&mut value, None, &sk, &vk, &transport).await;
+
+            match &result {
+                Err(RelayError::ClientSuppliedFederationField { fields }) => {
+                    assert!(
+                        fields.contains(field),
+                        "expected rejected-fields list to name '{field}', got '{fields}'"
+                    );
+                }
+                other => {
+                    panic!("field '{field}': expected ClientSuppliedFederationField, got {other:?}")
+                }
+            }
+            assert_eq!(
+                value, before,
+                "field '{field}': a rejected client-supplied-federation-field envelope must \
+                 not be mutated — no signature, no derived fields ever inserted"
+            );
+            assert!(
+                value.get("signature").is_none(),
+                "field '{field}': no signature must be produced on this reject path"
+            );
+        }
+    }
+
+    /// Multiple client-supplied federation fields at once are all named in
+    /// the single typed rejection (not just the first one found).
+    #[tokio::test]
+    async fn relay_one_names_all_present_client_supplied_fields_at_once() {
+        let sk = FampSigningKey::from_bytes([51u8; 32]);
+        let vk = sk.verifying_key();
+        let from: Principal = "agent:hosta.test/alice".parse().unwrap();
+        let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let transport = HttpTransport::new_client_only(None).unwrap();
+
+        let mut value = plain_request_value(&from, &to);
+        value.as_object_mut().unwrap().insert(
+            "nonce".to_string(),
+            Value::String("attacker-nonce".to_string()),
+        );
+        value.as_object_mut().unwrap().insert(
+            "capability".to_string(),
+            Value::String("attacker-capability".to_string()),
+        );
+
+        let result = relay_one(&mut value, None, &sk, &vk, &transport).await;
+        match result {
+            Err(RelayError::ClientSuppliedFederationField { fields }) => {
+                assert!(fields.contains("nonce"), "got: {fields}");
+                assert!(fields.contains("capability"), "got: {fields}");
+            }
+            other => panic!("expected ClientSuppliedFederationField, got {other:?}"),
+        }
     }
 }
