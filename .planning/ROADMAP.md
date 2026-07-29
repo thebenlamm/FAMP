@@ -317,7 +317,7 @@ Plans:
 
 **Wave 2** *(depends on Wave 1 — hygiene must land BEFORE the bump so REL-03 stays satisfiable)*
 
-- [ ] 12-04-PLAN.md — atomic version bump to `1.0.0` (13 manifests, banner const, its pinning test, 2 docs, regenerated lockfile) in ONE commit, then live check-run attestation at that exact SHA with run IDs recorded [REL-03, REL-05] (depends 12-01, 12-02, 12-03)
+- [x] 12-04-PLAN.md — atomic version bump to `1.0.0` (13 manifests, banner const, its pinning test, 2 docs, regenerated lockfile) in ONE commit, then live check-run attestation at that exact SHA with run IDs recorded [REL-03, REL-05] (depends 12-01, 12-02, 12-03)
 
 **Wave 3** *(depends on Wave 2)*
 
