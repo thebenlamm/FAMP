@@ -80,6 +80,16 @@ Added 2026-07-28 from the third external design review ("FAMP v1.0 Remote Addres
 
 - [ ] **UAT-01**: The Gate A two-machine dogfood is re-run with the fixed `famp send` (no injector) and reaches a terminal task state on both sides — the final human gate before tagging v1.0.0. Per the design review's §16 release ruling, this gates a `v1.0.0-rc.1` tag; `v1.0.0` follows only once the review's 9-item checklist is satisfied.
 
+### Release (REL) — Phase 12 v1.0.0 tag gate
+
+Added 2026-07-29. These are exactly the items of design review C's §16 nine-item `v1.0.0` tag checklist (`.planning/phases/11-shipping-client-remote-addressing-setup-hardening/DESIGN-REVIEW-C-final.pdf`) that Phase 11 did **not** close. §16 items 1 (shipping client accepts a complete remote principal), 2 (globally qualified `from`/`to`), 3 (`from` bound to broker-authenticated identity), 4 (no `local.bus` authority crosses federation), 5 (remote gateway verifies and delivers the same signed bytes), and 7 (ambiguous route config fails closed) are already satisfied — covered by ADDR-01/02/03 and SEC-01/04 and independently re-verified in `11-VERIFICATION.md` (7/7 truths, source + re-run tests + live two-machine UAT). They are re-attested by citation under REL-05, not re-implemented.
+
+- [ ] **REL-01** (§16 item 8 — "the documentation states what `send` confirms"): `docs/GATEWAY-SETUP.md`, the `famp send` help text, and the README remote-path section state explicitly what a successful remote `famp send` does and does not confirm — which acknowledgement a zero exit code represents (accepted by local gateway egress / verified-and-delivered into the remote mailbox / task FSM terminal) and where the fire-and-forget boundary sits. A `crates/famp/tests/gateway_setup_doc_accuracy.rs` assertion pins the statement against drift. *(Today `GATEWAY-SETUP.md` contains nothing on send-confirmation semantics — verified by grep, zero coverage.)*
+- [ ] **REL-02** (§16 item 9 — "Zed's independent source verdict is reconciled"): an independent, source-grounded adversarial review of the **shipped `v1.0.0-rc.1` code** covering the federation trust boundary — egress `from`-stamping, ingress destination/domain validation, federation-owned-field ownership, route config — with every finding triaged to fixed or explicitly documented-accept with written rationale. Zed's earlier corrections were absorbed *pre*-fix (D-02 in `11-CONTEXT.md`, which drove the both-`from`-and-`to` rewrite); this requirement is the post-fix reconciliation against what actually shipped.
+- [ ] **REL-03** (§16 item 6 — "existing canonicalization and E2E gates remain green"): canonicalization / RFC 8785 gates, the two-process cross-host E2E (`e2e_cross_host_delivery`, `e2e_shipping_surface`), `clippy -D warnings`, and `fmt` are green **in CI at the exact commit that receives the `v1.0.0` tag**, with run IDs recorded in the phase record. `v1.0.0-rc.1` sits on `ba6b166` while CI's green run is on `ca59f48`, and full-workspace `cargo test --workspace` / `just ci` cannot be run locally on this machine (documented nextest `--list` hang) — so CI at the tag commit is the only admissible evidence.
+- [ ] **REL-04** (release-record hygiene, from the `11-VERIFICATION.md` WARNING): the release record is internally consistent before the tag — UAT-01's traceability row and checklist box reflect its recorded PASS rather than `Pending`/unchecked; the dangling `ADDR-04` reference introduced by plan 11-07's commit message is resolved; and Phase 11's ROADMAP entry reflects all 8 shipped plans (11-08 is currently absent from its plan list) and its true completion state. *(The SEC-02/03/04 rows the verifier flagged have since been corrected to `Complete` — confirmed 2026-07-29; only the items named here remain.)*
+- [ ] **REL-05** (the tag): §16 items 1, 2, 3, 4, 5, 7 re-attested by citation to `11-VERIFICATION.md` evidence; items 6, 8, 9 confirmed closed by REL-01..03; workspace version bumped to `1.0.0`; `v1.0.0` tagged with the §16 checklist reproduced in the tag annotation. Any shipped limitation statement must be verified current first — §16's proposed wording ("`famp send` … does not initiate or complete the task FSM") predates ADDR-02, which made remote sends typed and FSM-driving (`--new-task`→Request, `--task`→Commit, `--task --terminal`→Deliver). Ship the accurate statement or none; never a stale limitation. Tagging is outward-facing — Ben confirms before it lands.
+
 ## v2 Requirements (deferred — v1.1 / v2.0+)
 
 Tracked but not in this milestone's roadmap. See `~/.claude/plans/first-work-out-the-nested-star.md`.
@@ -141,11 +151,16 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DOC-05 | Phase 11 | Complete |
 | TEST-03 | Phase 11 | Complete |
 | UAT-01 | Phase 11 | Pending |
+| REL-01 | Phase 12 | Pending |
+| REL-02 | Phase 12 | Pending |
+| REL-03 | Phase 12 | Pending |
+| REL-04 | Phase 12 | Pending |
+| REL-05 | Phase 12 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 24 total
-- Mapped to phases: 24 (100%)
+- v1 requirements: 29 total
+- Mapped to phases: 29 (100%)
 - Unmapped: 0
 
 **Phase summary:**
@@ -154,7 +169,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 - Phase 8 — Signed Cross-Host Envelope + Trust Bootstrap: WIRE-01, WIRE-02, TRUST-01, TRUST-02 (4 reqs)
 - Phase 9 — End-to-End Cross-Host Delivery: GW-01, GW-02, GW-03 (3 reqs)
 - Phase 10 — Test Reactivation + Setup Docs: TEST-01, TEST-02, DOC-04 (3 reqs)
+- Phase 11 — Shipping-Client Remote Addressing + Setup Hardening: ADDR-01, ADDR-02, ADDR-03, OBS-01, DOC-05, TEST-03, UAT-01, SEC-01..04 (11 reqs)
+- Phase 12 — v1.0.0 Release Gate: REL-01, REL-02, REL-03, REL-04, REL-05 (5 reqs)
 
 ---
 *Requirements defined: 2026-07-23*
-*Last updated: 2026-07-23 — roadmap created (ROADMAP.md Phases 7–10); traceability populated, 13/13 requirements mapped, 100% coverage.*
+*Last updated: 2026-07-29 — Phase 12 (v1.0.0 Release Gate) added; REL-01..05 scoped from design review C §16's nine-item tag checklist minus the six items Phase 11 already closed (items 1–5, 7 — see `11-VERIFICATION.md`). 29/29 requirements mapped, 100% coverage.*
+*Previously: 2026-07-23 — roadmap created (ROADMAP.md Phases 7–10); traceability populated, 13/13 requirements mapped, 100% coverage.*

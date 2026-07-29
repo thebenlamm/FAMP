@@ -26,6 +26,7 @@
 - [ ] **Phase 9: End-to-End Cross-Host Delivery** - Full bidirectional `request → commit → deliver → ack` task cycle across two machines through the gateway.
 - [ ] **Phase 10: Test Reactivation + Setup Docs** - Deferred federation tests triaged and green, a live two-process E2E in `just ci`, and a two-machine setup guide.
 - [ ] **Phase 11: Shipping-Client Remote Addressing + Setup Hardening** - Make `famp send` able to address a remote principal (C2/C5 sender-side split-addressing) so a real client — not just a hand-written injector — drives a cross-host delivery; fix the 8 Gate A dogfood findings (GATEWAY-SETUP.md wiring/cert/firewall, the transport error-chain swallow, platform-conditional fixtures); replace the throwaway injector with a shipping-surface test; re-run the two-machine dogfood with the real client as the final v1.0.0 gate.
+- [ ] **Phase 12: v1.0.0 Release Gate** - Close the three design-review-C §16 checklist items Phase 11 left open (what `send` confirms in the docs; an independent source verdict on the shipped `v1.0.0-rc.1` code; a green-gate attestation at the tag commit), clean the release record, then bump to `1.0.0` and tag. §16 items 1–5 and 7 are already satisfied and re-attested by citation — no new federation logic.
 
 ## Phase Details
 
@@ -286,6 +287,28 @@ Plans:
 **Wave 4** *(depends on Wave 3)*
 
 - [x] 11-06-PLAN.md — UAT-01 live two-machine dogfood with the fixed `famp send` (mode flags, no injector) — final v1.0.0 gate [UAT-01] (depends 11-03, 11-04, 11-05, 11-07, autonomous: false)
+
+### Phase 12: v1.0.0 Release Gate
+
+**Goal:** Close the three items of design review C's §16 nine-item `v1.0.0` tag checklist that Phase 11 did not close — the `send`-confirmation documentation gap, the post-fix independent source verdict, and a green-gate attestation at the exact commit that receives the tag — then tag `v1.0.0`. This phase writes no federation logic: items 1, 2, 3, 4, 5, and 7 of the §16 checklist are already satisfied and independently re-verified in `.planning/phases/11-shipping-client-remote-addressing-setup-hardening/11-VERIFICATION.md` (7/7 truths + SEC-01..04), and are re-attested here by citation only. Source: `.planning/phases/11-shipping-client-remote-addressing-setup-hardening/DESIGN-REVIEW-C-final.pdf` §16 "Exact release ruling".
+**Depends on:** Phase 11 (all nine §16 items presuppose the shipping-client remote addressing, trust-boundary binding, and fail-closed route config that Phase 11 landed; `v1.0.0-rc.1` is tagged at `ba6b166`).
+**Requirements:** REL-01, REL-02, REL-03, REL-04, REL-05 (5 requirements)
+**Success Criteria** (what must be TRUE):
+
+  1. `docs/GATEWAY-SETUP.md` (and the `famp send` help text / README remote-path section) state explicitly what a successful remote `famp send` does and does not confirm — which acknowledgement the exit code represents (accepted by local gateway egress vs. verified-and-delivered into the remote mailbox vs. task FSM terminal) and where the fire-and-forget boundary sits; a `crates/famp/tests/gateway_setup_doc_accuracy.rs` assertion pins the statement so it cannot silently rot (REL-01, §16 item 8 — today the doc says nothing on this).
+  2. An independent, source-grounded adversarial review of the **shipped `v1.0.0-rc.1` code** (not the pre-fix design) covers the federation trust boundary — egress `from`-stamping, ingress destination/domain validation, federation-owned-field ownership, route config — and every finding is triaged to either fixed or explicitly documented-accept with written rationale (REL-02, §16 item 9; zed's earlier source corrections were absorbed *pre*-fix as D-02 in `11-CONTEXT.md`, so this is the post-fix reconciliation).
+  3. Canonicalization / RFC 8785 gates, the two-process cross-host E2E (`e2e_cross_host_delivery`, `e2e_shipping_surface`), `clippy -D warnings`, and `fmt` are all green **in CI at the exact commit that receives the `v1.0.0` tag**, with the run IDs recorded in the phase record (REL-03, §16 item 6 — CI is green on `ca59f48` but `v1.0.0-rc.1` sits on `ba6b166`, and full-workspace `cargo test --workspace` / `just ci` cannot be run locally on this machine per the documented nextest hang).
+  4. Release-record hygiene is clean: UAT-01's traceability row and checklist box reflect its recorded PASS rather than `Pending`/unchecked, the dangling `ADDR-04` reference from plan 11-07's commit message is resolved, and Phase 11's ROADMAP entry reflects all 8 shipped plans (11-08 is currently absent from its plan list) and its true completion state (REL-04, from the `11-VERIFICATION.md` WARNING — the SEC-02/03/04 rows that report flagged have since been corrected to `Complete`, confirmed 2026-07-29).
+  5. §16 items 1, 2, 3, 4, 5, 7 are re-attested by citation to `11-VERIFICATION.md` evidence, items 6/8/9 are confirmed closed by REL-01..03, the workspace version is bumped to `1.0.0`, and `v1.0.0` is tagged with the §16 checklist reproduced in the tag annotation (REL-05).
+  6. Any release-note limitation is verified current before it ships: §16's proposed wording ("`famp send` … does not initiate or complete the task FSM") predates Phase 11's ADDR-02, which made remote sends typed and FSM-driving (`--new-task`→Request, `--task`→Commit, `--task --terminal`→Deliver). Re-evaluate against the shipped behavior and ship the accurate statement or none — never a stale limitation (REL-05).
+
+**Hard constraints:** No federation logic changes unless REL-02 surfaces a real defect — this is a release gate, not a feature phase. INV-10 / RFC-8785 canonical + `FAMP-sig-v1\0` unchanged; the local bus stays UNSIGNED; no CI-gate weakening or `--no-verify`; spec authority v0.5.2. Tagging `v1.0.0` is outward-facing — confirm with Ben before the tag lands.
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 12 to break down)
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>

@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Federation Profile)
-current_phase: 999.1
-current_phase_name: BACKLOG
+current_phase: 12
+current_phase_name: v1.0.0 Release Gate
 status: planning
-stopped_at: Completed 11-05-PLAN.md
-last_updated: "2026-07-29T02:19:59.054Z"
-last_activity: 2026-07-28
-last_activity_desc: Phase 11 complete, transitioned to Phase 999.1
+stopped_at: Phase 12 added to roadmap — not yet planned
+last_updated: "2026-07-29T19:31:39.213Z"
+last_activity: 2026-07-29
+last_activity_desc: Phase 12 (v1.0.0 Release Gate) scoped from design review C §16; repointed off the auto-advanced backlog Phase 999.1
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 4
   total_plans: 24
   completed_plans: 23
-  percent: 80
+  percent: 67
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extends that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 11 — shipping-client-remote-addressing-setup-hardening
+**Current focus:** Phase 12 — v1.0.0 Release Gate
 
 ## Current Position
 
-Phase: 999.1 — `famp await` crash safety — cursor advance vs flush ordering (BACKLOG)
+Phase: 12 — v1.0.0 Release Gate (REL-01..05, design review C §16 residual)
 Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-28 — Phase 11 complete, transitioned to Phase 999.1
+Status: Ready to plan — `/gsd-plan-phase 12`
+Last activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and `v1.0.0-rc.1` tagged at `ba6b166`; `phase.complete` had auto-advanced this pointer to backlog Phase 999.1 (roadmap ordering, not intent) and it has been repointed to Phase 12. **Backlog phases 999.x are NOT the next work** — promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
 
 ## v1.0 Phase Map
 
@@ -276,3 +276,9 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 ## Operator Next Steps
 
 - Run `/gsd-plan-phase 7` to plan Phase 7 (Broker-Liveness Fork + Gateway Skeleton) — the gating spine for v1.0.
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 12 added: v1.0.0 Release Gate — design review C §16 residual (REL-01..05): what `send` confirms in docs, independent source verdict on shipped rc.1, green-gate attestation at tag commit, release-record hygiene, then bump to 1.0.0 and tag. §16 items 1-5 and 7 already closed by Phase 11, re-attested by citation.
