@@ -23,6 +23,11 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::too_many_lines)]
 
+/// Startup deadline for broker socket, relaxed from 5s to accommodate parallel
+/// test execution where multiple harnesses spawn brokers simultaneously.
+/// See crates/famp-gateway/tests/common/gateway_harness.rs::STARTUP_DEADLINE.
+const STARTUP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -189,7 +194,7 @@ async fn build_harness(own_domain: Option<&str>, sk: &FampSigningKey) -> Harness
     let tmp = tempfile::TempDir::new().unwrap();
     let sock = tmp.path().join("bus.sock");
     let broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
 
     let mut registry = GatewayRegistry::default();
     registry

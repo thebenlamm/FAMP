@@ -1,6 +1,11 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+/// Startup deadline for broker socket, relaxed from 5s to accommodate parallel
+/// test execution where multiple harnesses spawn brokers simultaneously.
+/// See crates/famp-gateway/tests/common/gateway_harness.rs::STARTUP_DEADLINE.
+const STARTUP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
 // Phase 09 Plan 01 Task 1: ProxiedPrincipal::send_recv and
 // GatewayRegistry::get_mut — the shared drain/send plumbing every
 // downstream Phase 9 plan (egress/ingress) hangs off.
@@ -93,7 +98,7 @@ async fn send_recv_round_trips_await_timeout_and_send() {
     let tmp = tempfile::TempDir::new().unwrap();
     let sock = tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
 
     // "bob" is the gateway-backed remote principal stand-in under test.
     let mut bob = ProxiedPrincipal::register(&sock, "bob".into())
@@ -192,7 +197,7 @@ async fn registry_get_mut_returns_backed_and_none_for_unbacked() {
     let tmp = tempfile::TempDir::new().unwrap();
     let sock = tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
 
     let mut registry = GatewayRegistry::default();
     registry

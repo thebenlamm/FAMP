@@ -1,6 +1,12 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+/// Startup deadline for broker socket and gateway registration, relaxed from 5s
+/// to accommodate parallel test execution where multiple harnesses spawn
+/// brokers simultaneously (causing contention during cargo/nextest runs).
+/// See crates/famp-gateway/tests/common/gateway_harness.rs::STARTUP_DEADLINE.
+const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
+
 // Phase 07 Plan 03 Task 2: GW-04 — a single `famp-gateway` process
 // backing two proxied principals (alice, bob) never lets a message
 // addressed to alice appear in bob's mailbox.
@@ -226,10 +232,10 @@ async fn gw04_no_cross_talk_between_proxied_principals() {
     let sock = tmp.path().join("bus.sock");
 
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
     // ONE gateway process backs BOTH alice and bob.
     let _gateway = spawn_gateway_subprocess(&sock, tmp.path(), &["alice", "bob"]);
-    poll_until_all_live(&sock, &["alice", "bob"], Duration::from_secs(5));
+    poll_until_all_live(&sock, &["alice", "bob"], STARTUP_DEADLINE);
 
     // Sender: a D-10 `bind_as = Some("bob")` proxy connection onto the
     // gateway's own live "bob" registration -- the same mechanism

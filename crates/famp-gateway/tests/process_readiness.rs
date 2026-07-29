@@ -17,6 +17,11 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+/// Startup deadline for broker socket, relaxed from 5s to accommodate parallel
+/// test execution where multiple harnesses spawn brokers simultaneously.
+/// See crates/famp-gateway/tests/common/gateway_harness.rs::STARTUP_DEADLINE.
+const STARTUP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -83,7 +88,7 @@ fn ready_line_is_never_printed_when_peers_keyring_load_fails() {
     let broker_tmp = tempfile::TempDir::new().unwrap();
     let sock = broker_tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
 
     // Deliberately fresh `FAMP_HOME`: no `gateway/` directory, no
     // `peers.keyring` file. `load_or_generate` (signing key) creates

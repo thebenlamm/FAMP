@@ -1,6 +1,12 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+/// Startup deadline for broker socket and gateway registration, relaxed from 5s
+/// to accommodate parallel test execution where multiple harnesses spawn
+/// brokers simultaneously (causing contention during cargo/nextest runs).
+/// See crates/famp-gateway/tests/common/gateway_harness.rs::STARTUP_DEADLINE.
+const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
+
 // Phase 07 Plan 03 Task 1: LIVE-02 — a real `famp-gateway` process
 // backing N proxied principals keeps them ALL live in
 // `famp inspect identities` for as long as it runs, and SIGKILLing it
@@ -215,14 +221,14 @@ fn live02_gateway_exit_reaps_all_principals() {
     let sock = tmp.path().join("bus.sock");
 
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
     let mut gateway = spawn_gateway_subprocess(&sock, tmp.path(), &["alice", "bob"]);
 
     // Falsification control: BOTH principals must be observed live
     // BEFORE we ever touch the gateway process. A test that skipped
     // this and went straight to SIGKILL+poll would trivially "pass" even
     // if registration were broken (never-live counts as "absent" too).
-    poll_until_all_live(&sock, &["alice", "bob"], Duration::from_secs(5));
+    poll_until_all_live(&sock, &["alice", "bob"], STARTUP_DEADLINE);
 
     // SIGKILL the gateway directly (`Child::kill` sends SIGKILL on
     // Unix) — no graceful disconnect frame. The broker only learns the

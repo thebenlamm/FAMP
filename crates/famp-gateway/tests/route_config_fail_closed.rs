@@ -11,6 +11,11 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+/// Startup deadline for broker socket, relaxed from 5s to accommodate parallel
+/// test execution where multiple harnesses spawn brokers simultaneously.
+/// See crates/famp-gateway/tests/common/gateway_harness.rs::STARTUP_DEADLINE.
+const STARTUP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -111,7 +116,7 @@ fn duplicate_peer_domain_fails_startup() {
     let broker_tmp = tempfile::TempDir::new().unwrap();
     let sock = broker_tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
     let home = home_with_empty_peers_keyring();
 
     let out = run_gateway(
@@ -145,7 +150,7 @@ fn duplicate_backs_principal_fails_startup() {
     let broker_tmp = tempfile::TempDir::new().unwrap();
     let sock = broker_tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
     let home = home_with_empty_peers_keyring();
 
     let out = run_gateway(
@@ -181,7 +186,7 @@ fn bare_names_with_two_peers_fails_startup_with_actionable_message() {
     let broker_tmp = tempfile::TempDir::new().unwrap();
     let sock = broker_tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
     let home = home_with_empty_peers_keyring();
 
     let out = run_gateway(
@@ -220,7 +225,7 @@ fn bare_names_with_exactly_one_peer_still_starts_and_prints_ready() {
     let broker_tmp = tempfile::TempDir::new().unwrap();
     let sock = broker_tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
     let home = home_with_empty_peers_keyring();
 
     let child = Command::cargo_bin("famp-gateway")
@@ -278,7 +283,7 @@ fn backs_with_no_matching_peer_fails_startup() {
     let broker_tmp = tempfile::TempDir::new().unwrap();
     let sock = broker_tmp.path().join("bus.sock");
     let _broker = spawn_broker_subprocess(&sock);
-    wait_for_broker_socket(&sock, Duration::from_secs(5));
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
     let home = home_with_empty_peers_keyring();
 
     let out = run_gateway(
