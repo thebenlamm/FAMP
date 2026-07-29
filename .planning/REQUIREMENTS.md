@@ -78,7 +78,7 @@ Added 2026-07-28 from the third external design review ("FAMP v1.0 Remote Addres
 
 ### UAT — Phase 11
 
-- [ ] **UAT-01**: The Gate A two-machine dogfood is re-run with the fixed `famp send` (no injector) and reaches a terminal task state on both sides — the final human gate before tagging v1.0.0. Per the design review's §16 release ruling, this gates a `v1.0.0-rc.1` tag; `v1.0.0` follows only once the review's 9-item checklist is satisfied.
+- [x] **UAT-01**: The Gate A two-machine dogfood is re-run with the fixed `famp send` (no injector) and reaches a terminal task state on both sides — the final human gate before tagging v1.0.0. Per the design review's §16 release ruling, this gates a `v1.0.0-rc.1` tag; `v1.0.0` follows only once the review's 9-item checklist is satisfied.
 
 ### Release (REL) — Phase 12 v1.0.0 tag gate
 
@@ -150,7 +150,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | SEC-04 | Phase 11 | Complete |
 | DOC-05 | Phase 11 | Complete |
 | TEST-03 | Phase 11 | Complete |
-| UAT-01 | Phase 11 | Pending |
+| UAT-01 | Phase 11 | Complete |
 | REL-01 | Phase 12 | Complete |
 | REL-02 | Phase 12 | Complete |
 | REL-03 | Phase 12 | Pending |
@@ -176,3 +176,4 @@ Which phases cover which requirements. Populated during roadmap creation.
 *Requirements defined: 2026-07-23*
 *Last updated: 2026-07-29 — Phase 12 (v1.0.0 Release Gate) added; REL-01..05 scoped from design review C §16's nine-item tag checklist minus the six items Phase 11 already closed (items 1–5, 7 — see `11-VERIFICATION.md`). 29/29 requirements mapped, 100% coverage.*
 *Previously: 2026-07-23 — roadmap created (ROADMAP.md Phases 7–10); traceability populated, 13/13 requirements mapped, 100% coverage.*
+*2026-07-29 — REL-04: UAT-01's checklist entry and traceability row reconciled to its recorded verdict (`11-HUMAN-UAT.md` frontmatter `verdict: PASS`, corroborated by `11-VERIFICATION.md` truth #7).*

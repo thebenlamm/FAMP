@@ -25,7 +25,7 @@
 - [x] **Phase 8: Signed Cross-Host Envelope + Trust Bootstrap** - Ed25519-signed, forward-compatible cross-host envelope format plus two-machine TOFU key export/import. (completed 2026-07-23)
 - [ ] **Phase 9: End-to-End Cross-Host Delivery** - Full bidirectional `request → commit → deliver → ack` task cycle across two machines through the gateway.
 - [ ] **Phase 10: Test Reactivation + Setup Docs** - Deferred federation tests triaged and green, a live two-process E2E in `just ci`, and a two-machine setup guide.
-- [ ] **Phase 11: Shipping-Client Remote Addressing + Setup Hardening** - Make `famp send` able to address a remote principal (C2/C5 sender-side split-addressing) so a real client — not just a hand-written injector — drives a cross-host delivery; fix the 8 Gate A dogfood findings (GATEWAY-SETUP.md wiring/cert/firewall, the transport error-chain swallow, platform-conditional fixtures); replace the throwaway injector with a shipping-surface test; re-run the two-machine dogfood with the real client as the final v1.0.0 gate.
+- [x] **Phase 11: Shipping-Client Remote Addressing + Setup Hardening** - Make `famp send` able to address a remote principal (C2/C5 sender-side split-addressing) so a real client — not just a hand-written injector — drives a cross-host delivery; fix the 8 Gate A dogfood findings (GATEWAY-SETUP.md wiring/cert/firewall, the transport error-chain swallow, platform-conditional fixtures); replace the throwaway injector with a shipping-surface test; re-run the two-machine dogfood with the real client as the final v1.0.0 gate. (Verified `passed`, 7/7 must-haves — `11-VERIFICATION.md`.)
 - [ ] **Phase 12: v1.0.0 Release Gate** - Close the three design-review-C §16 checklist items Phase 11 left open (what `send` confirms in the docs; an independent source verdict on the shipped `v1.0.0-rc.1` code; a green-gate attestation at the tag commit), clean the release record, then bump to `1.0.0` and tag. §16 items 1–5 and 7 are already satisfied and re-attested by citation — no new federation logic.
 
 ## Phase Details
@@ -266,7 +266,7 @@ Plans:
 
 **Hard constraints:** INV-10 / RFC-8785 canonical + `FAMP-sig-v1\0`; the local bus stays UNSIGNED (do not reopen the v0.9 decision); `crates/famp-gateway/tests/e2e_cross_host_delivery.rs` stays green; no CI-gate weakening; spec authority v0.5.2.
 
-**Plans:** 7 plans (revised via `--reviews` 2026-07-28: +11-07 trust-boundary sender-`from` binding; 11-03 class now mode-branched for terminal FSM)
+**Plans:** 8 plans (revised via `--reviews` 2026-07-28: +11-07 trust-boundary sender-`from` binding; 11-03 class now mode-branched for terminal FSM)
 
 Plans:
 **Wave 1**
@@ -283,6 +283,7 @@ Plans:
 
 - [x] 11-04-PLAN.md — D-08/D-09 cross-platform fixtures regen (branched control) + harness extraction + shipping-surface e2e (happy + full-cycle terminal + observable negative), retire injector [TEST-03] (depends 11-01, 11-03, 11-07)
 - [x] 11-05-PLAN.md — D-07 GATEWAY-SETUP.md 8-finding correction + semantic doc-accuracy gate (scoped pin-label regex, wiring + ready ordering) [DOC-05] (depends 11-02, 11-03)
+- [x] 11-08-PLAN.md — review HIGH trust-boundary: ingress destination/domain validation + sole-writer enforcement for federation-owned fields + route-map cross-product removal with fail-closed startup rejection [SEC-02, SEC-03, SEC-04] (depends 11-07)
 
 **Wave 4** *(depends on Wave 3)*
 
