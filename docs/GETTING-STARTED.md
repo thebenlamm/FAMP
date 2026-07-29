@@ -50,7 +50,7 @@ Verify the install:
 
 ```bash
 famp --version
-# famp 1.0.0-rc.1
+# famp 1.0.0
 ```
 
 ### Step 3 — Install the persistent broker (run once, from a normal shell)

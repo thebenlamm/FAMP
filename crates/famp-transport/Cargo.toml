@@ -12,7 +12,7 @@ description = "FAMP — transport trait abstraction: MemoryTransport for tests, 
 workspace = true
 
 [dependencies]
-famp-core = { path = "../famp-core", version = "1.0.0-rc.1" }
+famp-core = { path = "../famp-core", version = "1.0.0" }
 tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 thiserror = { workspace = true }
 

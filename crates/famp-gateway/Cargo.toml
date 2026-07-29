@@ -12,13 +12,13 @@ description = "FAMP v0.5.2 — famp-gateway crate (Layer 2 skeleton)"
 workspace = true
 
 [dependencies]
-famp-bus            = { path = "../famp-bus", version = "1.0.0-rc.1" }
-famp                = { path = "../famp", version = "1.0.0-rc.1" }
-famp-keyring        = { path = "../famp-keyring", version = "1.0.0-rc.1" }
-famp-envelope       = { path = "../famp-envelope", version = "1.0.0-rc.1" }
-famp-crypto         = { path = "../famp-crypto", version = "1.0.0-rc.1" }
-famp-transport      = { path = "../famp-transport", version = "1.0.0-rc.1" }
-famp-transport-http = { path = "../famp-transport-http", version = "1.0.0-rc.1" }
+famp-bus            = { path = "../famp-bus", version = "1.0.0" }
+famp                = { path = "../famp", version = "1.0.0" }
+famp-keyring        = { path = "../famp-keyring", version = "1.0.0" }
+famp-envelope       = { path = "../famp-envelope", version = "1.0.0" }
+famp-crypto         = { path = "../famp-crypto", version = "1.0.0" }
+famp-transport      = { path = "../famp-transport", version = "1.0.0" }
+famp-transport-http = { path = "../famp-transport-http", version = "1.0.0" }
 tokio      = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
 thiserror  = { workspace = true }
 serde_json = { workspace = true }
@@ -32,7 +32,7 @@ time       = { version = "0.3", features = ["formatting", "parsing"] }
 [dev-dependencies]
 assert_cmd = "2.0"
 tempfile = "3"
-famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.0.0-rc.1" }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.0.0" }
 
 [[bin]]
 name = "famp-gateway"

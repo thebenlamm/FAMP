@@ -37,7 +37,7 @@ pub use error::CliError;
 /// Display banner shown in `famp --help` and in the `version_strings_unified` test.
 /// D-06, D-07: milestone-aligned display version (0.11.0) paired with spec version (v0.5.2).
 /// Do NOT wire this to `BUS_PROTO_VERSION` or `FAMP_SPEC_VERSION` — three separate axes.
-const BANNER_ABOUT: &str = "FAMP 1.0.0-rc.1 (spec v0.5.2)";
+const BANNER_ABOUT: &str = "FAMP 1.0.0 (spec v0.5.2)";
 
 #[derive(Parser, Debug)]
 #[command(name = "famp", version, about = BANNER_ABOUT)]
@@ -229,18 +229,18 @@ mod tests {
 
     /// VER-02: Verify the workspace version, banner content, and absence of the
     /// stale v0.5.1 string. D-06/D-07: milestone-aligned display version,
-    /// 1.0.0-rc.1 for the v1.0 federation milestone.
+    /// 1.0.0 for the v1.0 federation milestone.
     #[test]
     fn version_strings_unified() {
-        // clap reads CARGO_PKG_VERSION at compile time — pin to 1.0.0-rc.1.
+        // clap reads CARGO_PKG_VERSION at compile time — pin to 1.0.0.
         assert_eq!(
             env!("CARGO_PKG_VERSION"),
-            "1.0.0-rc.1",
-            "workspace version must be 1.0.0-rc.1"
+            "1.0.0",
+            "workspace version must be 1.0.0"
         );
         assert!(
-            BANNER_ABOUT.contains("1.0.0-rc.1"),
-            "banner must contain 1.0.0-rc.1; got: {BANNER_ABOUT}"
+            BANNER_ABOUT.contains("1.0.0"),
+            "banner must contain 1.0.0; got: {BANNER_ABOUT}"
         );
         assert!(
             BANNER_ABOUT.contains("spec v0.5.2"),
@@ -249,6 +249,10 @@ mod tests {
         assert!(
             !BANNER_ABOUT.contains("v0.5.1"),
             "banner must NOT contain stale v0.5.1; got: {BANNER_ABOUT}"
+        );
+        assert!(
+            !BANNER_ABOUT.contains("-rc."),
+            "banner must NOT contain a release-candidate marker; got: {BANNER_ABOUT}"
         );
     }
 }

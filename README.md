@@ -9,7 +9,7 @@
 > **On the version numbers:** FAMP v0.5.1 is the protocol spec; v0.6 / v0.7 / v0.8 are
 > implementation milestones (all shipped); v0.9 is the local-first bus and v0.11 adds
 > the persistent broker daemon; v1.0 is the federation gateway. The workspace version
-> is unified to `1.0.0-rc.1` (`famp -V` → `famp 1.0.0-rc.1`).
+> is unified to `1.0.0` (`famp -V` → `famp 1.0.0`).
 
 FAMP today is local-first: a UDS-backed broker for same-host agent messaging
 with zero crypto on the local path. FAMP at v1.0 is federated: cross-host
