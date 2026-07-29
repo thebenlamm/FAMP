@@ -63,7 +63,7 @@ use gateway_harness::{
     cross_machine_fixture_dir, ensure_famp_bin_built, famp_cmd, peer_export, peer_import,
     pick_free_port, poll_inbox_contains, poll_terminal_state, spawn_broker, spawn_register,
     wait_for_broker_socket, wait_for_tcp, wait_until_live, ChildGuard, Side, ALICE, ALICE_DOMAIN,
-    BOB, BOB_DOMAIN, POLL_DEADLINE,
+    BOB, BOB_DOMAIN, POLL_DEADLINE, STARTUP_DEADLINE,
 };
 
 /// A shorter bounded window for confirming NON-delivery (D-09 negative
@@ -274,18 +274,13 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
 
     let _broker_a = spawn_broker(&side_a);
     let _broker_b = spawn_broker(&side_b);
-    wait_for_broker_socket(&side_a.sock(), Duration::from_secs(5));
-    wait_for_broker_socket(&side_b.sock(), Duration::from_secs(5));
+    wait_for_broker_socket(&side_a.sock(), STARTUP_DEADLINE);
+    wait_for_broker_socket(&side_b.sock(), STARTUP_DEADLINE);
 
     let _alice_register = spawn_register(&side_a, "alice");
     let _bob_register = spawn_register(&side_b, "bob");
-    wait_until_live(
-        &side_a.sock(),
-        side_a.home(),
-        "alice",
-        Duration::from_secs(5),
-    );
-    wait_until_live(&side_b.sock(), side_b.home(), "bob", Duration::from_secs(5));
+    wait_until_live(&side_a.sock(), side_a.home(), "alice", STARTUP_DEADLINE);
+    wait_until_live(&side_b.sock(), side_b.home(), "bob", STARTUP_DEADLINE);
 
     let alice_blob = peer_export(side_a.home(), ALICE);
     peer_import(side_b.home(), &alice_blob);
@@ -312,26 +307,10 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
         "alice",
     );
 
-    wait_until_live(
-        &side_a.sock(),
-        side_a.home(),
-        "bob",
-        Duration::from_secs(10),
-    );
-    wait_until_live(
-        &side_b.sock(),
-        side_b.home(),
-        "alice",
-        Duration::from_secs(10),
-    );
-    wait_for_tcp(
-        SocketAddr::from(([127, 0, 0, 1], port_a)),
-        Duration::from_secs(10),
-    );
-    wait_for_tcp(
-        SocketAddr::from(([127, 0, 0, 1], port_b)),
-        Duration::from_secs(10),
-    );
+    wait_until_live(&side_a.sock(), side_a.home(), "bob", STARTUP_DEADLINE);
+    wait_until_live(&side_b.sock(), side_b.home(), "alice", STARTUP_DEADLINE);
+    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_a)), STARTUP_DEADLINE);
+    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_b)), STARTUP_DEADLINE);
 
     // ===================================================================
     // 1. HAPPY PATH — `famp send --to agent:<bob-domain>/bob --new-task`

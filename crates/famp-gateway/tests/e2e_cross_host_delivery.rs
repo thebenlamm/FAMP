@@ -66,7 +66,6 @@
 
 use std::net::SocketAddr;
 use std::path::Path;
-use std::time::Duration;
 
 use famp::{AuthorityScope, FampSigningKey, MessageId, Principal, TerminalStatus, Timestamp};
 use famp_bus::{BusMessage, BusReply, Target};
@@ -87,6 +86,7 @@ use gateway_harness::{
     ensure_famp_bin_built, peer_export, peer_import, pick_free_port, poll_inbox_contains,
     poll_terminal_state, spawn_broker, spawn_gateway, spawn_register, wait_for_broker_socket,
     wait_for_tcp, wait_until_live, Side, ALICE, ALICE_DOMAIN, BOB, BOB_DOMAIN, POLL_DEADLINE,
+    STARTUP_DEADLINE,
 };
 
 // ---------------------------------------------------------------------
@@ -275,19 +275,14 @@ fn gw01_gw02_gw03_two_process_cross_host_delivery() {
     // Two isolated brokers.
     let _broker_a = spawn_broker(&side_a);
     let _broker_b = spawn_broker(&side_b);
-    wait_for_broker_socket(&side_a.sock(), Duration::from_secs(5));
-    wait_for_broker_socket(&side_b.sock(), Duration::from_secs(5));
+    wait_for_broker_socket(&side_a.sock(), STARTUP_DEADLINE);
+    wait_for_broker_socket(&side_b.sock(), STARTUP_DEADLINE);
 
     // Real identities: alice on A, bob on B.
     let _alice_register = spawn_register(&side_a, "alice");
     let _bob_register = spawn_register(&side_b, "bob");
-    wait_until_live(
-        &side_a.sock(),
-        side_a.home(),
-        "alice",
-        Duration::from_secs(5),
-    );
-    wait_until_live(&side_b.sock(), side_b.home(), "bob", Duration::from_secs(5));
+    wait_until_live(&side_a.sock(), side_a.home(), "alice", STARTUP_DEADLINE);
+    wait_until_live(&side_b.sock(), side_b.home(), "bob", STARTUP_DEADLINE);
 
     // Mutual TOFU trust bootstrap — MUST happen before gateway startup;
     // the gateway loads its peers keyring once at startup, no hot-reload
@@ -313,26 +308,10 @@ fn gw01_gw02_gw03_two_process_cross_host_delivery() {
         "alice",
     );
 
-    wait_until_live(
-        &side_a.sock(),
-        side_a.home(),
-        "bob",
-        Duration::from_secs(10),
-    );
-    wait_until_live(
-        &side_b.sock(),
-        side_b.home(),
-        "alice",
-        Duration::from_secs(10),
-    );
-    wait_for_tcp(
-        SocketAddr::from(([127, 0, 0, 1], port_a)),
-        Duration::from_secs(10),
-    );
-    wait_for_tcp(
-        SocketAddr::from(([127, 0, 0, 1], port_b)),
-        Duration::from_secs(10),
-    );
+    wait_until_live(&side_a.sock(), side_a.home(), "bob", STARTUP_DEADLINE);
+    wait_until_live(&side_b.sock(), side_b.home(), "alice", STARTUP_DEADLINE);
+    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_a)), STARTUP_DEADLINE);
+    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_b)), STARTUP_DEADLINE);
 
     // --- Harness ready: two isolated broker+gateway pairs with mutual
     // --- TOFU trust over loopback HTTPS (Task 1's <done> criterion).

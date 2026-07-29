@@ -48,6 +48,21 @@ pub const BOB_DOMAIN: &str = "hostb.test";
 /// being unbounded.
 pub const POLL_DEADLINE: Duration = Duration::from_secs(20);
 
+/// Bounded deadline for *subprocess startup* waits (`wait_for_broker_socket`,
+/// `wait_until_live`, `wait_for_tcp`).
+///
+/// Deliberately much larger than the ~1s a broker needs when it has the box to
+/// itself: CI (and `cargo test -p famp-gateway`) runs test *binaries* in
+/// parallel, so several two-host harnesses can be spawning brokers, registers
+/// and gateways at the same moment. Under that contention a 5s budget is not
+/// enough and the suite fails with "broker socket ... never came up" even
+/// though nothing is actually broken — observed 2026-07-28 running this suite
+/// alongside `gateway_setup_doc_accuracy`, green in isolation.
+///
+/// Polling is 50-100ms, so a fast startup still returns immediately; this only
+/// raises the ceiling before a genuine hang is declared.
+pub const STARTUP_DEADLINE: Duration = Duration::from_secs(30);
+
 // ---------------------------------------------------------------------
 // Subprocess + harness plumbing (Pattern A, liveness.rs)
 // ---------------------------------------------------------------------
