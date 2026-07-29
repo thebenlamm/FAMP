@@ -46,6 +46,24 @@ pub(crate) fn shallow_validate(v: &str) -> bool {
         && off[5].is_ascii_digit()
 }
 
+/// Byte-exact canonical whole-second UTC form: `YYYY-MM-DDTHH:MM:SSZ`,
+/// exactly 20 bytes, ending in a literal `Z` (never a `+HH:MM`/`-HH:MM`
+/// offset, never a fractional-second suffix).
+///
+/// REL-02 (12-02) finding: [`shallow_validate`] alone accepts EITHER a `Z`
+/// suffix or an offset suffix, and does not bound any fractional-second
+/// digits before that suffix. Two strings that both pass
+/// `shallow_validate` are therefore not guaranteed to share the same
+/// representation, so a raw lexical/byte-string `<=`/`>=` comparison
+/// between them (as `SignedEnvelope::federation_format_ok`'s expiry-vs-ts
+/// ordering check performs) does not reliably reflect true chronological
+/// order unless BOTH operands are also known to share this canonical
+/// form. Callers that need a lexically-safe ordering comparison must
+/// gate on this function first.
+pub(crate) fn is_canonical_utc_form(v: &str) -> bool {
+    shallow_validate(v) && v.len() == 20 && v.as_bytes()[19] == b'Z'
+}
+
 impl serde::Serialize for Timestamp {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.0)

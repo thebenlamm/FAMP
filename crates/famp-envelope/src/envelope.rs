@@ -523,10 +523,16 @@ impl<B: BodySchema> SignedEnvelope<B> {
     ///
     /// - `nonce`, when present, must be non-empty.
     /// - `expiry`, when present, must pass the same shallow RFC 3339 format
-    ///   gate as `ts` (see `crate::timestamp`) and must be strictly after
-    ///   `ts` by lexical (byte-string) comparison. Both fixed-width RFC 3339
-    ///   strings in the same offset representation order correctly under
-    ///   lexical comparison; this is a format check, not a security boundary.
+    ///   gate as `ts` (see `crate::timestamp`), and BOTH `expiry` and `ts`
+    ///   must additionally be in the canonical whole-second UTC-`Z` form
+    ///   (`crate::timestamp::is_canonical_utc_form`) before the ordering
+    ///   check trusts a raw lexical (byte-string) comparison between them —
+    ///   REL-02 (12-02): `shallow_validate` alone permits a `+HH:MM`/
+    ///   `-HH:MM` offset or fractional-second suffix on either operand
+    ///   independently, and a lexical comparison between two differently-
+    ///   represented-but-individually-valid timestamps does not reliably
+    ///   reflect true chronological order. A non-canonical `ts`/`expiry`
+    ///   fails closed here rather than risk a wrong accept/reject.
     #[must_use]
     pub fn federation_format_ok(&self) -> bool {
         if let Some(nonce) = self.inner.nonce.as_ref() {
@@ -536,6 +542,11 @@ impl<B: BodySchema> SignedEnvelope<B> {
         }
         if let Some(expiry) = self.inner.expiry.as_ref() {
             if !crate::timestamp::shallow_validate(&expiry.0) {
+                return false;
+            }
+            if !crate::timestamp::is_canonical_utc_form(&expiry.0)
+                || !crate::timestamp::is_canonical_utc_form(&self.inner.ts.0)
+            {
                 return false;
             }
             if expiry.0 <= self.inner.ts.0 {
@@ -801,5 +812,31 @@ mod tests {
         // No nonce/expiry set at all is trivially well-formed.
         let none_set = federation_test_unsigned().sign(&sk).unwrap();
         assert!(none_set.federation_format_ok());
+    }
+
+    /// REL-02 (12-02): `federation_format_ok`'s doc comment claims "both
+    /// fixed-width RFC 3339 strings in the same offset representation
+    /// order correctly under lexical comparison" — but `shallow_validate`
+    /// independently accepts EITHER a `Z` suffix or a `+HH:MM`/`-HH:MM`
+    /// offset for `ts` and `expiry`, with no requirement that the two
+    /// share a representation. Here `expiry` ("2026-04-13T00:00:01+01:00",
+    /// actual UTC instant 2026-04-12T23:00:01Z) is chronologically ONE
+    /// HOUR BEFORE `ts` ("2026-04-13T00:00:00Z"), but the raw byte string
+    /// lexically compares GREATER (byte 19 is `1` vs `0`), so the
+    /// `expiry.0 <= ts.0` ordering check does not fire and the envelope is
+    /// wrongly treated as well-formed. Must be rejected.
+    #[test]
+    fn federation_format_ok_rejects_expiry_with_non_canonical_offset_that_lexically_misorders() {
+        let sk = test1_keys().0;
+        let env = federation_test_unsigned()
+            .with_expiry(Timestamp("2026-04-13T00:00:01+01:00".to_string()))
+            .sign(&sk)
+            .unwrap();
+        assert!(
+            !env.federation_format_ok(),
+            "an expiry that is chronologically BEFORE ts, disguised by a \
+             non-canonical UTC offset, must be rejected -- not silently \
+             accepted via raw lexical byte comparison"
+        );
     }
 }
