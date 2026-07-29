@@ -273,8 +273,26 @@ async fn build_route_map(args: &GatewayArgs, backed_names: &[String], transport:
             1 => {
                 let (domain, url) = &args.peers[0];
                 for name in backed_names {
-                    if let Ok(principal) = format!("agent:{domain}/{name}").parse::<Principal>() {
-                        transport.add_peer(principal, url.clone()).await;
+                    // REL-02 (12-02): a `--peer` domain is validated only
+                    // for non-emptiness (main.rs's `--peer` parser), never
+                    // as a legal `Principal` authority — so a malformed
+                    // domain here used to be silently skipped (`if let
+                    // Ok(...)`), leaving this backed name with NO route
+                    // while the process still printed "ready" and kept
+                    // running. Fail loud instead, naming both the domain
+                    // and the affected principal name, matching every
+                    // other route-configuration failure in this function.
+                    match format!("agent:{domain}/{name}").parse::<Principal>() {
+                        Ok(principal) => transport.add_peer(principal, url.clone()).await,
+                        Err(e) => {
+                            eprintln!(
+                                "famp-gateway: --peer domain '{domain}' combined with backed \
+                                 principal name '{name}' does not form a valid principal \
+                                 (agent:{domain}/{name}): {e} — fix the --peer domain or the \
+                                 backed principal name"
+                            );
+                            std::process::exit(1);
+                        }
                     }
                 }
             }

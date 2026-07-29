@@ -277,6 +277,57 @@ fn bare_names_with_exactly_one_peer_still_starts_and_prints_ready() {
     );
 }
 
+/// REL-02 (12-02): the bare-positional-name + single-`--peer` fallback in
+/// `build_route_map` used to build `agent:{domain}/{name}` and silently
+/// SKIP the route (`if let Ok(principal) = ...`) whenever that string
+/// failed to parse as a `Principal` -- no error, no route, and the
+/// process still printed "ready" and kept running. A `--peer` domain is
+/// validated only for non-emptiness (not as a legal Principal authority),
+/// so an operator typo here produced a gateway that looks healthy but can
+/// never actually relay for the backed name. Must be startup-fatal,
+/// naming both the bad domain and the affected principal name, matching
+/// every other route-configuration failure in this file.
+#[test]
+fn invalid_single_peer_domain_fails_startup_instead_of_silently_dropping_route() {
+    ensure_famp_bin_built();
+    let broker_tmp = tempfile::TempDir::new().unwrap();
+    let sock = broker_tmp.path().join("bus.sock");
+    let _broker = spawn_broker_subprocess(&sock);
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
+    let home = home_with_empty_peers_keyring();
+
+    let out = run_gateway(
+        &sock,
+        home.path(),
+        &[
+            "--peer",
+            "not_a_valid_domain=https://127.0.0.1:9443",
+            "alice",
+        ],
+    );
+
+    assert!(
+        !out.status.success(),
+        "a --peer domain that cannot combine with a backed name into a valid \
+         Principal must be startup-fatal, not silently produce a zero-route \
+         gateway; stdout={:?} stderr={:?}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("ready"),
+        "'ready' must NOT print for a --peer domain that cannot form a valid \
+         route; got stdout:\n{stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("not_a_valid_domain") && stderr.contains("alice"),
+        "expected an actionable message naming both the invalid domain and \
+         the backed name that failed to combine into a route; got: {stderr}"
+    );
+}
+
 #[test]
 fn backs_with_no_matching_peer_fails_startup() {
     ensure_famp_bin_built();
