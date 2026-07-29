@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Federation Profile)
-current_phase: 11
-current_phase_name: shipping-client-remote-addressing-setup-hardening
-status: executing
-stopped_at: Completed 11-08-PLAN.md
-last_updated: "2026-07-28T23:49:23.758Z"
+current_phase: 999.1
+current_phase_name: BACKLOG
+status: planning
+stopped_at: Completed 11-05-PLAN.md
+last_updated: "2026-07-29T02:19:59.054Z"
 last_activity: 2026-07-28
-last_activity_desc: Phase 11 execution resumed (wave continue)
+last_activity_desc: Phase 11 complete, transitioned to Phase 999.1
 progress:
-  total_phases: 10
-  completed_phases: 3
+  total_phases: 5
+  completed_phases: 4
   total_plans: 24
-  completed_plans: 20
-  percent: 30
+  completed_plans: 23
+  percent: 80
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 ## Current Position
 
-Phase: 11 (shipping-client-remote-addressing-setup-hardening) — EXECUTING
-Plan: 6 of 7
-Status: Ready to execute
-Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
+Phase: 999.1 — `famp await` crash safety — cursor advance vs flush ordering (BACKLOG)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-28 — Phase 11 complete, transitioned to Phase 999.1
 
 ## v1.0 Phase Map
 
@@ -145,6 +145,9 @@ Last activity: 2026-07-28 — Phase 11 execution resumed (wave continue)
 - [Phase 11]: [11-08]: sign_federation_fields's or_insert_with->insert change left the existing sign_federation_fields_is_idempotent test unmodified -- its already_signed early-return (keyed on the 'signature' field) short-circuits before the entry/insert block on any second call, so the entry-vs-insert change is invisible to that test
 - [Phase 11]: [11-08]: client-supplied-federation-field pre-check placed once in relay_one before sign_federation_fields, not inside a retry wrapper -- the drain loop never re-queues or retries a failed relay (Await permanently advances the mailbox cursor), so there is no legitimate second gateway pass this could ever reject
 - [Phase 11]: [11-08]: route-map --backs binding scoped to route resolution only, not to which principals are locally backed -- backed_names (from positional args) stays the single source for GatewayRegistry.back(), keeping F-5 (bare-name proxy mailbox collision) untouched and out of scope per the plan's prohibition
+- [Phase ?]: [11-04] Falsification control observed pre-regen fixtures PASS on macOS via --trust-cert (not the plan's assumed fail mode); added a CA->leaf delegation test to tls.rs per the plan's own branch instruction to get a genuinely informative control.
+- [Phase ?]: [11-04] Full-cycle terminal test uses 3 legs (request/commit/deliver-terminal), not 4 (+ack) -- famp send has no ack mode; terminal state reached from the deliver envelope's own terminal_status header.
+- [Phase ?]: 11-05: doc-accuracy semantic assertions normalize whitespace before matching multi-word anchors, avoiding markdown line-wrap false-negatives
 
 ## Issues / Blockers
 
@@ -261,11 +264,13 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 11-shipping-client-remote-addressing-setup-hardening P03 | 55min | 3 tasks | 3 files |
 | Phase 11 P07 | 75min | 2 tasks | 9 files |
 | Phase 11 P08 | 70min | 3 tasks | 5 files |
+| Phase 11 P04 | 55min | 3 tasks | 8 files |
+| Phase 11 P05 | 15min | 2 tasks | 2 files |
 
 ## Session
 
-**Last session:** 2026-07-28T23:49:23.746Z
-**Stopped At:** Completed 11-08-PLAN.md
+**Last session:** 2026-07-29T01:26:18.204Z
+**Stopped At:** Completed 11-05-PLAN.md
 **Resume File:** None
 
 ## Operator Next Steps

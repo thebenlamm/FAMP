@@ -52,11 +52,11 @@
 
 ### Docs (DOC) — Phase 11
 
-- [ ] **DOC-05**: `docs/GATEWAY-SETUP.md` is corrected for all 8 Gate A dogfood findings — wiring direction (back the remote principal), pin under the sender agent principal, keyring pin-before-launch + duplicate-pubkey brick + ready-line-after-keyring-load, the CA:FALSE+serverAuth cert recipe that works on both macOS and Linux, and macOS host-firewall pre-auth. "self-signed is fine" is replaced.
+- [x] **DOC-05**: `docs/GATEWAY-SETUP.md` is corrected for all 8 Gate A dogfood findings — wiring direction (back the remote principal), pin under the sender agent principal, keyring pin-before-launch + duplicate-pubkey brick + ready-line-after-keyring-load, the CA:FALSE+serverAuth cert recipe that works on both macOS and Linux, and macOS host-firewall pre-auth. "self-signed is fine" is replaced.
 
 ### Test (TEST) — Phase 11
 
-- [ ] **TEST-03**: Committed cross-machine fixtures regenerated to CA:FALSE+serverAuth EKU; a macOS CI leg exercises the previously Linux-only-green path; a shipping-surface integration test drives the real `famp send` cross-host (replacing the throwaway injector); a negative test asserts a `local.bus`-authority envelope through the federated path yields a typed error, not a silent drop.
+- [x] **TEST-03**: Committed cross-machine fixtures regenerated to CA:FALSE+serverAuth EKU; a macOS CI leg exercises the previously Linux-only-green path; a shipping-surface integration test drives the real `famp send` cross-host (replacing the throwaway injector); a negative test asserts a `local.bus`-authority envelope through the federated path yields a typed error, not a silent drop.
 
 ### Security (SEC) — Phase 11 gateway trust boundary
 
@@ -126,11 +126,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ADDR-03 | Phase 11 | Complete |
 | OBS-01 | Phase 11 | Complete |
 | SEC-01 | Phase 11 | Complete |
-| SEC-02 | Phase 11 | In Progress |
-| SEC-03 | Phase 11 | In Progress |
-| SEC-04 | Phase 11 | In Progress |
-| DOC-05 | Phase 11 | Pending |
-| TEST-03 | Phase 11 | Pending |
+| SEC-02 | Phase 11 | Complete |
+| SEC-03 | Phase 11 | Complete |
+| SEC-04 | Phase 11 | Complete |
+| DOC-05 | Phase 11 | Complete |
+| TEST-03 | Phase 11 | Complete |
 | UAT-01 | Phase 11 | Pending |
 
 **Coverage:**

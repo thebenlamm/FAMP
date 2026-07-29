@@ -280,12 +280,12 @@ Plans:
 
 **Wave 3** *(depends on Wave 2)*
 
-- [ ] 11-04-PLAN.md — D-08/D-09 cross-platform fixtures regen (branched control) + harness extraction + shipping-surface e2e (happy + full-cycle terminal + observable negative), retire injector [TEST-03] (depends 11-01, 11-03, 11-07)
-- [ ] 11-05-PLAN.md — D-07 GATEWAY-SETUP.md 8-finding correction + semantic doc-accuracy gate (scoped pin-label regex, wiring + ready ordering) [DOC-05] (depends 11-02, 11-03)
+- [x] 11-04-PLAN.md — D-08/D-09 cross-platform fixtures regen (branched control) + harness extraction + shipping-surface e2e (happy + full-cycle terminal + observable negative), retire injector [TEST-03] (depends 11-01, 11-03, 11-07)
+- [x] 11-05-PLAN.md — D-07 GATEWAY-SETUP.md 8-finding correction + semantic doc-accuracy gate (scoped pin-label regex, wiring + ready ordering) [DOC-05] (depends 11-02, 11-03)
 
 **Wave 4** *(depends on Wave 3)*
 
-- [ ] 11-06-PLAN.md — UAT-01 live two-machine dogfood with the fixed `famp send` (mode flags, no injector) — final v1.0.0 gate [UAT-01] (depends 11-03, 11-04, 11-05, 11-07, autonomous: false)
+- [x] 11-06-PLAN.md — UAT-01 live two-machine dogfood with the fixed `famp send` (mode flags, no injector) — final v1.0.0 gate [UAT-01] (depends 11-03, 11-04, 11-05, 11-07, autonomous: false)
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
