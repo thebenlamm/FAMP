@@ -5,15 +5,15 @@ milestone_name: Federation Profile)
 current_phase: 12
 current_phase_name: v1.0.0 Release Gate
 status: executing
-stopped_at: Completed 12-02-PLAN.md (REL-02)
-last_updated: "2026-07-29T23:05:15.831Z"
+stopped_at: Completed 12-03-PLAN.md (REL-04)
+last_updated: "2026-07-29T23:10:37.478Z"
 last_activity: 2026-07-29
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 29
-  completed_plans: 25
+  completed_plans: 26
   percent: 67
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 ## Current Position
 
 Phase: 12 (v1.0.0 Release Gate) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-07-29 — Phase 12 execution started
 Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and `v1.0.0-rc.1` tagged at `ba6b166`; `phase.complete` had auto-advanced this pointer to backlog Phase 999.1 (roadmap ordering, not intent) and it has been repointed to Phase 12. **Backlog phases 999.x are NOT the next work** — promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
@@ -152,6 +152,7 @@ Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and
 - [Phase ?]: [12-01]: README anchor A5 implemented as bare 'Federation gateway (v1.0, shipped)' (no markdown ** inside the test literal) per the ASCII-anchor rule; doc bullet itself keeps the bold wrapper
 - [Phase ?]: [12-02]: REL-02 review used a backgrounded codex exec second opinion (not a Task-tool subagent, unavailable in this executor's toolset) as the independent reviewer; every codex-sourced claim was re-verified against source before disposition
 - [Phase ?]: [12-02]: fixed 2 of 6 REL-02 findings (timestamp lexical-comparison defect in famp-envelope::federation_format_ok; silently-skipped invalid single-peer gateway route); documented-accept for 4 real-but-out-of-scope findings (Target/to decoupling, own-domain fail-open, per-gateway-key/per-Principal-keyring mismatch, egress non-durability) each tied to an existing decision or already-shipped mitigation
+- [Phase ?]: [12-03]: REL-04 resolved ADDR-04 by append-only pointer addendum in 11-VERIFICATION.md citing REQUIREMENTS.md:49-56, not by minting a new requirement ID
 
 ## Issues / Blockers
 
@@ -272,11 +273,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 11 P05 | 15min | 2 tasks | 2 files |
 | Phase 12 P01 | 55min | 2 tasks | 4 files |
 | Phase 12 P02 | ~2h | 2 tasks | 5 files |
+| Phase 12 P03 | 12min | 2 tasks | 3 files |
 
 ## Session
 
-**Last session:** 2026-07-29T23:05:15.818Z
-**Stopped At:** Completed 12-02-PLAN.md (REL-02)
+**Last session:** 2026-07-29T23:10:37.466Z
+**Stopped At:** Completed 12-03-PLAN.md (REL-04)
 **Resume File:** None
 
 ## Operator Next Steps

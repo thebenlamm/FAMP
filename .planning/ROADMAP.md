@@ -313,7 +313,7 @@ Plans:
 
 - [x] 12-01-PLAN.md — TRACER: send-confirmation semantics in GATEWAY-SETUP.md §6 + `famp send --help` + README, pinned non-vacuously by `gateway_setup_doc_accuracy.rs` [REL-01]
 - [x] 12-02-PLAN.md — independent post-fix adversarial review of the shipped `v1.0.0-rc.1` federation trust boundary; every finding triaged to fixed-with-regression-test or documented-accept [REL-02]
-- [ ] 12-03-PLAN.md — release-record hygiene: UAT-01 reconciled to its recorded PASS, Phase 11's ROADMAP entry completed (11-08 in Wave 3, count 8, box checked), ADDR-04 loop closed by pointer [REL-04]
+- [x] 12-03-PLAN.md — release-record hygiene: UAT-01 reconciled to its recorded PASS, Phase 11's ROADMAP entry completed (11-08 in Wave 3, count 8, box checked), ADDR-04 loop closed by pointer [REL-04]
 
 **Wave 2** *(depends on Wave 1 — hygiene must land BEFORE the bump so REL-03 stays satisfiable)*
 
