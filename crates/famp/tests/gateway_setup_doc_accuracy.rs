@@ -16,6 +16,7 @@
 // — splitting it into helpers would scatter each assertion's context away
 // from the failure message that explains it.
 #![allow(clippy::too_many_lines)]
+#![allow(clippy::cognitive_complexity)]
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -224,5 +225,61 @@ fn gateway_setup_doc_accuracy() {
         normalized.contains("after the keyring has loaded prints"),
         "update the guide or the code: guide §4 must explicitly state the \
          ready line prints AFTER the keyring has loaded (finding #4)"
+    );
+
+    // -----------------------------------------------------------------
+    // REL-01: send-confirmation semantics (design review C §16 item 8).
+    // A remote `famp send`'s zero exit code confirms only local-broker
+    // acceptance into the gateway-backed outbound mailbox — not remote
+    // drain/sign/relay, remote verification, remote mailbox arrival, or
+    // far-side task-FSM advancement. These three anchors pin that exact
+    // boundary so it cannot silently drift back to an overclaim.
+    // -----------------------------------------------------------------
+    assert!(
+        normalized.contains(
+            "A zero exit code confirms only that the local broker accepted \
+             the envelope into the gateway-backed outbound mailbox on this \
+             host."
+        ),
+        "update the guide or the code: guide §6 must state the exact \
+         fire-and-forget boundary — a zero exit code confirms only local \
+         broker acceptance into the outbound mailbox (REL-01)"
+    );
+    assert!(
+        normalized.contains(
+            "It does not confirm that the gateway has drained, signed, and \
+             relayed the envelope"
+        ),
+        "update the guide or the code: guide §6 must state that a zero \
+         exit code does not confirm gateway drain/sign/relay (REL-01)"
+    );
+    assert!(
+        normalized.contains("That is the fire-and-forget boundary."),
+        "update the guide or the code: guide §6 must name the \
+         fire-and-forget boundary explicitly (REL-01)"
+    );
+
+    // Ordering: the send-confirmation paragraph must sit between the
+    // `famp send` example and the `famp inspect tasks` verification step,
+    // where it is actually read in sequence.
+    let send_example_idx = normalized
+        .find("famp send --to agent:hostB.example/bob")
+        .expect(
+            "update the guide: §6 must still document the `famp send --to \
+             agent:hostB.example/bob` example",
+        );
+    let inspect_tasks_idx = normalized.find("famp inspect tasks --id").expect(
+        "update the guide: §6 must still document the `famp inspect tasks \
+         --id` verification step",
+    );
+    let confirms_only_idx = normalized
+        .find("A zero exit code confirms only")
+        .expect("update the guide: REL-01 anchor A1 must be present to check its position");
+    assert!(
+        confirms_only_idx > send_example_idx && confirms_only_idx < inspect_tasks_idx,
+        "update the guide or the code: the REL-01 send-confirmation \
+         paragraph must sit between the `famp send --to agent:...` example \
+         and the `famp inspect tasks --id` verification step, where it is \
+         read in sequence"
     );
 }

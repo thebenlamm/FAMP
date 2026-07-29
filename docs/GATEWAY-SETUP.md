@@ -255,6 +255,16 @@ using the real shipping `famp send` client (own-domain resolved per §5):
 famp send --to agent:hostB.example/bob --new-task --body "hello from A"
 ```
 
+**What a successful `famp send` confirms — and what it does not.** A zero
+exit code confirms only that the local broker accepted the envelope into
+the gateway-backed outbound mailbox on this host. It does not confirm that
+the gateway has drained, signed, and relayed the envelope, that the remote
+gateway verified it, that it reached the remote mailbox, or that the task
+FSM advanced on the far side — egress is a decoupled background drain loop
+(polling roughly once a second) that the CLI process never waits on. That
+is the fire-and-forget boundary. The `famp inspect tasks` check below is
+what actually confirms end-to-end delivery.
+
 Then confirm the task's FSM reached a terminal state on **both** sides:
 
 ```bash
