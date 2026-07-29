@@ -183,3 +183,245 @@ d5Fgf3wO4+uOXDA7I3TNOOcbwtphm53S
         let _client = build_client_config(Some(&path)).expect("client config with anchor");
     }
 }
+
+/// D-08 falsification control (RESEARCH Open Q2): a dedicated system-trust
+/// (real CA -> leaf delegation) TLS test, isolated from the E2E's
+/// `--trust-cert` config.
+///
+/// **Why a separate config is needed:** the E2E (`e2e_cross_host_delivery.rs`)
+/// and `docs/GATEWAY-SETUP.md` both use `--trust-cert <peer's own leaf cert>`
+/// — i.e. the peer's self-signed leaf is added DIRECTLY as an extra trust
+/// anchor via [`Verifier::new_with_extra_roots`], and that SAME cert is what
+/// the peer presents as its server cert. Running the actual E2E on macOS
+/// with the pre-regen fixtures (ECDSA, no `extendedKeyUsage`) on 2026-07-28
+/// PASSED — confirming Open Q2's hypothesis that this "leaf pinned directly
+/// as its own anchor" shortcut does not enforce Apple SecTrust's normal
+/// leaf-EKU policy the way a real CA-delegation chain does. A post-regen
+/// green under that same config would therefore prove nothing about EKU
+/// enforcement specifically (both old and new fixtures pass it identically).
+///
+/// This test instead builds a genuine two-cert chain — a self-signed CA
+/// (added as the ONLY extra root) that ISSUES two different leaves — so a
+/// live TLS handshake goes through real chain validation instead of the
+/// leaf-pinning shortcut. `#[cfg(target_os = "macos")]` because this is
+/// specifically pinning Apple SecTrust's EKU divergence (finding #5);
+/// webpki (Linux) tolerates a missing EKU, so the must-fail pole would not
+/// hold there and is out of scope for this control.
+#[cfg(all(test, target_os = "macos"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod system_trust_eku_control {
+    use std::{net::SocketAddr, path::PathBuf, process::Command, sync::Arc};
+
+    use axum::{routing::get, Router};
+
+    struct GeneratedChain {
+        dir: PathBuf,
+    }
+
+    impl GeneratedChain {
+        fn path(&self, name: &str) -> PathBuf {
+            self.dir.join(name)
+        }
+    }
+
+    impl Drop for GeneratedChain {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn run_openssl(args: &[&str]) {
+        let out = Command::new("openssl")
+            .args(args)
+            .output()
+            .expect("openssl CLI must be available (RESEARCH Environment Availability)");
+        assert!(
+            out.status.success(),
+            "openssl {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// Generate a self-signed CA plus two leaves it issues: one with NO
+    /// `extendedKeyUsage`, one with `extendedKeyUsage=serverAuth` (the D-08
+    /// canonical recipe). Both leaves share the same loopback SANs.
+    fn gen_ca_and_leaves() -> GeneratedChain {
+        let dir = std::env::temp_dir().join(format!(
+            "famp-system-trust-eku-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let chain = GeneratedChain { dir };
+
+        let ca_key = chain.path("ca.key");
+        let ca_crt = chain.path("ca.crt");
+        run_openssl(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "800",
+            "-keyout",
+            ca_key.to_str().unwrap(),
+            "-out",
+            ca_crt.to_str().unwrap(),
+            "-subj",
+            "/CN=test-ca",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
+        ]);
+
+        for (stub, eku_ext) in [("leaf_no_eku", None), ("leaf_eku", Some("serverAuth"))] {
+            let key = chain.path(&format!("{stub}.key"));
+            let csr = chain.path(&format!("{stub}.csr"));
+            let crt = chain.path(&format!("{stub}.crt"));
+            let extfile = chain.path(&format!("{stub}.ext"));
+
+            run_openssl(&[
+                "req",
+                "-new",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                key.to_str().unwrap(),
+                "-out",
+                csr.to_str().unwrap(),
+                "-subj",
+                "/CN=localhost",
+            ]);
+
+            let mut ext_contents = String::from(
+                "basicConstraints=critical,CA:FALSE\n\
+                 subjectAltName=IP:127.0.0.1,DNS:localhost\n\
+                 keyUsage=critical,digitalSignature,keyEncipherment\n",
+            );
+            if let Some(eku) = eku_ext {
+                use std::fmt::Write as _;
+                let _ = writeln!(ext_contents, "extendedKeyUsage={eku}");
+            }
+            std::fs::write(&extfile, ext_contents).unwrap();
+
+            run_openssl(&[
+                "x509",
+                "-req",
+                "-in",
+                csr.to_str().unwrap(),
+                "-CA",
+                ca_crt.to_str().unwrap(),
+                "-CAkey",
+                ca_key.to_str().unwrap(),
+                "-CAcreateserial",
+                "-days",
+                "800",
+                "-out",
+                crt.to_str().unwrap(),
+                "-extfile",
+                extfile.to_str().unwrap(),
+            ]);
+        }
+
+        chain
+    }
+
+    /// Spin up a bare HTTPS server presenting `leaf_crt`/`leaf_key`, build a
+    /// system-trust client whose ONLY extra root is `ca_crt` (never the leaf
+    /// itself), and attempt one GET. Returns `Err` on any TLS/connect/status
+    /// failure.
+    async fn try_tls_get(
+        ca_crt: &std::path::Path,
+        leaf_crt: &std::path::Path,
+        leaf_key: &std::path::Path,
+    ) -> Result<(), String> {
+        let cert = super::load_pem_cert(leaf_crt).map_err(|e| e.to_string())?;
+        let key = super::load_pem_key(leaf_key).map_err(|e| e.to_string())?;
+        let server_cfg = super::build_server_config(cert, key).map_err(|e| e.to_string())?;
+
+        let std_listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+        std_listener
+            .set_nonblocking(true)
+            .map_err(|e| e.to_string())?;
+        let addr: SocketAddr = std_listener.local_addr().map_err(|e| e.to_string())?;
+
+        let router = Router::new().route("/", get(|| async { "ok" }));
+        let handle =
+            crate::tls_server::serve_std_listener(std_listener, router, Arc::new(server_cfg));
+
+        // Bounded wait for the listener to actually accept, no fixed sleep
+        // on the steady-state path.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if std::net::TcpStream::connect(addr).is_ok() {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                handle.abort();
+                return Err("server never accepted a TCP connection".to_string());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+
+        let client_cfg = super::build_client_config(Some(ca_crt)).map_err(|e| e.to_string())?;
+        let client = reqwest::Client::builder()
+            .use_preconfigured_tls(client_cfg)
+            .timeout(std::time::Duration::from_secs(5))
+            .http1_only()
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let result = client
+            .get(format!("https://localhost:{}/", addr.port()))
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+
+        handle.abort();
+        result
+    }
+
+    /// Falsification control: with a real CA -> leaf chain (not the
+    /// leaf-pinned-as-its-own-anchor shortcut), Apple SecTrust rejects a
+    /// leaf with no `extendedKeyUsage` (must-fail pole) and accepts the
+    /// D-08 canonical recipe's `extendedKeyUsage=serverAuth` leaf (must-pass
+    /// pole). Green on both poles would mean the control carries zero
+    /// information; this test names each pole explicitly so that can never
+    /// happen silently.
+    #[tokio::test]
+    async fn ca_delegated_leaf_enforces_eku_on_apple_sectrust() {
+        let chain = gen_ca_and_leaves();
+        let ca_crt = chain.path("ca.crt");
+
+        let no_eku = try_tls_get(
+            &ca_crt,
+            &chain.path("leaf_no_eku.crt"),
+            &chain.path("leaf_no_eku.key"),
+        )
+        .await;
+        assert!(
+            no_eku.is_err(),
+            "MUST-FAIL pole: a CA-delegated leaf with no extendedKeyUsage must be \
+             REJECTED by Apple SecTrust under real chain validation; got {no_eku:?}"
+        );
+
+        let with_eku = try_tls_get(
+            &ca_crt,
+            &chain.path("leaf_eku.crt"),
+            &chain.path("leaf_eku.key"),
+        )
+        .await;
+        assert!(
+            with_eku.is_ok(),
+            "MUST-PASS pole: a CA-delegated leaf with extendedKeyUsage=serverAuth \
+             (D-08 canonical recipe) must be ACCEPTED; got {with_eku:?}"
+        );
+    }
+}
