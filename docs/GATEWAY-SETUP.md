@@ -205,8 +205,8 @@ famp-gateway --listen 0.0.0.0:8443 \
 ```
 
 Each gateway loads its keyring **first**, then connects to its local
-broker and picks up its principals, and only **after** the keyring has
-loaded prints `famp-gateway: ready, backing N principal(s): ...`. If you see
+broker and picks up its principals, and only after the keyring has loaded
+prints `famp-gateway: ready, backing N principal(s): ...`. If you see
 `ready` before you've confirmed the keyring loaded (or the process exits
 right after with a `duplicate pubkey` error), the ready line does not mean
 what it says — treat it as a live signal only once §3's pinning is known

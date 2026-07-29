@@ -10,6 +10,12 @@
 
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+// The single test function below intentionally holds every accuracy
+// assertion (flag-grep + the semantic checks added for the Gate A dogfood
+// findings) in one place, mirroring the doc it validates section-by-section
+// — splitting it into helpers would scatter each assertion's context away
+// from the failure message that explains it.
+#![allow(clippy::too_many_lines)]
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -93,5 +99,130 @@ fn gateway_setup_doc_accuracy() {
         doc.contains("famp peer import"),
         "docs/GATEWAY-SETUP.md drifted from the shipping CLI — update the guide \
          or the flag: guide is missing `famp peer import` usage"
+    );
+
+    // -----------------------------------------------------------------
+    // Semantic checks (Gate A dogfood, 10-HUMAN-UAT.md findings #1-#6/#8).
+    // The flag-grep above only catches missing/renamed flags; these catch
+    // the semantic inversions the grep missed — wrong wiring direction,
+    // wrong pin-label authority, wrong ordering, and stale cert guidance.
+    // Whitespace-normalize so a paragraph's markdown line-wrap can never
+    // split an anchor phrase across a literal newline.
+    // -----------------------------------------------------------------
+    let normalized = doc.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    // Finding #5/#8: "self-signed is fine" replaced with the CA:FALSE +
+    // serverAuth recipe that verifies on both Apple SecTrust and webpki.
+    assert!(
+        doc.contains("CA:FALSE"),
+        "update the guide or the code: guide must document the CA:FALSE \
+         leaf-cert recipe (finding #8 — webpki rejects CA:TRUE as a server \
+         end-entity)"
+    );
+    assert!(
+        doc.contains("serverAuth"),
+        "update the guide or the code: guide must document the serverAuth \
+         EKU (finding #5 — Apple's verifier rejects a no-EKU cert)"
+    );
+
+    // D-05: own-domain config surface (plan 02) must be documented.
+    assert!(
+        doc.contains("FAMP_OWN_DOMAIN"),
+        "update the guide or the code: guide must document the \
+         FAMP_OWN_DOMAIN env var (own-domain config surface, plan 02)"
+    );
+    assert!(
+        doc.contains("own-domain"),
+        "update the guide or the code: guide must document the \
+         $FAMP_HOME/own-domain file (own-domain config surface, plan 02)"
+    );
+    assert!(
+        normalized.contains("famp send --to agent:"),
+        "update the guide or the code: guide must document a \
+         `famp send --to agent:<domain>/<name>` remote-addressing example \
+         (plan 03)"
+    );
+
+    // Finding #6: macOS host firewall pre-authorization step.
+    assert!(
+        doc.contains("socketfilterfw"),
+        "update the guide or the code: guide must document a macOS \
+         socketfilterfw pre-auth step (finding #6 — the host firewall \
+         silently drops unsolicited inbound TCP)"
+    );
+
+    // Finding #2: pin under the sender AGENT principal, never a
+    // gateway-suffixed label. Positive: the guide names the sender agent
+    // principal as the pin authority.
+    assert!(
+        normalized.contains("sender AGENT principal"),
+        "update the guide or the code: guide §3 must instruct pinning \
+         under the sender AGENT principal (finding #2 — ingress verifies \
+         on the envelope `from`, an agent principal)"
+    );
+    // Negative: no pin label of the SHAPE `agent:<domain>/gateway` may
+    // appear anywhere in the guide. Built from parts (never written
+    // verbatim in this test file) and scoped so it does NOT false-positive
+    // on legitimate filesystem paths like `~/.famp/gateway/identity.ed25519`
+    // (no `agent:` prefix precedes those paths).
+    let bad_pin_label_pattern = {
+        let prefix = "agent:";
+        let middle = r"[^\s]*/";
+        let suffix = "gateway";
+        format!("{prefix}{middle}{suffix}")
+    };
+    let bad_pin_label_re =
+        regex::Regex::new(&bad_pin_label_pattern).expect("bad-pin-label pattern must compile");
+    assert!(
+        !bad_pin_label_re.is_match(&doc),
+        "update the guide: found a gateway-suffixed pin label \
+         (`agent:<domain>/gateway`-shaped) — finding #2 regression, pin \
+         under the sender AGENT principal instead"
+    );
+
+    // Finding #1: wiring direction. A gateway backs the REMOTE principal it
+    // proxies for, not the local one — concretely A backs bob, B backs
+    // alice. Assert both CONCRETE directional statements, not just that
+    // the word "back(s)" appears somewhere.
+    assert!(
+        normalized.contains("backs the remote principal `bob`"),
+        "update the guide or the code: guide §4 must state that A's \
+         gateway backs the remote principal `bob` (finding #1 — wiring \
+         was inverted in the original guide)"
+    );
+    assert!(
+        normalized.contains("backs the remote principal `alice`"),
+        "update the guide or the code: guide §4 must state that B's \
+         gateway backs the remote principal `alice` (finding #1 — wiring \
+         was inverted in the original guide)"
+    );
+
+    // Findings #3/#4: keyring load-once + ready-after-keyring ordering.
+    // The ready signal must be documented as appearing AFTER keyring load,
+    // not merely mentioned somewhere in the doc — assert both presence and
+    // document order.
+    assert!(
+        normalized.contains("keyring loads once"),
+        "update the guide or the code: guide §3 must state the keyring \
+         loads once at startup with no hot-reload (finding #3)"
+    );
+    let keyring_load_idx = normalized
+        .find("loads its keyring")
+        .expect("update the guide: §4 must describe keyring-load ordering relative to `ready`");
+    let ready_idx = normalized
+        .find("famp-gateway: ready")
+        .expect("update the guide: §4 must document the `famp-gateway: ready` signal");
+    assert!(
+        keyring_load_idx < ready_idx,
+        "update the guide or the code: the `famp-gateway: ready` signal \
+         must be documented as appearing AFTER keyring load (finding #4 — \
+         a ready line before keyring load is a false-success signal); \
+         found keyring-load mention at byte {keyring_load_idx}, ready \
+         mention at byte {ready_idx}"
+    );
+    assert!(
+        normalized.contains("after the keyring has loaded prints"),
+        "update the guide or the code: guide §4 must explicitly state the \
+         ready line prints AFTER the keyring has loaded (finding #4)"
     );
 }
