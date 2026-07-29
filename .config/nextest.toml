@@ -18,6 +18,21 @@ failure-output = "immediate-final"
 filter = "package(famp) and (test(/listen_/) or test(=conversation_restart_safety) or test(=mcp_stdio_tool_calls))"
 test-group = "listen-subprocess"
 
+# Phase 11: the famp-gateway integration tests each spawn a two-host rig
+# (2 brokers + 2 registers + 2 gateways). Unbounded, they run fully parallel
+# alongside `inspect_cancel_1000`, which itself forks 1000 concurrent `famp`
+# subprocesses -- on a 4-core runner that combination exhausts the process
+# limit and `inspect_cancel_1000` dies on EAGAIN at spawn.
+#
+# This got worse when the gateway startup deadline was raised 5s -> 30s
+# (commits 0184f01 / f8506cb): a gateway rig that cannot start now HOLDS its
+# children for 30s instead of failing fast at 5s and releasing them. Bounding
+# concurrency is the real fix -- the deadline raise treated the symptom.
+# Same remedy as TD-1 above.
+[[profile.default.overrides]]
+filter = "package(famp-gateway) and kind(test)"
+test-group = "gateway-subprocess"
+
 [[profile.default.overrides]]
 filter = "package(famp) and (test(/inspect_broker/) or test(/inspect_identities/) or test(/inspect_tasks/) or test(/inspect_messages/) or test(/inspect_cancel_1000/) or test(/inspect_load_test/))"
 test-group = "inspect-subprocess"
@@ -27,9 +42,14 @@ filter = "package(famp) and (test(/listen_/) or test(=conversation_restart_safet
 test-group = "listen-subprocess"
 
 [[profile.ci.overrides]]
+filter = "package(famp-gateway) and kind(test)"
+test-group = "gateway-subprocess"
+
+[[profile.ci.overrides]]
 filter = "package(famp) and (test(/inspect_broker/) or test(/inspect_identities/) or test(/inspect_tasks/) or test(/inspect_messages/) or test(/inspect_cancel_1000/) or test(/inspect_load_test/))"
 test-group = "inspect-subprocess"
 
 [test-groups]
 listen-subprocess = { max-threads = 4 }
 inspect-subprocess = { max-threads = 1 }
+gateway-subprocess = { max-threads = 2 }
