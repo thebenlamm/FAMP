@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: Federation Profile)
 current_phase: 12
 current_phase_name: v1.0.0 Release Gate
-status: planning
-stopped_at: Phase 12 planned (5 plans, 3 waves) — ready to execute
-last_updated: "2026-07-29T19:31:39.213Z"
+status: executing
+stopped_at: Completed 12-01-PLAN.md
+last_updated: "2026-07-29T21:14:30.654Z"
 last_activity: 2026-07-29
-last_activity_desc: Phase 12 (v1.0.0 Release Gate) scoped from design review C §16; repointed off the auto-advanced backlog Phase 999.1
+last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 24
-  completed_plans: 23
+  total_plans: 29
+  completed_plans: 24
   percent: 67
 ---
 
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 ## Current Position
 
-Phase: 12 — v1.0.0 Release Gate (REL-01..05, design review C §16 residual)
-Plan: 0/5 complete
-Status: Ready to execute — `/gsd-execute-phase 12`
-Last activity: 2026-07-29 — Phase 12 planned: 5 plans in 3 waves (12-01 tracer REL-01, 12-02 REL-02, 12-03 REL-04 in Wave 1; 12-04 REL-03+REL-05 version bump + CI attestation in Wave 2; 12-05 REL-05 tag behind a blocking `checkpoint:decision` in Wave 3, `autonomous: false`). Plan-checker VERIFICATION PASSED, 0 blockers. Wave ordering is load-bearing: `ci.yml`'s `paths-ignore` gives a docs-only commit ZERO check-runs, so the version bump must be the last CI-triggering commit and the tag must point at that recorded SHA, never `HEAD`.
+Phase: 12 (v1.0.0 Release Gate) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-07-29 — Phase 12 execution started
 Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and `v1.0.0-rc.1` tagged at `ba6b166`; `phase.complete` had auto-advanced this pointer to backlog Phase 999.1 (roadmap ordering, not intent) and it has been repointed to Phase 12. **Backlog phases 999.x are NOT the next work** — promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
 
 ## v1.0 Phase Map
@@ -149,6 +149,7 @@ Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and
 - [Phase ?]: [11-04] Falsification control observed pre-regen fixtures PASS on macOS via --trust-cert (not the plan's assumed fail mode); added a CA->leaf delegation test to tls.rs per the plan's own branch instruction to get a genuinely informative control.
 - [Phase ?]: [11-04] Full-cycle terminal test uses 3 legs (request/commit/deliver-terminal), not 4 (+ack) -- famp send has no ack mode; terminal state reached from the deliver envelope's own terminal_status header.
 - [Phase ?]: 11-05: doc-accuracy semantic assertions normalize whitespace before matching multi-word anchors, avoiding markdown line-wrap false-negatives
+- [Phase ?]: [12-01]: README anchor A5 implemented as bare 'Federation gateway (v1.0, shipped)' (no markdown ** inside the test literal) per the ASCII-anchor rule; doc bullet itself keeps the bold wrapper
 
 ## Issues / Blockers
 
@@ -267,11 +268,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 11 P08 | 70min | 3 tasks | 5 files |
 | Phase 11 P04 | 55min | 3 tasks | 8 files |
 | Phase 11 P05 | 15min | 2 tasks | 2 files |
+| Phase 12 P01 | 55min | 2 tasks | 4 files |
 
 ## Session
 
-**Last session:** 2026-07-29T01:26:18.204Z
-**Stopped At:** Completed 11-05-PLAN.md
+**Last session:** 2026-07-29T21:14:30.642Z
+**Stopped At:** Completed 12-01-PLAN.md
 **Resume File:** None
 
 ## Operator Next Steps
