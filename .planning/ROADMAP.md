@@ -304,11 +304,23 @@ Plans:
 
 **Hard constraints:** No federation logic changes unless REL-02 surfaces a real defect — this is a release gate, not a feature phase. INV-10 / RFC-8785 canonical + `FAMP-sig-v1\0` unchanged; the local bus stays UNSIGNED; no CI-gate weakening or `--no-verify`; spec authority v0.5.2. Tagging `v1.0.0` is outward-facing — confirm with Ben before the tag lands.
 
-**Plans:** 0 plans
+**Plans:** 5 plans (tracer-first: 12-01 is the only doc+code commit and therefore the first to trigger CI, proving the edit→test→CI-green loop before the version bump depends on it. Wave ordering is load-bearing — `ci.yml`'s `paths-ignore` means a docs-only commit gets ZERO check-runs, not a pass, so the version bump must be the LAST commit before the tag.)
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 12 to break down)
+**Wave 1**
+
+- [ ] 12-01-PLAN.md — TRACER: send-confirmation semantics in GATEWAY-SETUP.md §6 + `famp send --help` + README, pinned non-vacuously by `gateway_setup_doc_accuracy.rs` [REL-01]
+- [ ] 12-02-PLAN.md — independent post-fix adversarial review of the shipped `v1.0.0-rc.1` federation trust boundary; every finding triaged to fixed-with-regression-test or documented-accept [REL-02]
+- [ ] 12-03-PLAN.md — release-record hygiene: UAT-01 reconciled to its recorded PASS, Phase 11's ROADMAP entry completed (11-08 in Wave 3, count 8, box checked), ADDR-04 loop closed by pointer [REL-04]
+
+**Wave 2** *(depends on Wave 1 — hygiene must land BEFORE the bump so REL-03 stays satisfiable)*
+
+- [ ] 12-04-PLAN.md — atomic version bump to `1.0.0` (13 manifests, banner const, its pinning test, 2 docs, regenerated lockfile) in ONE commit, then live check-run attestation at that exact SHA with run IDs recorded [REL-03, REL-05] (depends 12-01, 12-02, 12-03)
+
+**Wave 3** *(depends on Wave 2)*
+
+- [ ] 12-05-PLAN.md — draft the §16-checklist annotation with a verified-current limitation statement, `checkpoint:decision` for Ben (one-way door), then tag `v1.0.0` on the attested SHA by value [REL-05] (depends 12-04, autonomous: false)
 
 <details>
 <summary>✅ v0.5.1 Spec Fork (Phases 0–1) — SHIPPED 2026-04-13</summary>
