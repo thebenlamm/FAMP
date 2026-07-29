@@ -136,6 +136,18 @@ jobs:
       issues: write
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
+      # `rustsec/audit-check@v2` builds cargo-audit from source on the runner,
+      # and that build has been broken since 2026-07-23 ("failed to compile
+      # cargo-audit v0.22.2"), so the audit job failed on every commit for 13+
+      # consecutive runs regardless of whether any advisory existed. A
+      # permanently-red job is worse than no job: it trains everyone to ignore
+      # CI, and it did — a real test regression on 2026-07-29 was initially
+      # dismissed as "the usual audit red".
+      #
+      # Install the prebuilt binary instead (same action this repo already uses
+      # for cargo-nextest above), so the job reports ADVISORIES rather than a
+      # toolchain build failure.
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+      - run: cargo audit

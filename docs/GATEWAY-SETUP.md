@@ -60,6 +60,15 @@ On **each** host:
   (Or click "Allow" on the inbound-connection prompt the first time a peer
   connects — but doing it ahead of time avoids losing the first message
   while you're not watching for the prompt.)
+
+  **The allow-rule is bound to the binary's PATH, not to the program.** An
+  approval granted to `target/release/famp-gateway` during development does
+  **not** cover `~/.cargo/bin/famp-gateway` after `just install-all` — they are
+  different paths, so the deployed binary is silently blocked again even though
+  `socketfilterfw --listapps` shows a `famp-gateway` entry. Check that the
+  listed path is the one you are actually running (`which famp-gateway`), and
+  re-add it after switching. Observed during the UAT-01 dogfood, where the
+  pre-existing rule covered only the `target/release` path.
 - The gateway's on-disk identity lives under `$FAMP_HOME` (or `$HOME/.famp`
   if unset):
   - `~/.famp/gateway/identity.ed25519` — this gateway's own signing key.

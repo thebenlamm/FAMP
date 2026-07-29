@@ -46,6 +46,15 @@
 - [x] **ADDR-02**: Remote sends emit a typed, FSM-driving envelope constructed unsigned on the local bus (sign-then-strip / BUS-11 — no local crypto); bare-name local chat stays `audit_log`. The v0.9 unsigned-local-bus decision is NOT reopened.
 - [x] **ADDR-03**: The gateway/CLI has a defined own-domain source for stamping the envelope `from` (resolving the `--as` / broker `bind_as` charset collision).
 
+> **`ADDR-04` does not exist — resolved, do not go looking for it.** Commit
+> `04171bd` (plan 11-07 metadata) cites `SEC-01, ADDR-04` in its message. `SEC-01`
+> was subsequently defined; `ADDR-04` never was. The trust-boundary work that
+> message referred to is covered by `SEC-01` (envelope-`from` binding at both
+> boundaries). Treated as a commit-message slip, recorded here rather than
+> back-filled as a phantom requirement, since the commit is already pushed and
+> its message cannot be rewritten. Flagged by 11-08's plan note and confirmed by
+> the Phase 11 verifier.
+
 ### Observability (OBS) — Phase 11
 
 - [x] **OBS-01**: Transport egress logs the full error source chain, not the opaque `"reqwest failure"` Display string — every transport fault (EkuError, CaUsedAsEndEntity, connect-refused, timeout, DNS) is distinguishable in the log (Gate A finding #7).

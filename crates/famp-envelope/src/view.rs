@@ -151,6 +151,27 @@ impl<'a> EnvelopeView<'a> {
                 .and_then(Value::as_str)
                 .map(str::to_string);
         }
+        // 4. A task-root `request` IS the task: its own `id` is the task id.
+        //
+        // Branch 3 only fires for the LOCAL send shape, whose body carries the
+        // `famp.send.new_task` event marker. A remote `--new-task` (Phase 11
+        // ADDR-02) emits a typed `RequestBody` instead — `{bounds,
+        // natural_language_summary, scope}` — with no `event` key, so branches
+        // 1-3 all miss and an OPEN remote task was invisible to
+        // `famp inspect tasks` until a threaded reply arrived to supply
+        // `causality.ref`.
+        //
+        // Resolving a `request` to its own `id` is not a guess: the replies
+        // that continue the task set `causality.ref` to exactly that `id`
+        // (verified end-to-end in the UAT-01 two-machine dogfood), so this
+        // branch and branch 1 agree on the same task id by construction.
+        if self.class() == Some("request") {
+            return self
+                .value
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
         None
     }
 
@@ -302,7 +323,11 @@ mod tests {
     }
 
     #[test]
-    fn task_id_uses_id_only_for_new_task_event() {
+    fn task_id_uses_id_for_new_task_event_but_not_other_events() {
+        // NB: these fixtures carry no `class`, so the Phase 11 task-root
+        // `request` branch is deliberately not in play here — this test is
+        // scoped to the `body.event` branch alone. Request-class resolution
+        // is covered by `remote_request_root_resolves_task_id_from_its_own_id`.
         let new_task = json!({"body": {"event": "famp.send.new_task"}, "id": "the-id"});
         assert_eq!(
             EnvelopeView::new(&new_task).task_id(),
@@ -348,9 +373,17 @@ mod tests {
 
     // --- equivalence: prove the view matches the raw extractors it replaces ---
 
-    /// Replicates inspect-server's `envelope_task_id` (~443-473) verbatim, so
-    /// the property test below pins `view.task_id()` to the exact derivation
-    /// the wave-2 migration must preserve.
+    /// Independent re-implementation of the task-id derivation, so the
+    /// property test below pins `view.task_id()` to a spelled-out reference
+    /// rather than to itself.
+    ///
+    /// Originally a verbatim copy of inspect-server's `envelope_task_id`
+    /// (~443-473) to pin the wave-2 migration. Phase 11 (F-A) added the
+    /// task-root `request` branch to the real implementation; this reference
+    /// is kept in lockstep deliberately — if it is allowed to drift, the
+    /// equivalence test below silently degrades into "the old logic still
+    /// works on inputs the old logic handled", which is exactly the false
+    /// confidence it exists to prevent.
     fn raw_envelope_task_id(env: &Value) -> Option<String> {
         if let Some(task_id) = env
             .get("causality")
@@ -375,6 +408,9 @@ mod tests {
         {
             return env.get("id").and_then(Value::as_str).map(str::to_string);
         }
+        if env.get("class").and_then(Value::as_str) == Some("request") {
+            return env.get("id").and_then(Value::as_str).map(str::to_string);
+        }
         None
     }
 
@@ -392,6 +428,12 @@ mod tests {
                 "id": "also-lose"
             }),
             json!({"causality": {"ref": 7}, "body": {"details": {"task": "t6"}}}),
+            // Phase 11 F-A: task-root request resolves to its own id...
+            json!({"class": "request", "id": "t7"}),
+            // ...but causality.ref still outranks it...
+            json!({"class": "request", "id": "lose", "causality": {"ref": "win"}}),
+            // ...and a non-request with a bare id still resolves to None.
+            json!({"class": "deliver", "id": "t8"}),
         ];
         for env in &corpus {
             assert_eq!(
@@ -427,6 +469,90 @@ mod tests {
                 view.to(),
                 raw_to.and_then(|s| Principal::from_str(s).ok()),
                 "to mismatch for {env}"
+            );
+        }
+    }
+
+    /// F-A (UAT-01 finding): a task-root `request` resolves to its own `id`.
+    ///
+    /// This is the VERBATIM envelope captured from bob's mailbox on the Linux
+    /// host during the UAT-01 two-machine dogfood — a remote `--new-task` sent
+    /// by the shipping `famp send`. Note the typed `RequestBody` shape: no
+    /// `causality`, no `body.details.task`, and no `body.event` marker, which
+    /// is why every pre-existing branch missed it.
+    #[test]
+    fn remote_request_root_resolves_task_id_from_its_own_id() {
+        let env = json!({
+            "authority": "advisory",
+            "body": {
+                "bounds": {"budget": {"amount": "0", "unit": "usd"}, "hop_limit": 8},
+                "natural_language_summary": "UAT-01 phase 11 two-machine dogfood",
+                "scope": {}
+            },
+            "class": "request",
+            "famp": "0.5.2",
+            "from": "agent:mac.famp/alice",
+            "id": "019fab97-d3e0-7d63-92ba-39f1ce171b83",
+            "scope": "standalone",
+            "to": "agent:devbox.famp/bob",
+            "ts": "2026-07-29T01:58:01Z"
+        });
+        assert_eq!(
+            EnvelopeView::new(&env).task_id().as_deref(),
+            Some("019fab97-d3e0-7d63-92ba-39f1ce171b83"),
+            "an open remote request must be task-indexed by its own id, or \
+             `famp inspect tasks` cannot see a pending task until it is answered"
+        );
+    }
+
+    /// The reply that continues the task must agree with the branch above:
+    /// its `causality.ref` is the request's `id`. If these two ever disagree,
+    /// one task would show up under two ids.
+    #[test]
+    fn threaded_reply_causality_ref_matches_the_request_root_id() {
+        let root = "019fab97-d3e0-7d63-92ba-39f1ce171b83";
+        let request = json!({
+            "class": "request", "id": root,
+            "body": {"natural_language_summary": "x", "scope": {}}
+        });
+        let commit = json!({
+            "class": "commit", "id": "019fab99-52bf-7770-a36a-cc28c156bc18",
+            "causality": {"ref": root, "rel": "commits"}
+        });
+        assert_eq!(
+            EnvelopeView::new(&request).task_id(),
+            EnvelopeView::new(&commit).task_id(),
+            "request root and its threaded reply must resolve to the SAME task id"
+        );
+    }
+
+    /// Precedence guard: branch 1 still wins. A `request` that carries an
+    /// explicit `causality.ref` must resolve to the ref, NOT to its own id --
+    /// otherwise a request threaded into an existing task would fork a second.
+    #[test]
+    fn request_with_causality_ref_prefers_the_ref_over_its_own_id() {
+        let env = json!({
+            "class": "request",
+            "id": "019fab99-0000-7000-8000-000000000000",
+            "causality": {"ref": "019fab97-d3e0-7d63-92ba-39f1ce171b83"}
+        });
+        assert_eq!(
+            EnvelopeView::new(&env).task_id().as_deref(),
+            Some("019fab97-d3e0-7d63-92ba-39f1ce171b83")
+        );
+    }
+
+    /// Negative: the new branch is scoped to `request`. A class that does not
+    /// open a task and carries no correlation still resolves to None, so this
+    /// change cannot make unrelated envelopes masquerade as tasks.
+    #[test]
+    fn non_request_without_correlation_still_resolves_to_none() {
+        for class in ["audit_log", "ack", "deliver", "commit"] {
+            let env = json!({"class": class, "id": "019fab99-1111-7000-8000-000000000000"});
+            assert_eq!(
+                EnvelopeView::new(&env).task_id(),
+                None,
+                "class {class} must not self-resolve a task id"
             );
         }
     }
