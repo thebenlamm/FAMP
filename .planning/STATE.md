@@ -5,7 +5,7 @@ milestone_name: Federation Profile)
 current_phase: 12
 current_phase_name: v1.0.0 Release Gate
 status: planning
-stopped_at: Phase 12 added to roadmap — not yet planned
+stopped_at: Phase 12 planned (5 plans, 3 waves) — ready to execute
 last_updated: "2026-07-29T19:31:39.213Z"
 last_activity: 2026-07-29
 last_activity_desc: Phase 12 (v1.0.0 Release Gate) scoped from design review C §16; repointed off the auto-advanced backlog Phase 999.1
@@ -32,9 +32,10 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 ## Current Position
 
 Phase: 12 — v1.0.0 Release Gate (REL-01..05, design review C §16 residual)
-Plan: Not started
-Status: Ready to plan — `/gsd-plan-phase 12`
-Last activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and `v1.0.0-rc.1` tagged at `ba6b166`; `phase.complete` had auto-advanced this pointer to backlog Phase 999.1 (roadmap ordering, not intent) and it has been repointed to Phase 12. **Backlog phases 999.x are NOT the next work** — promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
+Plan: 0/5 complete
+Status: Ready to execute — `/gsd-execute-phase 12`
+Last activity: 2026-07-29 — Phase 12 planned: 5 plans in 3 waves (12-01 tracer REL-01, 12-02 REL-02, 12-03 REL-04 in Wave 1; 12-04 REL-03+REL-05 version bump + CI attestation in Wave 2; 12-05 REL-05 tag behind a blocking `checkpoint:decision` in Wave 3, `autonomous: false`). Plan-checker VERIFICATION PASSED, 0 blockers. Wave ordering is load-bearing: `ci.yml`'s `paths-ignore` gives a docs-only commit ZERO check-runs, so the version bump must be the last CI-triggering commit and the tag must point at that recorded SHA, never `HEAD`.
+Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and `v1.0.0-rc.1` tagged at `ba6b166`; `phase.complete` had auto-advanced this pointer to backlog Phase 999.1 (roadmap ordering, not intent) and it has been repointed to Phase 12. **Backlog phases 999.x are NOT the next work** — promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
 
 ## v1.0 Phase Map
 
