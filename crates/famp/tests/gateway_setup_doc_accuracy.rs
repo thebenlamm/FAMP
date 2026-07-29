@@ -7,6 +7,14 @@
 //! This asserts `famp peer export --help` / `famp peer import --help`
 //! succeed and advertise the flags/subcommands the guide documents, and
 //! that the guide's invocations are present in the clap help text.
+//!
+//! REL-01 (design review C §16 item 8) extends this gate to also pin the
+//! send-confirmation boundary across all three user-facing surfaces: the
+//! guide's §6 prose (above), `famp send --help`'s `to`-field caveat, and
+//! README's federation-shipped bullet. The README check reads a file
+//! outside `crates/famp/`, which is deliberate — it is the same claim as
+//! the guide/`--help` anchors, just a third surface for the identical
+//! REL-01 boundary statement, not a misplaced README-specific test.
 
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -25,6 +33,10 @@ use assert_cmd::cargo::CommandCargoExt;
 
 fn gateway_setup_doc_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/GATEWAY-SETUP.md")
+}
+
+fn readme_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../README.md")
 }
 
 #[test]
@@ -281,5 +293,44 @@ fn gateway_setup_doc_accuracy() {
          paragraph must sit between the `famp send --to agent:...` example \
          and the `famp inspect tasks --id` verification step, where it is \
          read in sequence"
+    );
+
+    // REL-01 surface 2: `famp send --help` must carry the same caveat.
+    let send_help = Command::cargo_bin("famp")
+        .unwrap()
+        .args(["send", "--help"])
+        .output()
+        .expect("famp send --help must be runnable");
+    assert!(
+        send_help.status.success(),
+        "famp send --help must exit 0; got {:?}",
+        send_help.status
+    );
+    let send_help_stdout = String::from_utf8_lossy(&send_help.stdout);
+    let normalized_send_help = send_help_stdout
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        normalized_send_help
+            .contains("only local acceptance into the gateway-backed outbound mailbox"),
+        "update the guide or the code: `famp send --help` must state the \
+         fire-and-forget boundary on the `--to` flag (REL-01); got:\n{send_help_stdout}"
+    );
+
+    // REL-01 surface 3: README must carry the same claim and no longer
+    // claim shipped federation is unshipped.
+    let readme_path = readme_path();
+    let readme = std::fs::read_to_string(&readme_path).unwrap_or_else(|e| {
+        panic!(
+            "update the guide or the code: could not read {}: {e}",
+            readme_path.display()
+        )
+    });
+    assert!(
+        readme.contains("Federation gateway (v1.0, shipped)"),
+        "update the guide or the code: README must have a \
+         `Federation gateway (v1.0, shipped)` bullet under \
+         `## What Works Today` (REL-01)"
     );
 }

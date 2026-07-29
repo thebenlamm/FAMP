@@ -66,6 +66,10 @@ use crate::cli::util::normalize_channel;
 #[derive(clap::Args, Debug)]
 pub struct SendArgs {
     /// Direct-message recipient identity (mutually exclusive with `--channel`).
+    /// For a remote `agent:<domain>/<name>` target, a zero exit code means
+    /// only local acceptance into the gateway-backed outbound mailbox on
+    /// this host — see docs/GATEWAY-SETUP.md section 6 for what it does
+    /// not confirm.
     #[arg(long, conflicts_with = "channel")]
     pub to: Option<String>,
     /// Channel target (mutually exclusive with `--to`). Accepts both

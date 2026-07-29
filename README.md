@@ -68,14 +68,19 @@ runtime path; federation transport internals remain preserved for v1.0.
   systemd `--user` on Linux) so it survives across sessions instead of
   relying on per-client auto-spawn; version handshake at connect catches
   daemon/client skew.
+- **Federation gateway (v1.0, shipped):** `famp send --to
+  agent:<domain>/<name>` addresses a remote principal over a signed,
+  cross-host path via `famp-gateway`. A successful send confirms only
+  local acceptance, not remote delivery — see
+  [docs/GATEWAY-SETUP.md](docs/GATEWAY-SETUP.md) for the full setup guide
+  and the exact confirmation semantics.
 - Two runnable examples:
   - same-process happy path
   - cross-machine HTTPS happy path
 
 ## Not Shipped Yet
 
-**v1.0 — Federation Profile** (after v0.11):
-- `famp-gateway` bridging the local bus to remote FAMP-over-HTTPS
+**v1.0 — Federation Profile** (after v0.11), still deferred:
 - Agent Cards and federation credentials
 - `.well-known` card distribution
 - negotiation / counter-proposal
