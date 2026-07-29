@@ -14,6 +14,35 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 **A byte-exact, signature-verifiable FAMP substrate a single developer can use from their own code today, and two independent parties can interop against later.** If canonicalization or signature verification disagrees, nothing else matters — so Personal Profile exercises the same signing contract Federation Profile will depend on.
 
+## Current Milestone: v1.0 Federation Profile — Gateway Core
+
+**Goal:** An agent on one of Ben's machines exchanges a signed FAMP envelope with an agent on a second machine he controls, bidirectionally and reliably, over a network he fully controls (direct or a VPN he already runs — **no public relay**). This is the thin cross-host slice that closes **Gate A** and tags `v1.0.0`.
+
+**Why own-machines-first:** the gateway plus the broker-liveness fix are already one hard thing. Proving them with hand-copied keys and full network control means that when v1.1 adds public-internet reachability and cross-person trust, any failure is unambiguously in the *new* layer, not the spine. (Full arc: `~/.claude/plans/first-work-out-the-nested-star.md`.)
+
+**Target features:**
+- Resolve the **broker-liveness fork** — the current same-host `kill(pid,0)` reaps a naively-proxied cross-host principal. Design A (local-proxy: gateway backs each remote principal with a `bind_as` connection reporting its own live local PID; zero `famp-bus` change) is recommended; Design B (heartbeat/lease) is the fallback. **This decision gates the whole build.**
+- Build **`famp-gateway`** (Layer 2) wrapping the preserved `famp-transport-http` + `famp-keyring`, bridging the local UDS bus to a remote gateway over signed HTTPS envelopes.
+- **Reactivate** `crates/famp/tests/_deferred_v1/` (~27 parked federation tests) — triage, wire what still describes real behavior, retire the obsolete.
+- **Full INV-10 envelope signing** on the cross-host path; extend `famp-envelope` with the forward-compat fields v1.1 needs (sender/receiver domain + key_id, nonce, expiry), capability/approval fields absent (omitted-when-empty).
+
+**Explicitly NOT v1.0** (deferred to v1.1 / v2.0+ per the roadmap): public-internet relay, cross-person trust bootstrap, the signed peer directory, and the entire FAMP-Sec capability/approval/tool-admission plane.
+
+**Status (2026-07-29): the milestone goal above is MET; `v1.0.0-rc.1` is tagged.**
+All four target features shipped — the broker-liveness fork resolved via Design A
+(Phase 7), `famp-gateway` built (Phases 7–10), the deferred federation tests
+reactivated (Phase 10), and full INV-10 signing with forward-compat federation
+fields on the cross-host path. Phase 11 then closed the blocker Gate A exposed:
+a *shipping* client (`famp send --to agent:<domain>/<name>`), not a hand-written
+injector, now drives the cross-host cycle.
+
+Proven live 2026-07-29 (UAT-01): macOS ↔ Linux over Tailscale, task
+`019fab97-…` reached a terminal COMPLETED state on **both** hosts, bidirectional,
+`sig_verified: true`. Record: `phases/11-…/11-HUMAN-UAT.md`.
+
+`v1.0.0` proper remains gated on design review C's §16 nine-item checklist, which
+is not yet scoped into a phase.
+
 ## Requirements
 
 ### Validated
