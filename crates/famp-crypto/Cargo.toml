@@ -21,7 +21,7 @@ zeroize        = { version = "1", features = ["derive"] }
 subtle         = "2"
 sha2           = { workspace = true }
 rand           = { workspace = true }
-famp-canonical = { path = "../famp-canonical", version = "0.11.0" }
+famp-canonical = { path = "../famp-canonical", version = "1.0.0-rc.1" }
 
 [dev-dependencies]
 hex        = "0.4.3"
