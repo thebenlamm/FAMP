@@ -14,6 +14,32 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 **A byte-exact, signature-verifiable FAMP substrate a single developer can use from their own code today, and two independent parties can interop against later.** If canonicalization or signature verification disagrees, nothing else matters — so Personal Profile exercises the same signing contract Federation Profile will depend on.
 
+## Current Milestone: v1.1 Open-Internet Federation
+
+**Goal:** Two **different people** exchange signed FAMP envelopes over the open internet. v1.0 proved the gateway spine on two machines Ben controls, on a network he controls, with hand-copied keys. v1.1 removes all three of those crutches.
+
+**Acceptance (an event, not a person — v1.0's lesson):** an agent on Ben's machine and an agent on a second person's machine, in different networks with **no shared VPN** and **no hand-copied keys**, exchange signed envelopes in **both** directions and both task FSMs reach a terminal state. That person follows a doc **unassisted** — Ben does not sit on a call with them.
+
+**Target features:**
+- **Public reachability** — relay and/or NAT traversal. The model is decided **first**, in a zero-code Phase-1 spike, because it carries real infra cost and ownership: self-hosted relay VM vs. hosted tunnel service vs. avoiding a relay entirely (direct-dial + port forward / an existing tunnel). Deliverable is a recorded decision with cost/month and named operator, not code.
+- **Cross-person trust bootstrap.** The v1.0 mechanism (`famp peer export` → paste over Signal → `famp peer import`) is the thing that will actually fail with a real human. **This is the hard problem, not the transport.**
+- **Signed peer directory.**
+- **Protocol-grade ingress at the boundary** — freshness / bounded replay cache, audience binding, DoS ordering, key revocation. All four were explicitly deferred out of v1.0 as open-internet concerns; this is where they come due. The v1.0 envelope already reserves the `nonce` and `expiry` fields these need.
+- **Inbound message content is DATA, not instructions — BLOCKING SECURITY GATE**, settled before any outside person connects. A remote agent must not be able to steer Ben's agent by sending it text. Enforced **FAMP-side and harness-agnostic** (structural quarantine with untrusted-origin provenance at the MCP + CLI output layer, adversarial corpus in CI), not as a prompt convention and not in `~/.claude` wiring — a harness-layer boundary is untestable in FAMP's CI and silently fails to protect Codex/Grok/other clients.
+- **SEED-002 — harness-adapter push notification** (`famp watch --notify`, replacing the `famp await` long-poll + `.famp-listen` sentinel + global Stop-hook trick). Promoted into v1.1 scope: a stranger's agent waking reliably on inbound messages is part of the unassisted-follower experience, and the blocking Stop-hook convention is the brittlest part of onboarding someone new.
+
+**Explicitly NOT in scope:**
+- **The FAMP-Sec capability / approval / tool-admission plane** (v2.0+, demand-gated). v1.1 stays conversation-only — no remote-triggered tools.
+- **Gate B's conformance vector pack** — independent and event-driven; it fires when a second implementer commits to interop, not on this milestone's schedule.
+
+**Constraints:**
+- **Layer 0 primitives stay untouched** — `famp-canonical`, `famp-crypto`, `famp-core`, `famp-envelope`, `famp-fsm`. The nonce/expiry/capability/approval fields v1.0 reserved are already there — **use them**; do not add a second signature or a parallel envelope type.
+- **The human acceptance gate is scheduled EARLY in the phase order, not last.** v1.0's single most important finding (no shipping client could address a remote principal) arrived at the final human gate after four phases of green CI. A second person is lined up, so the real-person gate can sit at Phase 2–3.
+
+**Status (2026-07-30): milestone opened. Phase numbering continues from v1.0's Phase 12 → v1.1 starts at Phase 13.**
+
+---
+
 ## Shipped Milestone: v1.0 Federation Profile — Gateway Core — SHIPPED 2026-07-29
 
 **Goal:** An agent on one of Ben's machines exchanges a signed FAMP envelope with an agent on a second machine he controls, bidirectionally and reliably, over a network he fully controls (direct or a VPN he already runs — **no public relay**). This is the thin cross-host slice that closes **Gate A** and tags `v1.0.0`.
@@ -62,6 +88,18 @@ back-dated, because Phase 11 is what closed it.
 - [x] `famp-canonical` — RFC 8785 JCS canonicalization with external-vector conformance gate — *Validated in Phase 01: canonical-json-foundations. 12/12 conformance tests green (Appendix B/C/E byte-exact, 100K cyberphone float corpus, UTF-16 supplementary, duplicate-key rejection). SEED-001 resolved: keep `serde_jcs 0.2.0`. CI gate + nightly 100M full-corpus workflow live; fallback plan on disk as insurance.*
 - [x] `famp-crypto` — Ed25519 sign/verify with domain-separation prefix, `verify_strict`-only — *Validated in Phase 02: crypto-foundations. 7/7 truths verified. Ed25519 sign/verify with SPEC-03 domain-separation prefix, `verify_strict`-only (raw `verify` unreachable), weak-key rejection at ingress, base64url-unpadded strict codec, RFC 8032 KAT gate, §7.1c worked-example byte-exact interop gate, SHA-256 content-addressing via `sha2 0.11` (CRYPTO-07), constant-time verify via `subtle`. 24/24 nextest + clippy clean.*
 - [x] `famp-core` — shared types, typed error enum, INV-1..11 scaffolding — *Validated in Phase 03: core-types-invariants. 10/10 must-haves verified. Principal/Instance identity, UUIDv7 ID newtypes, ArtifactId with `sha256:<hex>` invariant (CORE-01..03); 15-variant flat `ProtocolErrorKind` with wire-string round-trip and ProtocolError wrapper (CORE-04); `invariants::INV_1..INV_11` namespaced doc anchors (CORE-05); `AuthorityScope` 5-variant enum with hand-written 5×5 `satisfies()` truth table, no `Ord` derive (CORE-06); exhaustive consumer stub under `#![deny(unreachable_patterns)]` making new variants a hard compile error (SC #3/#5). 66/66 famp-core + 112/112 workspace nextest green.*
+
+### Active — v1.1 Open-Internet Federation — IN PROGRESS ◆
+
+Detailed requirements: see `.planning/REQUIREMENTS.md`. Six requirement areas:
+
+- [ ] **Public reachability model** — decided in a zero-code Phase-13 spike (cost/month + named operator recorded as a decision), then implemented.
+- [ ] **Cross-person trust bootstrap** — replaces hand-copied `peer export`/`import`; must survive a real human who is not Ben.
+- [ ] **Signed peer directory.**
+- [ ] **Protocol-grade ingress** — freshness / bounded replay cache, audience binding, DoS ordering, key revocation.
+- [ ] **Inbound-content-is-DATA hard boundary** — FAMP-side structural quarantine, harness-agnostic, adversarial corpus in CI. **Blocking before any outside person connects.**
+- [ ] **SEED-002 push-notification harness adapter** — `famp watch --notify`, retiring the `famp await` poll + Stop-hook convention as the primary wake path.
+- [ ] **Human acceptance gate (early)** — second person, own machine, own network, no shared VPN, no hand-copied keys, doc-only, bidirectional, both FSMs terminal.
 
 ### Active — Personal Profile (v0.6 + v0.7) — COMPLETE ✓
 
@@ -406,4 +444,4 @@ Also open and unscoped: the FAMP-Sec capability/approval/tool-admission plane (v
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. MCP surface grew from 8 tools (v0.9) to 12 (current); the contract is stable across v0.8 → v0.9 → v1.0, the count is not.
 
 ---
-*Last updated: 2026-07-29 after v1.0 milestone — **v1.0 Federation Profile — Gateway Core SHIPPED**, `v1.0.0` tagged at `5edff41`. Gate A closed: cross-host signed messaging between two machines Ben controls, driven by the shipping client (UAT-01 live macOS ↔ Linux). 6 phases (7–12), 29 plans, 29/29 requirements. The 2026-06-08 mesh-VPN Gate A draft is collapsed above as superseded — the tailnet is no longer the trust boundary; the gateway verifies INV-10 at the boundary itself. Next: planning open; Gate B (conformance vector pack, 2nd implementer) and the v1.1 open-internet sketch both remain event-driven. Core Value re-checked and unchanged. Prior: v0.11 shipped 2026-06-06 (3 phases, 11 plans, 15/15 reqs).*
+*Last updated: 2026-07-30 after opening milestone **v1.1 Open-Internet Federation** — goal: two different people exchange signed envelopes over the open internet, no shared VPN, no hand-copied keys, follower unassisted. Reachability model deferred to a zero-code Phase-13 spike; human acceptance gate scheduled early (Phase 2–3 of the milestone, second person lined up); prompt-injection boundary enforced FAMP-side and harness-agnostic; SEED-002 promoted into scope. Layer 0 stays untouched. Phase numbering continues from Phase 12 → starts at Phase 13. Prior: 2026-07-29 after v1.0 milestone — **v1.0 Federation Profile — Gateway Core SHIPPED**, `v1.0.0` tagged at `5edff41`. Gate A closed: cross-host signed messaging between two machines Ben controls, driven by the shipping client (UAT-01 live macOS ↔ Linux). 6 phases (7–12), 29 plans, 29/29 requirements. The 2026-06-08 mesh-VPN Gate A draft is collapsed above as superseded — the tailnet is no longer the trust boundary; the gateway verifies INV-10 at the boundary itself. Next: planning open; Gate B (conformance vector pack, 2nd implementer) and the v1.1 open-internet sketch both remain event-driven. Core Value re-checked and unchanged. Prior: v0.11 shipped 2026-06-06 (3 phases, 11 plans, 15/15 reqs).*

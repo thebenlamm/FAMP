@@ -1,19 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Federation Profile — Gateway Core
-current_phase_name: v1.0 milestone complete — v1.0.0 tagged and archived
-status: Awaiting next milestone
-stopped_at: v1.0 milestone closed and archived; v1.0.0 tagged at 5edff41
-last_updated: "2026-07-30T14:23:56.286Z"
-last_activity: 2026-07-29
-last_activity_desc: "Completed quick task 260729-ur8: CI-gated the slash-command assets against the live MCP tool registry (8 tests, 4 falsifications, additive asset-gate.yml)"
+milestone: v1.1
+milestone_name: Open-Internet Federation
+status: planning
+last_updated: "2026-07-30T14:48:04.227Z"
+last_activity: 2026-07-30
 progress:
-  total_phases: 5
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-current_phase: none
+  percent: 0
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
@@ -30,10 +27,10 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 ## Current Position
 
-Phase: — (v1.0 milestone complete and archived; no phase in flight)
-Plan: 29/29 complete
-Status: Awaiting next milestone (`/gsd-new-milestone`)
-Last activity: 2026-07-30 — Completed quick task 260730-d9h: dropped three stale/false claims from the live MCP tool descriptions and deleted the two chronically-flaky archived-script daemon tests
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-07-30 — Milestone v1.1 started
 
 ## v1.0 Phase Map
 
