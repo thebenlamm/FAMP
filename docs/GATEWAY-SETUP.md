@@ -292,7 +292,7 @@ you used in the other host's `--listen`/TLS setup, that both processes are
 still running, and that the TOFU-pinned key in each `peers.keyring` matches
 what the other side actually exported (§3).
 
-**Known limitation (leaf-name ambiguity, deferred to v1.1).** A remote send
+**Known limitation (leaf-name ambiguity, not yet resolved).** A remote send
 like `--to agent:hostB.example/bob` routes the *local* bus frame on A using
 only the bare leaf name `bob` — the domain qualifies the envelope's `to`/
 `from`, not the bus routing target. If a host also has a **local** holder

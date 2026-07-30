@@ -3,8 +3,10 @@
 
 This document covers every runtime configuration knob in the `famp` binary:
 environment variables, CLI flags, config files, broker data-directory layout,
-and Justfile recipes. The local-first v0.9 bus and the legacy v0.8 federation
-paths each have distinct variables — the separation is noted where it matters.
+and Justfile recipes. The local-first v0.9 bus, the legacy v0.8 federation
+paths, and v1.0 gateway federation each have distinct variables — the
+separation is noted where it matters. For the v1.0 gateway setup flow, see
+[GATEWAY-SETUP.md](GATEWAY-SETUP.md).
 
 ---
 
@@ -15,10 +17,11 @@ paths each have distinct variables — the separation is noted where it matters.
 | `FAMP_BUS_SOCKET` | No | `~/.famp/bus.sock` | Override the UDS broker socket path. Every CLI subcommand and the MCP server use this when set. Must be an absolute path. |
 | `FAMP_LOCAL_IDENTITY` | No | — | D-01 identity resolution tier 2. Set to skip the cwd→`wires.tsv` lookup. Overridden by an explicit `--as` flag; overrides the wires.tsv match. Empty string is treated as unset. |
 | `FAMP_LOCAL_ROOT` | No | `$HOME/.famp-local` | Override the MCP server's backing-store root (per-identity agent directories). Resolved by `famp mcp` only. |
-| `FAMP_HOME` | No | `$HOME/.famp` | Override the identity home directory used by v0.8 federation commands (`init`, `info`, `config.toml`, `peers.toml`, keypair files). Must be an absolute path; relative paths are rejected with `HomeNotAbsolute`. |
+| `FAMP_HOME` | No | `$HOME/.famp` | Override the identity home directory used by v0.8 federation artifacts (`info`, `config.toml`, `peers.toml`, keypair files) and by v1.0 gateway federation (the `own-domain` file and the gateway identity/keyring under `$FAMP_HOME`). Must be an absolute path; relative paths are rejected with `HomeNotAbsolute`. |
 | `HOME` | No (required if overrides absent) | OS default | Standard POSIX home directory. Used as the base when `FAMP_BUS_SOCKET`, `FAMP_LOCAL_ROOT`, and `FAMP_HOME` are all unset. `famp mcp` exits with `HomeNotSet` when `HOME` is absent and `FAMP_LOCAL_ROOT` is not set. |
 | `FAMP_INSTALL_TARGET_HOME` | No | `dirs::home_dir()` | Hidden flag (also accepted as a CLI `--home` argument) that redirects `famp install-claude-code` and `famp daemon install` to a custom home directory. Intended for integration tests and CI; not for normal use. |
 | `FAMP_RUN_LAUNCHCTL_TESTS` | No | — | When set (any value), enables launchctl integration tests in `tests/daemon_lifecycle.rs` and `tests/daemon_restart_binary_pickup.rs`. Test-only; not read by the binary at runtime. |
+| `FAMP_OWN_DOMAIN` | No | (none) | This host's own-domain authority for v1.0 gateway federation. Precedence: `--domain` flag > `FAMP_OWN_DOMAIN` > `$FAMP_HOME/own-domain` file; unset in all three is an error. See docs/GATEWAY-SETUP.md. |
 
 ### Resolution precedence for the broker socket
 
@@ -58,7 +61,7 @@ listen_addr = "127.0.0.1:8443"
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `listen_addr` | Yes | `"127.0.0.1:8443"` | TCP address for the v0.8 HTTPS federation listener (`famp listen`). |
+| `listen_addr` | Yes | `"127.0.0.1:8443"` | v0.8-era HTTPS listen address. `famp listen` was removed in v0.9; today this field is consumed only by `famp info`, to build the peer-card `endpoint`. |
 | `principal` | No | `"agent:localhost/self"` | Self-principal used in envelope `from` fields. Useful when two daemons share a host. |
 
 Unknown fields are rejected (`deny_unknown_fields`).
@@ -78,7 +81,7 @@ pubkey_b64 = "<base64url-unpadded ed25519 verifying key>"
 
 | Field | Required | Description |
 |---|---|---|
-| `alias` | Yes | Local nickname used in `famp send --to <alias>`. Must be unique. |
+| `alias` | Yes | Local nickname for this peer entry. v0.8 artifact — not consulted by the current `famp send --to`, which resolves bare names via the broker and `agent:<domain>/<name>` via the gateway. Must be unique. |
 | `endpoint` | Yes | `https://host:port` of the remote daemon. |
 | `pubkey_b64` | Yes | Base64url-unpadded Ed25519 verifying key (32 raw bytes when decoded). |
 | `principal` | No | FAMP principal of the peer. Inferred as `agent:localhost/self` if absent. |

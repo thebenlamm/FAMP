@@ -118,7 +118,7 @@ Or from a normal terminal:
 ```bash
 famp register architect
 famp send --to bob --new-task "ship it"
-famp inbox --as bob
+famp inbox list --as bob
 ```
 
 ---

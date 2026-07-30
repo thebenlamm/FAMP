@@ -79,7 +79,7 @@ For test-specific recipes (`just test`, `just test-canonical`, etc.), see
 
 ## Workspace Layout
 
-The workspace root `Cargo.toml` lists 15 crates under `crates/`. Three
+The workspace root `Cargo.toml` lists 16 crates under `crates/`. Three
 groups matter for development:
 
 **Protocol primitives** — transport-neutral, reused by both v0.9 and v1.0:
@@ -94,6 +94,7 @@ groups matter for development:
 | `famp-inbox` | Append-only inbox storage |
 | `famp-taskdir` | Task state directory management |
 | `famp-transport` | `Transport` trait and `MemoryTransport` |
+| `famp-bus` | Layer 1 local bus — pure-actor UDS broker core, tokio-free |
 
 **Inspector crates** — observability without write access:
 
@@ -109,6 +110,7 @@ groups matter for development:
 |-------|---------|
 | `famp-keyring` | TOFU keyring file format and peer parsing |
 | `famp-transport-http` | HTTPS transport (`axum` + `reqwest` + `rustls`) |
+| `famp-gateway` | Proxies remote principals onto the local bus over the signed cross-host wire (shipped v1.0) |
 
 **CLI + runtime:**
 
@@ -278,8 +280,7 @@ convention used in this repo:
 - Feature / fix branches: `feat/<short-description>` or `fix/<short-description>`
 - Phase branches (GSD workflow): named by the workflow automatically
 
-External PRs are welcome from v1.0 onward; until then, file issues rather
-than opening PRs (see CONTRIBUTING.md).
+External PRs are welcome now that v1.0 has shipped (see CONTRIBUTING.md).
 
 ---
 

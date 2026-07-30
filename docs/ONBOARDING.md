@@ -2,7 +2,8 @@
 
 FAMP (Federated Agent Messaging Protocol) gives two or more agent windows on
 the same machine a way to talk — DMs, channels, per-session inbox — through
-a shared local broker. Federation across machines lands in v1.0.
+a shared local broker. Federation across machines shipped in v1.0 via
+`famp-gateway`; see [GATEWAY-SETUP.md](GATEWAY-SETUP.md).
 
 ## Install
 
