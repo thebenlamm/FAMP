@@ -7,6 +7,25 @@
 
 > **Scoping note.** These requirements were scoped by the orchestrator on 2026-07-30 while Ben was away, under his standing authorization to "plan + execute everything that doesn't need me or a 2nd person," with reachability spend pre-authorized to ~$15/mo. Every judgment call the orchestrator made rather than deferred is marked **[ORCH]** with its rationale, so any of them can be vetoed cheaply on review.
 
+> ## ⚠ OPEN SCOPE DECISION — BEN MUST DECIDE
+>
+> **The milestone brief's security-gate sentence overclaims what QUAR delivers, and the error is in our threat model, not in the implementation.**
+>
+> The brief says: *"A remote agent must not be able to steer my agent by sending it text. Design and test this as a hard boundary, not a prompt convention."* We justified conversation-only scope by arguing it removes the tool leg of the "lethal trifecta."
+>
+> **That justification is false.** An independent design review established it: conversation-only removes remote-triggered *FAMP* tools, but the receiving end is a listen-mode Claude Code session that auto-wakes on inbound messages, is instructed to call `famp_inbox`, and holds its **own full local toolset** — Bash, file access, and `famp_send` for exfiltration. Untrusted content + private data + tools + automatic ingestion: the trifecta is fully assembled **on the recipient's side**. FAMP removed the attacker's direct tool invocation; it did not remove the steered-local-agent path, which is precisely the threat the brief names.
+>
+> Structural tagging is spotlighting/datamarking. Published consensus (OWASP LLM01:2025, the spotlighting literature QUAR-08 itself cites) is that this **raises attack cost and does not bound a capable attacker** — and the attacker gets unlimited retries against a 23-hour listener. What QUAR-01..11 genuinely buys is the *prerequisite* for real enforcement: machine-checkable provenance. None of the actual boundaries (a `PreToolUse` hook that blocks tool calls once remote-tagged content has entered the turn; rendering remote bodies only through a quarantined summarizer; a listener profile with tools disabled) are possible while provenance is erased at `strip_relay_fields`.
+>
+> **The decision:** does v1.1 also ship harness-level tool-gating so the stated bar is actually met, or does v1.1 deliver provenance + honest documentation and defer enforcement?
+>
+> - **Option A — add tool-gating (meets the brief as written).** FAMP already ships hooks (`famp-await.sh`, the `famp hook` subcommand), so a `PreToolUse` gate is consistent with what it already does. Tension: it is Claude-Code-specific, and the brief also says enforce *harness-agnostic*. Those two instructions cannot both be fully satisfied — the honest resolution is a harness-agnostic provenance core plus per-harness enforcement adapters.
+> - **Option B — provenance + honest docs, defer enforcement.** Cheaper and still valuable, but then **the milestone's gate sentence must be rewritten** to what is delivered, and UAT-02 must not be described as proving a steering boundary.
+>
+> **Orchestrator recommendation: Option A**, because the brief called this a *blocking* gate before any outside person connects, and Option B means an outside person connects to an agent that can still be steered. **Not actioned** — this is scope, and scope is Ben's call.
+>
+> **Work proceeding meanwhile is common to both options**: QUAR-01..11 are required either way, so nothing is wasted whichever is chosen.
+
 ---
 
 ## v1 Requirements
@@ -69,13 +88,16 @@ All four concerns explicitly deferred out of v1.0 as open-internet problems. All
 Settled before any outside person connects. A remote agent must not be able to steer a local agent by sending it text. Structural and harness-agnostic — **not** a prompt convention, and **not** enforced in `~/.claude` wiring.
 
 - [ ] **QUAR-01**: Remote origin survives to the mailbox. `strip_relay_fields` currently erases every field that could mark an envelope as relayed before the local bus write; provenance is carried instead as a new **additive** field on `famp-bus`'s `Register` frame (Layer 1 — not frozen), leaving `famp-envelope` untouched.
-- [ ] **QUAR-02**: **Every** surface that renders received content marks remote-origin content structurally — `famp_inbox`, `famp_await`, `famp_channel_log`, CLI `inbox list`, and CLI `await`. A boundary covering four of five is not a boundary.
+- [ ] **QUAR-02**: **Every** surface that renders received content marks remote-origin content structurally. The surface list MUST be generated **mechanically** — every call site reaching `EnvelopeView::body()`, `write_outcome`, `emit_tail_line`, or serializing an `envelopes: Vec<Value>` — never hand-curated. Known surfaces: `famp_inbox`, `famp_await`, `famp_channel_log`, CLI `inbox list`, CLI `await`, **CLI `register --tail`** (`cli/register.rs:199-201`, `:270-272`, body rendered at `emit_tail_line` `:347`), and **CLI `wait-reply`** (`cli/wait_reply.rs:33-34`, plus its own inbox-first path `:53-67`). All content must flow through **one shared render helper**, not N ad-hoc implementations. *(Corrected 2026-07-30: the original five-surface list omitted `register --tail` and `wait-reply`. By this requirement's own standard — a boundary covering five of seven is not a boundary — the hand-curated list failed its own test. Hence the mechanical-generation mandate.)*
 - [ ] **QUAR-03**: A **FAMP-native** adversarial corpus runs in CI. Published benchmarks (AgentDojo, InjecAgent, WASP) are tool-calling-agent-shaped, not message-relay-shaped — the corpus must be built for this threat model, including payloads that emit the tagging delimiter itself.
 - [ ] **QUAR-04**: The corpus is proven **non-vacuous** by a falsification control: a named test that must FAIL when the quarantine is reverted, alongside a named test that must still PASS. Green under both states carries zero information.
 - [ ] **QUAR-05**: A regression gate fails when a **new** rendering surface is added without tagging — the five-surface list cannot silently go stale.
 - [ ] **QUAR-06**: The wake-up notification payload carries **no** attacker-controlled body text. (`famp-await.sh` is already correct on this and is the model to preserve.)
 - [ ] **QUAR-07**: An independent, **diff-only** adversarial review of the quarantine passes. The reviewer receives the diff and the threat model, not the author's own findings.
-- [ ] **QUAR-08**: Documentation states plainly what this boundary does **not** protect against, naming delimiter-emission and prompt-level mitigation as known-insufficient, so no future reader over-trusts it.
+- [ ] **QUAR-08**: Documentation states plainly what this does **not** protect against, naming delimiter-emission and prompt-level mitigation as known-insufficient, so no future reader over-trusts it. It must **not** claim that a remote agent is prevented from steering a local agent — see QUAR-11. Honest wording: this delivers machine-checkable provenance and untrusted-marking at every rendering surface; steering-resistance remains the harness's job.
+- [ ] **QUAR-09**: Provenance is **fail-closed**. The broker stamps **every** mailbox append explicitly (`origin: local` | `origin: gateway`) at `Out::AppendMailbox` (`famp-bus/src/broker/handle.rs:455-460`); a **missing** stamp renders as `unknown — untrusted`, never as local. Absence must be anomalous. Proven by a **version-skew test**: an old gateway binary against a new broker must not produce unmarked remote content. *(An opt-in flag whose only setter is `ProxiedPrincipal::register` would silently evaporate under exactly the binary-skew this repo hits routinely — the daemon on the dev machine was running a stale build during this very milestone's planning.)*
+- [ ] **QUAR-10**: The provenance wire shape does not break existing consumers. `WireEnvelope` is `deny_unknown_fields`, so the stamp cannot ride inside the envelope `Value` — **preserve that**, since it makes the tag unforgeable by a remote sender. The chosen carrier (Hello-version-gated serving, or an additive sibling array parallel to `envelopes`) must be decided **before** implementation and proven by old-client round-trip tests. Consumers at risk: every pre-v1.1 `famp` binary, `famp_channel_log` (reads the JSONL **directly from disk, bypassing the broker**), and Grok's foreign implementation, which has already wedged a mailbox once.
+- [ ] **QUAR-11**: A **laundering test** exists and PASSES, documenting a real limitation rather than hiding it: a remote-tagged message read by local agent A, whose body A then quotes into a message to local agent B, arrives at B **untagged**. The tag is one-hop. This must be stated in QUAR-08's documentation.
 
 ### Push Notification Adapter (WATCH) — SEED-002
 
@@ -175,6 +197,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | QUAR-06 | Phase 14 | Pending |
 | QUAR-07 | Phase 14 | Pending |
 | QUAR-08 | Phase 14 | Pending |
+| QUAR-09 | Phase 14 | Pending |
+| QUAR-10 | Phase 14 | Pending |
+| QUAR-11 | Phase 14 | Pending |
 | WATCH-01 | Phase 20 | Pending |
 | WATCH-02 | Phase 20 | Pending |
 | WATCH-03 | Phase 20 | Pending |
@@ -185,8 +210,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | UAT-02 | Phase 18 | Pending |
 
 **Coverage:**
-- v1 requirements: 43 total (corrected 2026-07-30 during roadmap creation — the count recorded at requirements-definition time read 41; exhaustive extraction of every `**XXX-NN**` id under `## v1 Requirements` found 43 unique ids. No requirement text changed, only the tally.)
-- Mapped to phases: 43/43 ✓
+- v1 requirements: 46 total. *(Count history, since it moved twice: 41 was recorded at definition time and was simply wrong — exhaustive ID extraction during roadmap creation found 43. It then became 46 when the independent design review added QUAR-09 (fail-closed provenance), QUAR-10 (wire compat with old clients and foreign implementations), and QUAR-11 (one-hop laundering limitation). Only the QUAR additions changed requirement text; the 41→43 move was a tally correction alone.)*
+- Mapped to phases: 46/46 ✓
 - Unmapped: 0 ✓
 
 ---
