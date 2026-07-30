@@ -1,0 +1,41 @@
+# ci.yml excludes **/*.md from its push/pull_request triggers (paths-ignore),
+# and crates/famp/assets/slash_commands/*.md are .md files — so an assets-only
+# commit produces ZERO check-runs under ci.yml and the schema gate in
+# crates/famp/tests/slash_command_assets.rs never fires on the exact change
+# it exists to catch. This workflow is purely additive: it does not touch
+# ci.yml, it only covers that dark commit-shape path.
+#
+# See quick task 260729-ur8.
+name: asset-gate
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "crates/famp/assets/slash_commands/**"
+      - "crates/famp/tests/slash_command_assets.rs"
+      - ".github/workflows/asset-gate.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "crates/famp/assets/slash_commands/**"
+      - "crates/famp/tests/slash_command_assets.rs"
+      - ".github/workflows/asset-gate.yml"
+
+concurrency:
+  group: asset-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  asset-gate:
+    name: asset-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p famp --test slash_command_assets
