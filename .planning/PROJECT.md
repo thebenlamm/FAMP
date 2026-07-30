@@ -14,9 +14,11 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 **A byte-exact, signature-verifiable FAMP substrate a single developer can use from their own code today, and two independent parties can interop against later.** If canonicalization or signature verification disagrees, nothing else matters — so Personal Profile exercises the same signing contract Federation Profile will depend on.
 
-## Current Milestone: v1.0 Federation Profile — Gateway Core
+## Shipped Milestone: v1.0 Federation Profile — Gateway Core — SHIPPED 2026-07-29
 
 **Goal:** An agent on one of Ben's machines exchanges a signed FAMP envelope with an agent on a second machine he controls, bidirectionally and reliably, over a network he fully controls (direct or a VPN he already runs — **no public relay**). This is the thin cross-host slice that closes **Gate A** and tags `v1.0.0`.
+
+**Delivered:** 6 phases (7–12), 29 plans, 29/29 requirements, 106 commits over 7 days. `v1.0.0` annotated and pushed at `5edff41` with 12/12 CI check-runs green at that exact SHA. Planned as Phases 7–10; two phases were added by discovery, not scope creep — Phase 11 (the Gate A dogfood found no *shipping* client could address a remote principal, plus 8 setup-guide defects and a sender-`from` forgery hole) and Phase 12 (design review C's §16 nine-item release checklist). See [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) · [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md) · [MILESTONES.md](MILESTONES.md).
 
 **Why own-machines-first:** the gateway plus the broker-liveness fix are already one hard thing. Proving them with hand-copied keys and full network control means that when v1.1 adds public-internet reachability and cross-person trust, any failure is unambiguously in the *new* layer, not the spine. (Full arc: `~/.claude/plans/first-work-out-the-nested-star.md`.)
 
@@ -28,20 +30,28 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 
 **Explicitly NOT v1.0** (deferred to v1.1 / v2.0+ per the roadmap): public-internet relay, cross-person trust bootstrap, the signed peer directory, and the entire FAMP-Sec capability/approval/tool-admission plane.
 
-**Status (2026-07-29): the milestone goal above is MET; `v1.0.0-rc.1` is tagged.**
+**Status (2026-07-29): milestone goal MET; `v1.0.0` tagged, pushed, and archived.**
 All four target features shipped — the broker-liveness fork resolved via Design A
-(Phase 7), `famp-gateway` built (Phases 7–10), the deferred federation tests
-reactivated (Phase 10), and full INV-10 signing with forward-compat federation
-fields on the cross-host path. Phase 11 then closed the blocker Gate A exposed:
-a *shipping* client (`famp send --to agent:<domain>/<name>`), not a hand-written
-injector, now drives the cross-host cycle.
+(Phase 7), `famp-gateway` built (Phases 7–10), the deferred federation test debt
+triaged and retired with the real E2E pinned into CI in its place (Phase 10), and
+full INV-10 signing with forward-compat federation fields on the cross-host path.
+Phase 11 closed the blocker Gate A exposed — a *shipping* client
+(`famp send --to agent:<domain>/<name>`), not a hand-written injector, now drives
+the cross-host cycle — and fixed two trust-boundary holes (broker-side `from`
+forgery; gateway ingress/egress destination + metadata binding) **before** the
+tag. Phase 12 closed design review C's §16 nine-item checklist, including an
+independent adversarial source pass that found and fixed a real timestamp
+defect and a silently-dropped route.
 
 Proven live 2026-07-29 (UAT-01): macOS ↔ Linux over Tailscale, task
 `019fab97-…` reached a terminal COMPLETED state on **both** hosts, bidirectional,
-`sig_verified: true`. Record: `phases/11-…/11-HUMAN-UAT.md`.
+`sig_verified: true`. Record: `milestones/v1.0-phases/11-…/11-HUMAN-UAT.md`.
 
-`v1.0.0` proper remains gated on design review C's §16 nine-item checklist, which
-is not yet scoped into a phase.
+**One honest caveat carried forward:** Phase 10's `10-VERIFICATION.md` is still
+`human_needed` and `10-HUMAN-UAT.md` `failed` on DOC-04's *unassisted-follower*
+clause. That failure is what scoped Phase 11, whose UAT-01 re-ran the same Gate A
+dogfood to a recorded PASS — superseded, not open. Left as-is rather than
+back-dated, because Phase 11 is what closed it.
 
 ## Requirements
 
@@ -68,6 +78,17 @@ is not yet scoped into a phase.
 - [x] Adversarial matrix: 3 cases × 2 transports = 6 rows (CONF-05/06/07 across MemoryTransport + HttpTransport) — *Validated in Phases 03+04. Byte-identical CONF-07 fixture reused; HTTP rows include sentinel proof that handler closure is not entered.*
 
 **v0.7 totals:** 4/4 phases, 15/15 plans, 32/32 requirements, 253/253 tests green, `cargo tree -i openssl` empty.
+
+### Shipped — v1.0 Federation Profile — Gateway Core — COMPLETE ✓ (shipped 2026-07-29)
+
+Closed **Gate A**: cross-host signed messaging between two machines Ben controls, driven by the shipping client. 6 phases (7–12), 29 plans, 29/29 requirements. Detailed requirements: see `.planning/milestones/v1.0-REQUIREMENTS.md`.
+
+- [x] Phase 7: Broker-Liveness Fork + Gateway Skeleton — *Validated 2026-07-23. Design A landed with **zero `famp-bus` change**: `ProxiedPrincipal::register` backs each remote principal with a no-spawn UDS `Register` carrying the gateway's own PID, so the broker's unmodified `kill(pid,0)` sweep can't reap a cross-host holder. Proven by a unit test (N clients on one PID survive a live Tick, reap together), a real-process SIGKILL/reap subprocess test, and a cross-talk-isolation test against a genuine `famp-gateway` OS process. LIVE-01/02, GW-04.*
+- [x] Phase 8: Signed Cross-Host Envelope + Trust Bootstrap — *Validated 2026-07-23. Seven optional omit-when-empty federation fields ride the one existing INV-10 signature — local-bus bytes byte-identical, no wire break. `FampSigningKey::generate()` (OsRng-only) + 16-char b64url `key_id()`; `verify_inbound` as the single pure trust decision routing exclusively through `TrustedVerifyingKey`/`verify_strict`; `famp peer export/import` mutual TOFU via a hand-copied 3-field blob backed by a new generate-once-and-persist gateway keypair at `~/.famp/gateway/identity.ed25519` (0600). WIRE-01/02, TRUST-01/02.*
+- [x] Phase 9: End-to-End Cross-Host Delivery — *Validated 2026-07-27. `run_ingress` (axum + rustls; TLS is channel encryption only, `verify_inbound_any` remains the sole trust gate) + per-principal `run_egress` compose under one `tokio::select!`. The two-process loopback E2E closing `request → commit → deliver → ack` to a converged terminal FSM state on both sides caught a real BUS-11 ingress bug that had made **every** relayed envelope permanently unreadable on the receiving side. GW-01/02/03.*
+- [x] Phase 10: Test Reactivation + Setup Docs — *Validated 2026-07-27 (`human_needed` on DOC-04's unassisted-follower clause only — superseded by Phase 11's UAT-01 PASS). All 27 parked `_deferred_v1/` tests triaged 27/27 RETIRE with a per-file rationale ledger (every one depended on a v0.9-deleted CLI symbol with no live rewrite target); two falsification-tested guards pin the real Phase 9 E2E into the default nextest set instead; `docs/GATEWAY-SETUP.md` gated by two accuracy tests that extract flags from the live CLI. TEST-01/02, DOC-04.*
+- [x] Phase 11: Shipping-Client Remote Addressing + Setup Hardening — *Validated 2026-07-29, 7/7 must-haves. `famp send --to agent:<domain>/<name>` emits the domain-qualified envelope the gateway relays, class branched by send mode so the FSM can terminate through the CLI/MCP surface, `--to bob` byte-identical to before; one host-level federation authority (`--domain` > `FAMP_OWN_DOMAIN` > `$FAMP_HOME/own-domain`) makes the `from`-authority == pinned-label invariant structural. Broker binds envelope `from` to the authenticated identity (forgery rejected pre-insertion); gateway rejects — never signs — mismatched-authority egress, non-own-domain ingress, and client-supplied federation metadata; route map fail-closed on ambiguity. All 8 dogfood doc findings corrected. UAT-01 PASS live macOS ↔ Linux. ADDR-01..03, OBS-01, SEC-01..04, DOC-05, TEST-03, UAT-01.*
+- [x] Phase 12: v1.0.0 Release Gate — *Validated 2026-07-30, 9/9 must-haves. Two-reviewer independent adversarial pass over shipped `v1.0.0-rc.1` found and fixed a real timestamp-validation defect in `federation_format_ok` and a silently-dropped gateway route; 10/10 findings dispositioned. Send-confirmation boundary pinned across guide/`--help`/README by one non-vacuous test. §16's proposed limitation wording re-evaluated against ADDR-02 and **dropped rather than shipped stale**. Version bumped atomically to `1.0.0` across 13 manifests + lock + banner; `v1.0.0` tagged at `5edff41` with 12/12 check-runs green re-queried at that SHA. REL-01..05.*
 
 ### Shipped — v0.11 Broker Daemon & Cross-Tool Bootstrap — COMPLETE ✓ (shipped 2026-06-06)
 
@@ -170,6 +191,12 @@ These are tracked in `REQUIREMENTS.md` but are **not v1-blocking**. They matter 
 | **Unconditional `KeepAlive=true` in the plist (v0.11)** | Gated/idle-aware KeepAlive needs either an idle-timeout flag or socket activation; neither exists yet (`--no-idle-exit` is the inverse). Unconditional KeepAlive is the honest interim shape; socket activation is explicitly deferred. | ✓ Good — guardian APPROVED the literal plist; byte-exact fixture gate in CI |
 | **Fail loud on protocol-version skew at connect (v0.11)** | A long-lived daemon outlives client upgrades (`cargo install`/`brew upgrade`); a silent wire-version mismatch against a byte-exactness protocol is the exact failure the inspector exists to expose. `BusClientError::ProtocolMismatch` names `famp daemon restart`. Down-payment on v1.0 federation wire-version negotiation. | ✓ Good — VER-01 skew test green |
 | **Unify workspace version to `0.11.0` as single source of truth (v0.11)** | `famp -V` reported `0.1.0` (unbumped crate) while the banner said `0.5.x` — untrustworthy for skew diagnosis on a long-lived daemon. Reconciled `-V` / banner / handshake to one version. | ✓ Good — VER-02; `-V`/banner/handshake agree |
+| **Design A (local-proxy) for the broker-liveness fork — gateway registers each remote principal under its OWN pid (v1.0)** | The alternative (Design B heartbeat/lease) meant changing `famp-bus`, the one crate every other layer depends on, to solve a problem created *outside* it. Backing each proxied principal with a connection reporting the gateway's own live PID makes the broker's existing `kill(pid,0)` sweep correct by construction. | ✓ Good — zero `famp-bus` change; LIVE-01/02 + GW-04 verified 3/3 including real-process SIGKILL |
+| **Federation fields ride the ONE existing INV-10 signature, omitted when empty (v1.0)** | A second signature or a separate federation envelope type would fork the canonicalization contract — the exact failure this project exists to prevent. Optional omit-when-empty fields keep local-bus bytes byte-identical while giving v1.1/v2.0 (nonce, expiry, capability, approval) their slots now. | ✓ Good — no wire break; local bus unaffected; v1.1 fields already reserved |
+| **Retire the 27 parked `_deferred_v1/` tests rather than reactivate them (v1.0)** | Every one depended on a CLI symbol v0.9 Phase 4 deleted, with no live `famp-bus`/`famp-gateway` rewrite target. Reactivating would have meant inventing new tests wearing old names. Two guards pinning the *real* Phase 9 E2E into the default nextest set buy the actual protection. | ✓ Good — 27/27 RETIRE with a per-file rationale ledger; the E2E it protects is what caught the BUS-11 ingress bug |
+| **Fix the sender-`from` forgery hole inside v1.0 rather than defer to v1.1** | A cross-host boundary that ships trusting a client-supplied `from` is a hole that gets designed around, not fixed later. The fix is small and local (broker binds `from` to the authenticated identity; gateway refuses to sign mismatched authority) and needs no local crypto and no BUS-11 reopen. | ✓ Good — SEC-01..04 shipped pre-tag; ingress destination binding + fail-closed route config landed with it |
+| **Drop §16's proposed release-note limitation instead of shipping it (v1.0)** | The wording ("`famp send` … does not initiate or complete the task FSM") predated ADDR-02, which made remote sends typed and FSM-driving. A stale limitation in a `v1.0.0` tag body is worse than none — it misdescribes the product to the first outside reader. | ✓ Good — REL-05; tag body carries the accurate fire-and-forget wording, pinned by a regression test across three surfaces |
+| **Two added phases (11, 12) instead of tagging `v1.0.0` at the end of Phase 10** | The Gate A dogfood proved the gateway worked but no *shipping client* could reach a remote principal — tagging there would have shipped a demo, not a product. Phase 12 likewise refused to tag on a checklist with three open items. | ✓ Good — cost ~2 days; caught a forgery hole, 8 doc defects, a timestamp defect, and a dropped route that all would have shipped |
 
 ## Evolution
 
@@ -243,7 +270,10 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 
 **Design context:** Brainstorm + adversarial review by `matt-essentialist` (reframe: "the inspector RPC is the product, the dashboard is a demo of it") and `hamming-research-scientist` (rejected the double-print counter as wrong-instrument; flagged the dead-broker-diagnosis command as load-bearing). Decisions locked in conversation prior to milestone open.
 
-## Current Milestone: v1.0 Federation Profile — Gate A (Gateway)
+<details>
+<summary>Superseded draft: v1.0 Federation Profile — Gate A (Gateway), 2026-06-08 mesh-VPN framing</summary>
+
+**Superseded 2026-07-23** by the own-machines-first scope at the top of this file, and shipped under that scope on 2026-07-29. Two premises here did not survive: (1) *reachability = mesh VPN* — the tailnet is no longer the trust boundary, because the gateway verifies Ed25519/INV-10 at the boundary itself (auto-memory `project_v10_reachability_meshvpn`, updated 2026-07-23); (2) *add the friend after the own-machines proof* — cross-person trust moved out of v1.0 entirely and into v1.1. Kept for the design rationale only.
 
 **Goal:** Ben's Claude Code on one host exchanges signed FAMP envelopes with another host's Claude Code, over a mesh VPN, via a new `famp-gateway` (Layer 2) wrapping the preserved `famp-transport-http` + `famp-keyring`.
 
@@ -262,6 +292,8 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 **Deferred out of this milestone:** Agent Cards + federation credentials, `.well-known` card distribution, negotiation/counter-proposal, delegation forms, provenance graph, extensions registry. SEED-002 (push-notification harness adapter) deferred — orthogonal to the federation transport. **Gate B (Conformance)** stays event-driven: a 2nd implementer commits to interop → conformance vector pack (`WRAP-V0-5-1-PLAN.md`; SEED-001 is its serde_jcs gate) ships at whatever tag is current. Sofer is the natural Gate-B candidate.
 
 **References:** `docs/superpowers/specs/2026-05-09-v1-trigger-unweld-design.md`; auto-memories `project_v10_trigger`, `project_v10_reachability_meshvpn`; escape-hatch tag `v0.8.1-federation-preserved`.
+
+</details>
 
 ## Last Milestone: v0.9 Local-First Bus — SHIPPED 2026-05-04
 
@@ -361,10 +393,17 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 - **v0.9 Local-First Bus** (2026-05-04) — UDS broker at `~/.famp/bus.sock` replacing per-identity TLS listener mesh. New `famp-bus` Layer-1 substrate (tokio-free pure broker, length-prefixed canonical-JSON codec, four TDD gates GREEN, five proptest properties GREEN). Atomic v0.5.1 → v0.5.2 spec bump landing `MessageClass::AuditLog` + `Relation::Audits` + `BusEnvelope<B>` sibling type + `AnyBusEnvelope` 6-arm dispatch. New 8-verb top-level CLI (`register`, `send`, `inbox`, `await`, `join`, `leave`, `sessions`, `whoami`) and 8-tool stable MCP surface; `famp install-claude-code` + 7 slash commands; `famp-local hook add` declarative wiring with Stop-hook execution runner. Federation CLI hard-deleted (`famp setup/listen/init/peer add/peer import` removed); `famp-transport-http` + `famp-keyring` preserved as v1.0 internals via library-API `e2e_two_daemons` test that runs in CI every commit. Tag `v0.8.1-federation-preserved` cut as escape hatch. Migration guide ships at `docs/MIGRATION-v0.8-to-v0.9.md`. 5 phases, 35 plans, 85/85 requirements, audit `passed`. 12-line/30-second README acceptance gate met.
 - **v0.10 Inspector & Observability** (2026-05-11) — read-only `famp.inspect.*` RPC on the v0.9 broker UDS + `famp inspect broker/identities/tasks/messages` CLI; three inspector crates (`-proto` no-I/O, `-client` no-clap, `-server` version-aligned); compile-time + dep-graph read-only discipline; 500 ms latency budget + cancellable handlers; no-starvation load test. Closes the orphan-listener / task-FSM-invisibility / stale-mailbox incident classes. 3 phases, 10 plans, 26/26 requirements, audit `passed`.
 - **v0.11 Broker Daemon & Cross-Tool Bootstrap** (2026-06-06) — user-level service-managed daemon (`famp daemon install/uninstall/status/restart`; launchd + systemd `--user`) restoring guaranteed broker presence so a fresh clone works for both Claude Code and Codex; `famp broker --no-idle-exit` flag + no-install bridge; actionable EPERM-on-bind sandbox diagnostics (CLI + MCP); connect-time version-skew detection; workspace version unified to 0.11.0; daemon-first README verified live against the binary. 3 phases (4–6), 11 plans, 15/15 requirements. DAEMON-06 Linux behavioral acceptance deferred to a Linux host.
+- **v1.0 Federation Profile — Gateway Core** (2026-07-29, tagged `v1.0.0` at `5edff41`) — **Gate A closed.** `famp-gateway` (Layer 2) proxies remote principals onto the local UDS bus over signed HTTPS: Design-A liveness fix with zero `famp-bus` change, 7 forward-compat federation fields under the one existing INV-10 signature, two-machine TOFU via `famp peer export/import`, and `famp send --to agent:<domain>/<name>` as the shipping remote-addressing surface with the class branched by send mode so the FSM terminates through the CLI/MCP. Trust boundary hardened pre-tag: broker binds envelope `from` to the authenticated identity, gateway rejects non-own-domain ingress / mismatched-authority egress / client-supplied federation metadata, route config fail-closed on ambiguity. Proven live macOS ↔ Linux over Tailscale (UAT-01), terminal COMPLETED on both hosts. 6 phases (7–12), 29 plans, 29/29 requirements, 12/12 CI check-runs green at the tagged SHA.
 
-**Next:** v1.0 Federation Profile — **trigger-gated, two independent gates** (4-week clock retired 2026-05-09). Cross-host FAMP-over-HTTPS via `famp-gateway` wrapping the local bus; Agent Cards + federation credentials; negotiation/delegation/provenance; conformance vector pack. **Gate A:** Ben's sustained symmetric cross-machine use (~2 weeks) → gateway + `v1.0.0`. **Gate B:** a 2nd implementer commits to interop → conformance vector pack. Both event-driven.
+**Codebase state at v1.0.0:** Rust workspace at version `1.0.0`; 16 crates across three layers — Layer 0 protocol primitives (`famp-canonical`, `famp-crypto`, `famp-core`, `famp-envelope`, `famp-fsm`), Layer 1 local bus + inspector (`famp-bus`, `famp-inbox`, `famp-inspect-{proto,client,server}`), Layer 2 federation (`famp-gateway`, `famp-transport`, `famp-transport-http`, `famp-keyring`), plus the `famp` binary. Spec authority `v0.5.2`. ~973 workspace tests green; `cargo tree -i openssl` still empty. Stable 12-tool MCP surface.
+
+**Next:** planning open. Two named non-blocking gates remain, both event-driven:
+- **Gate B — conformance vector pack.** Fires when a second implementer commits to interop (`WRAP-V0-5-1-PLAN.md`; SEED-001 is its RFC 8785 gate, already green). Independent of any version number — ships at whatever tag is current. The first foreign-implementation contact (Grok, 2026-06-11) exchanged messages on the bus but did not commit to interop.
+- **v1.1 sketch — open-internet federation.** Public reachability (relay / NAT traversal), cross-person trust bootstrap, a signed peer directory, and protocol-grade ingress (freshness/replay-cache enforcement, audience binding, DoS ordering, revocation). The v1.0 own-machines proof is deliberately the floor this builds on: any v1.1 failure is unambiguously in the new layer, not the spine.
+
+Also open and unscoped: the FAMP-Sec capability/approval/tool-admission plane (v2.0+, demand-gated — reviewed draft 0.2 exists), and the `999.x` backlog (await crash-safety, multi-listener lock semantics, `heartbeat`/`user_attention` envelope classes, spec-by-path tracking, broker-owned delivery position).
 
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. 8-tool MCP surface stable across v0.8 → v0.9 → v1.0.
 
 ---
-*Last updated: 2026-06-08 — v1.0 Federation Profile (Gate A / Gateway) started. Fired by the friend-to-friend ask; reachability decided as mesh VPN (not self-built NAT traversal) to keep it a thin vertical slice over the preserved transport. Build `famp-gateway`, prove laptop↔home-machine first, then add friend. Gate B (conformance pack) stays event-driven. Prior: v0.11 Broker Daemon & Cross-Tool Bootstrap shipped 2026-06-06 (3 phases, 11 plans, 15/15 reqs).*
+*Last updated: 2026-07-29 after v1.0 milestone — **v1.0 Federation Profile — Gateway Core SHIPPED**, `v1.0.0` tagged at `5edff41`. Gate A closed: cross-host signed messaging between two machines Ben controls, driven by the shipping client (UAT-01 live macOS ↔ Linux). 6 phases (7–12), 29 plans, 29/29 requirements. The 2026-06-08 mesh-VPN Gate A draft is collapsed above as superseded — the tailnet is no longer the trust boundary; the gateway verifies INV-10 at the boundary itself. Next: planning open; Gate B (conformance vector pack, 2nd implementer) and the v1.1 open-internet sketch both remain event-driven. Core Value re-checked and unchanged. Prior: v0.11 shipped 2026-06-06 (3 phases, 11 plans, 15/15 reqs).*

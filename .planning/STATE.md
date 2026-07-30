@@ -1,41 +1,40 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: Federation Profile)
-current_phase: none
-current_phase_name: v1.0 milestone complete — v1.0.0 tagged
-status: milestone-complete
-stopped_at: Phase 12 complete — v1.0.0 tagged at 5edff41; v1.0 milestone done
-last_updated: "2026-07-30T00:20:23.343Z"
+milestone_name: Federation Profile — Gateway Core
+status: Awaiting next milestone
+stopped_at: v1.0 milestone closed and archived; v1.0.0 tagged at 5edff41
+last_updated: "2026-07-30T00:34:32.089Z"
 last_activity: 2026-07-29
-last_activity_desc: Phase 12 complete; v1.0.0 tagged and pushed; §16 checklist closed; verification 9/9
+last_activity_desc: Milestone v1.0 completed and archived (override_closeout)
 progress:
   total_phases: 6
   completed_phases: 6
   total_plans: 29
   completed_plans: 29
   percent: 100
+current_phase: none
+current_phase_name: v1.0 milestone complete — v1.0.0 tagged and archived
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
 
-**Last Updated:** 2026-07-23 — Roadmap created. 4 phases (7–10), 13/13 requirements mapped, 100% coverage. Awaiting plan-phase.
+**Last Updated:** 2026-07-29 — **v1.0 milestone CLOSED and archived.** 6 phases (7–12), 29/29 plans, 29/29 requirements, `v1.0.0` tagged and pushed at `5edff41`. Awaiting `/gsd-new-milestone`.
 
 ## Project Reference
 
-See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the current milestone (roadmap created 2026-07-23, not yet started). Closes Gate A: an agent on one of Ben's machines exchanges a signed FAMP envelope with an agent on a second machine he controls, bidirectionally and reliably, over a network he fully controls (direct or a VPN he already runs — no public relay). Tags `v1.0.0` on completion.
+See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped 2026-07-29.** Gate A closed: an agent on one of Ben's machines exchanges signed FAMP envelopes with an agent on a second machine he controls, bidirectionally, driven by the shipping `famp` client (UAT-01: macOS ↔ Linux over Tailscale, terminal COMPLETED on both hosts). Archives: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) · [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md) · [milestones/v1.0-phases/](milestones/v1.0-phases/).
 
-**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extends that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
+**Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 12 — v1.0.0 Release Gate
+**Current focus:** none — planning the next milestone. Open non-blocking gates: **Gate B** (conformance vector pack; fires when a 2nd implementer commits to interop) and the v1.1 sketch (public-internet relay, cross-person trust, signed peer directory, protocol-grade ingress).
 
 ## Current Position
 
-Phase: — (v1.0 milestone COMPLETE; no phase in flight)
+Phase: — (v1.0 milestone complete and archived; no phase in flight)
 Plan: 29/29 complete
-Status: Milestone complete — run `/gsd-complete-milestone` to archive v1.0, then scope v1.1
-Last activity: 2026-07-29 — **Phase 12 complete; `v1.0.0` tagged and pushed at `5edff41`** (annotated, CI 11/11 green re-verified live at that exact SHA). Design review C §16's nine-item checklist is closed: items 1–5/7 re-attested by citation to `11-VERIFICATION.md`, item 8 by REL-01, item 9 by REL-02's two-reviewer adversarial pass (2 real defects fixed), item 6 by REL-03's attestation. Verification passed 9/9. `phase.complete` again auto-advanced this pointer to backlog Phase 999.1 and it has again been repointed — **backlog phases 999.x are NOT the next work**; promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
-Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and `v1.0.0-rc.1` tagged at `ba6b166`; `phase.complete` had auto-advanced this pointer to backlog Phase 999.1 (roadmap ordering, not intent) and it has been repointed to Phase 12. **Backlog phases 999.x are NOT the next work** — promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
+Status: Awaiting next milestone (`/gsd-new-milestone`)
+Last activity: 2026-07-29 — v1.0 milestone closed, archived, and recorded in MILESTONES.md
 
 ## v1.0 Phase Map
 
@@ -161,6 +160,22 @@ Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and
 
 ## Deferred Items
 
+### Acknowledged at v1.0 milestone close (2026-07-29) — `override_closeout`
+
+42 open items surfaced by `query audit-open` at pre-flight; all acknowledged and deferred. **None is a v1.0 requirement gap** — REQUIREMENTS.md shows 29/29 Complete and Phase 12 verified 9/9. Breakdown:
+
+| Category | Count | Item / Disposition |
+|----------|-------|--------------------|
+| quick_task | 36 | 31 `unknown` + 5 `verified` completion-artifact slugs, v0.5.x–v0.11 era drift residue. Superset of the 45 already carried at the v0.11 close below; no active obligation attached to any. |
+| debug_session | 1 | `knowledge-base` — **false positive.** `.planning/debug/knowledge-base.md` is the resolved-session KB index the `gsd-debugger` reads, not an open investigation. Real sessions live in `debug/resolved/` (3, all closed). |
+| seed | 2 | `SEED-001-serde-jcs-conformance-gate` — dormant, **Gate B** (its RFC 8785 gate already shipped in v0.6; the vector pack it feeds waits on a 2nd implementer). `SEED-002-harness-adapter-push-notifications` — dormant, gate-assignment still deferred. |
+| uat_gap | 2 | Phase 10 `10-HUMAN-UAT.md` [failed] and Phase 11 `11-HUMAN-UAT.md` [passed]. Phase 11's is a **recorded PASS** (flagged only by the scanner's phase-completeness heuristic). Phase 10's failure is DOC-04's *unassisted-follower* clause — that failure is precisely what scoped Phase 11, whose UAT-01 re-ran the same Gate A dogfood with the real client to a PASS. **Superseded, not open.** |
+| verification_gap | 1 | Phase 10 `10-VERIFICATION.md` [human_needed] — same DOC-04 human clause as above; all three Phase 10 requirements (TEST-01/02, DOC-04) had their automatable substance verified green (973/973 tests, `just lint` clean). Left at `human_needed` rather than back-dated to `passed`, because the honest record is that Phase 11 closed it, not Phase 10. |
+
+**Also carried, unchanged:** **999.5** (spec-by-path tracking) was re-checked against shipped v1.0 and is still NOT covered — v1.0 addressing is by name/principal, with no portable content-addressable artifact reference. Open for v1.1+ (ROADMAP.md Backlog Phase 999.5). Backlog phase dirs `999.1 / 999.2 / 999.7 / 999.8 / 999.11` were swept into `milestones/v1.0-phases/` by `query milestone.complete` and **restored** to `.planning/phases/` — they are live backlog, not shipped work.
+
+### Acknowledged at v0.11 milestone close (2026-06-06)
+
 Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd-sdk query audit-open`): 48 total, none v0.11-blocking — 45 orphan quick_task slugs (v0.6–v0.10 era; representative sample below, all `missing` completion artifacts with no active obligation), 2 dormant seeds, and 1 DAEMON-06 Linux UAT scenario. Carried forward from prior closes unchanged unless newer work pulls one in:
 
 | Category | Item | Status |
@@ -280,12 +295,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 ## Session
 
 **Last session:** 2026-07-29T23:47:49.426Z
-**Stopped At:** Completed 12-04-PLAN.md (REL-05 bump + REL-03 CI attestation)
+**Stopped At:** v1.0 milestone closed and archived (`override_closeout`); `v1.0.0` tagged and pushed at `5edff41`
 **Resume File:** None
 
 ## Operator Next Steps
 
-- Run `/gsd-plan-phase 7` to plan Phase 7 (Broker-Liveness Fork + Gateway Skeleton) — the gating spine for v1.0.
+- Start the next milestone with /gsd-new-milestone
 
 ## Accumulated Context
 
