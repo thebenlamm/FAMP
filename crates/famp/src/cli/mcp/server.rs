@@ -54,7 +54,7 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_await",
-            "description": "Block until one or more new messages arrive. Returns { envelopes: [...], mailbox, next_offset } for the first mailbox with queued messages, capped at 50 envelopes per call; re-call immediately if you need to drain more. AwaitTimeout remains { timeout: true }. This is the canonical real-time signal — unlike famp_inbox list (which hides entries for tasks that have reached a terminal FSM state), famp_await delivers every message including the closing 'terminal' reply that finishes a task. USE THIS to detect when a task you sent via famp_send completes. Pass task_id to wait only for a reply to that specific task.",
+            "description": "Block until one or more new messages arrive. Returns { envelopes: [...], mailbox, next_offset } for the first mailbox with queued messages, capped at 50 envelopes per call; re-call immediately if you need to drain more. AwaitTimeout remains { timeout: true }. This is the canonical real-time signal — famp_await delivers every message as it arrives, including the closing 'terminal' reply that finishes a task. USE THIS to detect when a task you sent via famp_send completes. Pass task_id to wait only for a reply to that specific task.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -65,12 +65,12 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_inbox",
-            "description": "List received messages from your agent mailbox AND any channels you've joined. List-only: advancing the read cursor is CLI-only (`famp inbox ack`); there is no MCP ack. Each list entry has a 'task_id' — use that with famp_send (mode=deliver or terminal) to reply. To observe task completion in real time, use famp_await. Note: include_terminal is accepted on the wire but currently a no-op — broker-side terminal-FSM filtering is deferred to v1; today every list returns all unread envelopes.",
+            "description": "List received messages from your agent mailbox AND any channels you've joined. List-only: advancing the read cursor is CLI-only (`famp inbox ack`); there is no MCP ack. Each list entry has a 'task_id' — use that with famp_send (mode=deliver or terminal) to reply. To observe task completion in real time, use famp_await. Note: include_terminal is accepted for wire compatibility but is currently a no-op — broker-side terminal-FSM filtering has not shipped as of v1.0, so every list returns all unread envelopes.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "since":            { "type": "integer", "description": "Byte offset to start from (default 0)" },
-                    "include_terminal": { "type": "boolean", "description": "Accepted for wire compatibility but currently a no-op: broker-side terminal-FSM filtering (hide COMPLETED/FAILED/CANCELLED) is deferred to v1. Today, list returns every unread envelope regardless of this flag." }
+                    "include_terminal": { "type": "boolean", "description": "Accepted for wire compatibility but currently a no-op: broker-side terminal-FSM filtering (hide COMPLETED/FAILED/CANCELLED) has not shipped as of v1.0. Today, list returns every unread envelope regardless of this flag." }
                 }
             }
         },
