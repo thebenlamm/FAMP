@@ -376,6 +376,68 @@ fn slash_command_assets_prescribe_every_required_argument_key() {
     }
 }
 
+/// English number words 1–20, so a count spelled out in prose ("exactly eight
+/// tools") is gated exactly like a digit one ("exactly 8 tools").
+///
+/// The original shipped bug — `famp-who.md` claiming an "8-tool MCP surface"
+/// after the registry reached 12 — was a digit, but nothing stops the next
+/// rewrite from spelling it. A digit-only scanner would `continue` past a
+/// spelled claim silently, which is the same class of hole this whole file
+/// exists to close. Verified: with a digit-only scanner, an asset reading
+/// "exactly eight tools" passed the suite 8/8.
+fn spelled_number(word: &str) -> Option<usize> {
+    const WORDS: [(&str, usize); 20] = [
+        ("one", 1),
+        ("two", 2),
+        ("three", 3),
+        ("four", 4),
+        ("five", 5),
+        ("six", 6),
+        ("seven", 7),
+        ("eight", 8),
+        ("nine", 9),
+        ("ten", 10),
+        ("eleven", 11),
+        ("twelve", 12),
+        ("thirteen", 13),
+        ("fourteen", 14),
+        ("fifteen", 15),
+        ("sixteen", 16),
+        ("seventeen", 17),
+        ("eighteen", 18),
+        ("nineteen", 19),
+        ("twenty", 20),
+    ];
+    let lower = word.to_ascii_lowercase();
+    WORDS.iter().find(|(w, _)| *w == lower).map(|(_, n)| *n)
+}
+
+/// The tool count `text` claims immediately before a `-tool` / ` tools`
+/// marker, as a digit run (`12`) or an English number word (`twelve`).
+///
+/// `None` means no countable claim, which is how inert phrases like
+/// `allowed-tools`, `tool listed`, and `mcp__famp__famp_peers` tool` stay out
+/// of the assertion below.
+fn claimed_count(before: &str) -> Option<usize> {
+    let digits_start = before
+        .rfind(|c: char| !c.is_ascii_digit())
+        .map_or(0, |i| i + 1);
+    let digits = &before[digits_start..];
+    if !digits.is_empty() {
+        return Some(
+            digits
+                .parse()
+                .unwrap_or_else(|_| panic!("`{digits}` is not a valid tool-count number")),
+        );
+    }
+
+    // No digit run — fall back to a trailing English word.
+    let word_start = before
+        .rfind(|c: char| !c.is_ascii_alphabetic())
+        .map_or(0, |i| i + 1);
+    spelled_number(&before[word_start..])
+}
+
 #[test]
 fn slash_command_asset_tool_count_claims_match_registry() {
     let registry = registry();
@@ -385,19 +447,9 @@ fn slash_command_asset_tool_count_claims_match_registry() {
     for (file, text) in ASSETS {
         for marker in ["-tool", " tools"] {
             for (idx, _) in text.match_indices(marker) {
-                let before = &text[..idx];
-                let digits_start = before
-                    .rfind(|c: char| !c.is_ascii_digit())
-                    .map_or(0, |i| i + 1);
-                let digits = &before[digits_start..];
-                if digits.is_empty() {
-                    // No trailing digit run — inert phrases like
-                    // `allowed-tools` and `tool listed` land here.
+                let Some(claim) = claimed_count(&text[..idx]) else {
                     continue;
-                }
-                let claim: usize = digits.parse().unwrap_or_else(|_| {
-                    panic!("{file}: `{digits}` before `{marker}` is not a valid number")
-                });
+                };
                 claims_found += 1;
                 assert_eq!(
                     claim, expected,
@@ -414,4 +466,21 @@ fn slash_command_asset_tool_count_claims_match_registry() {
          rewrite that removes every countable claim doesn't silently turn this test into a \
          no-op; if that's intentional, delete this test explicitly instead"
     );
+}
+
+/// Guards `claimed_count`'s own logic, so the scanner cannot regress into
+/// silently returning `None` for real claims (which would make the test above
+/// pass vacuously) or into flagging inert `-tool` substrings.
+#[test]
+fn claimed_count_reads_digits_and_words_but_ignores_inert_phrases() {
+    assert_eq!(claimed_count("The MCP surface is exactly 12"), Some(12));
+    assert_eq!(claimed_count("The MCP surface is exactly twelve"), Some(12));
+    assert_eq!(claimed_count("claimed an 8"), Some(8));
+    assert_eq!(claimed_count("claimed an Eight"), Some(8));
+    // Inert: these are the real substrings that precede `-tool` / ` tools`
+    // in the shipped assets and must NOT be read as counts.
+    assert_eq!(claimed_count("allowed"), None);
+    assert_eq!(claimed_count("---\nallowed"), None);
+    assert_eq!(claimed_count("use only the listed"), None);
+    assert_eq!(claimed_count(""), None);
 }
