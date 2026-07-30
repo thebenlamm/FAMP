@@ -4,18 +4,18 @@
 [![License: Apache-2.0 OR MIT](https://img.shields.io/badge/license-Apache--2.0%20OR%20MIT-blue.svg)](#license)
 [![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](rust-toolchain.toml)
 
-**Status:** `v0.11 Broker Daemon`
+**Status:** `v1.0 Federation Profile — Gateway Core` (shipped 2026-07-29, tagged `v1.0.0`)
 
 > **On the version numbers:** FAMP v0.5.1 is the protocol spec; v0.6 / v0.7 / v0.8 are
 > implementation milestones (all shipped); v0.9 is the local-first bus and v0.11 adds
 > the persistent broker daemon; v1.0 is the federation gateway. The workspace version
 > is unified to `1.0.0` (`famp -V` → `famp 1.0.0`).
 
-FAMP today is local-first: a UDS-backed broker for same-host agent messaging
-with zero crypto on the local path. FAMP at v1.0 is federated: cross-host
-messaging via a `famp-gateway` wrapping the local bus, all of v0.5.2's
-signature/canonical-JSON guarantees preserved. The v1.0 trigger condition
-is documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+FAMP is local-first and federated. Local: a UDS-backed broker for same-host agent
+messaging with zero crypto on the local path. Federated: cross-host messaging via
+a `famp-gateway` wrapping that local bus, all of v0.5.2's
+signature/canonical-JSON guarantees preserved. The gateway shipped in v1.0; the
+layered model is documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 **The fastest thing to try:** get two Claude Code or Codex windows on your Mac
 exchanging messages via the local bus. See [Quick Start](#quick-start)
@@ -23,12 +23,15 @@ below; no cert wrangling, no peer-card piping.
 
 Under the hood it's a v0.5.2-spec-conformant stack: canonical JSON
 (RFC 8785), Ed25519 signatures with domain separation, typed identity
-and envelope types, and a 5-state task FSM. The local bus is the v0.11
-runtime path; federation transport internals remain preserved for v1.0.
+and envelope types, and a 5-state task FSM. The local bus is the same-host
+runtime path; the preserved federation transport internals are now wired into
+the shipped `famp-gateway`.
 
-- **Local (v0.11)** — same-host agents through a local UDS broker (persistent daemon, or auto-spawn for unsandboxed clients).
-- **Federation Profile (v1.0)** — cross-host protocol, Agent Cards,
-  delegation, provenance, and remote routing via `famp-gateway`.
+- **Local (v0.11, shipped)** — same-host agents through a local UDS broker (persistent daemon, or auto-spawn for unsandboxed clients).
+- **Federation Profile (v1.0, shipped)** — cross-host remote routing via
+  `famp-gateway`, over a signed wire with two-machine TOFU trust. Agent Cards,
+  delegation, and the provenance graph are not part of the shipped v1.0 surface —
+  see [Not Shipped Yet](#not-shipped-yet).
   See the [design spec](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
 
 ## What Works Today
@@ -54,7 +57,7 @@ runtime path; federation transport internals remain preserved for v1.0.
   - `famp register` — bind a local identity to the broker
   - `famp whoami` — show the current identity
   - `famp send` — send local bus messages
-  - `famp inbox list` — inspect received messages (includes posts from joined channels; `--include-terminal` is accepted but currently a no-op — broker-side terminal filtering is deferred to v1)
+  - `famp inbox list` — inspect received messages (includes posts from joined channels; `--include-terminal` is accepted but currently a no-op — broker-side terminal filtering did not land in v1.0 and remains deferred)
   - `famp await` — block until new messages arrive (unfiltered; canonical real-time signal, including task completion)
   - `famp join` / `famp leave` — manage channel membership
 - **MCP server** (`famp mcp`) for Claude Code and Codex
@@ -80,14 +83,16 @@ runtime path; federation transport internals remain preserved for v1.0.
 
 ## Not Shipped Yet
 
-**v1.0 — Federation Profile** (after v0.11), still deferred:
+**Deferred past v1.0** — the next milestone is not yet defined:
 - Agent Cards and federation credentials
 - `.well-known` card distribution
 - negotiation / counter-proposal
 - delegation forms
 - provenance graph
 - extensions registry
-- replay defense / freshness windows / idempotency scoping
+- replay defense and idempotency scoping — the cross-host envelope carries `nonce`
+  and `expiry` and is format-validated at ingress, but no seen-nonce cache rejects
+  a re-sent envelope
 - full adversarial conformance matrix and Level 2/3 badges
 
 ## Prerequisites
@@ -291,9 +296,9 @@ single session. Broker diagnostics live under `~/.famp/` (`bus.sock`,
 
 The v0.8 federation CLI (`famp init / setup / listen / peer add / peer import`)
 was removed in v0.9. See [docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md)
-for the migration path; the `v0.8.1-federation-preserved` git tag is the
-escape hatch for users who genuinely need cross-host messaging today (frozen,
-bug fixes ship via the v1.0 federation gateway when it lands).
+for the migration path; the `v0.8.1-federation-preserved` git tag is the frozen
+reference point for the pre-v1.0 cross-host path. Cross-host messaging now ships
+via `famp-gateway` — see [docs/GATEWAY-SETUP.md](docs/GATEWAY-SETUP.md).
 
 ## MCP Integration (Claude Code and Codex)
 
@@ -736,12 +741,18 @@ workflow (Quick Start install path) runs separately in CI and is not included in
 - `v0.10`: inspector & observability — shipped. `famp inspect broker` /
   `famp inspect identities` / `famp inspect tasks` / `famp inspect messages`
   for read-only broker diagnosis without registration.
-- `v0.11`: **broker daemon & cross-tool bootstrap** — shipped, current
-  runtime. `famp daemon install` runs a service-managed broker (launchd /
+- `v0.11`: **broker daemon & cross-tool bootstrap** — shipped.
+  `famp daemon install` runs a service-managed broker (launchd /
   systemd `--user`) so Claude Code and Codex connect to a persistent broker
   instead of relying on per-client auto-spawn; version handshake at connect.
-- `v1.0`: federation profile — after v0.11. Agent Cards, delegation,
-  provenance, cross-host via a `famp-gateway` process.
+- `v1.0`: **federation profile — gateway core** — shipped 2026-07-29, tagged
+  `v1.0.0`, current runtime. Cross-host messaging via a `famp-gateway` process:
+  remote principals proxied onto the local bus over an Ed25519-signed (INV-10)
+  cross-host wire with two-machine TOFU trust. Agent Cards, delegation, and
+  provenance are not in the shipped surface — see
+  [Not Shipped Yet](#not-shipped-yet).
+- Next milestone: **not yet defined.** **Gate B** — the conformance vector pack,
+  which fires when a second implementer commits to interop — remains open.
 
 See [`docs/history/ROADMAP.md`](docs/history/ROADMAP.md) for the curated
 roadmap snapshot and [`docs/history/MILESTONES.md`](docs/history/MILESTONES.md)
