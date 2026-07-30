@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Federation Profile)
-current_phase: 12
-current_phase_name: v1.0.0 Release Gate
-status: executing
-stopped_at: Completed 12-04-PLAN.md (REL-05 bump + REL-03 CI attestation)
-last_updated: "2026-07-29T23:47:49.444Z"
+current_phase: none
+current_phase_name: v1.0 milestone complete — v1.0.0 tagged
+status: milestone-complete
+stopped_at: Phase 12 complete — v1.0.0 tagged at 5edff41; v1.0 milestone done
+last_updated: "2026-07-30T00:20:23.343Z"
 last_activity: 2026-07-29
-last_activity_desc: Phase 12 execution started
+last_activity_desc: Phase 12 complete; v1.0.0 tagged and pushed; §16 checklist closed; verification 9/9
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 6
   total_plans: 29
-  completed_plans: 27
-  percent: 67
+  completed_plans: 29
+  percent: 100
 ---
 
 # STATE: FAMP — v1.0 Federation Profile — Gateway Core
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md — v1.0 Federation Profile — Gateway Core is the cu
 
 ## Current Position
 
-Phase: 12 (v1.0.0 Release Gate) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-07-29 — Phase 12 execution started
+Phase: — (v1.0 milestone COMPLETE; no phase in flight)
+Plan: 29/29 complete
+Status: Milestone complete — run `/gsd-complete-milestone` to archive v1.0, then scope v1.1
+Last activity: 2026-07-29 — **Phase 12 complete; `v1.0.0` tagged and pushed at `5edff41`** (annotated, CI 11/11 green re-verified live at that exact SHA). Design review C §16's nine-item checklist is closed: items 1–5/7 re-attested by citation to `11-VERIFICATION.md`, item 8 by REL-01, item 9 by REL-02's two-reviewer adversarial pass (2 real defects fixed), item 6 by REL-03's attestation. Verification passed 9/9. `phase.complete` again auto-advanced this pointer to backlog Phase 999.1 and it has again been repointed — **backlog phases 999.x are NOT the next work**; promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
 Prior activity: 2026-07-29 — Phase 12 added and scoped. Phase 11 completed and `v1.0.0-rc.1` tagged at `ba6b166`; `phase.complete` had auto-advanced this pointer to backlog Phase 999.1 (roadmap ordering, not intent) and it has been repointed to Phase 12. **Backlog phases 999.x are NOT the next work** — promote them deliberately via `/gsd-review-backlog`, never by drifting into them.
 
 ## v1.0 Phase Map
