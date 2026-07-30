@@ -1,6 +1,6 @@
 # famp-crypto
 
-FAMP v0.5.1 Ed25519 sign/verify with domain separation (`FAMP-sig-v1\0`),
+FAMP v0.5.2 Ed25519 sign/verify with domain separation (`FAMP-sig-v1\0`),
 weak-key ingress rejection, and `verify_strict`-only exposure. Every byte
 that enters FAMP's signature path passes through functions in this crate
 which prepend the domain prefix internally — callers never assemble

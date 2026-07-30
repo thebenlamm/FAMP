@@ -1,9 +1,8 @@
 # Contributing to FAMP
 
 FAMP is a Rust reference implementation of the Federated Agent Messaging
-Protocol. The `v0.8` Personal Runtime (with MCP integration) is maintained by
-a single developer. External PRs are welcome from `v1.0` onward; until then,
-please file issues rather than PRs.
+Protocol. The Personal Runtime (with MCP integration) is maintained by a single
+developer under adversarial review. External PRs are welcome — `v1.0` has shipped.
 
 ## Setup
 
@@ -38,6 +37,11 @@ A green `just ci` locally implies a green GitHub Actions run.
 - `crates/famp-taskdir` — task state directory management
 - `crates/famp-transport` — `Transport` trait and `MemoryTransport`
 - `crates/famp-transport-http` — minimal HTTPS transport (`axum` + `reqwest` + `rustls`)
+- `crates/famp-bus` — pure-actor local UDS bus (Layer 1)
+- `crates/famp-gateway` — cross-host Ed25519-signed proxy for remote principals (Layer 2, INV-10)
+- `crates/famp-inspect-proto` — inspector RPC types (no I/O)
+- `crates/famp-inspect-server` — inspector RPC handlers, mounted by the broker
+- `crates/famp-inspect-client` — inspector RPC client behind `famp inspect`
 - `crates/famp` — CLI binary, MCP server, runtime glue, examples, and integration tests
 
 ## Test Gates
@@ -68,7 +72,7 @@ locally is the shipping bar.
 
 ## Code Review
 
-For `v0.8`: single maintainer plus adversarial review agent. Workflow is
+Single maintainer plus adversarial review agent, applied to every non-trivial change. Workflow is
 documented in `CLAUDE.md`. Every non-trivial change gets an adversarial
 review pass before merge.
 

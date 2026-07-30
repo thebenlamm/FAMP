@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "FAMP v0.5.2 — famp-gateway crate (Layer 2 skeleton)"
+description = "FAMP v0.5.2 — famp-gateway crate (Layer 2 cross-host federation gateway, shipped v1.0; INV-10)"
 
 [lints]
 workspace = true
