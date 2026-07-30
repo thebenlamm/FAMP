@@ -247,6 +247,44 @@ fn slash_command_asset_harness_is_not_vacuous() {
     }
 }
 
+/// The gates below read two Markdown idioms: `- \`key\`: \`value\`` bullets and
+/// inline `` `key: "value"` `` spans, with tools named as `mcp__famp__<tool>`.
+/// Anything else is INVISIBLE to them — which means the original bug could
+/// re-ship verbatim in different formatting and CI would stay green:
+///
+/// ```text
+///     ```json
+///     {"to": {"kind": "agent", "name": "$1"}}     <- no backtick spans, unseen
+///     ```
+///     call the `famp_sessions` tool                <- no mcp__famp__, unseen
+/// ```
+///
+/// Rather than grow the extractors to chase every phrasing (each widening adds
+/// false-positive surface, and a gate that red-lights CORRECT assets is a gate
+/// that gets deleted), this pins the assets to the readable idiom. Writing an
+/// unparseable form fails here with instructions, instead of passing silently.
+#[test]
+fn slash_command_assets_stay_in_the_gate_readable_idiom() {
+    for (file, text) in ASSETS {
+        assert!(
+            !text.contains("```"),
+            "{file} contains a fenced code block. The argument-key gates only read \
+             `- \\`key\\`: \\`value\\`` bullets and inline \\`key: \"value\"\\` spans, so a call \
+             shape shown in a fence is unvalidated — express the arguments as bullets instead."
+        );
+
+        for (idx, _) in text.match_indices("famp_") {
+            let before = &text[..idx];
+            assert!(
+                before.ends_with("mcp__") || before.ends_with("mcp__famp__"),
+                "{file} names a tool as a bare `famp_…` at byte {idx}; the tool gates only \
+                 match the `mcp__famp__<tool>` form, so a bare name escapes the \
+                 registry/dispatch checks — write mcp__famp__<tool>."
+            );
+        }
+    }
+}
+
 #[test]
 fn slash_command_assets_reference_only_dispatchable_mcp_tools() {
     let registry = registry();
