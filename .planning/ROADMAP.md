@@ -26,7 +26,7 @@
 - [ ] **Phase 9: End-to-End Cross-Host Delivery** - Full bidirectional `request → commit → deliver → ack` task cycle across two machines through the gateway.
 - [ ] **Phase 10: Test Reactivation + Setup Docs** - Deferred federation tests triaged and green, a live two-process E2E in `just ci`, and a two-machine setup guide.
 - [x] **Phase 11: Shipping-Client Remote Addressing + Setup Hardening** - Make `famp send` able to address a remote principal (C2/C5 sender-side split-addressing) so a real client — not just a hand-written injector — drives a cross-host delivery; fix the 8 Gate A dogfood findings (GATEWAY-SETUP.md wiring/cert/firewall, the transport error-chain swallow, platform-conditional fixtures); replace the throwaway injector with a shipping-surface test; re-run the two-machine dogfood with the real client as the final v1.0.0 gate. (Verified `passed`, 7/7 must-haves — `11-VERIFICATION.md`.)
-- [ ] **Phase 12: v1.0.0 Release Gate** - Close the three design-review-C §16 checklist items Phase 11 left open (what `send` confirms in the docs; an independent source verdict on the shipped `v1.0.0-rc.1` code; a green-gate attestation at the tag commit), clean the release record, then bump to `1.0.0` and tag. §16 items 1–5 and 7 are already satisfied and re-attested by citation — no new federation logic.
+- [x] **Phase 12: v1.0.0 Release Gate** - Close the three design-review-C §16 checklist items Phase 11 left open (what `send` confirms in the docs; an independent source verdict on the shipped `v1.0.0-rc.1` code; a green-gate attestation at the tag commit), clean the release record, then bump to `1.0.0` and tag. §16 items 1–5 and 7 are already satisfied and re-attested by citation — no new federation logic.
 
 ## Phase Details
 
