@@ -3,19 +3,19 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
 status: planning
-last_updated: "2026-07-30T14:48:04.227Z"
+last_updated: "2026-07-30T16:00:00.000Z"
 last_activity: 2026-07-30
 progress:
-  total_phases: 0
+  total_phases: 8
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
 ---
 
-# STATE: FAMP — v1.0 Federation Profile — Gateway Core
+# STATE: FAMP — v1.1 Open-Internet Federation
 
-**Last Updated:** 2026-07-29 — **v1.0 milestone CLOSED and archived.** 6 phases (7–12), 29/29 plans, 29/29 requirements, `v1.0.0` tagged and pushed at `5edff41`. Awaiting `/gsd-new-milestone`.
+**Last Updated:** 2026-07-30 — **v1.1 roadmap created.** Eight phases (13–20), 43/43 requirements mapped, 0/8 phases planned. Awaiting `/gsd-plan-phase 13`.
 
 ## Project Reference
 
@@ -23,14 +23,36 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** none — planning the next milestone. Open non-blocking gates: **Gate B** (conformance vector pack; fires when a 2nd implementer commits to interop) and the v1.1 sketch (public-internet relay, cross-person trust, signed peer directory, protocol-grade ingress).
+**Current focus:** v1.1 roadmap defined, no phase planned yet. Next: `/gsd-plan-phase 13` (the zero-code reachability spike). Open non-blocking gate: **Gate B** (conformance vector pack; fires when a 2nd implementer commits to interop) — independent of v1.1 and not scheduled by this roadmap.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Not started (roadmap created, Phase 13 not yet planned)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-07-30 — Milestone v1.1 started
+Status: Roadmap created — 8 phases (13–20), 43/43 requirements mapped, 0 plans
+Last activity: 2026-07-30 — v1.1 roadmap created (Phases 13–20)
+
+## v1.1 Phase Map
+
+- **Phase 13: Public Reachability Decision (Spike)** (3 reqs: REACH-01, REACH-02, REACH-03). Zero-code decision record naming the reachability model (self-hosted relay vs. hosted tunnel vs. direct/no-relay), its live-verified cost/month from vendor pricing pages (not aggregators), a named operator, and what the relay/tunnel can and cannot observe about FAMP traffic. `iroh` explicitly weighed and its rejection rationale recorded. Validated against a real symmetric-NAT network, not only networks Ben controls. Gates only REACH-04/05 (Phase 17) — does NOT gate KEYR, PAIR, QUAR, DIR, or WATCH.
+- **Phase 14: Inbound-Content-Is-DATA Quarantine** (8 reqs: QUAR-01..08). The milestone's blocking security gate — must be verified complete before Phase 18. Remote origin survives to the mailbox via a new additive field on `famp-bus`'s `Register` frame (Layer 1, not frozen); every one of the five known rendering surfaces (`famp_inbox`, `famp_await`, `famp_channel_log`, CLI `inbox list`, CLI `await`) structurally tags remote-origin content; a FAMP-native adversarial corpus runs in CI with a falsification control (a test that must FAIL when the quarantine is reverted, one that must still PASS); an independent diff-only review closes it out. Technically independent of REACH/KEYR/PAIR/DIR — sequenced right after the spike rather than left to shadow the human gate.
+- **Phase 15: Keyring Multi-Key Extension + Revocation** (6 reqs: KEYR-01..03, REVK-01..03). Extends the keyring from exactly one key per principal to an active/retired/revoked lifecycle, with existing single-key files loading unchanged. "Key changed" is structurally distinct from "new peer, first pin." Revocation-as-expiry (pinned keys carry a validity window, rejected past it regardless of any revocation record) is the primary mechanism; a signed revocation statement is defense-in-depth. Must land before Phase 16 (PAIR) and Phase 19 (DIR) — both write through the same `pin_tofu`/`rotate_to` integration point; pairing the keyring extension with the revocation data model here avoids a second on-disk format migration later.
+- **Phase 16: Cross-Person Trust Bootstrap (Pairing)** (5 reqs: PAIR-01..05). PAKE-backed, fail-loud short-code pairing between two people with no prior shared secret — replaces v1.0's paste-a-blob TOFU (`peer export`/`import`), architecturally the same silent-accept pattern as SSH TOFU. Wrong code hard-aborts, no partial pin; code is single-use with a bounded validity window; no raw key blob pasted, no fingerprint read aloud. Depends on Phase 15's extended keyring.
+- **Phase 17: Protocol-Grade Ingress + Reachability Implementation** (10 reqs: REACH-04, REACH-05, INGR-01..08). Implements the model Phase 13 decided on, paired with the ingress hardening that must ship with it per the milestone's "must-land-together" constraint — never live on the open internet without replay cache, freshness enforcement, audience binding, and DoS-safe cheap-before-expensive check ordering. All new enforcement lands in `famp-gateway` (`verify.rs` / a new `ingress_guard.rs`) — never in the frozen `famp-envelope`, whose `federation_format_ok` stays format-only. Depends on Phase 13's decision.
+- **Phase 18: Human Acceptance Gate** (3 reqs: DOC-06, DOC-07, UAT-02). **The acceptance event**, scheduled as early as the real dependency chain allows — not parked last. Minimum capability set for it to be meaningful: Phase 14's quarantine verified complete, Phase 16's pairing working end-to-end, and Phase 17's reachability + ingress live. A second person, own machine, own network, no shared VPN, no hand-copied keys, follows a semantically-gated setup guide (validated on a clean machine first) unassisted; both task FSMs reach a terminal state; pass criterion is the receiving person's own `famp inspect tasks` output, never a sender-side exit 0 or a Ben-relayed report. Phase 19 (directory) and Phase 20 (push-notify) are deliberately sequenced *after* this phase since neither gates it.
+- **Phase 19: Signed Peer Directory** (3 reqs: DIR-01..03). New `famp-directory` crate (depends on `famp-keyring`, never the reverse) publishing a signed, TTL-bounded peer key list over the existing RFC 8785 JCS + Ed25519 substrate. Never an implicit trust anchor — a directory-only peer (present in the directory but never explicitly pinned) is rejected. Depends on Phase 15's extended keyring; independently fixture-testable, no live gateway needed.
+- **Phase 20: Push Notification Adapter** (5 reqs: WATCH-01..05). `famp watch --notify <command>` — a thin CLI-side wrapper looping `famp await`, ships with zero `famp-bus` change (preserves `just check-no-tokio-in-bus`). Envelope metadata reaches the notified command via environment variables only, never interpolated into a shell string. Genuinely orthogonal to every other v1.1 phase — scheduled last only because nothing blocks it and it blocks nothing.
+
+**Scope discipline (locked at roadmap time):** Layer 0 (`famp-canonical`, `famp-crypto`, `famp-core`, `famp-envelope`, `famp-fsm`) is frozen for the entire milestone — no phase plans changes to it. The FAMP-Sec capability/approval/tool-admission plane and Gate B's conformance vector pack are explicitly out of scope (v2.0+ / event-driven, respectively).
+
+## v1.1 Architectural Invariants Locked at Roadmap Time
+
+1. **Phase 13 gates only REACH-04/05, nothing else.** The reachability spike is a zero-code decision phase; KEYR, PAIR, QUAR, and DIR work can and should proceed without waiting on it.
+2. **QUAR (Phase 14) must be verified complete before Phase 18.** No outside person connects until the inbound-content-is-DATA boundary holds — this is a hard precondition on the human acceptance gate, not a nice-to-have.
+3. **Must-land-together pairs are phase-scoped, not cross-phase promises.** Phase 17 ships reachability implementation and protocol-grade ingress together — a live public listener without the ingress checks is an unacceptable intermediate state, so this phase does not close until both are done. Phase 15 ships the keyring multi-key extension and the revocation data model together, to avoid a second on-disk format migration.
+4. **KEYR (Phase 15) is a hard prerequisite for PAIR (Phase 16) and DIR (Phase 19).** Both write through the same `pin_tofu`/`rotate_to` integration point; sequencing them after the keyring extension is not optional.
+5. **UAT-02 (Phase 18) is scheduled as early as the dependency chain honestly allows, not parked last.** Phase 19 (directory) and Phase 20 (push-notify) are ordered *after* Phase 18 specifically because delaying the human gate for either would repeat v1.0's mistake of discovering the real blocker only at the final gate after several phases of green CI.
+6. **WATCH (Phase 20) is genuinely orthogonal.** No phase depends on it and it depends on nothing; its position at the end of the sequence is a scheduling convenience, not a statement that it is lower-priority work.
 
 ## v1.0 Phase Map
 
@@ -76,6 +98,14 @@ Last activity: 2026-07-30 — Milestone v1.1 started
 4. **Guardian plist review is a blocking pre-load gate** — DAEMON-02 requires guardian to approve the literal plist XML before the service is first loaded. This is not an advisory review; the service must not be loaded until sign-off is received.
 5. **Socket activation + spawn-lock stay deferred** — do not create phases or plan items for launchd/systemd socket activation or for the `bind_exclusive` stale-branch spawn-lock. Both are explicitly out of v0.11 scope.
 
+## Carry-Forward from v1.0 into v1.1
+
+- `famp-gateway` (Layer 2), `famp-transport-http`, and `famp-keyring` are the substrate v1.1 extends, not rebuilds: Phase 15 extends `famp-keyring`'s one-key-per-principal map; Phase 17 adds ingress checks inside `famp-gateway`; Phase 13/17's reachability work is a sibling of the existing `run_ingress`/`run_egress` composed under the same `tokio::select!`.
+- The seven forward-compat federation fields v1.0 rode on the one existing INV-10 signature (`from_domain`, `to_domain`, `sender_key_id`, `nonce`, `expiry`, `capability`, `approval`, omitted-when-empty) are already reserved on the wire — v1.1's freshness/replay/audience work (Phase 17) and revocation work (Phase 15) consume `nonce`/`expiry` that already exist; no second signature or parallel envelope type is introduced.
+- `strip_relay_fields` (the v1.0 ingress path that erases every federation-signal field before the local bus `Send`) is the reason Phase 14's quarantine provenance tag cannot ride the envelope `Value` itself and must be a new additive field on `famp-bus`'s `Register` frame instead — a direct architectural consequence of a v1.0 design choice, not new tech debt.
+- `famp send --to agent:<domain>/<name>` (Phase 11, v1.0) is the shipping-client remote-addressing surface Phase 18's human acceptance gate exercises; v1.1 does not need a new send surface, only a new reachability/trust layer underneath it.
+- One host-level federation authority resolution (`--domain` > `FAMP_OWN_DOMAIN` > `$FAMP_HOME/own-domain`, Phase 11) remains the single source Phase 17's audience-binding checks consult.
+
 ## Carry-Forward from v0.11 into v1.0
 
 - v0.11 daemon (`famp daemon install`, launchd/systemd `--user`, version-skew detection) is the runtime v1.0 builds on. `famp-gateway` is a new process that connects to the existing local bus, not a replacement for it.
@@ -92,6 +122,9 @@ Last activity: 2026-07-30 — Milestone v1.1 started
 
 ## Decisions
 
+- [Roadmap v1.1]: Eight-phase structure (Phases 13-20) derived from the milestone brief's five hard constraints, not natural-category grouping alone. Phase 13 (zero-code reachability spike) is scoped to gate only REACH-04/05, explicitly not KEYR/PAIR/QUAR/DIR/WATCH, so those four workstreams are not blocked on a decision phase. Phase 14 (QUAR, the blocking security gate) is placed immediately after the spike rather than adjacent to the human gate it protects, because it is architecturally independent of everything else and building it early reduces the risk of discovering problems late (the exact PITFALLS.md-flagged failure mode). Phase 15 (KEYR+REVK) is placed before Phase 16 (PAIR) and Phase 19 (DIR) because both write through the same pin_tofu/rotate_to integration point -- sequencing the keyring format change first, once, avoids a second migration. Phase 17 pairs REACH-04/05 with INGR-01..08 in one phase per the research's explicit "must-land-together" finding: a live public listener without replay/freshness/audience checks is an unacceptable intermediate state. Phase 18 (UAT-02 + DOC-06/07) is placed as early as the honest dependency chain allows -- immediately after its three true prerequisites (Phase 14 QUAR verified, Phase 16 PAIR working, Phase 17 REACH+INGR live) -- rather than last; Phase 19 (DIR) and Phase 20 (WATCH) are ordered after it on purpose, since neither gates the human gate and delaying it for either would repeat v1.0's mistake of finding the real blocker only at a final human gate after several phases of green CI.
+- [Roadmap v1.1]: Rejected merging Phase 15 (keyring extension) with Phase 16 (PAKE pairing) into one phase, even though pairing depends on the keyring extension. Keyring format change is a foundational data-model migration (fixture-testable, low ambiguity); PAKE-based pairing is new, HIGH-complexity UX/protocol work needing its own rendezvous design (flagged by research as needing deeper research at plan time). Merging them would make a plan-phase failure ambiguous about which layer broke -- the same reasoning v1.0 used to reject merging the liveness fix with wire/trust work.
+- [Roadmap v1.1]: Corrected REQUIREMENTS.md's own stated v1 requirement count from 41 to 43 during traceability mapping. Exhaustive extraction of every `**XXX-NN**` id under the `## v1 Requirements` heading found 43 unique ids (DIR/DOC/INGR/KEYR/PAIR/QUAR/REACH/REVK/UAT/WATCH); no requirement text was added, removed, or reworded -- only the tally was wrong at requirements-definition time. All 43 are mapped, 0 unmapped.
 - [Roadmap v1.0]: Four-phase structure (Phases 7–10) derived from a hard dependency chain, not natural-category grouping alone: Phase 7 resolves the liveness fork before any gateway work can be trusted (the gating spine — every later phase assumes proxied principals behave correctly); Phase 8 lands the wire format + trust bootstrap once the gateway skeleton exists to carry it; Phase 9 proves the two compose into the actual product promise (full bidirectional task cycle); Phase 10 closes with test reactivation + docs once real behavior exists to test and document. Rejected an alternative that merged Phase 7+8 (liveness fix is high-risk and independently verifiable; bundling it with wire/trust work would make failures ambiguous — which layer broke?).
 - [Roadmap v1.0]: Phase numbering continues from v0.11's Phase 6 (starts at Phase 7) rather than resetting to Phase 1, per instruction to avoid colliding with the existing duplicate v0.7-era `### Phase 1..4` archived block and the parked `### Phase 999.1..999.8` backlog placeholders already in ROADMAP.md. Those blocks were left untouched.
 - [Roadmap v1.0]: GW-04 (single gateway backs multiple principals, no cross-talk) placed in Phase 7 alongside the liveness reqs, not Phase 9, because multi-principal correctness is a property of the gateway skeleton itself (how it demuxes proxied connections), not of the end-to-end task-cycle behavior Phase 9 proves.
@@ -300,7 +333,7 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Run `/gsd-plan-phase 13` to plan the zero-code reachability spike (first v1.1 phase).
 
 ## Accumulated Context
 

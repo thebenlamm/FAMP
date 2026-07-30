@@ -140,12 +140,54 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _(populated by roadmapper)_ | | |
+| REACH-01 | Phase 13 | Pending |
+| REACH-02 | Phase 13 | Pending |
+| REACH-03 | Phase 13 | Pending |
+| REACH-04 | Phase 17 | Pending |
+| REACH-05 | Phase 17 | Pending |
+| KEYR-01 | Phase 15 | Pending |
+| KEYR-02 | Phase 15 | Pending |
+| KEYR-03 | Phase 15 | Pending |
+| PAIR-01 | Phase 16 | Pending |
+| PAIR-02 | Phase 16 | Pending |
+| PAIR-03 | Phase 16 | Pending |
+| PAIR-04 | Phase 16 | Pending |
+| PAIR-05 | Phase 16 | Pending |
+| DIR-01 | Phase 19 | Pending |
+| DIR-02 | Phase 19 | Pending |
+| DIR-03 | Phase 19 | Pending |
+| INGR-01 | Phase 17 | Pending |
+| INGR-02 | Phase 17 | Pending |
+| INGR-03 | Phase 17 | Pending |
+| INGR-04 | Phase 17 | Pending |
+| INGR-05 | Phase 17 | Pending |
+| INGR-06 | Phase 17 | Pending |
+| INGR-07 | Phase 17 | Pending |
+| INGR-08 | Phase 17 | Pending |
+| REVK-01 | Phase 15 | Pending |
+| REVK-02 | Phase 15 | Pending |
+| REVK-03 | Phase 15 | Pending |
+| QUAR-01 | Phase 14 | Pending |
+| QUAR-02 | Phase 14 | Pending |
+| QUAR-03 | Phase 14 | Pending |
+| QUAR-04 | Phase 14 | Pending |
+| QUAR-05 | Phase 14 | Pending |
+| QUAR-06 | Phase 14 | Pending |
+| QUAR-07 | Phase 14 | Pending |
+| QUAR-08 | Phase 14 | Pending |
+| WATCH-01 | Phase 20 | Pending |
+| WATCH-02 | Phase 20 | Pending |
+| WATCH-03 | Phase 20 | Pending |
+| WATCH-04 | Phase 20 | Pending |
+| WATCH-05 | Phase 20 | Pending |
+| DOC-06 | Phase 18 | Pending |
+| DOC-07 | Phase 18 | Pending |
+| UAT-02 | Phase 18 | Pending |
 
 **Coverage:**
-- v1 requirements: 41 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 41 ⚠️
+- v1 requirements: 43 total (corrected 2026-07-30 during roadmap creation — the count recorded at requirements-definition time read 41; exhaustive extraction of every `**XXX-NN**` id under `## v1 Requirements` found 43 unique ids. No requirement text changed, only the tally.)
+- Mapped to phases: 43/43 ✓
+- Unmapped: 0 ✓
 
 ---
 
@@ -161,4 +203,4 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 ---
 *Requirements defined: 2026-07-30*
-*Last updated: 2026-07-30 after v1.1 milestone open*
+*Last updated: 2026-07-30 after v1.1 roadmap creation — all 43 v1 requirements mapped to Phases 13-20, 100% coverage, no orphans. See ROADMAP.md.*
