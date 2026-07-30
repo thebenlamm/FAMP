@@ -15,8 +15,8 @@ membership is observable from the user's prior `/famp-join` /
 `/famp-leave` interactions in this conversation; if membership is not
 known from context, present the full `online` list and label the output
 "filtered: best-effort — channel membership not introspectable from the
-8-tool MCP surface in v0.9".
+12-tool MCP surface".
 
 Use only the `mcp__famp__famp_peers` tool listed in `allowed-tools`
-above. The v0.9 MCP surface is exactly 8 tools and the project tests
+above. The MCP surface is exactly 12 tools and the project tests
 forbid referencing any other tool name from this asset.
