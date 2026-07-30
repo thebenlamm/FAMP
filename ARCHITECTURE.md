@@ -31,8 +31,8 @@ independently from the `famp_await` channel cursor, so a post may
 surface on either surface (or both) for a given holder. `famp_await`
 stays unfiltered and is the canonical real-time signal for task
 completion. The `include_terminal` flag on `famp_inbox` is accepted on
-the wire but currently a no-op — broker-side terminal-FSM filtering is
-deferred to v1 (would require the famp-bus actor to read famp-taskdir,
+the wire but currently a no-op — broker-side terminal-FSM filtering did not
+land in v1.0 and remains deferred (would require the famp-bus actor to read famp-taskdir,
 which crosses the transport-vs-cli boundary).
 
 Note: the federation transport side (`famp listen`, `famp setup`,
@@ -41,7 +41,7 @@ each identity's keypair, TLS cert, and durable inbox live under that
 directory. The bifurcation (MCP session-bound; federation `FAMP_HOME`-based)
 is intentional and collapses when v0.9's local bus replaces the transport.
 
-## v0.9 — local-first bus (shipping at v0.9.0 tag)
+## v0.9 — local-first bus (shipped at the v0.9.0 tag)
 
 Observed during dogfooding: forcing same-host, same-user agents to pay
 federation-grade costs (cert generation, TOFU pinning, per-identity HOME
@@ -65,8 +65,8 @@ The v0.9 re-scope introduces a **local bus**:
   `famp_leave` for IRC-style channel support; the register/whoami contract
   is not altered. The full v0.9 surface:
   `famp_register`, `famp_whoami`, `famp_send`, `famp_inbox`, `famp_await`,
-  `famp_peers`, `famp_join`, `famp_leave` — the same contract that will
-  gain transparent remote routing in v1.0.
+  `famp_peers`, `famp_join`, `famp_leave` — the same contract that gained
+  transparent remote routing in v1.0.
 
 **Layer split:**
 
@@ -74,15 +74,44 @@ The v0.9 re-scope introduces a **local bus**:
 |---|---|---|---|---|
 | 0 — Protocol primitives | Transport-neutral | `famp-canonical`, `famp-crypto`, `famp-core`, `famp-fsm`, `famp-envelope` | N/A | N/A |
 | 1 — Local bus (v0.9) | Same-host, same-UID | `famp-bus` (new), broker subcommand | UDS + canonical JSON framing | None |
-| 2 — Federation gateway (v1.0) | Cross-host | `famp-gateway` (new), reuses `famp-transport-http`, `famp-keyring` | HTTPS + canonical JSON + Ed25519 | Full |
+| 2 — Federation gateway (v1.0, shipped) | Cross-host | `famp-gateway`, reuses `famp-transport-http`, `famp-keyring` | HTTPS + canonical JSON + Ed25519 | Full |
 
-Layer 0 is untouched by v0.9. Layer 1 is net-new. Layer 2 is designed in
-v0.9 but not built — its internals (`famp-transport-http`,
-`famp-keyring`) stay compiling and tested in CI so they don't rot before
-being wrapped.
+Layer 0 is untouched by v0.9. Layer 1 is net-new. Layer 2 was designed in
+v0.9 but not built then — its internals (`famp-transport-http`,
+`famp-keyring`) stayed compiling and tested in CI so they would not rot
+before being wrapped, which `famp-gateway` did in v1.0.
 
 Full v0.9 design:
 [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
+
+## v1.0 — federation gateway (shipped at the v1.0.0 tag, 2026-07-29)
+
+Layer 2 is built. `famp-gateway` is a separate process that connects to the
+existing local bus rather than replacing it. It backs each remote principal with
+a `bind_as` connection reporting the gateway's own live local PID, so the
+broker's same-host `kill(pid, 0)` liveness check needed no change — `famp-bus` is
+untouched by v1.0. One gateway backs multiple remote principals concurrently
+with no cross-talk.
+
+- **Wire.** Every cross-host envelope is Ed25519-signed over RFC 8785 canonical
+  JSON under the `FAMP-sig-v1\0` domain prefix (INV-10), and is rejected before
+  it touches the local bus if unsigned or invalid. The envelope carries
+  sender/receiver domain, `sender_key_id`, `nonce`, and `expiry`;
+  capability/approval fields are omitted when empty. Federation fields are
+  stripped before the onward local `Send`, so relayed envelopes stay decodable
+  by `famp inbox` / `famp inspect` (BUS-11).
+- **Trust.** Hand-copied keys via out-of-band `famp peer export` /
+  `famp peer import` with TOFU pinning. Unpinned keys are rejected; there is no
+  implicit peering.
+- **Addressing.** `famp send --to agent:<domain>/<name>` from the shipping client
+  reaches a remote principal. A successful send confirms local acceptance into
+  the gateway-backed outbound mailbox, not remote delivery — verify the far side
+  with `famp inspect tasks`.
+- **Scope.** Two machines under one operator, over a network that operator
+  already runs. No public relay, no NAT traversal, no cross-person trust, no
+  signed peer directory, no capability/approval plane.
+
+Setup guide: [`docs/GATEWAY-SETUP.md`](docs/GATEWAY-SETUP.md).
 
 ## Pre-v0.9 scaffolding
 
@@ -102,15 +131,15 @@ broker ships; when the broker lands, the script becomes redundant.
   `famp-crypto`, `famp-core`, `famp-fsm`, `famp-envelope` — used by both
   v0.9 bus and v1.0 gateway. Changes here ripple everywhere.
 - **Transport crates are federation-specific.** `famp-transport-http`,
-  `famp-keyring` — will be wrapped by `famp-gateway` in v1.0, not by
-  `famp-bus` in v0.9. Treat them as v1.0 internals.
+  `famp-keyring` — wrapped by `famp-gateway` (v1.0), not by `famp-bus`.
+  Treat them as federation internals.
 - **The MCP tool surface is the stable contract** across v0.8, v0.9, and
   v1.0. If you find yourself changing tool signatures, stop — that's a
   cross-version UX decision.
 
 ## Crate responsibilities
 
-All 15 workspace crates at v0.11.0. Dependencies listed are intra-workspace
+All 16 workspace crates at v1.0.0. Dependencies listed are intra-workspace
 FAMP crates only (external deps omitted for brevity).
 
 | Crate | Layer | One-line purpose | Depends on |
@@ -129,6 +158,7 @@ FAMP crates only (external deps omitted for brevity).
 | `famp-inspect-client` | 1 | Inspector RPC async UDS client; issues dead-broker probes so `famp inspect` works even when broker is down | `famp-inspect-proto`, `famp-bus`, `famp-canonical` |
 | `famp-keyring` | 2 (v1.0) | TOFU keyring for federation peers: stores and verifies leaf-cert SHA-256 pins | `famp-core`, `famp-crypto` |
 | `famp-transport-http` | 2 (v1.0) | HTTPS transport binding for federation gateway; wraps `famp-keyring` for peer auth | `famp-core`, `famp-envelope`, `famp-crypto`, `famp-keyring`, `famp-transport`, `famp-canonical` |
+| `famp-gateway` (binary) | 2 | Federation gateway process: proxies remote principals onto the local bus; signs egress and verifies inbound envelopes before relay | `famp-bus`, `famp`, `famp-keyring`, `famp-envelope`, `famp-crypto`, `famp-transport`, `famp-transport-http` |
 | `famp` (binary) | CLI | `famp` CLI binary and MCP stdio server; single construction site for `BusEnvelope` (`cli::send::build_envelope_value`) | all active Layer 0–1 crates |
 
 ## Message flow (v0.9 send path)
