@@ -302,9 +302,11 @@ via `famp-gateway` — see [docs/GATEWAY-SETUP.md](docs/GATEWAY-SETUP.md).
 
 ## MCP Integration (Claude Code and Codex)
 
-FAMP ships an MCP stdio server (`famp mcp`) that exposes eight tools:
+FAMP ships an MCP stdio server (`famp mcp`) that exposes twelve tools:
 `famp_register`, `famp_whoami`, `famp_send`, `famp_await`, `famp_inbox`,
-`famp_peers`, `famp_join`, `famp_leave`. The model: **one MCP server config
+`famp_peers`, `famp_join`, `famp_leave`, `famp_channel_log`, `famp_set_listen`,
+`famp_verify`, `famp_inspect_waiters`. The authoritative list is enumerated at
+runtime via the MCP `tools/list` method. The model: **one MCP server config
 per client; the window picks an identity at runtime via `famp_register`.**
 
 ### Onboarding (recommended path)
@@ -706,16 +708,27 @@ workflow (Quick Start install path) runs separately in CI and is not included in
 
 ## Repo Layout
 
+- `crates/famp`: runtime glue, CLI, MCP stdio server, examples, and
+  cross-crate integration tests (umbrella crate + binary)
+- `crates/famp-bus`: Layer 1 local bus — pure-actor UDS broker protocol
+  primitives, tokio-free
 - `crates/famp-canonical`: RFC 8785 canonical JSON wrapper and conformance gate
-- `crates/famp-crypto`: Ed25519 sign/verify, base64url codecs, worked vectors
 - `crates/famp-core`: `Principal`, `Instance`, UUIDv7 IDs, `ArtifactId`,
   `ProtocolErrorKind`, invariants
+- `crates/famp-crypto`: Ed25519 sign/verify, base64url codecs, worked vectors
 - `crates/famp-envelope`: signed envelope types and five shipped message bodies
 - `crates/famp-fsm`: minimal 5-state task FSM
+- `crates/famp-gateway`: Layer 2 federation gateway (shipped in v1.0) — proxies
+  remote principals onto the local bus over the signed cross-host wire
+- `crates/famp-inbox`: durable JSONL inbox (append with fsync, tail-tolerant read)
+- `crates/famp-inspect-client`: read-only Inspector RPC client (UDS, async)
+- `crates/famp-inspect-proto`: Inspector RPC request/response types (no I/O)
+- `crates/famp-inspect-server`: Inspector RPC server handlers (tokio-free,
+  read-only, mounted by the broker)
 - `crates/famp-keyring`: TOFU keyring file format and peer parsing
+- `crates/famp-taskdir`: per-task TOML storage primitive (atomic replace + fsync)
 - `crates/famp-transport`: transport trait + `MemoryTransport`
-- `crates/famp-transport-http`: minimal HTTPS transport
-- `crates/famp`: runtime glue, examples, and cross-crate integration tests
+- `crates/famp-transport-http`: minimal HTTPS transport binding
 
 ## Design Notes
 
