@@ -419,23 +419,46 @@ fn spelled_number(word: &str) -> Option<usize> {
 /// `allowed-tools`, `tool listed`, and `mcp__famp__famp_peers` tool` stay out
 /// of the assertion below.
 fn claimed_count(before: &str) -> Option<usize> {
-    let digits_start = before
-        .rfind(|c: char| !c.is_ascii_digit())
-        .map_or(0, |i| i + 1);
-    let digits = &before[digits_start..];
-    if !digits.is_empty() {
+    // `trim_end_matches` returns a prefix of `before`, so its `len()` is always
+    // a valid char boundary. An earlier version used
+    // `rfind(|c| !pred(c)).map_or(0, |i| i + 1)`, which PANICS whenever the
+    // first non-matching char is multi-byte: `rfind` yields that char's START
+    // byte, so `+ 1` lands inside it. Markdown prose is full of em-dashes and
+    // curly quotes, and `The surface has grown—12 tools are live.` reproduced
+    // it as `byte index 488 is not a char boundary; it is inside '—'`. Pinned
+    // by `claimed_count_survives_multibyte_punctuation_before_a_count`.
+    let digit_run = trailing_run(before, |c| c.is_ascii_digit());
+    if !digit_run.is_empty() {
+        // Reject a digit run that is part of a larger token rather than a
+        // standalone count: a version (`v0.9 tools`), a date
+        // (`2026-07-29 tools`), or an identifier (`phase05 tools`). Without
+        // this, ordinary prose red-lights the gate claiming a "9-tool
+        // surface", which is a false failure pointing at a count nobody wrote.
+        let head = &before[..before.len() - digit_run.len()];
+        if head
+            .chars()
+            .next_back()
+            .is_some_and(|c| c == '.' || c == '-' || c.is_ascii_alphanumeric())
+        {
+            return None;
+        }
         return Some(
-            digits
+            digit_run
                 .parse()
-                .unwrap_or_else(|_| panic!("`{digits}` is not a valid tool-count number")),
+                .unwrap_or_else(|_| panic!("`{digit_run}` overflows usize as a tool count")),
         );
     }
 
     // No digit run — fall back to a trailing English word.
-    let word_start = before
-        .rfind(|c: char| !c.is_ascii_alphabetic())
-        .map_or(0, |i| i + 1);
-    spelled_number(&before[word_start..])
+    spelled_number(trailing_run(before, |c| c.is_ascii_alphabetic()))
+}
+
+/// The longest suffix of `s` whose chars all satisfy `class`.
+///
+/// Boundary-safe by construction: `trim_end_matches` returns a prefix of `s`,
+/// so slicing at its `len()` can never split a multi-byte char.
+fn trailing_run(s: &str, class: impl Fn(char) -> bool) -> &str {
+    &s[s.trim_end_matches(|c: char| class(c)).len()..]
 }
 
 #[test]
@@ -483,4 +506,35 @@ fn claimed_count_reads_digits_and_words_but_ignores_inert_phrases() {
     assert_eq!(claimed_count("---\nallowed"), None);
     assert_eq!(claimed_count("use only the listed"), None);
     assert_eq!(claimed_count(""), None);
+}
+
+/// A digit run that is part of a larger token is not a surface-size claim.
+/// Without this guard the gate red-lights correct prose, naming a count the
+/// author never wrote — a false failure is how a gate loses its credibility.
+#[test]
+fn claimed_count_ignores_digits_inside_versions_dates_and_identifiers() {
+    assert_eq!(claimed_count("on the v0.9"), None);
+    assert_eq!(claimed_count("shipped 2026-07-29"), None);
+    assert_eq!(claimed_count("see phase05"), None);
+    // ...but a standalone number still counts, including at start-of-text.
+    assert_eq!(claimed_count("exactly 12"), Some(12));
+    assert_eq!(claimed_count("12"), Some(12));
+    assert_eq!(claimed_count("(12"), Some(12));
+}
+
+/// Regression: `claimed_count` must not panic on multi-byte punctuation
+/// adjacent to the scanned run. The previous `rfind(...) + 1` arithmetic
+/// yielded a byte index inside the em-dash and paniced with
+/// `byte index N is not a char boundary`, which named a UTF-8 offset instead
+/// of the asset — found by adversarial review of this file's own diff.
+#[test]
+fn claimed_count_survives_multibyte_punctuation_before_a_count() {
+    // Em-dash (3 bytes) immediately before a digit run.
+    assert_eq!(claimed_count("The surface has grown—12"), Some(12));
+    // Curly apostrophe / quote (3 bytes) immediately before a word run.
+    assert_eq!(claimed_count("the server’s twelve"), Some(12));
+    assert_eq!(claimed_count("the “twelve"), Some(12));
+    // Multi-byte char with no countable run after it — must be None, not panic.
+    assert_eq!(claimed_count("see the docs —"), None);
+    assert_eq!(claimed_count("→"), None);
 }

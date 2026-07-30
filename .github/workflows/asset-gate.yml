@@ -14,12 +14,26 @@ on:
     paths:
       - "crates/famp/assets/slash_commands/**"
       - "crates/famp/tests/slash_command_assets.rs"
+      # The test recovers the tool registry by parsing this file as text and
+      # pins it at 12 descriptors, so a registry change here is half of the
+      # drift pair the gate watches. ci.yml's workspace test job already covers
+      # .rs commits, but that makes this gate's ground truth depend on another
+      # workflow's job set: if ci.yml ever narrows, the 12-pin would die
+      # silently. Listing it here keeps asset-gate self-sufficient.
+      - "crates/famp/src/cli/mcp/server.rs"
       - ".github/workflows/asset-gate.yml"
   pull_request:
     branches: ["**"]
     paths:
       - "crates/famp/assets/slash_commands/**"
       - "crates/famp/tests/slash_command_assets.rs"
+      # The test recovers the tool registry by parsing this file as text and
+      # pins it at 12 descriptors, so a registry change here is half of the
+      # drift pair the gate watches. ci.yml's workspace test job already covers
+      # .rs commits, but that makes this gate's ground truth depend on another
+      # workflow's job set: if ci.yml ever narrows, the 12-pin would die
+      # silently. Listing it here keeps asset-gate self-sufficient.
+      - "crates/famp/src/cli/mcp/server.rs"
       - ".github/workflows/asset-gate.yml"
 
 concurrency:
