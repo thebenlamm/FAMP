@@ -1,0 +1,124 @@
+FAMP v1.0.0 — Federation Profile
+
+Delivered: the v1.0 Federation Profile milestone (Phases 7-12, 6 phases, 29
+plans, 25 requirements). A shipping FAMP client (`famp send` / `famp_send`)
+addresses a remote principal across two machines Ben controls, drives a
+signed, Ed25519-verified cross-host envelope through a gateway on each side,
+and reaches a terminal task-FSM state on both hosts. This closes design
+review C's central objection to the v1.0.0-rc.1 candidate: the release's
+primary feature is now reachable through the shipping client, not just
+provable via a hand-written injector.
+
+Key accomplishments:
+- Gateway skeleton resolving the same-host `kill(pid,0)` liveness fork for
+  cross-host-proxied principals (Phase 7).
+- Signed cross-host envelope wire format under `FAMP-sig-v1\0` (INV-10),
+  two-machine TOFU trust bootstrap via hand-copied peer export/import
+  (Phase 8).
+- Full bidirectional request -> commit -> deliver cross-host delivery cycle,
+  proven end-to-end (Phase 9).
+- Test reactivation triage (27 parked tests: 0 salvageable, all superseded)
+  and the two-machine setup guide (Phase 10).
+- Shipping-client remote addressing: `famp send --to agent:<domain>/<name>`
+  mode-branches into typed, FSM-driving Request/Commit/Deliver envelopes
+  (not the always-audit_log bare-name path); trust-boundary hardening
+  (broker binds `from` to authenticated identity, gateway rejects
+  foreign-domain and misaddressed envelopes, federation-owned fields have
+  exactly one writer, ambiguous route config fails closed); live two-machine
+  dogfood UAT-01 PASS (Phase 11).
+- This release gate: documented send-confirmation semantics (REL-01), a
+  two-reviewer independent adversarial source review of the shipped trust
+  boundary with two confirmed-and-fixed defects and eight documented-accept
+  dispositions (REL-02), release-record hygiene (REL-04), and this tag,
+  created only after CI green was re-verified at its exact target commit
+  (REL-03/REL-05).
+
+Known gaps / deferred (not fixed in this release, each with a named home):
+- Own-domain fails open (not closed) when left unconfigured at gateway
+  startup, and the documented setup order in GATEWAY-SETUP.md configures it
+  AFTER first start — accepted for v1.0's locked own-two-machines,
+  single-peer scope; recommend reordering the setup doc and consider a
+  mandatory-own-domain-at-startup requirement alongside INGRESS-01/PEER-01
+  in v1.1 (REL-02 review, finding F-2).
+- One signing key per gateway process, but ingress trust is pinned per full
+  Principal — backing 2+ agents under one gateway is not supported today
+  and fails closed (typed `DuplicatePubkey` startup error), not silently;
+  not reachable through the documented one-agent-per-gateway v1.0 flow
+  (REL-02 review, finding F-3).
+- Egress is a decoupled, non-durable background drain loop: a relay failure
+  after local mailbox acceptance is logged, not retried or requeued, and
+  the local sender has no visibility into it. Mitigated for v1.0 by the
+  send-confirmation boundary documented below (REL-01), not by a durability
+  fix (REL-02 review, finding F-4).
+- Freshness-window and replay-cache enforcement at the ingress boundary is
+  not built (v1.1's INGRESS-01) — `federation_format_ok` checks
+  well-formedness only, not expiry-past or nonce-uniqueness.
+
+Design review C section 16 "Exact release ruling" — the nine-item checklist
+gating this tag, each item satisfied with its own evidence citation:
+
+1. The shipping client accepts a complete remote principal — satisfied
+   (Phase 11). Evidence: 11-VERIFICATION.md truth row #1 (`famp send --to
+   agent:<domain>/<name>` splits `Target`/envelope `to`, delivers into the
+   remote mailbox).
+2. The signed envelope contains globally qualified `from` and `to` —
+   satisfied (Phase 11). Evidence: 11-VERIFICATION.md truth row #1
+   (`build_envelope_value`/`build_remote_envelope_value`) and truth row #2
+   (typed, FSM-driving, sign-then-strip envelopes).
+3. `from` is bound to broker-authenticated identity — satisfied (Phase 11).
+   Evidence: 11-VERIFICATION.md SEC-01 row
+   (`crates/famp-bus/src/broker/handle.rs::send`,
+   `is_self_authored(envelope, Some(&effective_identity))` gate before
+   mailbox write).
+4. No `local.bus` authority crosses federation — satisfied (Phase 11).
+   Evidence: 11-VERIFICATION.md truth row #1 (bus target stays bare leaf,
+   only the signed envelope carries domain-qualified authority) and SEC-02
+   row (ingress authoritative only for own domain + addressed mailbox).
+5. The remote gateway verifies and delivers the same signed bytes —
+   satisfied (Phase 11). Evidence: 11-VERIFICATION.md truth row #6
+   (`e2e_shipping_surface.rs` drives the real `famp send`, cross-platform
+   fixtures regenerated) and SEC-02 row (`federation_format_ok` wired into
+   `inbox_handler`).
+6. Existing canonicalization and E2E gates remain green — satisfied (this
+   phase, REL-03). Evidence: 12-CI-ATTESTATION.md — commit 5edff41,
+   `famp-canonical RFC 8785 conformance gate` and both `test (*)` jobs
+   (which include `e2e_cross_host_delivery`/`e2e_shipping_surface`) all
+   `success`, 11/11 check-runs green, re-queried immediately before this
+   tag was created.
+7. Ambiguous route configuration fails closed — satisfied (Phase 11,
+   reconfirmed Phase 12). Evidence: 11-VERIFICATION.md SEC-04 row (`--backs`
+   flag, duplicate/ambiguous config rejects at parse/startup); reconfirmed
+   by 12-02-SUMMARY.md's route-config fail-closed fix
+   (`crates/famp-gateway/tests/route_config_fail_closed.rs`).
+8. The documentation states what `send` confirms — satisfied (this phase,
+   REL-01). Evidence: 12-01-SUMMARY.md — docs/GATEWAY-SETUP.md §6, `famp
+   send --help`, and README all state the fire-and-forget send-confirmation
+   boundary, pinned by `gateway_setup_doc_accuracy.rs`.
+9. Zed's independent source verdict is reconciled — satisfied (this phase,
+   REL-02). Evidence: 12-02-SUMMARY.md / 12-REL-02-REVIEW.md — two-reviewer
+   (self + codex) independent adversarial pass over the shipped trust
+   boundary, 10 findings triaged, 2 real defects fixed with regression
+   tests, 8 documented-accept with source-grounded rationale.
+
+This discharges the closing line of the v1.0.0-rc.1 annotation: "v1.0.0
+proper still requires design review C's section 16 nine-item checklist."
+That checklist is closed as of this tag, at commit 5edff41835b9c8e6daa59a51efce549460d88e5b.
+
+Limitation — what a successful `famp send` confirms: a zero exit code
+confirms only that the local broker accepted the envelope into the
+gateway-backed outbound mailbox on this host. It does NOT confirm that the
+gateway has drained, signed, and relayed it, that the remote gateway
+verified it, that it reached the remote mailbox, or that the task FSM
+advanced on the far side. Egress is a decoupled background drain loop the
+CLI process never waits on. This is the same statement shipped in
+docs/GATEWAY-SETUP.md section 6, `famp send --help`, and README, pinned
+against drift by crates/famp/tests/gateway_setup_doc_accuracy.rs.
+
+Reachability scope, unchanged from rc.1 and locked at roadmap time:
+own-two-machines only (direct network or a VPN Ben already runs). No public
+relay, no cross-person trust, no signed peer directory, no
+freshness/replay-cache enforcement, no capability/approval/tool-admission
+plane, no conformance vector pack — all deferred to v1.1/v2.0 or to the
+separate Gate B trigger.
+
+Wire protocol unchanged: BUS_PROTO_VERSION remains 1.
