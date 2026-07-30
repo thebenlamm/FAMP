@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "famp": {
-      "command": "STUB_FAMP_BIN_PATH",
-      "args": ["mcp"]
-    }
-  }
-}
