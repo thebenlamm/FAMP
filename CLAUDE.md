@@ -12,7 +12,7 @@ A Rust reference implementation of FAMP (Federated Agent Messaging Protocol) v0.
 - **Tech stack**: Rust (stable, latest). `ed25519-dalek` for signatures, `serde` + custom canonicalizer for RFC 8785 JCS, `proptest` + `stateright` for state-machine model checking, `axum` or `hyper` for HTTP transport reference.
 - **Tech stack (deferred)**: No Python/TS bindings in v1; keep FFI surface clean but unwired.
 - **Transport**: HTTP/1.1 + JSON over TLS as reference wire; in-process `MemoryTransport` for tests. Other transports live behind the `Transport` trait.
-- **Conformance target**: Staged conformance is supported — each milestone tags conformance level achieved; vector pack ships in v1.0 alongside federation gateway.
+- **Conformance target**: Staged conformance is supported — each milestone tags conformance level achieved; the vector pack did NOT ship in v1.0 — it is gated on a second implementer committing to interop (Gate B, still open).
 - **Spec fidelity**: v0.5.2 is the authority for this implementation (the v0.5.1 fork amended with the `audit_log` `MessageClass`, which does not fire the task FSM, shipped alongside v0.9 Phase 1). All diffs from v0.5 documented with reviewer rationale.
 - **Security**: Every message signed (INV-10); unsigned messages rejected. Ed25519 non-negotiable. Domain separation prefix added in v0.5.1 fork.
 - **Developer onboarding**: Rust toolchain install is Phase 0; assume zero prior Rust experience.
@@ -54,10 +54,10 @@ When listen mode is active, the Stop hook (`~/.claude/hooks/famp-await.sh`) bloc
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-**FAMP today is local-first** (v0.11, built on the v0.9 local bus): a
-persistent, service-managed UDS broker daemon for same-host agent messaging,
-with cross-tool bootstrap (Claude Code + Codex). **FAMP at v1.0 is
-federated**: cross-host messaging via `famp-gateway` wrapping the local bus.
+**FAMP today is local-first AND federated** (v1.0, shipped 2026-07-29): a
+persistent, service-managed UDS broker daemon for same-host agent messaging
+with cross-tool bootstrap (Claude Code + Codex), plus cross-host messaging via
+`famp-gateway` wrapping that same local bus.
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full layered model (Layer 0
 protocol primitives -> Layer 1 local bus -> Layer 2 federation gateway).
 
@@ -80,19 +80,20 @@ broker; dropped crypto on the local path; treats federation (cross-host) as
 a v1.0 gateway that wraps the bus. IRC-style channels, durable per-name
 mailboxes, stable MCP tool surface across v0.8 / v0.9 / v0.11 / v1.0.
 
-**v0.11 (shipped 2026-06-06, current runtime):** `famp daemon install`
+**v0.11 (shipped 2026-06-06):** `famp daemon install`
 installs a launchd (macOS) or systemd `--user` (Linux) service that keeps the
 v0.9 broker alive across sessions, replacing per-session auto-spawn as the
 primary reachability path; version handshake at connect catches
 daemon/client skew.
 
-**v1.0 readiness trigger (named):** v1.0 federation milestone fires
-when Sofer (or a named equivalent) runs FAMP from a different machine
-and exchanges a signed envelope. If 4 weeks pass after v0.9.0 ships
-with no movement on this trigger, federation framing is reconsidered.
-Concrete forcing function for the local-case-black-hole risk; the
-conformance vector pack ships at the same trigger (deferred from
-v0.5.1 wrap, see `.planning/WRAP-V0-5-1-PLAN.md` DEFERRED banner).
+**v1.0 (shipped 2026-07-29, tagged `v1.0.0`, current runtime):**
+`famp-gateway` proxies remote principals onto the local bus over an
+Ed25519-signed cross-host wire (INV-10) with two-machine TOFU trust;
+`famp send --to agent:<domain>/<name>` from the shipping client reaches a
+remote principal. Gate A closed: bidirectional signed exchange between two
+machines one operator controls (macOS <-> Linux). **Gate B** — the conformance
+vector pack, which fires when a second implementer commits to interop — is
+still open. **The next milestone is not yet defined.**
 
 Full write-up in [`ARCHITECTURE.md`](ARCHITECTURE.md) and the design spec
 [`docs/superpowers/specs/2026-04-17-local-first-bus-design.md`](docs/superpowers/specs/2026-04-17-local-first-bus-design.md).
