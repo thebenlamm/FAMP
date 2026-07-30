@@ -258,6 +258,51 @@ A user-level service-managed daemon (`famp daemon install/uninstall/status/resta
 
 ---
 
+## Milestone: v1.0 — Federation Profile — Gateway Core
+
+**Shipped:** 2026-07-29 (tagged `v1.0.0` at `5edff41`)
+**Phases:** 6 (7–12) | **Plans:** 29 | **Requirements:** 29/29
+**Timeline:** 2026-07-23 → 2026-07-29 (7 days, 106 commits, 185 files, +21064/−4080)
+
+### What Was Built
+
+`famp-gateway` (Layer 2): a process that proxies remote principals onto the local UDS bus over signed HTTPS. The same-host `kill(pid,0)` liveness fork was resolved with **zero `famp-bus` change** by backing each proxied principal with a no-spawn `Register` carrying the gateway's own PID. Seven optional omit-when-empty federation fields ride the one existing INV-10 signature, so local-bus bytes stay byte-identical. Two-machine TOFU trust bootstraps via `famp peer export/import` over a hand-copied 3-field blob. `famp send --to agent:<domain>/<name>` is the shipping remote-addressing surface, with the envelope class branched by send mode so the task FSM can actually terminate through the CLI/MCP. The trust boundary was hardened *before* the tag: the broker binds envelope `from` to the authenticated identity, and the gateway rejects non-own-domain ingress, mismatched-authority egress, client-supplied federation metadata, and ambiguous route config. Proven live macOS ↔ Linux over Tailscale (UAT-01), terminal COMPLETED on both hosts.
+
+### What Worked
+
+- **The dogfood was the design review that mattered.** Four phases of green CI said the gateway worked. One real two-machine run said no shipping client could address a remote principal — the product's entire point. Nothing in the automated suite could have reported that, because every test drove a hand-written injector. **A gate that only a human can fail is worth scheduling before the tag, not after.**
+- **Refusing to tag on an open checklist.** Phase 12 existed solely because design review C's §16 had three unclosed items. Working them found a real timestamp-validation defect in `federation_format_ok` and a silently-dropped gateway route — both in code already tagged `v1.0.0-rc.1`. The rc tag is what made this affordable: it let UAT-01 close a blocker without either shipping `v1.0.0` early or leaving the work untagged.
+- **Fixing the `from`-forgery hole inside the milestone rather than filing it.** Deferring it to v1.1 would have shipped a cross-host boundary that trusts a client-supplied sender — the kind of hole that gets designed around instead of fixed. The fix needed no local crypto and no BUS-11 reopen.
+- **Killing 27 parked tests instead of "reactivating" them.** Every one depended on a CLI symbol v0.9 deleted, with no live rewrite target. Two guards pinning the *real* Phase 9 E2E into the default nextest set bought the actual protection — and that E2E is what caught the BUS-11 ingress bug that had made every relayed envelope permanently unreadable.
+- **Falsification with a control, applied literally.** Phase 11-04's control found that the E2E passed on the *old* no-EKU TLS fixtures too — the assumed failure mode didn't exist, and the test would have been vacuous. That produced a real CA→leaf delegation test instead. Same discipline caught a vacuous version-bump test path in 12-04 (`cli::mod::tests::` never matched anything).
+
+### What Was Inefficient
+
+- **Roadmap checkboxes went stale mid-milestone.** Phases 9 and 10 shipped and verified while their ROADMAP boxes stayed unchecked, and Phase 11/12 never got progress rows. It was caught at close (and had already been recorded in an auto-memory as a known drift), but a milestone-close pass shouldn't be where "did this ship?" gets answered.
+- **`query milestone.complete` still isn't milestone-scoped — and now it moves things it shouldn't.** Third milestone with this complaint (v0.6, v0.9, v0.11). This time it counted **11 phases** (including the five `999.x` backlog dirs), dumped all 28 raw plan one-liners into MILESTONES.md — one of which is the literal string `"PASS."` and another `"Task 3 was executed by the orchestrator"` — and **swept the live `999.x` backlog phase dirs into `milestones/v1.0-phases/`**, which had to be manually restored.
+- **The audit-open scanner reports bookkeeping as blockers.** 42 items at pre-flight; the real count of v1.0 gaps was zero. One "open debug session" was `debug/knowledge-base.md` — the KB index itself. A scanner that cries wolf 42 times trains you to skip the step where a real gap would surface.
+- **Phase 10's verification honestly could not pass, and there was no vocabulary for that.** `human_needed` is the right status, but it left a `failed` UAT and an unresolved verification sitting in the tree for two days while Phase 11 (the actual fix) ran, and at close the only options were to back-date it or explain it. Explained it.
+
+### Patterns Established
+
+- **Tag an `rc` at the human gate.** When the last gate is a human run on real hardware, tag `X.Y.Z-rc.N` at the code that gate will test. The rc absorbs whatever the run finds without either lying about the release or losing the provenance of what was tested.
+- **Verify a release claim by re-querying the exact SHA, never the commit message.** Phase 12 re-hit GitHub's check-runs API for `5edff41` at verification time and found 12 check-runs where the attestation had recorded 11 (a new job had been added — additive, still green). Paired with the earlier lesson that `paths-ignore` makes docs-only commits produce **zero** check-runs, which reads identically to a pass unless you check `total_count`.
+- **Re-read a proposed limitation against what actually shipped before publishing it.** §16's suggested release note ("`famp send` … does not initiate or complete the task FSM") had been made false by ADDR-02 earlier in the same milestone. A stale limitation in a `v1.0.0` tag body misdescribes the product to its first outside reader.
+
+### Key Lessons
+
+- **Green tests plus a demo harness is not a shipped product.** The gap between "the protocol works" and "a user can invoke it" was one CLI flag's worth of code and the single most important finding of the milestone.
+- **Scope growth from discovery is not scope creep.** Two unplanned phases (~2 days) caught a forgery hole, 8 setup-guide defects, a timestamp defect, and a dropped route. All four would have shipped in `v1.0.0`.
+- **Do the archive-hygiene chore the previous retrospective already told you to do.** v0.11's retrospective said: archive phase dirs at close so the next scrape stays milestone-scoped. It wasn't done, and the v1.0 scrape misfired in a new and worse way — it *moved live backlog into an archive*.
+
+### Cost Observations
+
+- Model mix and session counts were not instrumented this milestone; the honest figure is that they weren't measured. What is measurable: 29 plans across 6 phases in 7 days, 106 commits.
+- Executors ran **non-isolated** (sequential on `main`, no worktrees) throughout, per the standing FAMP decision — `.planning/` is gitignored, and worktree plan-materialization FATALs on it.
+- The Phase 12 independent review used a **backgrounded `codex exec`** as the second reviewer (the in-harness Task tool was unavailable to that executor). Every codex-sourced claim was re-verified against source before disposition — 2 of 6 findings were real and fixed, 4 were real-but-out-of-scope and documented-accept.
+
+---
+
 ## Cross-Milestone Trends
 
 ### Patterns that have held across ≥3 milestones
@@ -268,7 +313,9 @@ A user-level service-managed daemon (`famp daemon install/uninstall/status/resta
 - **Narrow, phase-appropriate error enums** — held into v0.9 (`BusErrorKind` is exhaustive, no wildcard; MCP error-mapping fails compile until `BusErrorKind` extension is handled).
 - **Free-function-primary + trait-sugar pattern** — held in v0.9 (`Mailbox`/`Liveness` are traits but `InMemoryMailbox`/`DiskMailboxEnv` are constructed as concrete types).
 - **Defer-until-proven-needed for `stateright`** — re-evaluated at v0.9 multi-actor concurrency entry; proptest legality + the four TDD gates (drain cursor atomicity, PID reuse race, EOF cleanup) were sufficient. Position holds for v1.0; will be re-evaluated when federation negotiation FSM lands.
-- **Phase numbering reset per milestone** — v0.7, v0.8, v0.9 all reset to Phase 1. Convention locked.
+- **Phase numbering reset per milestone** — v0.7, v0.8, v0.9 all reset to Phase 1. Convention locked. **Broken deliberately from v0.10 onward:** v0.10 (1–3), v0.11 (4–6), and v1.0 (7–12) continue sequentially, because prior phase dirs were still present in `.planning/phases/` and resetting would collide. The real convention is now *"reset only if the prior milestone's phase dirs were archived."*
+- **External-vector + `just ci` + `cargo tree -i openssl` gates** — held through v1.0. v1.0 added `famp-canonical`'s 100M-float-corpus job and a `famp-crypto` §7.1c gate to the required set (12 check-runs at the `v1.0.0` SHA).
+- **Narrow, phase-appropriate error enums** — held into v1.0: `RejectReason` was kept as its own enum rather than folded into `GatewayError`, and the broker's forged-`from` reject **reused** `BusErrorKind::EnvelopeInvalid` specifically to avoid touching the exhaustive MCP error-code table. The pattern now cuts both ways — narrow enums, but reuse a variant when adding one would ripple through an exhaustive consumer.
 
 ### Patterns established in v0.9 (watch for ≥2-milestone confirmation)
 
@@ -278,13 +325,21 @@ A user-level service-managed daemon (`famp daemon install/uninstall/status/resta
 - **Milestone-close fix-pass phase** — first proven in v0.9 Phase 5. Re-validate when next milestone audit finds non-deferrable gaps.
 - **Trigger-gated next milestone with a 4-week clock** — first proven by v0.9.0 → v1.0 transition. Re-validate by 2026-06-01 (clock expiration).
 
-### Open watch-items for v1.0
+### v1.0 watch-items — resolved at close (2026-07-29)
 
-- **Will the named-human trigger fire?** Sofer-from-different-machine, 4-week clock. If 2026-06-01 passes without movement, federation framing is reconsidered — and the conformance vector pack stays deferred.
-- **Will the v0.9 8-tool MCP surface stay stable through v1.0 federation-gateway work?** v0.9 promised the surface as the contract carried forward to v1.0. The federation gateway should *wrap* the local bus, not replace it; the gateway should be a separate process bridging UDS to remote HTTPS, not a new MCP surface.
-- **Will `e2e_two_daemons` library-API coverage be sufficient for federation regression detection in v1.0?** Today it's one test exercising sig-verify on real HTTPS. v1.0 federation work will likely demand 5+ tests (Agent Card validation, replay defense, supersession, delegation forms). Plan the test surface ahead of the implementation.
-- **Will the auto-extracted MILESTONES.md accomplishments noise problem (v0.6, repeated v0.9) be fixed before v1.0 close?** Three milestones with the same complaint is a pattern, not a one-off. Either fix `gsd-sdk query milestone.complete` extractor, or add a SUMMARY.md `deliverable:` field as a hard schema lint.
-- **Will quick-task index drift continue accumulating across milestones?** v0.8 closed with 22 deferred; v0.9 closed with 30. If v1.0 closes with 40+, the SDK should refuse to keep "missing"-status entries past N days OR `/gsd-cleanup` should run at phase boundaries.
+- **Will the named-human trigger fire?** ✅ **Yes, but not the one named.** The 4-week clock was retired 2026-05-09 and the trigger was re-cut into two gates. **Gate A** fired on Ben's own two machines — not Sofer, and not the friend-to-friend ask that briefly reframed it in June. **Gate B (2nd implementer → conformance vector pack) is still open.** The one foreign-implementation contact (Grok, 2026-06-11) exchanged messages on the bus but never committed to interop. The lesson: the *class* of trigger held, the *named human* in it did not — name the event, not the person.
+- **Will the v0.9 MCP surface stay stable through federation work?** ✅ **Yes.** The gateway is a separate process bridging UDS to remote HTTPS; it added **zero** MCP tools. The surface grew to 12 tools over v0.10–v0.12-era quick tasks (inspect/set_listen/verify/channel_log), none of them federation.
+- **Will `e2e_two_daemons` coverage suffice for federation regression detection?** ❌ **No — and the prediction was wrong about why.** The anticipated 5+ tests (Agent Card validation, replay defense, supersession, delegation) were all deferred out of v1.0 as v1.1/v2.0 scope. What was actually needed was different: a two-process signed E2E, two CI-gate guards pinning it into the default nextest set, a shipping-surface E2E driving the real CLI, ingress destination-validation and fail-closed route-config suites, and two doc-accuracy gates. **Plan the test surface against the shipped scope, not the roadmap's ambitions.**
+- **Will the MILESTONES.md auto-extraction noise be fixed before v1.0 close?** ❌ **No — fourth occurrence, and it regressed.** v1.0's scrape counted 11 phases (backlog dirs included), emitted 28 raw one-liners including `"PASS."`, and *moved live `999.x` backlog dirs into the archive*. This is no longer a cosmetic complaint: **archive prior phase dirs at close, and never let `milestone.complete` run against a `phases/` dir containing backlog.**
+- **Will quick-task index drift keep accumulating?** ❌ **Yes, as predicted.** v0.8: 22 → v0.9: 30 → v0.11: 48 → **v1.0: 42 total open artifacts (36 quick-tasks).** The threshold named at v0.9 ("if v1.0 closes with 40+") has been crossed. The scanner's signal-to-noise is now bad enough that the close step is rubber-stamped rather than read.
+
+### Open watch-items for v1.1 / Gate B
+
+- **Does the v1.0 own-machines floor actually make v1.1 failures unambiguous?** The whole justification for own-machines-first was that when public reachability and cross-person trust land, any failure is in the new layer, not the spine. First v1.1 incident is the test.
+- **Will a human-run gate be scheduled *before* the tag next time?** v1.0's most important finding came from UAT-01 and arrived after four phases of green CI. If v1.1 again discovers its blocker at the human gate, the gate belongs earlier in the phase order, not at the end.
+- **Does the `rc`-at-the-human-gate pattern hold?** First proven in v1.0 (`v1.0.0-rc.1` → UAT-01 → Phase 12 → `v1.0.0`). Re-validate at the next milestone with a blocking human acceptance.
+- **Will `999.x` backlog ever be worked, or is it a graveyard?** Seven backlog phases now, the oldest (999.1 await crash-safety) filed 2026-07-01 and re-parked at least twice; 999.11 was fully designed and 3-agent reviewed, then re-parked behind the federation spike. Either promote one per milestone or admit they're closed.
+- **Is the `human_needed` verification status carrying too much?** Phase 10 shipped with a `failed` UAT and unresolved verification that only a *later phase* could close. There is currently no way to express "superseded by phase N+1" in the artifact itself, so the record depends on prose in STATE.md and MILESTONES.md.
 
 ---
 *Living retrospective — appended per milestone, cross-milestone trends below the last entry.*
