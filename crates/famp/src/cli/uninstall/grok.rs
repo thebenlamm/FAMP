@@ -107,13 +107,36 @@ mod tests {
     use super::*;
     use crate::cli::install;
 
+    /// Run `install-grok` with `FAMP_INSTALL_FAMP_BIN` pinned at a
+    /// staged executable, so the set-up install resolves hermetically.
+    ///
+    /// Without the pin the resolver falls through to `which famp`, and whether
+    /// this test passes depends on the host having FAMP installed. Note that
+    /// `cargo test` prepends `$CARGO_HOME/bin` to the test process's PATH, so
+    /// a developer with `~/.cargo/bin/famp` sees a false green while CI —
+    /// which runs each test in its own process with no FAMP installed — fails.
+    /// WR-06: `temp_env` serializes the process-global env mutation.
+    fn install_with_pinned_famp_bin(home: &Path) {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("famp");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(bin.as_os_str()), || {
+            let mut out = Vec::<u8>::new();
+            let mut err = Vec::<u8>::new();
+            install::grok::run_at(home, &mut out, &mut err).unwrap();
+        });
+    }
+
     #[test]
     fn uninstall_after_install_removes_famp_table_skill_and_hooks() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        install::grok::run_at(home, &mut out, &mut err).unwrap();
+        install_with_pinned_famp_bin(home);
 
         assert!(home.join(".grok/hooks/famp-listen-stop.json").exists());
         assert!(home.join(".grok/hooks/famp-await.sh").exists());

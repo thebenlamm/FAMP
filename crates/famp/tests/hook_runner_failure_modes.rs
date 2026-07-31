@@ -11,9 +11,26 @@ fn shim_path() -> PathBuf {
         .join("hook-runner.sh")
 }
 
+/// Render `hook-runner.sh` the way `hook_runner::install_shim` does. Every
+/// test here exits before `$FAMP_BIN` is invoked (no stdin / malformed JSON /
+/// no hooks.tsv), so the pin points at a path that need not exist — what
+/// matters is that the rendered script, not the raw `@FAMP_BIN@` template,
+/// is what gets executed.
+fn rendered_shim(home: &std::path::Path) -> PathBuf {
+    let famp_bin = home.join("bin").join("famp");
+    let rendered = std::fs::read_to_string(shim_path()).unwrap().replace(
+        "@FAMP_BIN@",
+        &famp::cli::executable::posix_shell_literal(famp_bin.to_str().unwrap()),
+    );
+    assert!(!rendered.contains("@FAMP_BIN@"));
+    let path = home.join("hook-runner.rendered.sh");
+    std::fs::write(&path, rendered).unwrap();
+    path
+}
+
 fn run_shim(home: &std::path::Path, path: &str, stdin: Option<&str>) -> std::process::Output {
     let mut child = Command::new("bash")
-        .arg(shim_path())
+        .arg(rendered_shim(home))
         .env_clear()
         .env("HOME", home)
         .env("PATH", path)

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ~/.famp/hook-runner.sh — FAMP HOOK-04b execution runner
 # Stop-hook shim. Reads stdin JSON, parses transcript_path, glob-matches
-# rows in ~/.famp-local/hooks.tsv, fires `famp send` once per matching row.
+# rows in ~/.famp-local/hooks.tsv, fires the pinned FAMP sender once per matching row.
 # CRITICAL: This script MUST NEVER fail the Stop hook. All paths exit 0.
 set -uo pipefail
 
+FAMP_BIN=@FAMP_BIN@
 LOG="${HOME}/.famp/hook-runner.log"
 HOOKS_TSV="${FAMP_LOCAL_ROOT:-${HOME}/.famp-local}/hooks.tsv"
 mkdir -p "${HOME}/.famp" 2>/dev/null || true
@@ -84,7 +85,7 @@ PY
 # 5. Read hooks.tsv. Format: <id>\t<event>:<glob>\t<to>\t<added_at>.
 [ -r "$HOOKS_TSV" ] || { log "no hooks.tsv at $HOOKS_TSV"; exit 0; }
 
-# 6. For each row, glob-match against the file list; fire ONE `famp send` per
+# 6. For each row, glob-match against the file list; fire ONE pinned send per
 #    matching row (D-07: not per-file). Log + continue on any failure.
 while IFS=$'\t' read -r id spec to _ts; do
     [ -n "$id" ] && [ "${id#\#}" = "$id" ] || continue   # skip blank/comment
@@ -99,13 +100,13 @@ while IFS=$'\t' read -r id spec to _ts; do
         esac
     done <<< "$FILES"
     if [ "$matched" = 1 ]; then
-        log "match id=$id glob=$glob to=$to — dispatching famp send"
+        log "match id=$id glob=$glob to=$to — dispatching pinned FAMP send"
         if [ -n "$ACTIVE_IDENTITY" ]; then
-            famp send --as "$ACTIVE_IDENTITY" --to "$to" --new-task "Edit hook: $glob matched in last turn" \
-                >> "$LOG" 2>&1 || log "famp send failed for $id (suppressed)"
+            "$FAMP_BIN" send --as "$ACTIVE_IDENTITY" --to "$to" --new-task "Edit hook: $glob matched in last turn" \
+                >> "$LOG" 2>&1 || log "pinned FAMP send failed for $id (suppressed)"
         else
-            famp send --to "$to" --new-task "Edit hook: $glob matched in last turn" \
-                >> "$LOG" 2>&1 || log "famp send failed for $id (suppressed)"
+            "$FAMP_BIN" send --to "$to" --new-task "Edit hook: $glob matched in last turn" \
+                >> "$LOG" 2>&1 || log "pinned FAMP send failed for $id (suppressed)"
         fi
     fi
 done < "$HOOKS_TSV"

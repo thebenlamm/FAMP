@@ -23,6 +23,22 @@ fn shim_path() -> PathBuf {
         .join("hook-runner.sh")
 }
 
+/// Render `hook-runner.sh` the way `hook_runner::install_shim` does, pinning
+/// `FAMP_BIN` at `famp_bin`. The shipped shim no longer consults `PATH`, so a
+/// test that ran the raw asset would try to execute the literal `@FAMP_BIN@`
+/// token. Rendering here exercises the same substitution production performs.
+fn rendered_shim(bin_dir: &Path, famp_bin: &Path) -> PathBuf {
+    let rendered = std::fs::read_to_string(shim_path()).unwrap().replace(
+        "@FAMP_BIN@",
+        &famp::cli::executable::posix_shell_literal(famp_bin.to_str().unwrap()),
+    );
+    assert!(!rendered.contains("@FAMP_BIN@"));
+    let path = bin_dir.join("hook-runner.rendered.sh");
+    std::fs::create_dir_all(bin_dir).unwrap();
+    std::fs::write(&path, rendered).unwrap();
+    path
+}
+
 fn stage_fake_famp(bin_dir: &Path) -> PathBuf {
     std::fs::create_dir_all(bin_dir).unwrap();
     let famp = bin_dir.join("famp");
@@ -64,7 +80,7 @@ fn run_shim(
     let new_path = format!("{}:{host_path}", bin_dir.display());
 
     let mut cmd = Command::new("bash");
-    cmd.arg(shim_path())
+    cmd.arg(rendered_shim(bin_dir, &bin_dir.join("famp")))
         .env_clear()
         .env("HOME", home)
         .env("PATH", &new_path)

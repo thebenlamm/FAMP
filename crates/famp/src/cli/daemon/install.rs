@@ -21,6 +21,7 @@ use clap::Args;
 
 use crate::bus_client::spawn::{strict_bind_probe, SpawnError};
 use crate::cli::error::CliError;
+use crate::cli::executable::{resolve_for_generated_config, FampExecutable};
 
 // ─── Args ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,16 @@ pub struct DaemonInstallArgs {
 /// without a module collision.
 #[derive(Debug, thiserror::Error)]
 pub enum DaemonError {
+    /// Install-time resolution of the `famp` binary to embed in the service
+    /// file failed. Carries the resolver message verbatim (it already names
+    /// the actionable fix); `CliError::Daemon` renders it at the top level.
+    #[error("{0}")]
+    FampExecutable(String),
+
+    /// The daemon log path derived from `home` is not valid UTF-8, so it
+    /// cannot be interpolated into a systemd unit.
+    #[error("daemon log path is not valid UTF-8 under {}", home.display())]
+    LogPathNonUtf8 { home: PathBuf },
     /// I/O error while reading or writing a service file.
     #[error("io error at {}", path.display())]
     Io {
@@ -155,8 +166,11 @@ fn xml_escape(s: &str) -> String {
 /// no string concatenation. Guardian requirement: launchd does NOT expand `~`.
 #[cfg(any(target_os = "macos", test))]
 #[allow(clippy::unnecessary_wraps)] // preserves the `?`-using call site in `run_at`
-pub(crate) fn generate_plist(home: &Path) -> Result<String, DaemonError> {
-    let famp_bin = home.join(".cargo").join("bin").join("famp");
+pub(crate) fn generate_plist(
+    home: &Path,
+    executable: &FampExecutable,
+) -> Result<String, DaemonError> {
+    let famp_bin = executable.path();
     let log_path = home.join(".famp").join("broker.log");
 
     // XML-escape home-derived paths before interpolating into <string> elements.
@@ -207,6 +221,47 @@ pub(crate) fn generate_plist(home: &Path) -> Result<String, DaemonError> {
     );
 
     Ok(xml)
+}
+
+// ─── macOS: plist-change detection (reload advisory) ─────────────────────────
+
+/// What writing the generated service file did to the copy already on disk.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ServiceFileOutcome {
+    /// No file was there before.
+    Created,
+    /// Byte-identical to what was already there.
+    Unchanged,
+    /// Different content — e.g. a different resolved `famp` binary.
+    Updated,
+}
+
+/// Classify a service-file write without performing it.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn service_file_outcome(existing: Option<&str>, generated: &str) -> ServiceFileOutcome {
+    match existing {
+        None => ServiceFileOutcome::Created,
+        Some(previous) if previous == generated => ServiceFileOutcome::Unchanged,
+        Some(_) => ServiceFileOutcome::Updated,
+    }
+}
+
+/// True when the operator must be told that the on-disk plist and the loaded
+/// launchd job have diverged.
+///
+/// launchd keeps the `ProgramArguments` it was bootstrapped with: rewriting
+/// the plist under an already-loaded job does NOT repoint the running service.
+/// `famp daemon install` deliberately does not bootout/bootstrap here —
+/// reloading drops every in-memory registration and every parked `famp await`
+/// (see `cli::daemon::restart`), which an idempotent install must not do
+/// silently. `famp daemon restart` is the command that performs that reload.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) const fn needs_reload_advisory(
+    outcome: ServiceFileOutcome,
+    already_loaded: bool,
+) -> bool {
+    already_loaded && matches!(outcome, ServiceFileOutcome::Updated)
 }
 
 // ─── BOOT-02: Sandbox guard ───────────────────────────────────────────────────
@@ -290,7 +345,7 @@ fn load_macos(plist_path: &Path, uid: u32) -> Result<(), DaemonError> {
 /// the unsupported append: log directive. On such hosts, start the broker manually:
 ///   `famp broker --no-idle-exit`
 #[cfg(target_os = "linux")]
-fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
+fn install_linux(home: &Path, unit_content: &str, err: &mut dyn Write) -> Result<(), DaemonError> {
     // DAEMON-06: detect systemctl absent first.
     let systemctl_present = Command::new("sh")
         .args(["-c", "command -v systemctl"])
@@ -302,24 +357,8 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     }
 
     // Build absolute paths (no tilde — systemd does not expand ~).
-    let famp_bin = home.join(".cargo").join("bin").join("famp");
-    let log_path = home.join(".famp").join("broker.log");
     let unit_dir = home.join(".config").join("systemd").join("user");
     let unit_path = unit_dir.join("famp-broker.service");
-
-    // systemd tokenizes ExecStart on whitespace; a home path containing a
-    // space would split the binary path into separate argv tokens and the
-    // unit would silently fail to start. Validate and fail loudly rather than
-    // write an unactivatable unit. (StandardOutput/StandardError append: paths
-    // are validated too — a whitespace log path would likewise break parsing.)
-    let famp_bin_str = famp_bin.display().to_string();
-    let log_path_str = log_path.display().to_string();
-    if famp_bin_str.chars().any(char::is_whitespace) {
-        return Err(DaemonError::UnitPathHasWhitespace(famp_bin_str));
-    }
-    if log_path_str.chars().any(char::is_whitespace) {
-        return Err(DaemonError::UnitPathHasWhitespace(log_path_str));
-    }
 
     std::fs::create_dir_all(&unit_dir).map_err(|source| DaemonError::Io {
         path: unit_dir.clone(),
@@ -331,16 +370,7 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     // On systemd < 240 (e.g. RHEL 7 with systemd 219) the service will fail to
     // activate; users on such hosts should start the broker manually:
     //   famp broker --no-idle-exit
-    let unit_content = format!(
-        "[Unit]\nDescription=FAMP Local Bus Broker\nAfter=default.target\n\n\
-         [Service]\nExecStart={famp_bin} broker --no-idle-exit\nRestart=always\n\
-         StandardOutput=append:{log}\nStandardError=append:{log}\n\n\
-         [Install]\nWantedBy=default.target\n",
-        famp_bin = famp_bin.display(),
-        log = log_path.display(),
-    );
-
-    std::fs::write(&unit_path, &unit_content).map_err(|source| DaemonError::Io {
+    std::fs::write(&unit_path, unit_content).map_err(|source| DaemonError::Io {
         path: unit_path.clone(),
         source,
     })?;
@@ -411,6 +441,31 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn generate_systemd_unit(
+    home: &Path,
+    executable: &FampExecutable,
+) -> Result<String, DaemonError> {
+    let famp_bin = executable.utf8();
+    let log_path = home.join(".famp").join("broker.log");
+    let log = log_path
+        .to_str()
+        .ok_or_else(|| DaemonError::LogPathNonUtf8 {
+            home: home.to_path_buf(),
+        })?;
+    for path in [famp_bin, log] {
+        if path.chars().any(char::is_whitespace) {
+            return Err(DaemonError::UnitPathHasWhitespace(path.to_string()));
+        }
+    }
+    Ok(format!(
+        "[Unit]\nDescription=FAMP Local Bus Broker\nAfter=default.target\n\n\
+         [Service]\nExecStart={famp_bin} broker --no-idle-exit\nRestart=always\n\
+         StandardOutput=append:{log}\nStandardError=append:{log}\n\n\
+         [Install]\nWantedBy=default.target\n"
+    ))
+}
+
 // ─── Run logic ───────────────────────────────────────────────────────────────
 
 /// Write the platform service file and load it.
@@ -433,7 +488,22 @@ fn install_linux(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
 /// directory is interpolated by `generate_plist(home)` — no literal placeholder.
 #[allow(clippy::needless_return)] // explicit `return` per cfg branch; only one compiles per platform
 pub fn run_at(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
+    let executable = resolve_for_generated_config().map_err(|error| {
+        DaemonError::FampExecutable(crate::cli::executable::flatten_error_chain(&error))
+    })?;
+    run_at_with_executable(home, &executable, err)
+}
+
+#[allow(clippy::needless_return)]
+fn run_at_with_executable(
+    home: &Path,
+    executable: &FampExecutable,
+    err: &mut dyn Write,
+) -> Result<(), DaemonError> {
     writeln!(err, "Installing FAMP broker service...").ok();
+
+    #[cfg(target_os = "linux")]
+    let unit_content = generate_systemd_unit(home, executable)?;
 
     // BOOT-02: check for sandbox BEFORE writing anything.
     // The bus dir is the probe target; create_dir_all inside check_not_sandboxed
@@ -450,17 +520,23 @@ pub fn run_at(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
         })?;
 
         let plist_path = agents_dir.join("com.famp.broker.plist");
-        let xml = generate_plist(home)?;
+        let xml = generate_plist(home, executable)?;
+
+        // Classify the write BEFORE performing it: a changed plist under an
+        // already-loaded job needs an explicit reload to take effect.
+        let uid = u32::from(nix::unistd::getuid());
+        let already_loaded = super::status::launchctl_is_registered("com.famp.broker", uid);
+        let outcome =
+            service_file_outcome(std::fs::read_to_string(&plist_path).ok().as_deref(), &xml);
 
         std::fs::write(&plist_path, &xml).map_err(|source| DaemonError::Io {
             path: plist_path.clone(),
             source,
         })?;
-        writeln!(err, "  [1/2] plist written to {}", plist_path.display()).ok();
+        writeln!(err, "  [1/2] plist {outcome:?} at {}", plist_path.display()).ok();
 
         // Load the service via launchctl bootstrap (guardian-authorized action,
         // DAEMON-02 sign-off: sha256 b5d52c13eff63de697746b16da6676f2315fa2c631d2bc1b8bf21992cfbdeb3f).
-        let uid = u32::from(nix::unistd::getuid());
         load_macos(&plist_path, uid)?;
         writeln!(
             err,
@@ -469,6 +545,19 @@ pub fn run_at(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
         .ok();
 
         writeln!(err).ok();
+        if needs_reload_advisory(outcome, already_loaded) {
+            writeln!(
+                err,
+                "note: com.famp.broker was already loaded, so launchd is still running the \
+                 PREVIOUS ProgramArguments. The updated plist (famp binary: {}) takes effect \
+                 after an explicit reload:\n  famp daemon restart\n\
+                 (restart performs launchctl bootout + bootstrap + kickstart; it drops \
+                 in-memory registrations and parked `famp await` waiters, which is why \
+                 `famp daemon install` does not do it for you.)",
+                executable.path().display()
+            )
+            .ok();
+        }
         writeln!(err, "daemon install complete.").ok();
         return Ok(());
     }
@@ -476,7 +565,7 @@ pub fn run_at(home: &Path, err: &mut dyn Write) -> Result<(), DaemonError> {
     #[cfg(target_os = "linux")]
     {
         writeln!(err, "  [1/4] sandbox check: ok").ok();
-        install_linux(home, err)?;
+        install_linux(home, &unit_content, err)?;
         writeln!(err).ok();
         writeln!(err, "daemon install complete.").ok();
         return Ok(());
@@ -514,6 +603,142 @@ pub fn run(args: DaemonInstallArgs) -> Result<(), CliError> {
 mod tests {
     use super::*;
 
+    fn executable_at(path: &Path) -> FampExecutable {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        FampExecutable::validate(path.to_path_buf()).unwrap()
+    }
+
+    #[test]
+    fn plist_uses_exact_symlink_path_and_xml_escapes_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = executable_at(&dir.path().join("real-famp"));
+        #[cfg(unix)]
+        {
+            let link = dir.path().join("famp & <selected>");
+            std::os::unix::fs::symlink(target.path(), &link).unwrap();
+            let selected = FampExecutable::validate(link).unwrap();
+            let xml = generate_plist(dir.path(), &selected).unwrap();
+            assert!(xml.contains("famp &amp; &lt;selected&gt;"));
+            assert!(!xml.contains("real-famp</string>"));
+        }
+    }
+
+    #[test]
+    fn systemd_unit_uses_exact_path_and_rejects_whitespace_purely() {
+        let dir = tempfile::tempdir().unwrap();
+        let selected = executable_at(&dir.path().join("bin/famp"));
+        let unit = generate_systemd_unit(dir.path(), &selected).unwrap();
+        assert!(unit.contains(&format!(
+            "ExecStart={} broker --no-idle-exit",
+            selected.utf8()
+        )));
+        assert!(!unit.contains(".cargo/bin/famp"));
+
+        let spaced = executable_at(&dir.path().join("bin space/famp"));
+        assert!(matches!(
+            generate_systemd_unit(dir.path(), &spaced),
+            Err(DaemonError::UnitPathHasWhitespace(_))
+        ));
+        assert!(!dir
+            .path()
+            .join(".config/systemd/user/famp-broker.service")
+            .exists());
+    }
+
+    /// M2 (daemon half): `run_at` is the highest public orchestration entry
+    /// for `famp daemon install`. A resolution failure must land before the
+    /// service file is written, before `~/.famp/` is created by the sandbox
+    /// probe, and before any service-manager command runs.
+    ///
+    /// This test never reaches `launchctl` / `systemctl`: the resolver fails
+    /// first, which is precisely the guarantee under test.
+    #[test]
+    fn public_run_at_fails_before_any_mutation_when_executable_is_unresolvable() {
+        use crate::cli::executable::test_support::{
+            assert_tree_unchanged, snapshot_tree, MISSING_FAMP_BIN,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        // Representative pre-existing service files on both platforms.
+        std::fs::create_dir_all(home.join("Library/LaunchAgents")).unwrap();
+        std::fs::create_dir_all(home.join(".config/systemd/user")).unwrap();
+        let plist = home.join("Library/LaunchAgents/com.famp.broker.plist");
+        let unit = home.join(".config/systemd/user/famp-broker.service");
+        std::fs::write(&plist, "<!-- prior plist -->\n").unwrap();
+        std::fs::write(&unit, "# prior unit\n").unwrap();
+        let before = snapshot_tree(home);
+
+        for value in [MISSING_FAMP_BIN, " ", home.to_str().unwrap()] {
+            let result = temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(value), || {
+                let mut err = Vec::<u8>::new();
+                run_at(home, &mut err)
+            });
+            assert!(
+                matches!(result, Err(DaemonError::FampExecutable(_))),
+                "FAMP_INSTALL_FAMP_BIN={value:?} must fail resolution, got {result:?}"
+            );
+            assert_tree_unchanged(home, &before, &format!("daemon install {value:?}"));
+            assert!(
+                !home.join(".famp").exists(),
+                "sandbox probe must not create the bus dir before resolution succeeds"
+            );
+        }
+    }
+
+    /// H2: `famp daemon install` rewrites the service file but never reloads
+    /// an already-loaded launchd job — reloading would drop every in-memory
+    /// registration and parked await. The decision logic that drives the
+    /// operator advisory is pure and tested here; `launchctl` itself stays
+    /// out of the unit test.
+    #[test]
+    fn changed_plist_under_a_loaded_job_advises_an_explicit_reload() {
+        use ServiceFileOutcome::{Created, Unchanged, Updated};
+
+        assert_eq!(service_file_outcome(None, "<plist/>"), Created);
+        assert_eq!(
+            service_file_outcome(Some("<plist/>"), "<plist/>"),
+            Unchanged
+        );
+        assert_eq!(
+            service_file_outcome(Some("<plist>old bin</plist>"), "<plist>new bin</plist>"),
+            Updated
+        );
+
+        // Only a content change under a loaded job diverges from what launchd
+        // is running; every other combination is silent (idempotency).
+        assert!(needs_reload_advisory(Updated, true));
+        assert!(!needs_reload_advisory(Updated, false));
+        assert!(!needs_reload_advisory(Unchanged, true));
+        assert!(!needs_reload_advisory(Created, true));
+        assert!(!needs_reload_advisory(Created, false));
+    }
+
+    /// The advisory must fire exactly when the resolved binary moves — the
+    /// case this PR introduces (a reinstall that repoints `ProgramArguments`).
+    #[test]
+    fn repointing_the_famp_binary_is_a_plist_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = executable_at(&dir.path().join("a/famp"));
+        let second = executable_at(&dir.path().join("b/famp"));
+        let before = generate_plist(dir.path(), &first).unwrap();
+        let after = generate_plist(dir.path(), &second).unwrap();
+        assert_eq!(
+            service_file_outcome(Some(&before), &after),
+            ServiceFileOutcome::Updated
+        );
+        assert_eq!(
+            service_file_outcome(Some(&before), &before),
+            ServiceFileOutcome::Unchanged
+        );
+    }
+
     /// DAEMON-02 (generation half): verify the generated plist matches the
     /// locked guardian-reviewed shape exactly.
     ///
@@ -523,7 +748,8 @@ mod tests {
     fn plist_shape_matches_locked() {
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
-        let xml = generate_plist(home).unwrap();
+        let executable = FampExecutable::validate(std::env::current_exe().unwrap()).unwrap();
+        let xml = generate_plist(home, &executable).unwrap();
 
         // Label
         assert!(
@@ -618,7 +844,10 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/sample-com.famp.broker.plist"
         ));
-        let generated = generate_plist(std::path::Path::new("/Users/USERNAME")).unwrap();
+        let executable = FampExecutable::validate(std::env::current_exe().unwrap()).unwrap();
+        let generated = generate_plist(std::path::Path::new("/Users/USERNAME"), &executable)
+            .unwrap()
+            .replace(executable.utf8(), "/Users/USERNAME/.cargo/bin/famp");
         assert_eq!(
             generated, fixture,
             "sample fixture does not match generate_plist output for /Users/USERNAME"

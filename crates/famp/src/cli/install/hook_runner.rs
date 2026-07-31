@@ -10,20 +10,22 @@
 use std::path::Path;
 
 use crate::cli::error::CliError;
+use crate::cli::executable::{posix_shell_literal, FampExecutable};
 
 /// The bash shim source, embedded at compile time.
 pub const HOOK_RUNNER_SH: &str = include_str!("../../../assets/hook-runner.sh");
 
 /// Write the shim to `path` at mode 0755. Idempotent (overwrites existing).
 /// Creates parent directories if absent.
-pub fn install_shim(path: &Path) -> Result<(), CliError> {
+pub(crate) fn install_shim(path: &Path, executable: &FampExecutable) -> Result<(), CliError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|source| CliError::Io {
             path: parent.to_path_buf(),
             source,
         })?;
     }
-    std::fs::write(path, HOOK_RUNNER_SH).map_err(|source| CliError::Io {
+    let rendered = HOOK_RUNNER_SH.replace("@FAMP_BIN@", &posix_shell_literal(executable.utf8()));
+    std::fs::write(path, rendered).map_err(|source| CliError::Io {
         path: path.to_path_buf(),
         source,
     })?;
@@ -71,14 +73,15 @@ mod tests {
 
     #[test]
     fn shim_calls_famp_send() {
-        assert!(HOOK_RUNNER_SH.contains("famp send"));
+        assert!(HOOK_RUNNER_SH.contains("\"$FAMP_BIN\" send"));
     }
 
     #[test]
     fn install_shim_creates_file_at_mode_0755() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".famp/hook-runner.sh");
-        install_shim(&path).unwrap();
+        let executable = FampExecutable::validate(std::env::current_exe().unwrap()).unwrap();
+        install_shim(&path, &executable).unwrap();
         assert!(path.exists());
         #[cfg(unix)]
         {
@@ -92,15 +95,17 @@ mod tests {
     fn install_shim_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("hook-runner.sh");
-        install_shim(&path).unwrap();
-        install_shim(&path).unwrap();
+        let executable = FampExecutable::validate(std::env::current_exe().unwrap()).unwrap();
+        install_shim(&path, &executable).unwrap();
+        install_shim(&path, &executable).unwrap();
     }
 
     #[test]
     fn remove_shim_after_install_leaves_no_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("hook-runner.sh");
-        install_shim(&path).unwrap();
+        let executable = FampExecutable::validate(std::env::current_exe().unwrap()).unwrap();
+        install_shim(&path, &executable).unwrap();
         remove_shim(&path).unwrap();
         assert!(!path.exists());
     }
