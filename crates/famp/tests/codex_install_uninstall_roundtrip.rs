@@ -6,6 +6,21 @@
 
 use serde_json::json;
 
+/// Pin `FAMP_INSTALL_FAMP_BIN` at the cargo-built `famp` so the installer's
+/// executable resolution is hermetic. Without this the resolver falls through
+/// to `which famp`, and the test would pass or fail depending on whether the
+/// host happens to have FAMP installed (CI does not). Same convention as
+/// `install_codex.rs`; `temp_env` serializes the process-global env mutation
+/// (WR-06).
+fn with_pinned_famp_bin<T>(test: impl FnOnce() -> T) -> T {
+    let bin = assert_cmd::cargo::cargo_bin("famp");
+    temp_env::with_var(
+        "FAMP_INSTALL_FAMP_BIN",
+        Some(bin.to_string_lossy().into_owned()),
+        test,
+    )
+}
+
 const PRE: &str = r#"model = "gpt-4"
 sandbox_mode = "read"
 
@@ -25,7 +40,7 @@ fn codex_install_then_uninstall_restores_pre_state() {
 
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::codex::run_at(home, &mut out, &mut err)).unwrap();
 
     let mut out2 = Vec::<u8>::new();
     let mut err2 = Vec::<u8>::new();
@@ -53,7 +68,7 @@ fn codex_install_then_uninstall_on_empty_home_leaves_clean_state() {
     let home = tmp.path();
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::codex::run_at(home, &mut out, &mut err)).unwrap();
 
     let mut out2 = Vec::<u8>::new();
     let mut err2 = Vec::<u8>::new();
@@ -94,7 +109,7 @@ fn codex_uninstall_preserves_unrelated_project_hooks() {
 
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::codex::run_at(home, &mut out, &mut err)).unwrap();
 
     let mut out2 = Vec::<u8>::new();
     let mut err2 = Vec::<u8>::new();
@@ -122,7 +137,7 @@ fn codex_uninstall_prunes_stale_famp_hook_trust_after_index_churn() {
 
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::codex::run_at(home, &mut out, &mut err)).unwrap();
 
     let stale_key = format!("{}:stop:0:0", hooks_path.display());
     let mut hooks: serde_json::Value =
@@ -135,7 +150,7 @@ fn codex_uninstall_prunes_stale_famp_hook_trust_after_index_churn() {
 
     let mut out2 = Vec::<u8>::new();
     let mut err2 = Vec::<u8>::new();
-    famp::cli::install::codex::run_at(home, &mut out2, &mut err2).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::codex::run_at(home, &mut out2, &mut err2)).unwrap();
 
     let mut out3 = Vec::<u8>::new();
     let mut err3 = Vec::<u8>::new();

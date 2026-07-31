@@ -328,9 +328,22 @@ fn cli_hook_timeout_exits_zero_no_decision() {
 fn install_codex_trusts_native_command_string() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path();
-    let mut out = Vec::<u8>::new();
-    let mut err = Vec::<u8>::new();
-    famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+    // Pin the cargo-built `famp` (which genuinely supports `hook codex-stop`,
+    // so the installer's pre-write probe exercises a real success path).
+    // Without the pin the resolver falls through to `which famp` — a false
+    // green on a developer box with FAMP installed, a hard failure on CI.
+    // Same convention as `install_codex.rs`; `temp_env` (WR-06) serializes
+    // the process-global env mutation.
+    let bin = assert_cmd::cargo::cargo_bin("famp");
+    temp_env::with_var(
+        "FAMP_INSTALL_FAMP_BIN",
+        Some(bin.to_string_lossy().into_owned()),
+        || {
+            let mut out = Vec::<u8>::new();
+            let mut err = Vec::<u8>::new();
+            famp::cli::install::codex::run_at(home, &mut out, &mut err).unwrap();
+        },
+    );
 
     let hooks: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(home.join(".codex/hooks.json")).unwrap())

@@ -25,6 +25,7 @@ use serde_json::json;
 use toml::Value as TomlValue;
 
 use crate::cli::error::CliError;
+use crate::cli::executable::{resolve_for_generated_config, FampExecutable};
 use crate::cli::install::{await_hook, toml_merge};
 
 /// Embedded Grok skill body ("just register" + Stop auto-wake).
@@ -57,6 +58,15 @@ pub fn run(args: InstallGrokArgs) -> Result<(), CliError> {
 
 /// Test-facing entry: explicit home + writable handles.
 pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<(), CliError> {
+    let executable = resolve_for_generated_config()?;
+    run_at_with_executable(home, &executable, err)
+}
+
+fn run_at_with_executable(
+    home: &Path,
+    executable: &FampExecutable,
+    err: &mut dyn Write,
+) -> Result<(), CliError> {
     let config_path = home.join(".grok").join("config.toml");
     let skill_path = home
         .join(".grok")
@@ -68,20 +78,18 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         .join(".grok")
         .join("hooks")
         .join("famp-listen-stop.json");
-    // Absolute path only. Grok's MCP spawn env often lacks ~/.cargo/bin on
-    // PATH, so bare `command = "famp"` fails with ENOENT (live smoke 2026-07-23).
-    // Re-run `famp install-grok` after moving the binary.
-    let famp_bin = which::which("famp")
-        .ok()
-        .unwrap_or_else(|| home.join(".cargo").join("bin").join("famp"));
-
     writeln!(err, "Installing Grok MCP entry into {}", home.display()).ok();
-    writeln!(err, "  resolved famp binary: {}", famp_bin.display()).ok();
+    writeln!(
+        err,
+        "  resolved famp binary: {}",
+        executable.path().display()
+    )
+    .ok();
 
     let mut famp_table = toml::Table::new();
     famp_table.insert(
         "command".into(),
-        TomlValue::String(famp_bin.display().to_string()),
+        TomlValue::String(executable.utf8().to_string()),
     );
     famp_table.insert(
         "args".into(),
@@ -100,7 +108,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     .ok();
 
     // Native Grok await shim only (B2: do not write ~/.claude/).
-    await_hook::install_shim(&grok_await_shim)?;
+    await_hook::install_shim(&grok_await_shim, executable)?;
     writeln!(
         err,
         "  [2/4] {} :: await shim installed",
@@ -132,13 +140,6 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
          (Grok cap: 8 continuations/turn). Does not touch ~/.claude/."
     )
     .ok();
-    if which::which("famp").is_err() {
-        writeln!(
-            err,
-            "  hint: famp binary not on PATH; run `cargo install famp` to install it."
-        )
-        .ok();
-    }
     if home.join(".claude").join("settings.json").exists() {
         writeln!(
             err,
@@ -267,7 +268,90 @@ pub(crate) fn remove_skill_dir(skill_dir: &Path) -> Result<(), CliError> {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+
+    fn stage_executable(path: &Path) -> PathBuf {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        path.to_path_buf()
+    }
+
+    /// Pin `FAMP_INSTALL_FAMP_BIN` at a staged executable so the public
+    /// `run_at` path resolves hermetically instead of depending on a `famp`
+    /// binary being on the test host's PATH (CI has none).
+    /// WR-06: `temp_env` serializes the process-global env mutation.
+    fn with_pinned_famp_bin<T>(test: impl FnOnce() -> T) -> T {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = stage_executable(&dir.path().join("famp"));
+        temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(bin.as_os_str()), test)
+    }
+
+    #[test]
+    fn injected_executable_is_pinned_in_mcp_and_rendered_hook() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let bin = stage_executable(&dir.path().join("bin space/famp"));
+        let executable = FampExecutable::validate(bin).unwrap();
+        let mut err = Vec::new();
+        run_at_with_executable(&home, &executable, &mut err).unwrap();
+        let config: toml::Table =
+            toml::from_str(&std::fs::read_to_string(home.join(".grok/config.toml")).unwrap())
+                .unwrap();
+        assert_eq!(
+            config["mcp_servers"]["famp"]["command"].as_str(),
+            Some(executable.utf8())
+        );
+        let hook = std::fs::read_to_string(home.join(".grok/hooks/famp-await.sh")).unwrap();
+        assert!(hook.contains(&format!(
+            "FAMP_BIN={}",
+            crate::cli::executable::posix_shell_literal(executable.utf8())
+        )));
+        assert!(!hook.contains("command -v famp"));
+        assert!(!hook.contains(".cargo/bin/famp"));
+    }
     use serde_json::Value;
+
+    /// M2 (Grok half): a resolution failure on the public `run_at` path must
+    /// leave `~/.grok/` exactly as it was — no config rewrite, no await shim,
+    /// no Stop JSON, no skill file, no new directory.
+    #[test]
+    fn public_run_at_fails_before_any_mutation_when_executable_is_unresolvable() {
+        use crate::cli::executable::test_support::{
+            assert_tree_unchanged, snapshot_tree, MISSING_FAMP_BIN,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        std::fs::create_dir_all(home.join(".grok/hooks")).unwrap();
+        std::fs::write(
+            home.join(".grok/config.toml"),
+            "[mcp_servers.other]\ncommand = \"/x\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            home.join(".grok/hooks/famp-await.sh"),
+            "#!/bin/sh\n# prior await\n",
+        )
+        .unwrap();
+        let before = snapshot_tree(home);
+
+        for value in [MISSING_FAMP_BIN, "", home.to_str().unwrap()] {
+            let result = temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(value), || {
+                let mut out = Vec::<u8>::new();
+                let mut err = Vec::<u8>::new();
+                run_at(home, &mut out, &mut err)
+            });
+            assert!(
+                matches!(result, Err(CliError::FampExecutable(_))),
+                "FAMP_INSTALL_FAMP_BIN={value:?} must fail resolution, got {result:?}"
+            );
+            assert_tree_unchanged(home, &before, &format!("install-grok {value:?}"));
+        }
+    }
 
     #[test]
     fn install_grok_writes_mcp_skill_shim_and_stop_json() {
@@ -275,7 +359,7 @@ mod tests {
         let home = dir.path();
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out, &mut err)).unwrap();
 
         let cfg = home.join(".grok/config.toml");
         assert!(cfg.exists());
@@ -337,7 +421,7 @@ mod tests {
 
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out, &mut err)).unwrap();
 
         let post = std::fs::read_to_string(&settings).unwrap();
         assert_eq!(
@@ -382,18 +466,24 @@ mod tests {
     fn install_grok_is_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
-        let first = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
-        let first_stop =
-            std::fs::read_to_string(home.join(".grok/hooks/famp-listen-stop.json")).unwrap();
+        // One pinned binary for BOTH runs — the resolved path is embedded in
+        // the generated config, so it must not move between runs.
+        let (first, first_stop) = with_pinned_famp_bin(|| {
+            let mut out = Vec::<u8>::new();
+            let mut err = Vec::<u8>::new();
+            run_at(home, &mut out, &mut err).unwrap();
+            let first = (
+                std::fs::read_to_string(home.join(".grok/config.toml")).unwrap(),
+                std::fs::read_to_string(home.join(".grok/hooks/famp-listen-stop.json")).unwrap(),
+            );
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let mut out2 = Vec::<u8>::new();
-        let mut err2 = Vec::<u8>::new();
-        run_at(home, &mut out2, &mut err2).unwrap();
+            let mut out2 = Vec::<u8>::new();
+            let mut err2 = Vec::<u8>::new();
+            run_at(home, &mut out2, &mut err2).unwrap();
+            first
+        });
         let second = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
         let second_stop =
             std::fs::read_to_string(home.join(".grok/hooks/famp-listen-stop.json")).unwrap();

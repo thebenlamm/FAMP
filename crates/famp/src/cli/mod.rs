@@ -8,6 +8,7 @@ pub mod broker;
 pub mod config;
 pub mod daemon;
 pub mod error;
+pub mod executable;
 pub mod home;
 pub mod hook;
 pub mod identity;

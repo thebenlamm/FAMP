@@ -24,6 +24,7 @@
 use std::collections::HashSet;
 
 use famp::cli::error::CliError;
+use famp::cli::executable::FampExecutableError;
 use famp::cli::mcp::error_kind::bus_error_to_jsonrpc;
 use famp_bus::BusErrorKind;
 
@@ -265,6 +266,13 @@ fn variants_b() -> Vec<(&'static str, CliError)> {
 fn variants_c() -> Vec<(&'static str, CliError)> {
     vec![
         (
+            // Install-time executable resolution (`famp install-*`,
+            // `famp daemon install`). `NotFound` is the stable representative:
+            // it carries no path/io payload, so the fixture cannot rot.
+            "FampExecutable",
+            CliError::FampExecutable(FampExecutableError::NotFound),
+        ),
+        (
             "InvalidAgentName",
             CliError::InvalidAgentName {
                 name: "bad name".to_string(),
@@ -422,6 +430,10 @@ fn mcp_kind_mapping_spot_checks() {
                 pinned: "a".to_string(),
                 got: "b".to_string(),
             },
+        ),
+        (
+            "famp_executable_error",
+            CliError::FampExecutable(FampExecutableError::NotFound),
         ),
     ];
 

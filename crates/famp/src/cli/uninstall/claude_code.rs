@@ -98,7 +98,9 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     writeln!(err, "uninstall-claude-code complete.").ok();
     writeln!(
         err,
-        "  note: the famp binary remains in ~/.cargo/bin; run `cargo uninstall famp` to remove it."
+        "  note: the famp binary itself is not removed. If it came from \
+         `cargo install` (the usual `~/.cargo/bin/famp`), `cargo uninstall famp` \
+         removes it; otherwise delete the copy you installed."
     )
     .ok();
     writeln!(
@@ -203,13 +205,36 @@ mod tests {
     use super::*;
     use crate::cli::install;
 
+    /// Run `install-claude-code` with `FAMP_INSTALL_FAMP_BIN` pinned at a
+    /// staged executable, so the set-up install resolves hermetically.
+    ///
+    /// Without the pin the resolver falls through to `which famp`, and whether
+    /// this test passes depends on the host having FAMP installed. Note that
+    /// `cargo test` prepends `$CARGO_HOME/bin` to the test process's PATH, so
+    /// a developer with `~/.cargo/bin/famp` sees a false green while CI —
+    /// which runs each test in its own process with no FAMP installed — fails.
+    /// WR-06: `temp_env` serializes the process-global env mutation.
+    fn install_with_pinned_famp_bin(home: &Path) {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("famp");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(bin.as_os_str()), || {
+            let mut out = Vec::<u8>::new();
+            let mut err = Vec::<u8>::new();
+            install::claude_code::run_at(home, &mut out, &mut err).unwrap();
+        });
+    }
+
     #[test]
     fn uninstall_after_install_returns_to_clean_state() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        install::claude_code::run_at(home, &mut out, &mut err).unwrap();
+        install_with_pinned_famp_bin(home);
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();
@@ -242,9 +267,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        install::claude_code::run_at(home, &mut out, &mut err).unwrap();
+        install_with_pinned_famp_bin(home);
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();
@@ -267,9 +290,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
 
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        install::claude_code::run_at(home, &mut out, &mut err).unwrap();
+        install_with_pinned_famp_bin(home);
 
         let settings_path = home.join(".claude/settings.json");
         let mut settings: Value =
@@ -315,9 +336,7 @@ mod tests {
     fn uninstall_drops_stop_key_entirely_if_only_famp_was_there() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        install::claude_code::run_at(home, &mut out, &mut err).unwrap();
+        install_with_pinned_famp_bin(home);
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();

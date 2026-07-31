@@ -24,14 +24,14 @@ use famp_fsm::TaskFsmError;
 
 use crate::cli::error::CliError::{
     AwaitTimeout, BrokerUnreachable, BusClient, BusError, ChannelNotIdentity, Daemon, Disconnected,
-    Envelope, Exit, FsmTransition, Generic, HomeCreateFailed, HomeHasNoParent, HomeNotAbsolute,
-    HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
-    InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
-    JsonMergeRead, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented, NotRegistered,
-    NotRegisteredHint, OwnDomainInvalid, OwnDomainNotSet, PeerBlobMalformed, PeerKeyConflict,
-    PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal,
-    TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse, TomlSerialize, TomlTableExpected,
-    UnknownIdentity,
+    Envelope, Exit, FampExecutable, FsmTransition, Generic, HomeCreateFailed, HomeHasNoParent,
+    HomeNotAbsolute, HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration,
+    InvalidIdentityName, InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse,
+    JsonMergePersist, JsonMergeRead, KeyringBuildFailed, NameTaken, NoIdentityBound,
+    NotImplemented, NotRegistered, NotRegisteredHint, OwnDomainInvalid, OwnDomainNotSet,
+    PeerBlobMalformed, PeerKeyConflict, PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir,
+    TaskNotFound, TaskTerminal, TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse,
+    TomlSerialize, TomlTableExpected, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -46,6 +46,7 @@ impl crate::cli::error::CliError {
     #[must_use]
     pub const fn mcp_error_kind(&self) -> &'static str {
         match self {
+            FampExecutable(_) => "famp_executable_error",
             HomeNotSet => "home_not_set",
             HomeNotAbsolute { .. } => "home_not_absolute",
             HomeHasNoParent { .. } => "home_has_no_parent",

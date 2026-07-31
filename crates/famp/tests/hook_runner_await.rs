@@ -14,33 +14,32 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-fn hook_path() -> PathBuf {
-    dirs::home_dir()
-        .expect("home dir")
-        .join(".claude/hooks/famp-await.sh")
-}
-
 /// The repo asset — the SOURCE OF TRUTH for the hook (installed copies are
-/// `include_str!`-embedded from here). Issue #21 tests MUST exercise this,
-/// not the installed `~/.claude/hooks/famp-await.sh`, so they test the code
-/// under version control and do not depend on `famp install` having run.
-fn asset_hook_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/famp-await.sh")
+/// `include_str!`-embedded from here). These tests MUST exercise this, not
+/// the installed `~/.claude/hooks/famp-await.sh`, so they test the code under
+/// version control and do not depend on `famp install` having run.
+fn asset_hook_source() -> String {
+    std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/famp-await.sh"))
+        .expect("read famp-await.sh asset")
 }
 
-/// Skip the test if the hook is not installed (e.g., fresh CI checkout that
-/// hasn't run `famp install-claude-code`). Use at the top of every test that
-/// calls `run_hook()` or passes `hook_path()` to bash.
-macro_rules! require_hook {
-    () => {
-        if !hook_path().exists() {
-            eprintln!(
-                "SKIP: {} not installed; run `famp install-claude-code` first",
-                hook_path().display()
-            );
-            return;
-        }
-    };
+/// Render the asset the way `await_hook::install_shim` does, pinning
+/// `FAMP_BIN` at this test's mock `famp` (always staged at `<dir>/bin/famp`).
+///
+/// The shipped hook no longer consults `PATH`, so a test that ran the raw
+/// asset would execute the literal `@FAMP_BIN@` token. Rendering here keeps
+/// every test exercising the same substitution production performs.
+fn rendered_hook(dir: &Path) -> PathBuf {
+    let famp_bin = dir.join("bin").join("famp");
+    let rendered = asset_hook_source().replace(
+        "@FAMP_BIN@",
+        &famp::cli::executable::posix_shell_literal(famp_bin.to_str().unwrap()),
+    );
+    assert!(!rendered.contains("@FAMP_BIN@"));
+    let path = dir.join("famp-await.rendered.sh");
+    std::fs::write(&path, rendered).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path
 }
 
 /// Write a mock `famp` binary into `bin_dir` that records its full argv
@@ -190,7 +189,6 @@ con.commit()
 
 #[test]
 fn listen_true_and_successful_register_enters_listen_mode() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -199,7 +197,7 @@ fn listen_true_and_successful_register_enters_listen_mode() {
     make_transcript(&transcript, "dk", true, true, false);
 
     let out = run_hook(
-        &hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -227,7 +225,6 @@ fn listen_absent_enters_listen_mode() {
     // window. Before the fix, the hook's `if inp.get("listen"):`
     // treated absent as falsy and exited no-op, silently disabling
     // auto-wake whenever the MCP caller omitted the listen field.
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -241,7 +238,7 @@ fn listen_absent_enters_listen_mode() {
     std::fs::write(&transcript, body).unwrap();
 
     let out = run_hook(
-        &hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -265,7 +262,6 @@ fn listen_null_enters_listen_mode() {
     // Companion to `listen_absent_enters_listen_mode`: a JSON `null` for
     // the listen field is treated identically to absent (both arrive in
     // Python as `None`, which is `not False`).
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -277,7 +273,7 @@ fn listen_null_enters_listen_mode() {
     std::fs::write(&transcript, body).unwrap();
 
     let out = run_hook(
-        &hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -303,7 +299,7 @@ fn listen_false_is_noop() {
     make_transcript(&transcript, "dk", false, true, false);
 
     let out = run_hook(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -331,7 +327,13 @@ fn codex_mcp_register_rollout_enters_listen_mode() {
     )
     .unwrap();
 
-    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    let out = run_hook(
+        &rendered_hook(dir.path()),
+        &transcript,
+        &bin_dir,
+        &log,
+        &xdg,
+    );
     assert!(
         out.status.success(),
         "hook failed: {:?}",
@@ -359,7 +361,13 @@ fn codex_mcp_register_with_string_arguments_enters_listen_mode() {
     )
     .unwrap();
 
-    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    let out = run_hook(
+        &rendered_hook(dir.path()),
+        &transcript,
+        &bin_dir,
+        &log,
+        &xdg,
+    );
     assert!(out.status.success());
     let argv = std::fs::read_to_string(&log).unwrap_or_default();
     assert!(
@@ -384,7 +392,13 @@ fn codex_function_call_with_string_arguments_enters_listen_mode_without_mcp_end(
     )
     .unwrap();
 
-    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    let out = run_hook(
+        &rendered_hook(dir.path()),
+        &transcript,
+        &bin_dir,
+        &log,
+        &xdg,
+    );
     assert!(out.status.success());
     let argv = std::fs::read_to_string(&log).unwrap_or_default();
     assert!(
@@ -410,7 +424,13 @@ fn codex_mcp_end_failure_overrides_function_call_fallback() {
     )
     .unwrap();
 
-    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    let out = run_hook(
+        &rendered_hook(dir.path()),
+        &transcript,
+        &bin_dir,
+        &log,
+        &xdg,
+    );
     assert!(out.status.success());
     assert!(
         !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
@@ -434,7 +454,13 @@ fn codex_set_listen_false_cancels_listen_mode() {
     )
     .unwrap();
 
-    let out = run_hook(&asset_hook_path(), &transcript, &bin_dir, &log, &xdg);
+    let out = run_hook(
+        &rendered_hook(dir.path()),
+        &transcript,
+        &bin_dir,
+        &log,
+        &xdg,
+    );
     assert!(out.status.success());
     assert!(
         !log.exists() || std::fs::read_to_string(&log).unwrap_or_default().is_empty(),
@@ -465,7 +491,7 @@ fn codex_session_id_fallback_resolves_rollout_without_transcript_path() {
 
     let stop_json = format!(r#"{{"session_id":"{session_id}","hook_event_name":"Stop"}}"#);
     let out = run_hook_with_stdin(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &stop_json,
         &bin_dir,
         &xdg,
@@ -505,7 +531,7 @@ fn codex_session_id_fallback_resolves_rollout_from_sqlite_state_db() {
 
     let stop_json = format!(r#"{{"session_id":"{session_id}","hook_event_name":"Stop"}}"#);
     let out = run_hook_with_stdin(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &stop_json,
         &bin_dir,
         &xdg,
@@ -540,7 +566,7 @@ fn codex_sqlite_fallback_rejects_rollout_path_outside_codex_sessions() {
 
     let stop_json = format!(r#"{{"session_id":"{session_id}","hook_event_name":"Stop"}}"#);
     let out = run_hook_with_stdin(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &stop_json,
         &bin_dir,
         &xdg,
@@ -563,7 +589,7 @@ fn failed_register_result_is_noop() {
     make_transcript(&transcript, "dk", true, false, false); // ok=false
 
     let out = run_hook(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -580,7 +606,6 @@ fn failed_register_result_is_noop() {
 fn register_then_channel_leave_still_listens() {
     // famp_leave is a channel operation (requires a `channel` param), NOT an
     // unregister. Leaving a channel must NOT cancel listen mode.
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -589,7 +614,7 @@ fn register_then_channel_leave_still_listens() {
     make_transcript(&transcript, "dk", true, true, true); // with_leave_after=true
 
     let out = run_hook(
-        &hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -621,7 +646,7 @@ fn no_register_in_transcript_is_noop() {
     .unwrap();
 
     let out = run_hook(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -643,7 +668,7 @@ fn missing_transcript_is_noop() {
     let transcript = dir.path().join("does_not_exist.jsonl");
 
     let out = run_hook(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -669,7 +694,7 @@ fn malformed_transcript_is_noop() {
     std::fs::write(&transcript, "not json at all\n{broken\n").unwrap();
 
     let out = run_hook(
-        &asset_hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -687,7 +712,6 @@ fn malformed_transcript_is_noop() {
 
 #[test]
 fn last_registration_wins_when_multiple_in_transcript() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("famp.log");
     let xdg = dir.path().join("xdg");
@@ -703,7 +727,7 @@ fn last_registration_wins_when_multiple_in_transcript() {
     std::fs::write(&transcript, body).unwrap();
 
     let out = run_hook(
-        &hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -723,7 +747,6 @@ fn last_registration_wins_when_multiple_in_transcript() {
 
 #[test]
 fn block_decision_is_notification_only_no_envelope_bytes() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().join("xdg");
     let bin_dir = dir.path().join("bin");
@@ -782,7 +805,7 @@ PY
     let host_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{host_path}", bin_dir.display());
     let mut child = Command::new("bash")
-        .arg(hook_path())
+        .arg(rendered_hook(dir.path()))
         .env("PATH", &new_path)
         .env("XDG_STATE_HOME", &xdg)
         .stdin(Stdio::piped())
@@ -822,7 +845,6 @@ PY
 
 #[test]
 fn timeout_exits_zero_with_no_stdout() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().join("xdg");
     let bin_dir = dir.path().join("bin");
@@ -844,7 +866,7 @@ fn timeout_exits_zero_with_no_stdout() {
     let host_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{host_path}", bin_dir.display());
     let mut child = Command::new("bash")
-        .arg(hook_path())
+        .arg(rendered_hook(dir.path()))
         .env("PATH", &new_path)
         .env("XDG_STATE_HOME", &xdg)
         .stdin(Stdio::piped())
@@ -870,7 +892,6 @@ fn timeout_exits_zero_with_no_stdout() {
 
 #[test]
 fn broker_error_fails_open_exit_zero() {
-    require_hook!();
     let dir = tempfile::tempdir().unwrap();
     let xdg = dir.path().join("xdg");
     let bin_dir = dir.path().join("bin");
@@ -895,7 +916,7 @@ fn broker_error_fails_open_exit_zero() {
     let host_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{host_path}", bin_dir.display());
     let mut child = Command::new("bash")
-        .arg(hook_path())
+        .arg(rendered_hook(dir.path()))
         .env("PATH", &new_path)
         .env("XDG_STATE_HOME", &xdg)
         .stdin(Stdio::piped())
@@ -923,7 +944,6 @@ fn broker_error_fails_open_exit_zero() {
 
 #[test]
 fn identity_with_shell_metacharacters_is_noop() {
-    require_hook!();
     // A crafted transcript with an identity containing shell metacharacters must
     // be rejected before any subprocess is invoked. The hook's identity validation
     // guard (`case $'\n'` + grep) must catch this; if it doesn't, the mock famp
@@ -941,7 +961,7 @@ fn identity_with_shell_metacharacters_is_noop() {
     std::fs::write(&transcript, body).unwrap();
 
     let out = run_hook(
-        &hook_path(),
+        &rendered_hook(dir.path()),
         &transcript,
         &dir.path().join("bin"),
         &log,
@@ -959,7 +979,7 @@ fn identity_with_shell_metacharacters_is_noop() {
 
 // ── issue #21: cancellation-seam watcher tests ─────────────────────────────
 //
-// These exercise the ASSET hook (`asset_hook_path()`), driving its transcript
+// These exercise the ASSET hook (rendered via `rendered_hook`), driving its transcript
 // queue-watcher via a mock `famp` whose `await --abort-on-fd <fd>` reads one
 // byte from <fd>: a byte (written by the hook's watcher when the predicate
 // fires) => abort (exit 3); a timeout => no message (exit 0). Whether the hook
@@ -1021,7 +1041,7 @@ fn spawn_asset_hook(transcript: &Path, bin_dir: &Path, xdg: &Path) -> std::proce
     let host_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{host_path}", bin_dir.display());
     let mut child = Command::new("bash")
-        .arg(asset_hook_path())
+        .arg(rendered_hook(bin_dir.parent().unwrap()))
         .env("PATH", &new_path)
         .env("XDG_STATE_HOME", xdg)
         .env("FAMP_QWATCH_INTERVAL", "1")
@@ -1456,7 +1476,7 @@ exit 0
     std::fs::set_permissions(&famp, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     let supervisor = dir.path().join("supervisor.sh");
-    let hook = asset_hook_path();
+    let hook = rendered_hook(dir.path());
     let host_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{host_path}", bin_dir.display());
     // Supervisor parents both the fake mcp and the hook.
