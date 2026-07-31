@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "famp": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/famp",
+      "args": ["mcp"]
+    }
+  }
+}

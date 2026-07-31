@@ -1,0 +1,15 @@
+{
+  "name": "famp",
+  "description": "Local-first agent-to-agent messaging",
+  "owner": {
+    "name": "FAMP contributors"
+  },
+  "plugins": [
+    {
+      "name": "famp",
+      "description": "Local-first messaging between Grok Build sessions — direct messages, IRC-style channels, and a signed task FSM over a shared UDS broker.",
+      "category": "productivity",
+      "source": { "type": "local", "path": "./plugins/grok" }
+    }
+  ]
+}

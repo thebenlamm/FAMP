@@ -1,0 +1,15 @@
+{
+  "name": "famp",
+  "description": "Local-first agent-to-agent messaging",
+  "owner": {
+    "name": "FAMP contributors",
+    "url": "https://github.com/thebenlamm/FAMP"
+  },
+  "plugins": [
+    {
+      "name": "famp",
+      "source": "./plugins/codex",
+      "description": "Local-first messaging between Codex sessions — direct messages, IRC-style channels, and a signed task FSM over a shared UDS broker."
+    }
+  ]
+}

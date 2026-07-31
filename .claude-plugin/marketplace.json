@@ -1,0 +1,14 @@
+{
+  "name": "famp",
+  "owner": {
+    "name": "FAMP contributors",
+    "url": "https://github.com/thebenlamm/FAMP"
+  },
+  "plugins": [
+    {
+      "name": "famp",
+      "source": "./plugins/claude-code",
+      "description": "Local-first messaging between Claude Code windows — direct messages, IRC-style channels, and a signed task FSM over a shared UDS broker."
+    }
+  ]
+}

@@ -309,3 +309,33 @@ spike-tunnel:
     echo "    friend runs     : socat UNIX-LISTEN:\$HOME/.famp/bus.sock,fork TCP:$IP:9999"
     echo "Ctrl-C to stop the tunnel."
     socat TCP-LISTEN:9999,fork,reuseaddr,bind="$IP" UNIX-CONNECT:"$HOME/.famp/bus.sock"
+
+# Regenerate a host's plugin packaging from crates/famp/assets/.
+# Hosts: claude-code (default), codex, grok.
+plugin-gen host="claude-code":
+    bash scripts/gen-plugin.sh {{host}}
+
+# Fail if a host's derived plugin files have drifted from crates/famp/assets/.
+plugin-check host="claude-code":
+    bash scripts/gen-plugin.sh {{host}}
+    git diff --exit-code -- plugins/{{host}}/commands plugins/{{host}}/hooks
+
+# Drift-check all three host packagings (CI gate).
+plugin-check-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for host in claude-code codex grok; do
+        echo "== plugin-check $host =="
+        bash scripts/gen-plugin.sh "$host"
+        git diff --exit-code -- "plugins/$host/commands" "plugins/$host/hooks"
+    done
+    # Generated hooks must never retain the #28 install-time token.
+    if grep -rq '@FAMP_BIN@' plugins/*/hooks 2>/dev/null; then
+        echo "error: unresolved @FAMP_BIN@ under plugins/*/hooks" >&2
+        grep -rn '@FAMP_BIN@' plugins/*/hooks >&2 || true
+        exit 1
+    fi
+
+# Validate the Claude Code plugin manifest and components (requires Claude Code CLI).
+plugin-validate:
+    claude plugin validate ./plugins/claude-code
