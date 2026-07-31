@@ -451,13 +451,20 @@ mod tests {
         ));
     }
 
+    /// A non-UTF-8 candidate path is rejected before the filesystem is
+    /// consulted at all — `NonUtf8`, never `Metadata`.
+    ///
+    /// The file is deliberately NOT created: macOS rejects non-UTF-8 file
+    /// names outright (`EILSEQ`, "Illegal byte sequence"), so staging one is
+    /// impossible there. That is fine — asserting `NonUtf8` against a path
+    /// that does not exist is the stronger claim, since it proves the UTF-8
+    /// check runs first rather than being masked by a `Metadata` error.
     #[cfg(unix)]
     #[test]
     fn non_utf8_path_fails() {
         use std::os::unix::ffi::OsStringExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(OsString::from_vec(vec![b'f', 0x80]));
-        executable(&path);
         let mut fake = locator(dir.path());
         fake.explicit = Some(path.into_os_string());
         assert!(matches!(
