@@ -826,6 +826,80 @@ mod tests {
         }
     }
 
+    /// Task 2 (INGR-05, D-09): pins the check order with a
+    /// reorder-detector. One case per cheap gate that exists so far, each
+    /// asserting the response slug is the CHEAP gate's slug rather than a
+    /// signature-layer slug. If a later refactor moves
+    /// `verify_inbound_any` back above `run_cheap_gates`, each of these
+    /// cases starts returning a signature-layer slug (`invalid_signature`
+    /// / `unpinned_key`) instead and this test fails — the exact
+    /// falsification 17-01-SUMMARY.md reports was run once, deliberately,
+    /// with `strip_relay_fields_removes_wrapper_keeps_content` as the
+    /// named passing control, then reverted.
+    ///
+    /// Rationale in the requirement's own terms: a cheap-to-send request
+    /// that forces expensive verification on every hit is itself the
+    /// amplifier INGR-05's ordering exists to remove.
+    ///
+    /// MAINTENANCE: plans 02 and 03 MUST append one case per new cheap
+    /// gate (replay, audience, rate limit) to this same table, so the
+    /// chain stays fully pinned rather than pinned only at its head.
+    #[tokio::test]
+    async fn cheap_checks_reject_before_signature_verify_ever_runs() {
+        let sk = FampSigningKey::from_bytes([50u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+
+        let one_hour_ago = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+        let stale_ts = Timestamp(crate::clock::strip_subseconds(
+            &one_hour_ago
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap(),
+        ));
+        let stale_bytes = ack_bytes_with_ts(&sk, &from, &to, stale_ts);
+
+        // --- case 1: stale ts AND pinned to the WRONG key -> stale_timestamp, never invalid_signature ---
+        let wrong_sk = FampSigningKey::from_bytes([51u8; 32]);
+        let mut keyring_wrong = Keyring::new();
+        keyring_wrong
+            .pin_tofu(from.clone(), wrong_sk.verifying_key())
+            .unwrap();
+        let (router, registry) = router_with_keyring(keyring_wrong);
+        let resp = post_inbox(router, &to, stale_bytes.clone()).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            v["error"], "stale_timestamp",
+            "wrong-pinned-key case must reject on the CHEAP gate, never invalid_signature"
+        );
+        assert_eq!(registry.lock().await.names().count(), 0);
+
+        // --- case 2: stale ts AND sender absent from the keyring entirely -> stale_timestamp, never unpinned_key ---
+        let (router2, registry2) = router_with_keyring(Keyring::new());
+        let resp2 = post_inbox(router2, &to, stale_bytes).await;
+        assert_eq!(resp2.status(), StatusCode::BAD_REQUEST);
+        let body2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
+        let v2: Value = serde_json::from_slice(&body2).unwrap();
+        assert_eq!(
+            v2["error"], "stale_timestamp",
+            "absent-from-keyring case must reject on the CHEAP gate, never unpinned_key"
+        );
+        assert_eq!(registry2.lock().await.names().count(), 0);
+
+        // --- case 3: malformed JSON -> bad_envelope_shape, never invalid_signature ---
+        let (router3, registry3) = router_with_keyring(Keyring::new());
+        let resp3 = post_inbox(router3, &to, b"not json".to_vec()).await;
+        assert_eq!(resp3.status(), StatusCode::BAD_REQUEST);
+        let body3 = to_bytes(resp3.into_body(), usize::MAX).await.unwrap();
+        let v3: Value = serde_json::from_slice(&body3).unwrap();
+        assert_eq!(
+            v3["error"], "bad_envelope_shape",
+            "malformed JSON must reject on the CHEAP gate, never invalid_signature"
+        );
+        assert_eq!(registry3.lock().await.names().count(), 0);
+    }
+
     #[tokio::test]
     async fn bad_principal_in_path_is_rejected_before_verification() {
         let (router, _registry) = router_with_keyring(Keyring::new());
