@@ -113,6 +113,21 @@ with no cross-talk.
 
 Setup guide: [`docs/GATEWAY-SETUP.md`](docs/GATEWAY-SETUP.md).
 
+## v1.1 — inbound-content-is-DATA quarantine (Phase 14)
+
+Layer 1 (`famp-bus`) gained a fail-closed provenance stamp: the broker
+records `origin: local | gateway | unknown` on every mailbox append,
+with absence resolving to `unknown` (untrusted), never `local`. The
+render helper that turns a stamped record into human/agent-visible
+output (`famp::cli::render::render_envelope_body`/`render_body_text`)
+lives one layer up, in the CLI/MCP layer (the `famp` binary crate) —
+Layer 1 stamps provenance, Layer 2+ renders it. Layer 0 (`famp-canonical`,
+`famp-crypto`, `famp-core`, `famp-fsm`, `famp-envelope`) is untouched by
+this phase, same as it was untouched by v0.9 and v1.0.
+
+Full write-up, including what this boundary does and does not deliver:
+[`docs/QUARANTINE.md`](docs/QUARANTINE.md).
+
 ## Pre-v0.9 scaffolding
 
 [`scripts/famp-local`](scripts/famp-local) is a bash wrapper over the v0.8
