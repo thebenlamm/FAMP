@@ -194,8 +194,19 @@ Plans:
   4. An envelope not addressed to this gateway's own domain and a principal it actually backs is rejected (audience binding); check ordering runs cheap-before-expensive (size/format/rate before signature, signature before any state mutation), pinned by a test that fails if a later refactor reorders it.
   5. An oversized request body is rejected without being fully buffered into memory, and nonce scoping is per-sender so one peer cannot evict or collide with another peer's entries.
 
-**Plans:** TBD
+**Plans:** 6 plans
+
+Plans:
+- [ ] 17-01-PLAN.md — TRACER: ingress guard skeleton + pre-verify freshness gate + the check-order reorder pin (INGR-01, INGR-05)
+- [ ] 17-02-PLAN.md — bounded per-sender replay cache, the TTL/skew/size inequality as executable code, restart-window decision (INGR-02, INGR-03, INGR-08)
+- [ ] 17-03-PLAN.md — audience binding pre-verify, non-rotatable rate-limit key, body-cap tests (INGR-04, INGR-06, INGR-07)
+- [ ] 17-04-PLAN.md — new `famp-relay` crate: bounded opaque store-and-forward queue, per-domain fetch tokens (REACH-04)
+- [ ] 17-05-PLAN.md — gateway relay-fetch loop through the single ingest core + three-process bidirectional e2e (REACH-04)
+- [ ] 17-06-PLAN.md — relay-failure surface: `AckDisposition::Failed` onto the original sender's mailbox (REACH-05)
+
+**Waves:** W1 = 17-01, 17-04, 17-06 (no file overlap) · W2 = 17-02 · W3 = 17-03 · W4 = 17-05
 **Constraint:** All new enforcement lands in `famp-gateway` (`verify.rs` or a new `ingress_guard.rs`) — never in the frozen `famp-envelope`, whose `federation_format_ok` stays format-only.
+**Open on completion:** REACH-02 (real symmetric-NAT validation) stays OPEN regardless of this phase's outcome — blocked on Ben's carrier hotspot. REACH-04's genuinely-different-networks leg is proven on loopback only; the cross-network leg is a clearly-marked pending item (Phase 10 DOC-04 precedent). No Lightsail provisioning happens in this phase (D-04).
 
 ### Phase 18: Human Acceptance Gate
 
