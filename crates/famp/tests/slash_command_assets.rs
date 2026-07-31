@@ -53,9 +53,14 @@ fn test_famp_who_allowed_tools_lists_only_famp_peers() {
 
 #[test]
 fn test_famp_who_argument_hint_present() {
+    // The value must stay YAML-quoted. Unquoted, `[#channel?]` is a flow
+    // sequence whose first token starts with `#`, which is not a legal plain
+    // scalar — the whole frontmatter block then fails to parse and every field
+    // (including `allowed-tools`) is silently dropped at load time.
+    // `claude plugin validate` rejects the unquoted form outright.
     assert!(
-        FAMP_WHO_MD.contains("argument-hint: [#channel?]"),
-        "argument-hint contract changed — CC-07 expects [#channel?]"
+        FAMP_WHO_MD.contains(r#"argument-hint: "[#channel?]""#),
+        "argument-hint contract changed — CC-07 expects a quoted \"[#channel?]\""
     );
 }
 

@@ -1,10 +1,10 @@
 ---
 description: List online FAMP peers, or members of a channel if a #channel is given.
-allowed-tools: mcp__famp__famp_peers
+allowed-tools: famp__famp_peers
 argument-hint: "[#channel?]"
 ---
 
-Call `mcp__famp__famp_peers` to get the current set of online peers as
+Call `famp__famp_peers` to get the current set of online peers as
 `{ online: [...] }`.
 
 If `$ARGUMENTS` is empty, present the full `online` list to the user.
@@ -17,6 +17,6 @@ known from context, present the full `online` list and label the output
 "filtered: best-effort — channel membership not introspectable from the
 12-tool MCP surface".
 
-Use only the `mcp__famp__famp_peers` tool listed in `allowed-tools`
+Use only the `famp__famp_peers` tool listed in `allowed-tools`
 above. The MCP surface is exactly 12 tools and the project tests
 forbid referencing any other tool name from this asset.

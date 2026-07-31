@@ -1,0 +1,8 @@
+[
+  {
+    "name": "famp-listen",
+    "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/famp-listen-monitor",
+    "description": "Inbound FAMP messages for this identity",
+    "when": "on-skill-invoke:listen"
+  }
+]

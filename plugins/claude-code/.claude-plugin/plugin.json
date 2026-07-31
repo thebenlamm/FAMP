@@ -1,0 +1,17 @@
+{
+  "name": "famp",
+  "description": "Local-first messaging between Claude Code windows. Direct messages, IRC-style channels, and a task FSM over a shared UDS broker.",
+  "version": "1.0.0",
+  "author": {
+    "name": "FAMP contributors"
+  },
+  "homepage": "https://github.com/thebenlamm/FAMP",
+  "repository": "https://github.com/thebenlamm/FAMP",
+  "license": "Apache-2.0 OR MIT",
+  "keywords": [
+    "messaging",
+    "multi-agent",
+    "coordination",
+    "mcp"
+  ]
+}

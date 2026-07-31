@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# FAMP binary resolver.
+#
+# `bin/` is prepended to the Bash tool's PATH while the plugin is enabled, so
+# inside Claude Code this shim is what a bare `famp` resolves to. It must never
+# consult PATH itself — that would re-enter this script — so it execs the first
+# real binary from an explicit candidate list instead.
+#
+# The plugin deliberately does not vendor a compiled binary: that would mean
+# committing a ~7.6 MB artifact per platform triple to the marketplace repo.
+# `/famp:setup` installs it once; this shim is what finds it afterwards.
+set -euo pipefail
+
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+for candidate in \
+  "${FAMP_BIN:-}" \
+  "$HOME/.famp/bin/famp" \
+  "$HOME/.cargo/bin/famp" \
+  "/usr/local/bin/famp" \
+  "/opt/homebrew/bin/famp"; do
+  [ -n "$candidate" ] || continue
+  [ -x "$candidate" ] || continue
+  [ "$candidate" != "$SELF" ] || continue
+  exec "$candidate" "$@"
+done
+
+cat >&2 <<'EOF'
+famp: no broker binary found.
+
+This plugin ships the Claude Code wiring — skills, Stop hooks, MCP server
+registration — but not the compiled binary, which is platform-specific.
+
+Fix: run /famp:setup once in this window. It builds or locates the binary and
+installs the persistent broker service.
+
+Already have a binary elsewhere? Point $FAMP_BIN at it.
+EOF
+exit 127
