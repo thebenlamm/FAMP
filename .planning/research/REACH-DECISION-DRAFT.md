@@ -40,7 +40,16 @@ Saving $5/mo is not worth a relay that can vanish. Revisit if traffic ever justi
 
 ### What the relay can and cannot observe (REACH-01, required)
 
-**Cannot:** read message bodies. Every envelope is Ed25519-signed and verified end-to-end under the `FAMP-sig-v1\0` domain prefix; the relay is untrusted by construction and forwards opaque bytes. It cannot forge, alter, or read an envelope without detection.
+> ### ⚠ CORRECTION — 2026-07-31
+> **An earlier version of this section claimed the relay "cannot read message bodies… forwards opaque bytes." That was FALSE and is corrected below.** FAMP **signs but does not encrypt** — verified against the tree: there is no payload encryption anywhere in `famp-crypto`, `famp-envelope`, or `famp-gateway`. The relay terminates TLS and sees **plaintext envelopes**. Signing gives integrity and authenticity, not confidentiality. The error mattered because it understated what the relay operator can see and would have propagated into the follower-facing doc.
+
+**Cannot:** forge or alter an envelope without detection. Every envelope is Ed25519-signed and verified end-to-end under the `FAMP-sig-v1\0` domain prefix, so a malicious relay cannot inject, modify, or replay-with-changes anything the receiver will accept. It also cannot impersonate a peer, since it holds no private key.
+
+**Can — read everything.** Because there is no payload encryption, the relay sees **full message content in plaintext**, not just metadata. **The relay operator can read every message that transits their box.** Since Ben operates the relay, Ben can read the traffic of anyone who federates through it. This must be stated plainly and prominently in the follower-facing doc (DOC-06) — a second person cannot meaningfully consent to using this relay without knowing it.
+
+**Consequence for relay design (feeds Phase 17):** queue-drain authorization is therefore a **confidentiality** boundary, not merely an availability one. Whoever can drain a queue can *read* it. That rules out first-come/TOFU registration of queue owners at the relay — an attacker who registered a victim's queue first would read their plaintext, not merely deny them service.
+
+**Options if this is unacceptable** (all out of scope for v1.1, recorded so the tradeoff is explicit rather than forgotten): end-to-end payload encryption using the peer keys already exchanged; or a relay that forwards at the TCP layer without terminating TLS; or per-pair relays. Each is real work and none is required for the milestone's acceptance bar — but "the operator can read your messages" is a property, not a bug to be discovered later.
 
 **Can:** everything *about* the traffic — which principals talk to which, when, how often, message sizes, and timing. **Signing protects payload integrity, not metadata privacy.** Anyone with access to the relay host sees the full social graph and activity pattern of every pair using it. Since Ben operates it, Ben has that visibility over anyone who federates through it — that must be stated plainly in the follower-facing doc (DOC-06), not buried.
 
