@@ -29,17 +29,10 @@
 
 #![forbid(unsafe_code)]
 
-// Silencer: Task 2 (`fetch_auth`'s full implementation, replacing this
-// plan's Task 1 stub) is the first consumer of each of these. Remove
-// each line as its consumer module lands — `base64` and `serde_json` are
-// consumed by Task 3's fetch-route response encoding, the rest by Task
-// 2's signed-fetch-authorization mechanism.
+// Silencer: consumed by Task 3's fetch-route response encoding
+// (`http.rs`) — remove each line as that module lands.
 use base64 as _;
-use serde as _;
 use serde_json as _;
-use thiserror as _;
-use url as _;
-use uuid as _;
 
 // Silencer: `reqwest` is a dev-dependency consumed only by
 // `tests/relay_store_and_forward.rs` (Task 3's live-process test client)
