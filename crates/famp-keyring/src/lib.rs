@@ -66,6 +66,23 @@ pub enum KeyLookupOutcome<'a> {
     NonCanonicalNow,
 }
 
+/// The result of a successful [`Keyring::rotate_to`] call (KEYR-02).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RotationOutcome {
+    /// The principal had no entries at all (or only non-`Active`
+    /// entries); the new key is now pinned `Active`.
+    FirstPin,
+    /// The SAME 32-byte pubkey was already the principal's `Active`
+    /// entry — idempotent, no mutation.
+    AlreadyPinned,
+    /// The principal's previous `Active` entry was moved to `Retired`
+    /// (key material retained) and the new key pinned `Active`.
+    Rotated {
+        previous_key_id: String,
+        new_key_id: String,
+    },
+}
+
 /// Local-file TOFU keyring: `Principal -> Vec<KeyEntry>`.
 ///
 /// Construction paths:
@@ -283,6 +300,15 @@ impl Keyring {
         key: TrustedVerifyingKey,
     ) -> Result<(), KeyringError> {
         if let Some(entries) = self.map.get(&principal) {
+            if entries
+                .iter()
+                .any(|e| e.state() == KeyState::Revoked && e.key().as_bytes() == key.as_bytes())
+            {
+                return Err(KeyringError::KeyRevoked {
+                    principal,
+                    key_id: famp_crypto::key_id(&key),
+                });
+            }
             if let Some(active) = entries.iter().find(|e| e.state() == KeyState::Active) {
                 if active.key().as_bytes() != key.as_bytes() {
                     return Err(KeyringError::KeyConflict { principal });
@@ -294,6 +320,164 @@ impl Keyring {
             .entry(principal)
             .or_default()
             .push(KeyEntry::legacy(key));
+        Ok(())
+    }
+
+    /// Pin a new key for `principal`, moving any existing `Active` entry
+    /// to `Retired` rather than dropping it (KEYR-02). `now`/`valid_until`
+    /// are always caller-supplied — this function never reads a clock.
+    ///
+    /// Every check below runs BEFORE any mutation, so every `Err` path
+    /// leaves the keyring byte-identical (T-15-13):
+    /// 1. `now` (and `valid_until`, if present) must be canonical UTC, else
+    ///    [`KeyringError::NonCanonicalTimestamp`].
+    /// 2. `new_key` already exists as a `Revoked` entry for `principal` ->
+    ///    [`KeyringError::KeyRevoked`], regardless of `confirmed`
+    ///    (revocation is monotonic, T-15-04).
+    /// 3. No `Active` entry exists (either no entries at all, or only
+    ///    `Retired`/`Revoked` ones) -> pin `new_key` `Active`, return
+    ///    [`RotationOutcome::FirstPin`].
+    /// 4. An `Active` entry exists with the SAME pubkey ->
+    ///    [`RotationOutcome::AlreadyPinned`], no mutation.
+    /// 5. An `Active` entry exists with a DIFFERENT pubkey and
+    ///    `confirmed == false` -> [`KeyringError::KeyChangeRequiresConfirmation`].
+    /// 6. Otherwise: retire the existing `Active` entry (key material
+    ///    kept) and pin `new_key` `Active` ->
+    ///    [`RotationOutcome::Rotated`].
+    pub fn rotate_to(
+        &mut self,
+        principal: Principal,
+        new_key: TrustedVerifyingKey,
+        now: &str,
+        valid_until: Option<&str>,
+        confirmed: bool,
+    ) -> Result<RotationOutcome, KeyringError> {
+        if !entry::is_canonical_utc(now) {
+            return Err(KeyringError::NonCanonicalTimestamp {
+                value: now.to_string(),
+            });
+        }
+        if let Some(vu) = valid_until {
+            if !entry::is_canonical_utc(vu) {
+                return Err(KeyringError::NonCanonicalTimestamp {
+                    value: vu.to_string(),
+                });
+            }
+        }
+
+        let new_key_bytes = *new_key.as_bytes();
+        let new_key_id = famp_crypto::key_id(&new_key);
+
+        if let Some(entries) = self.map.get(&principal) {
+            if entries
+                .iter()
+                .any(|e| e.state() == KeyState::Revoked && *e.key().as_bytes() == new_key_bytes)
+            {
+                return Err(KeyringError::KeyRevoked {
+                    principal,
+                    key_id: new_key_id,
+                });
+            }
+        }
+
+        // Single mutable borrow for the rest of this call — every branch
+        // below operates on this same `entries` vector, so no error path
+        // needs a second fallible lookup.
+        let entries = self.map.entry(principal.clone()).or_default();
+        let active_idx = entries.iter().position(|e| e.state() == KeyState::Active);
+
+        let Some(idx) = active_idx else {
+            entries.push(KeyEntry::new(
+                new_key,
+                KeyState::Active,
+                valid_until.map(ToString::to_string),
+                Some(now.to_string()),
+                None,
+            ));
+            return Ok(RotationOutcome::FirstPin);
+        };
+
+        if *entries[idx].key().as_bytes() == new_key_bytes {
+            return Ok(RotationOutcome::AlreadyPinned);
+        }
+
+        let previous_key_id = entries[idx].key_id();
+
+        if !confirmed {
+            return Err(KeyringError::KeyChangeRequiresConfirmation {
+                principal,
+                previous_key_id,
+                new_key_id,
+            });
+        }
+
+        let old = entries[idx].clone();
+        entries[idx] = KeyEntry::new(
+            old.key().clone(),
+            KeyState::Retired,
+            old.valid_until().map(ToString::to_string),
+            old.pinned_at().map(ToString::to_string),
+            Some(now.to_string()),
+        );
+        entries.push(KeyEntry::new(
+            new_key,
+            KeyState::Active,
+            valid_until.map(ToString::to_string),
+            Some(now.to_string()),
+            None,
+        ));
+
+        Ok(RotationOutcome::Rotated {
+            previous_key_id,
+            new_key_id,
+        })
+    }
+
+    /// Remove a `Retired` entry from the trust store — the ONLY path that
+    /// deletes key material (KEYR-02). Refuses an `Active` entry (would
+    /// silently sever the channel, T-15-14) and a `Revoked` entry (a
+    /// revocation tombstone is permanent — deleting it would let a re-pin
+    /// resurrect the key, T-15-04). Removes the principal entirely from
+    /// the map once its entry vector becomes empty, so [`Keyring::len`]
+    /// stays "number of principals with at least one entry".
+    pub fn retire(&mut self, principal: &Principal, key_id: &str) -> Result<(), KeyringError> {
+        let entries = self
+            .map
+            .get_mut(principal)
+            .ok_or_else(|| KeyringError::NoSuchKeyEntry {
+                principal: principal.clone(),
+                key_id: key_id.to_string(),
+            })?;
+        let idx = entries
+            .iter()
+            .position(|e| e.key_id() == key_id)
+            .ok_or_else(|| KeyringError::NoSuchKeyEntry {
+                principal: principal.clone(),
+                key_id: key_id.to_string(),
+            })?;
+
+        match entries[idx].state() {
+            KeyState::Active => {
+                return Err(KeyringError::CannotRetire {
+                    principal: principal.clone(),
+                    key_id: key_id.to_string(),
+                    state: "active",
+                });
+            }
+            KeyState::Revoked => {
+                return Err(KeyringError::CannotRetire {
+                    principal: principal.clone(),
+                    key_id: key_id.to_string(),
+                    state: "revoked",
+                });
+            }
+            KeyState::Retired => {}
+        }
+
+        entries.remove(idx);
+        if entries.is_empty() {
+            self.map.remove(principal);
+        }
         Ok(())
     }
 }
