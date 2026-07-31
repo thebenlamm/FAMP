@@ -203,14 +203,12 @@ async fn run_one_session(
                 // time; subsequent Inbox polls advance from the
                 // broker's reported `next_offset`.
                 //
-                // `RegisterOk.drained` stays `Vec<serde_json::Value>` in
-                // this plan (D-17 defers converting it to plan 14-02), so
-                // there is no real per-record origin to pass here.
-                // `Origin::Unknown` renders these lines wrapped/untrusted
-                // — fail-closed, not fail-open — rather than defaulting
-                // to `Local`.
-                for env in &drained {
-                    emit_tail_line(famp_bus::Origin::Unknown, env);
+                // Phase 14 plan 14-02: `RegisterOk.drained` now carries
+                // `StampedEnvelope` elements with a real per-record
+                // origin — use it directly instead of the plan 14-01
+                // interim `Origin::Unknown` default.
+                for stamped in &drained {
+                    emit_tail_line(stamped.origin, &stamped.envelope);
                 }
                 tail_loop(&mut client, &args.name, sock).await
             } else {
@@ -230,9 +228,15 @@ async fn run_one_session(
         BusReply::Err { kind, message } | BusReply::HelloErr { kind, message } => {
             Err(CliError::BusError { kind, message })
         }
+        // T-14-08: `other` may be `RegisterOk`/`JoinOk`/`AwaitOk`, each of
+        // which now carries attacker-authored `StampedEnvelope` payloads
+        // for a Gateway/Unknown-origin sender. `{:?}` on the whole reply
+        // would print that payload into an error string that reaches
+        // stderr/MCP tool results. Use the variant name only, never the
+        // payload.
         other => Err(CliError::BusError {
             kind: BusErrorKind::Internal,
-            message: format!("unexpected broker reply: {other:?}"),
+            message: format!("unexpected broker reply: {}", other.variant_name()),
         }),
     }
 }
@@ -305,10 +309,16 @@ async fn tail_loop(
                     Ok(BusReply::Err { kind, message }) => {
                         return Err(CliError::BusError { kind, message });
                     }
+                    // T-14-08: variant name only, never the payload — see
+                    // the comment on the `Register` reply's fallback arm
+                    // above.
                     Ok(other) => {
                         return Err(CliError::BusError {
                             kind: BusErrorKind::Internal,
-                            message: format!("unexpected broker reply on Inbox: {other:?}"),
+                            message: format!(
+                                "unexpected broker reply on Inbox: {}",
+                                other.variant_name()
+                            ),
                         });
                     }
                     Err(e) => {

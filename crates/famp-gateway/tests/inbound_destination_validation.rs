@@ -296,7 +296,8 @@ async fn well_formed_same_domain_envelope_still_delivers() {
             assert!(
                 envelopes
                     .iter()
-                    .any(|e| e.get("id").and_then(|v| v.as_str()) == Some(id.to_string().as_str())),
+                    .any(|e| e.envelope.get("id").and_then(|v| v.as_str())
+                        == Some(id.to_string().as_str())),
                 "delivered envelope not found in bob's mailbox: {envelopes:?}"
             );
         }

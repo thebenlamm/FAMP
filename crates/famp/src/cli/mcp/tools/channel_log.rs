@@ -4,6 +4,20 @@
 //! registration. This is a recovery path for channel messages that arrived
 //! while an agent was busy composing and therefore were not observed through
 //! `famp_await`.
+//!
+//! ## Not version-gated (D-10, Phase 14 plan 14-02)
+//!
+//! This surface reads the mailbox JSONL directly from disk, bypassing the
+//! broker entirely — it therefore never goes through the Hello version
+//! check (`BUS_PROTO_VERSION`) that every other rendering surface rides
+//! on for free. A pre-Phase-14 mailbox line (or any record whose shape
+//! doesn't match `StampedEnvelope` exactly) is NOT a broker-rejected
+//! connection here; it is just a line this function reads. What keeps
+//! this fail-closed instead is `famp_bus::split_stamped`'s own posture:
+//! any record that isn't recognizably `{"origin":...,"envelope":...}`
+//! resolves to `Origin::Unknown`, which `render::render_envelope_body`
+//! then renders quarantine-wrapped — never `Origin::Local`. Pinned by
+//! `channel_log_marks_legacy_unstamped_record` (T-14-07).
 
 use std::path::Path;
 
@@ -23,7 +37,15 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     call_at_bus_dir(input, bus_dir(&sock))
 }
 
-fn call_at_bus_dir(input: &Value, bus_dir: &Path) -> Result<Value, ToolError> {
+/// Bus-dir-explicit entry point.
+///
+/// Phase 14 plan 14-02: `pub` so it serves as the same kind of explicit
+/// test seam this crate's other rendering surfaces already expose
+/// (`run_at`/`run_at_structured`). Lets
+/// `crates/famp/tests/quarantine_surfaces.rs` pin this surface's
+/// origin-marking directly against a temp mailbox directory, with no
+/// live broker and no process env vars.
+pub fn call_at_bus_dir(input: &Value, bus_dir: &Path) -> Result<Value, ToolError> {
     let channel_raw = input
         .get("channel")
         .and_then(Value::as_str)
@@ -74,9 +96,26 @@ fn read_channel_mailbox(
     let mut next_offset = since;
     let mut envelopes = Vec::new();
 
-    for (envelope, end_offset) in entries.into_iter().take(take) {
+    // Phase 14 D-04/D-05/D-10 (mechanical rendering surface #5 of 7): this
+    // path bypasses the broker (module doc above), so every raw line is
+    // unwrapped through `split_stamped` (fail-closed: an unrecognized or
+    // legacy shape resolves to `Origin::Unknown`) and its body rendered
+    // through the one shared helper before it reaches this JSON output —
+    // never a second wrapping implementation (D-07).
+    for (raw, end_offset) in entries.into_iter().take(take) {
         next_offset = end_offset;
-        envelopes.push(envelope);
+        let (origin, inner) = famp_bus::split_stamped(&raw);
+        let mut rendered_envelope = inner.clone();
+        if let Some(body) = famp_envelope::EnvelopeView::new(inner).body().cloned() {
+            let rendered_body = crate::cli::render::render_envelope_body(origin, &body);
+            if let Some(obj) = rendered_envelope.as_object_mut() {
+                obj.insert("body".to_string(), rendered_body);
+            }
+        }
+        envelopes.push(serde_json::json!({
+            "origin": origin,
+            "envelope": rendered_envelope,
+        }));
     }
 
     Ok(serde_json::json!({
@@ -128,8 +167,12 @@ mod tests {
 
         assert_eq!(out["channel"], "#planning");
         assert_eq!(out["envelopes"].as_array().unwrap().len(), 2);
-        assert_eq!(out["envelopes"][0]["id"], "one");
-        assert_eq!(out["envelopes"][1]["id"], "two");
+        assert_eq!(out["envelopes"][0]["envelope"]["id"], "one");
+        assert_eq!(out["envelopes"][1]["envelope"]["id"], "two");
+        // Phase 14: a bare (legacy) mailbox line resolves to Unknown, not
+        // Local — fail-closed even for a mailbox record predating this
+        // phase's on-disk stamp format.
+        assert_eq!(out["envelopes"][0]["origin"], "unknown");
         assert_eq!(out["next_offset"], second_offset);
     }
 
@@ -151,7 +194,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(out["envelopes"].as_array().unwrap().len(), 1);
-        assert_eq!(out["envelopes"][0]["id"], "three");
+        assert_eq!(out["envelopes"][0]["envelope"]["id"], "three");
         assert_eq!(out["next_offset"], third_offset);
     }
 

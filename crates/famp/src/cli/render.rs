@@ -103,7 +103,17 @@ fn quarantine_wrap(origin: Origin, text: &str) -> String {
 /// Snake_case label matching [`Origin`]'s `#[serde(rename_all =
 /// "snake_case")]` wire form, so the marker text and the machine-readable
 /// `"origin"` field callers add never drift apart.
-const fn origin_label(origin: Origin) -> &'static str {
+///
+/// `pub` (Phase 14 plan 14-02, D-07): surfaces that emit a *string*-typed
+/// machine-readable origin field (e.g. `register --tail`'s text-shaped
+/// tail line, `famp_channel_log`'s JSON) use this instead of
+/// hand-rolling a second `match` on [`Origin`]. Surfaces that emit a
+/// JSON `"origin"` key on an already-JSON payload can serialize `Origin`
+/// directly via its own `Serialize` impl (identical snake_case output) —
+/// either path is fine; what matters is neither hand-rolls a THIRD label
+/// scheme.
+#[must_use]
+pub const fn origin_label(origin: Origin) -> &'static str {
     match origin {
         Origin::Local => "local",
         Origin::Gateway => "gateway",

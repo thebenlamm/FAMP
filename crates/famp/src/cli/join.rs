@@ -17,13 +17,16 @@
 //! `drained` is the *count* of typed envelopes drained on join — the full
 //! envelopes are available structurally via [`run_at_structured`] for the
 //! MCP `famp_join` tool wrapper (plan 02-09). The wire shape on
-//! [`BusReply::JoinOk`] carries `drained: Vec<serde_json::Value>` (typed
-//! envelopes per Phase-1 D-09); the CLI surfaces only the count for
-//! ergonomics.
+//! [`BusReply::JoinOk`] carries `drained: Vec<StampedEnvelope>` (Phase 14
+//! plan 14-02, D-17); the CLI surfaces only the count for ergonomics.
+//! `famp join` never renders a body (D-06: no rendering surface here), so
+//! the per-record origin half each `StampedEnvelope` carries is simply
+//! not consulted by this module — see the doc comment on
+//! [`JoinOutcome::drained`].
 
 use std::path::Path;
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply, MemberInfo};
+use famp_bus::{BusErrorKind, BusMessage, BusReply, MemberInfo, StampedEnvelope};
 
 use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
 use crate::cli::error::CliError;
@@ -53,10 +56,15 @@ pub struct JoinArgs {
 pub struct JoinOutcome {
     pub channel: String,
     pub members: Vec<MemberInfo>,
-    /// Typed envelopes drained on join (Phase-1 D-09 wire shape). The
-    /// stdout JSONL form surfaces only the length; structured callers see
-    /// the full envelopes.
-    pub drained: Vec<serde_json::Value>,
+    /// Typed, provenance-stamped envelopes drained on join (Phase 14 plan
+    /// 14-02, D-17). `famp join` reports a drained COUNT, not bodies —
+    /// this surface never renders content (D-06), so callers that only
+    /// need the count (the CLI `run` wrapper, the MCP `famp_join` tool)
+    /// never inspect `origin`. Kept as the full `StampedEnvelope` (not
+    /// unwrapped to `Vec<Value>`) so a future structured caller that DOES
+    /// need to render has the provenance available without a second wire
+    /// round-trip.
+    pub drained: Vec<StampedEnvelope>,
 }
 
 /// Structured entry — opens a D-10 proxy connection, sends

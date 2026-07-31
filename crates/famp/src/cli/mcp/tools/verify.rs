@@ -240,7 +240,14 @@ fn list_mailbox_files(dir: &Path) -> Result<Vec<PathBuf>, ToolError> {
 ///   The mailbox file simply hasn't been written yet; `delivered: false` is correct.
 /// - Any other error → `Err(Internal)`. Permission errors, corrupt reads, etc.
 ///   must not produce the `delivered: false` "safe to retry" signal.
-fn scan_files(
+///
+/// `pub` (Phase 14 plan 14-02, Task 3): the same kind of sock-explicit
+/// test seam this crate's other rendering surfaces already expose
+/// (`run_at`/`run_at_structured`/`call_at_bus_dir`). Lets
+/// `crates/famp/tests/quarantine_surfaces.rs` pin `famp_verify`'s
+/// metadata-only output shape (D-06) directly, without touching process
+/// env vars or a live broker.
+pub fn scan_files(
     task_id: &str,
     envelope_id: Option<&str>,
     candidates: &[PathBuf],

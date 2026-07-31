@@ -231,31 +231,37 @@ pub enum BusReply {
         kind: BusErrorKind,
         message: String,
     },
-    // D-09: `drained` is `Vec<serde_json::Value>` on the wire to preserve
-    // BUS-02/BUS-03 canonical-JSON round-trip, but the broker MUST
-    // type-validate each line via `AnyBusEnvelope::decode` before inserting
-    // into this Vec. Decode failure emits `Err{EnvelopeInvalid}` and aborts
-    // cursor advance for that drain.
+    // D-09/D-17 (Phase 14 plan 14-02): `drained` carries `StampedEnvelope`
+    // elements, not bare `serde_json::Value`s — each element's `envelope`
+    // field is what preserves the BUS-02/BUS-03 canonical-JSON round-trip
+    // property the bare-`Value` shape used to carry directly. The broker
+    // still type-validates the INNER value via `AnyBusEnvelope::decode`
+    // before inserting into this Vec (see `decode_line` in
+    // `broker/handle.rs`); decode failure skips that one line
+    // (head-of-line resilience, fix 260611) rather than aborting the
+    // whole drain.
     RegisterOk {
         active: String,
-        drained: Vec<serde_json::Value>,
+        drained: Vec<StampedEnvelope>,
         peers: Vec<String>,
     },
     SendOk {
         task_id: uuid::Uuid,
         delivered: Vec<Delivered>,
     },
-    // D-17 (Phase 14): `envelopes` changed from `Vec<serde_json::Value>`
-    // to `Vec<StampedEnvelope>` — every `famp_inbox` / `inbox list` reply
-    // now carries the fail-closed provenance stamp per element. AwaitOk /
-    // RegisterOk / JoinOk stay on `Vec<serde_json::Value>` in this plan;
-    // plan 14-02 converts them.
+    // D-17 (Phase 14): `envelopes`/`drained` changed from
+    // `Vec<serde_json::Value>` to `Vec<StampedEnvelope>` on all four reply
+    // variants that carry drained mailbox content (`InboxOk` in plan
+    // 14-01; `AwaitOk`/`RegisterOk`/`JoinOk` in plan 14-02) — every reply
+    // that can carry received content now carries the fail-closed
+    // provenance stamp per element, closing the gap the original
+    // five-surface hand-curated list missed (D-04/D-05).
     InboxOk {
         envelopes: Vec<StampedEnvelope>,
         next_offset: u64,
     },
     AwaitOk {
-        envelopes: Vec<serde_json::Value>,
+        envelopes: Vec<StampedEnvelope>,
         mailbox: MailboxName,
         next_offset: u64,
     },
@@ -263,7 +269,7 @@ pub enum BusReply {
     JoinOk {
         channel: String,
         members: Vec<MemberInfo>,
-        drained: Vec<serde_json::Value>,
+        drained: Vec<StampedEnvelope>,
     },
     LeaveOk {
         channel: String,
@@ -294,6 +300,38 @@ pub enum BusReply {
         kind: BusErrorKind,
         message: String,
     },
+}
+
+impl BusReply {
+    /// Snake_case-ish variant name, no payload.
+    ///
+    /// Phase 14 T-14-08: several call sites used to interpolate an
+    /// unexpected `BusReply` via `{:?}` into an error string that flows
+    /// into MCP tool results / stderr — after this plan, `RegisterOk`,
+    /// `JoinOk`, and `AwaitOk` all carry `StampedEnvelope`, whose
+    /// `envelope` field is attacker-authored for a `Gateway`/`Unknown`
+    /// origin sender. `{:?}` on the whole reply prints that payload
+    /// verbatim. Callers reporting "unexpected reply" should use this
+    /// variant name instead of `{:?}` — never the payload.
+    #[must_use]
+    pub const fn variant_name(&self) -> &'static str {
+        match self {
+            Self::HelloOk { .. } => "HelloOk",
+            Self::HelloErr { .. } => "HelloErr",
+            Self::RegisterOk { .. } => "RegisterOk",
+            Self::SendOk { .. } => "SendOk",
+            Self::InboxOk { .. } => "InboxOk",
+            Self::AwaitOk { .. } => "AwaitOk",
+            Self::AwaitTimeout {} => "AwaitTimeout",
+            Self::JoinOk { .. } => "JoinOk",
+            Self::LeaveOk { .. } => "LeaveOk",
+            Self::SessionsOk { .. } => "SessionsOk",
+            Self::WhoamiOk { .. } => "WhoamiOk",
+            Self::InspectOk { .. } => "InspectOk",
+            Self::SetListenOk { .. } => "SetListenOk",
+            Self::Err { .. } => "Err",
+        }
+    }
 }
 
 /// Per-target delivery row in [`BusReply::SendOk`].
@@ -426,7 +464,10 @@ mod tests {
     #[test]
     fn roundtrip_await_ok_batch() {
         let v = BusReply::AwaitOk {
-            envelopes: vec![serde_json::json!({"body": "hello"})],
+            envelopes: vec![StampedEnvelope {
+                origin: Origin::Local,
+                envelope: serde_json::json!({"body": "hello"}),
+            }],
             mailbox: MailboxName::Channel("#team".into()),
             next_offset: 42,
         };
@@ -764,7 +805,10 @@ mod tests {
                     role: None,
                 },
             ],
-            drained: vec![],
+            drained: vec![StampedEnvelope {
+                origin: Origin::Gateway,
+                envelope: serde_json::json!({"body": "hello"}),
+            }],
         };
         let bytes = famp_canonical::canonicalize(&v).unwrap();
         let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();

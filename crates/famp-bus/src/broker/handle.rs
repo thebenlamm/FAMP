@@ -332,12 +332,12 @@ fn register<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    // RegisterOk.drained stays `Vec<serde_json::Value>` in this plan
-    // (D-17 defers converting it to plan 14-02); drop the per-record
-    // origin half decode_lines now carries.
-    let decoded: Vec<serde_json::Value> = decode_lines(&mailbox, since, &drained)
+    // Phase 14 plan 14-02: `RegisterOk.drained` carries `StampedEnvelope`
+    // elements — build them from decode_lines' per-record origin (the
+    // same pattern `inbox()` uses for `InboxOk.envelopes`).
+    let decoded: Vec<StampedEnvelope> = decode_lines(&mailbox, since, &drained)
         .into_iter()
-        .map(|(_, envelope)| envelope)
+        .map(|(origin, envelope)| StampedEnvelope { origin, envelope })
         .collect();
 
     // Peers snapshot is taken BEFORE binding so a first-time register does
@@ -495,7 +495,7 @@ fn send_agent<E: BrokerEnv>(
                 *waiting,
                 &mailbox,
                 &parked.filter,
-                Some((envelope, line_len)),
+                Some((origin, envelope, line_len)),
             );
             out.push(Out::Reply(*waiting, reply));
             out.push(Out::UnparkAwait { client: *waiting });
@@ -561,7 +561,7 @@ fn send_channel<E: BrokerEnv>(
                 *waiting,
                 &mailbox,
                 &parked.filter,
-                Some((envelope, line_len)),
+                Some((origin, envelope, line_len)),
             );
             out.push(Out::Reply(*waiting, reply));
             out.push(Out::UnparkAwait { client: *waiting });
@@ -829,11 +829,11 @@ fn join<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    // JoinOk.drained stays `Vec<serde_json::Value>` in this plan (D-17
-    // defers converting it to plan 14-02); drop the origin half.
-    let decoded: Vec<serde_json::Value> = decode_lines(&mailbox, since, &drained)
+    // Phase 14 plan 14-02: `JoinOk.drained` carries `StampedEnvelope`
+    // elements — build them from decode_lines' per-record origin.
+    let decoded: Vec<StampedEnvelope> = decode_lines(&mailbox, since, &drained)
         .into_iter()
-        .map(|(_, envelope)| envelope)
+        .map(|(origin, envelope)| StampedEnvelope { origin, envelope })
         .collect();
 
     // Prospective members list as it will look after this join commits

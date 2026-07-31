@@ -128,11 +128,13 @@ proptest! {
         };
         let observed: Vec<u64> = drained
             .iter()
-            .map(|value| {
-                let bytes = famp_canonical::canonicalize(value).unwrap();
+            .map(|stamped| {
+                let bytes = famp_canonical::canonicalize(&stamped.envelope).unwrap();
                 let typed = famp_envelope::AnyBusEnvelope::decode(&bytes).unwrap();
                 assert!(matches!(typed, famp_envelope::AnyBusEnvelope::AuditLog(_)));
-                value["body"]["details"]["offline_seq"].as_u64().unwrap()
+                stamped.envelope["body"]["details"]["offline_seq"]
+                    .as_u64()
+                    .unwrap()
             })
             .collect();
         prop_assert_eq!(observed, (0..n_offline_sends as u64).collect::<Vec<_>>());
@@ -212,7 +214,11 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_register() {
     // Both good envelopes delivered; the malformed one dropped from the batch.
     let seqs: Vec<u64> = drained
         .iter()
-        .map(|v| v["body"]["details"]["offline_seq"].as_u64().unwrap())
+        .map(|v| {
+            v.envelope["body"]["details"]["offline_seq"]
+                .as_u64()
+                .unwrap()
+        })
         .collect();
     assert_eq!(
         seqs,
@@ -258,7 +264,11 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_await() {
     };
     let seqs: Vec<u64> = envelopes
         .iter()
-        .map(|v| v["body"]["details"]["offline_seq"].as_u64().unwrap())
+        .map(|v| {
+            v.envelope["body"]["details"]["offline_seq"]
+                .as_u64()
+                .unwrap()
+        })
         .collect();
     assert_eq!(
         seqs,

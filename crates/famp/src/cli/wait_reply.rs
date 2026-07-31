@@ -8,7 +8,9 @@
 use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName};
 
 use crate::bus_client::resolve_sock_path;
-use crate::cli::await_cmd::{connect_bound, is_reply_for_task, write_outcome, AwaitOutcome};
+use crate::cli::await_cmd::{
+    connect_bound, is_reply_for_task, render_stamped_envelopes, write_outcome, AwaitOutcome,
+};
 use crate::cli::error::CliError;
 use crate::cli::identity::resolve_identity;
 
@@ -51,21 +53,21 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
     match inbox_reply {
         BusReply::InboxOk { envelopes, .. } => {
             // D-17: `is_reply_for_task` reads task-matching metadata from
-            // the INNER envelope; the origin travels forward into
-            // `AwaitOutcome` so plan 14-02's `write_outcome` has
-            // something real to render with.
+            // the INNER envelope; the origin travels forward through
+            // `render_stamped_envelopes` so `write_outcome` renders the
+            // body (and tags it) per this specific envelope's real
+            // origin, not an interim default.
             if let Some(stamped) = envelopes
                 .into_iter()
                 .find(|stamped| is_reply_for_task(&stamped.envelope, args.task))
             {
                 return Ok(AwaitOutcome {
-                    envelopes: vec![stamped.envelope],
+                    envelopes: render_stamped_envelopes(vec![stamped]),
                     mailbox: Some(MailboxName::Agent(identity.clone())),
                     next_offset: None,
                     timed_out: false,
                     diagnostic: None,
                     aborted: false,
-                    origin: stamped.origin,
                 });
             }
         }
@@ -74,9 +76,14 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
             ..
         } => return Err(CliError::NotRegisteredHint { name: identity }),
         BusReply::Err { kind, message } => return Err(CliError::BusError { kind, message }),
+        // T-14-08: `other` may be `RegisterOk`/`JoinOk`/`AwaitOk`, each
+        // carrying attacker-authored `StampedEnvelope` content for a
+        // Gateway/Unknown-origin sender. `{:?}` on the whole reply would
+        // print that payload into an error string that reaches
+        // stderr/MCP tool results — use the variant name only.
         other => {
             return Err(CliError::BusClient {
-                detail: format!("unexpected reply to Inbox: {other:?}"),
+                detail: format!("unexpected reply to Inbox: {}", other.variant_name()),
             });
         }
     }
@@ -101,13 +108,12 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
             mailbox,
             next_offset,
         } => Ok(AwaitOutcome {
-            envelopes,
+            envelopes: render_stamped_envelopes(envelopes),
             mailbox: Some(mailbox),
             next_offset: Some(next_offset),
             timed_out: false,
             diagnostic: None,
             aborted: false,
-            origin: famp_bus::Origin::Unknown,
         }),
         BusReply::AwaitTimeout {} => Ok(AwaitOutcome {
             envelopes: Vec::new(),
@@ -119,15 +125,16 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
                 args.task
             )),
             aborted: false,
-            origin: famp_bus::Origin::Unknown,
         }),
         BusReply::Err {
             kind: BusErrorKind::NotRegistered,
             ..
         } => Err(CliError::NotRegisteredHint { name: identity }),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
+        // T-14-08: variant name only, never the payload (see the fixed
+        // `unexpected reply to Inbox` arm above for the same threat).
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Await: {other:?}"),
+            detail: format!("unexpected reply to Await: {}", other.variant_name()),
         }),
     }
 }

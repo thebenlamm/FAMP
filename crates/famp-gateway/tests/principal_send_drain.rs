@@ -164,7 +164,8 @@ async fn send_recv_round_trips_await_timeout_and_send() {
             assert!(
                 envelopes
                     .iter()
-                    .any(|e| e.get("id").and_then(|v| v.as_str()) == Some(tag.to_string().as_str())),
+                    .any(|e| e.envelope.get("id").and_then(|v| v.as_str())
+                        == Some(tag.to_string().as_str())),
                 "drained envelopes did not contain the tagged send: {envelopes:?}"
             );
         }

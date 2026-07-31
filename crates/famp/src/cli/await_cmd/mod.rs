@@ -47,7 +47,7 @@ use std::io::Write;
 use std::os::fd::{AsFd, FromRawFd, OwnedFd};
 use std::path::Path;
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName, Origin};
+use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName};
 use serde_json::Value;
 use tokio::io::unix::AsyncFd;
 
@@ -123,15 +123,6 @@ pub struct AwaitOutcome {
     /// set; the MCP tool never sets it, so this stays `false` there.
     /// Drives the `{"aborted":true}` stdout line and the exit-code-3 return.
     pub aborted: bool,
-    /// Phase 14 (D-17): provenance of `envelopes`, when known. `AwaitOk`
-    /// itself stays untyped (`Vec<serde_json::Value>`) in this plan — this
-    /// field exists so a caller that discovered its result via `InboxOk`
-    /// (which IS typed) can carry that origin through `write_outcome`.
-    /// Defaults to `Origin::Unknown` (fail-closed, D-01) — NEVER
-    /// `Origin::Local` — for the genuine `AwaitOk`/`AwaitTimeout` paths,
-    /// which have no stamped origin to report yet; plan 14-02 converts
-    /// `AwaitOk` itself and removes this interim default.
-    pub origin: Origin,
 }
 
 /// Top-level entry point for `Commands::Await`.
@@ -192,10 +183,26 @@ pub(crate) fn write_outcome(outcome: &AwaitOutcome, mut out: impl Write) -> Resu
             }
             None => serde_json::Value::Null,
         };
+        // Phase 14 plan 14-02: each element of `envelopes` already carries
+        // its own `"origin"` (via `render_stamped_envelopes`) — a batch
+        // CAN legitimately mix origins (e.g. two channel members posting
+        // from different origins within one drain), so per-envelope
+        // `"origin"` is the authoritative signal. This top-level `origin`
+        // is a convenience mirror of the FIRST envelope's origin for the
+        // common single-envelope case (`wait-reply`, most `await` calls);
+        // a caller inspecting a multi-envelope batch MUST consult each
+        // envelope's own `"origin"`, not this summary field.
+        let summary_origin = outcome
+            .envelopes
+            .first()
+            .and_then(|env| env.get("origin"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         let wrapper = serde_json::json!({
             "mailbox": mailbox_value,
             "envelopes": outcome.envelopes,
             "next_offset": outcome.next_offset,
+            "origin": summary_origin,
         });
         let line = serde_json::to_string(&wrapper).map_err(|e| CliError::Io {
             path: std::path::PathBuf::new(),
@@ -277,7 +284,6 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
                     timed_out: false,
                     diagnostic: None,
                     aborted: true,
-                    origin: Origin::Unknown,
                 });
             }
         }
@@ -298,13 +304,12 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
             mailbox,
             next_offset,
         } => Ok(AwaitOutcome {
-            envelopes,
+            envelopes: render_stamped_envelopes(envelopes),
             mailbox: Some(mailbox),
             next_offset: Some(next_offset),
             timed_out: false,
             diagnostic: None,
             aborted: false,
-            origin: Origin::Unknown,
         }),
         BusReply::AwaitTimeout {} => {
             let diagnostic = timeout_diagnostic(&mut bus, &identity, args.task).await;
@@ -315,7 +320,6 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
                 timed_out: true,
                 diagnostic: Some(diagnostic),
                 aborted: false,
-                origin: Origin::Unknown,
             })
         }
         BusReply::Err {
@@ -323,10 +327,50 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
             ..
         } => Err(CliError::NotRegisteredHint { name: identity }),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
+        // T-14-08: variant name only, never the payload — `other` may be
+        // `RegisterOk`/`JoinOk`/`InboxOk`, each carrying attacker-authored
+        // `StampedEnvelope`/envelope content for a Gateway/Unknown-origin
+        // sender. `{:?}` on the whole reply would print that payload into
+        // an error string that reaches stderr/MCP tool results.
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Await: {other:?}"),
+            detail: format!("unexpected reply to Await: {}", other.variant_name()),
         }),
     }
+}
+
+/// Render each drained [`StampedEnvelope`]'s body per its own origin and
+/// flatten `origin` onto the envelope object as a sibling JSON field
+/// (Phase 14 plan 14-02, D-04/D-05/D-07: mechanical rendering surfaces
+/// `famp_await`, CLI `await`, CLI `wait-reply` all share this transform,
+/// via [`run_at_structured`] and `wait_reply::run_structured`).
+///
+/// Deliberately kept FLAT (`{"from":...,"body":<rendered>,"origin":...}`)
+/// rather than nested under a further `"envelope"` key the way
+/// `famp_inbox`/`inbox list` do — this preserves the existing raw
+/// field-access output shape (`envelopes[i]["body"]`,
+/// `envelopes[i]["from"]`) that `wait_reply`'s own tests and the MCP
+/// `famp_await` e2e tests already pin, and every downstream consumer of
+/// `AwaitOutcome.envelopes` (the wake path, the hook backup, the MCP
+/// tool) reads fields off a flat `Value` today.
+pub(crate) fn render_stamped_envelopes(
+    stamped: Vec<famp_bus::StampedEnvelope>,
+) -> Vec<serde_json::Value> {
+    stamped
+        .into_iter()
+        .map(|s| {
+            let mut env = s.envelope;
+            if let Some(body) = famp_envelope::EnvelopeView::new(&env).body().cloned() {
+                let rendered = crate::cli::render::render_envelope_body(s.origin, &body);
+                if let Some(obj) = env.as_object_mut() {
+                    obj.insert("body".to_string(), rendered);
+                }
+            }
+            if let Some(obj) = env.as_object_mut() {
+                obj.insert("origin".to_string(), serde_json::json!(s.origin));
+            }
+            env
+        })
+        .collect()
 }
 
 /// Validate and adopt a caller-supplied file descriptor as an async

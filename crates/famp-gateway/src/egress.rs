@@ -347,7 +347,10 @@ pub async fn run_egress(
             Ok(BusReply::AwaitOk { envelopes, .. }) => envelopes,
             Ok(BusReply::AwaitTimeout {}) => Vec::new(),
             Ok(other) => {
-                eprintln!("famp-gateway: egress[{name}]: unexpected Await reply: {other:?}");
+                eprintln!(
+                    "famp-gateway: egress[{name}]: unexpected Await reply: {}",
+                    other.variant_name()
+                );
                 Vec::new()
             }
             Err(e) => {
@@ -356,7 +359,16 @@ pub async fn run_egress(
             }
         };
 
-        for mut envelope in envelopes {
+        // Phase 14 D-10/D-17/BUS-11: `AwaitOk.envelopes` now carries
+        // `StampedEnvelope` — the `origin` stamp is a LOCAL bus concept
+        // (D-01/D-02) and must NEVER cross onto the federation wire.
+        // `WireEnvelope` is `deny_unknown_fields`
+        // (`famp-envelope/src/wire.rs`), so leaking an extra key here
+        // would make every relayed envelope undecodable at the far end —
+        // the exact BUS-11 failure class this repo already hit once.
+        // Unwrap to the INNER envelope before signing/relaying; the
+        // stamp itself is discarded, on purpose, right here.
+        for mut envelope in envelopes.into_iter().map(|stamped| stamped.envelope) {
             if let Err(e) =
                 relay_one(&mut envelope, own_domain.as_deref(), &sk, &vk, &transport).await
             {
@@ -470,6 +482,51 @@ mod tests {
         assert!(
             matches!(result, Err(RejectReason::InvalidSignature)),
             "tampered body must fail verification, got {result:?}"
+        );
+    }
+
+    /// Phase 14 plan 14-02, T-14-09/BUS-11: `AwaitOk.envelopes` now
+    /// carries `StampedEnvelope { origin, envelope }`. `run_egress`
+    /// unwraps to `stamped.envelope` (discarding `origin`) BEFORE this
+    /// signing step runs — the stamp is a local-bus-only concept and
+    /// must never cross onto the federation wire, because
+    /// `WireEnvelope` is `deny_unknown_fields` and would make the
+    /// relayed envelope permanently undecodable at the far end (the
+    /// exact BUS-11 failure class this repo already hit once). This
+    /// test proves the CORRECT call shape (already-unwrapped inner
+    /// envelope in, signed envelope out) never gains an "origin" key.
+    #[test]
+    fn egress_relayed_envelope_carries_no_origin_key() {
+        let sk = FampSigningKey::from_bytes([22u8; 32]);
+        let vk = sk.verifying_key();
+        let from: Principal = "agent:hosta.test/erin".parse().unwrap();
+        let to: Principal = "agent:hostb.test/frank".parse().unwrap();
+
+        // Simulate `run_egress`'s `.into_iter().map(|stamped| stamped.envelope)`
+        // unwrap: the drained AwaitOk element carries a Gateway origin
+        // stamp; only the inner envelope reaches signing.
+        let stamped = famp_bus::StampedEnvelope {
+            origin: famp_bus::Origin::Gateway,
+            envelope: plain_request_value(&from, &to),
+        };
+        let mut envelope = stamped.envelope;
+
+        sign_federation_fields(&mut envelope, &from, &to, &sk, &vk)
+            .expect("signing the unwrapped inner envelope must succeed");
+
+        assert!(
+            envelope.get("origin").is_none(),
+            "a relayed cross-host envelope must never carry an 'origin' key: {envelope:?}"
+        );
+        let keys: Vec<&str> = envelope
+            .as_object()
+            .expect("signed envelope must be an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert!(
+            !keys.contains(&"origin"),
+            "signed envelope key set must not contain 'origin': {keys:?}"
         );
     }
 

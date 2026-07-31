@@ -16,7 +16,10 @@ use crate::broker::identity::{
 };
 use crate::broker::state::ParkedAwait;
 use crate::mailbox::JSONL_RECORD_TERMINATOR_LEN;
-use crate::{AwaitFilter, Broker, BrokerEnv, BusErrorKind, BusReply, ClientId, MailboxName, Out};
+use crate::{
+    AwaitFilter, Broker, BrokerEnv, BusErrorKind, BusReply, ClientId, MailboxName, Origin, Out,
+    StampedEnvelope,
+};
 
 const AWAIT_BATCH_CAP: usize = 50;
 
@@ -93,7 +96,7 @@ pub(super) fn await_envelope<E: BrokerEnv>(
 #[derive(Debug)]
 struct AwaitBatch {
     mailbox: MailboxName,
-    envelopes: Vec<serde_json::Value>,
+    envelopes: Vec<StampedEnvelope>,
     next_offset: u64,
     /// `false` when `drain_await_batch` stopped early because it walked
     /// into a real, filter-mismatched envelope (Debug 999.1) rather than
@@ -149,7 +152,7 @@ pub(super) fn await_reply_for_mailbox<E: BrokerEnv>(
     client: ClientId,
     mailbox: &MailboxName,
     filter: &AwaitFilter,
-    trigger: Option<(&serde_json::Value, usize)>,
+    trigger: Option<(Origin, &serde_json::Value, usize)>,
 ) -> BusReply {
     let Ok((_, owner)) = resolve_await_owner(broker, client) else {
         return BusReply::Err {
@@ -213,7 +216,7 @@ fn drain_await_batch<E: BrokerEnv>(
     owner: ClientId,
     mailbox: &MailboxName,
     filter: &AwaitFilter,
-    trigger: Option<(&serde_json::Value, usize)>,
+    trigger: Option<(Origin, &serde_json::Value, usize)>,
 ) -> Result<AwaitBatch, (BusErrorKind, String)> {
     let since = await_offset(broker, owner, mailbox);
     let drained = broker
@@ -251,10 +254,14 @@ fn drain_await_batch<E: BrokerEnv>(
         },
     );
     let mut next_offset = outcome.next_offset;
-    // AwaitOk stays `Vec<serde_json::Value>` in this plan (D-17 defers
-    // converting it to plan 14-02); drop the per-record origin half.
-    let mut envelopes: Vec<serde_json::Value> =
-        outcome.delivered.into_iter().map(|(_, v)| v).collect();
+    // Phase 14 plan 14-02: `AwaitOk.envelopes` carries `StampedEnvelope`
+    // elements — keep the per-record origin `walk` already threads
+    // through instead of dropping it.
+    let mut envelopes: Vec<StampedEnvelope> = outcome
+        .delivered
+        .into_iter()
+        .map(|(origin, envelope)| StampedEnvelope { origin, envelope })
+        .collect();
     let fully_drained = outcome.fully_drained;
 
     // The wake-trigger envelope is only safe to fold in when this call
@@ -283,7 +290,7 @@ fn drain_await_batch<E: BrokerEnv>(
                 "fully-drained walk disagrees with the drain's end offset (partial trailing line, or a mid-line cursor)"
             );
         }
-        if let Some((trigger_envelope, trigger_line_len)) = trigger {
+        if let Some((trigger_origin, trigger_envelope, trigger_line_len)) = trigger {
             // The wake-trigger envelope was never drained, so there is no
             // `DrainedRecord` to source an offset from — frame it by hand,
             // but from the shared terminator constant, not a magic `1`.
@@ -295,7 +302,10 @@ fn drain_await_batch<E: BrokerEnv>(
                 // Permanently unmatchable — same as the main-loop case.
                 next_offset = trigger_next_offset;
             } else if filter_matches(filter, trigger_envelope) {
-                envelopes.push(trigger_envelope.clone());
+                envelopes.push(StampedEnvelope {
+                    origin: trigger_origin,
+                    envelope: trigger_envelope.clone(),
+                });
                 next_offset = trigger_next_offset;
             }
             // else: a real, filter-mismatched trigger envelope. Same

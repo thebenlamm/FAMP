@@ -200,7 +200,7 @@ fn test_channel_burst_while_not_parked_batches_on_next_await() {
     assert_eq!(envelopes.len(), 3, "dave must receive the whole burst");
     let observed: Vec<u64> = envelopes
         .iter()
-        .map(|envelope| envelope["body"]["details"]["seq"].as_u64().unwrap())
+        .map(|stamped| stamped.envelope["body"]["details"]["seq"].as_u64().unwrap())
         .collect();
     assert_eq!(observed, vec![1, 2, 3]);
     assert!(next_offset > 0, "AwaitOk should carry the resume offset");
@@ -324,6 +324,83 @@ fn register_without_origin_field_resolves_unknown() {
         state.origin,
         Origin::Unknown,
         "a Register frame omitting `origin` must resolve to Origin::Unknown, never Origin::Local"
+    );
+}
+
+/// Phase 14 plan 14-02, Task 1 acceptance criterion: a two-line drain
+/// (one stamped, one legacy bare-envelope) yields two `StampedEnvelope`
+/// elements carrying the STAMPED origin and `Origin::Unknown`
+/// respectively, IN THAT ORDER — the legacy line is not dropped, and its
+/// absence of a stamp never upgrades to `Local`. Exercised via
+/// `RegisterOk.drained` (the same `decode_lines` path `InboxOk`/`AwaitOk`
+/// also share).
+#[test]
+fn mixed_stamped_and_legacy_batch_preserves_both() {
+    let env = TestEnv::default();
+    let mailbox = MailboxName::Agent("alice".into());
+
+    // Line 1: broker-stamped, Gateway origin (matches what the executor
+    // writes for a gateway-registered sender's `Out::AppendMailbox`).
+    let stamped_envelope = audit_log_envelope(1, "bob");
+    let canonical_line = famp_canonical::canonicalize(&stamped_envelope).unwrap();
+    let stamped_bytes = crate::stamp_line(&canonical_line, Origin::Gateway).unwrap();
+    env.mailbox.append(&mailbox, stamped_bytes);
+
+    // Line 2: a legacy, pre-Phase-14 bare envelope — no stamp at all.
+    let legacy_envelope = audit_log_envelope(2, "carol");
+    let legacy_bytes = famp_canonical::canonicalize(&legacy_envelope).unwrap();
+    env.mailbox.append(&mailbox, legacy_bytes);
+
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Register {
+                name: "alice".into(),
+                pid: 100,
+                cwd: None,
+                listen: false,
+                origin: None,
+            },
+        },
+        now,
+    );
+    let drained = outs
+        .iter()
+        .find_map(|o| match o {
+            Out::Reply(_, BusReply::RegisterOk { drained, .. }) => Some(drained),
+            _ => None,
+        })
+        .expect("register must return RegisterOk");
+
+    assert_eq!(
+        drained.len(),
+        2,
+        "both the stamped and the legacy line must be delivered: {drained:?}"
+    );
+    assert_eq!(
+        drained[0].origin,
+        Origin::Gateway,
+        "first (stamped) element must carry the stamped Gateway origin"
+    );
+    assert_eq!(
+        drained[1].origin,
+        Origin::Unknown,
+        "second (legacy, unstamped) element must resolve to Origin::Unknown, never Local"
+    );
+    assert_eq!(
+        drained[0].envelope["body"]["details"]["seq"]
+            .as_u64()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        drained[1].envelope["body"]["details"]["seq"]
+            .as_u64()
+            .unwrap(),
+        2
     );
 }
 
@@ -1937,7 +2014,13 @@ fn inbox_preserves_channel_envelopes_after_unmatched_task_filtered_await() {
 /// (strict single-filter awaiter starvation); the complete fix is the
 /// broker-owned-delivery-position redesign tracked at
 /// `.planning/phases/999.11-broker-owned-delivery-position/SPEC.md`.
+///
+/// Phase 14: the two closing `assert_eq!` calls now read through
+/// `StampedEnvelope.envelope`, pushing this over the 100-line pedantic
+/// threshold — matches existing precedent for this exact lint elsewhere
+/// in this file/workspace (see `inbox()`/`execute_outs()`'s 14-01 notes).
 #[test]
+#[allow(clippy::too_many_lines)]
 fn strict_filtered_await_blocked_behind_mismatch_reports_timeout_then_unblocks_on_unfiltered_await()
 {
     let env = TestEnv::default();
@@ -2055,8 +2138,18 @@ fn strict_filtered_await_blocked_behind_mismatch_reports_timeout_then_unblocks_o
         "unfiltered await must unblock and deliver BOTH the blocking task-B envelope and \
          the previously-stuck task-A envelope: {envelopes:?}"
     );
-    assert_eq!(envelopes[0]["body"]["details"]["seq"].as_u64().unwrap(), 1);
-    assert_eq!(envelopes[1]["body"]["details"]["seq"].as_u64().unwrap(), 2);
+    assert_eq!(
+        envelopes[0].envelope["body"]["details"]["seq"]
+            .as_u64()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        envelopes[1].envelope["body"]["details"]["seq"]
+            .as_u64()
+            .unwrap(),
+        2
+    );
 }
 
 fn park_unfiltered_await(broker: &mut Broker<TestEnv>, client: u64, now: Instant) {
@@ -2122,7 +2215,7 @@ fn assert_member_woke_with_authors_post(broker: &Broker<TestEnv>, send_outs: &[O
         Some(BusReply::AwaitOk { envelopes, .. }) => {
             assert_eq!(envelopes.len(), 1, "member should receive author's post");
             assert_eq!(
-                envelopes[0]["from"].as_str().unwrap(),
+                envelopes[0].envelope["from"].as_str().unwrap(),
                 "agent:example.test/alice"
             );
         }
@@ -2465,7 +2558,10 @@ fn await_ok(outs: &[Out], client: u64) -> Option<(Vec<serde_json::Value>, u64)> 
                 next_offset,
                 ..
             },
-        ) if *c == client => Some((envelopes.clone(), *next_offset)),
+        ) if *c == client => Some((
+            envelopes.iter().map(|s| s.envelope.clone()).collect(),
+            *next_offset,
+        )),
         _ => None,
     })
 }
