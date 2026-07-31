@@ -37,8 +37,8 @@ Public reachability over the open internet. The model is decided **first**, in a
 - [ ] **REACH-01**: A decision record names the chosen reachability model, its **re-verified live** cost/month (vendor pricing pages, not aggregators), the named operator, and explicitly what the relay/tunnel **can and cannot observe** about FAMP traffic.
 - [ ] **REACH-02**: The spike's viability finding is validated against a **real symmetric-NAT network** (e.g. a carrier hotspot), not only networks Ben controls.
 - [ ] **REACH-03**: `iroh` is explicitly weighed as the single-crate alternative and its rejection rationale (transport-migration cost against a shipped, Gate-A-proven axum/rustls transport) is recorded in the decision record rather than silently dropped.
-- [ ] **REACH-04**: Two gateways on different networks, with no shared VPN, establish a working bidirectional path under the chosen model.
-- [ ] **REACH-05**: A reachability failure (relay down, hole-punch failed, peer offline) surfaces at the sender as a distinct, actionable error — never as a silent fire-and-forget success.
+- [x] **REACH-04**: Two gateways on different networks, with no shared VPN, establish a working bidirectional path under the chosen model.
+- [x] **REACH-05**: A reachability failure (relay down, hole-punch failed, peer offline) surfaces at the sender as a distinct, actionable error — never as a silent fire-and-forget success.
 
 ### Keyring Format Extension (KEYR)
 
@@ -52,11 +52,20 @@ Load-bearing prerequisite: the keyring is hard-coded to exactly one key per prin
 
 The milestone's hard problem. Replaces v1.0's `peer export` → paste-a-blob-over-Signal → `peer import`, which is architecturally the same silent-accept pattern as SSH TOFU.
 
-- [ ] **PAIR-01**: Two people with no prior shared secret complete **mutual** key pinning by exchanging a short code over any human channel.
-- [ ] **PAIR-02**: A wrong code **hard-aborts** the pairing. No partial pin, no degraded-but-continuing state, and a bounded number of guess attempts.
-- [ ] **PAIR-03**: A pairing code is single-use and has a bounded validity window; an expired or reused code is rejected.
+**MECHANISM DECIDED 2026-07-31 (Ben approved): a five-word TEXTED code (~55 bits from a 2048-word list). No PAKE. No capability link. No QR.**
+
+The deciding insight, from the `matt-essentialist` review: **a PAKE is only required if the code must be *low*-entropy.** Magic Wormhole uses 16 bits *because* SPAKE2 grants exactly one guess. The milestone bar forbids a live call, so the code was always going to be **texted** rather than spoken — and once it is texted, entropy is free. Five words from a 2048-word list is ~55 bits, with security carried by **entropy + single-use + server-side attempt limits**. This dissolves the blocker that drove the earlier capability-link proposal: the verified absence of a production-grade Rust balanced-PAKE rules out *low-entropy* codes, not codes as such.
+
+A texted word-code beat the 128-bit capability link on every axis that matters here: it survives phone→laptop transcription (five words vs. ~22 case-sensitive base64 chars — the link's advantage *inverts* exactly where it was supposed to help, since most non-technical people lack Signal Desktop); a sender-side link preview cannot burn it (messaging clients fetch URLs on the *sender's* device, consuming a GET-redeemed invite before the recipient ever sees it); it is not phishing-shaped ("click this link to connect your AI agent"); it needs no hosted web surface; and it keeps PAIR-01..05 honest **as written**, with no requirement redefinition. QR was dropped — it delivers to a device with a camera (the phone) while the software runs on the laptop, and `research/STACK.md:97` had already rejected it once on those grounds.
+
+- [ ] **PAIR-01**: Two people with no prior shared secret complete **mutual** key pinning by exchanging a short code over any human channel. *(Satisfied by a five-word code, texted. ~55 bits.)*
+- [ ] **PAIR-02**: A wrong code **hard-aborts** the pairing. No partial pin, no degraded-but-continuing state, and a bounded number of guess attempts. *(Attempt limits are server-side; entropy — not a one-guess PAKE — is what makes guessing infeasible.)*
+- [ ] **PAIR-03**: A pairing code is single-use and has a bounded validity window; an expired or reused code is rejected. **Window is 24 hours, not 15 minutes** — a short window is a *low-entropy* mechanism, and a 15-minute clock expires while the follower is still installing. Single-use consumption MUST be **endpoint-enforced and persisted before expensive processing**; a service restart must not restore a consumed invite. Relay-enforced single-use is void against the malicious-rendezvous threat this design claims to tolerate. A `famp pair revoke` path must exist.
 - [ ] **PAIR-04**: Pairing completes without either party pasting a raw key blob or reading a fingerprint aloud for visual comparison.
 - [ ] **PAIR-05**: A pairing failure tells the human **which** step failed and what to do next, in language that does not assume they know what a public key is.
+- [ ] **PAIR-06**: The code is entered via **stdin prompt, never as a command-line argument**. `famp pair <code>` would place the secret in `argv` (visible to `ps`) and in shell history in plaintext, durably — a leak path the design otherwise has no reason to create.
+- [ ] **PAIR-07**: The **inviter** sees who redeemed the invite (peer principal + key_id) before the pin becomes durable, and both sides reach a plain-language done-signal — one sentence, not FSM JSON. Pairing completes asymmetrically (the redeemer sees success immediately; the inviter pins on its next poll), so without this the redeemer gets a success signal for a half-finished state, and a forwarded invite pairs silently.
+- [ ] **PAIR-08**: Install instructions and the pairing code ship as **one artifact**, code at the bottom — so the invite outlives the follower's slowest step. The invite must be generated *after* the follower confirms their install works, not before; otherwise the validity window runs during the install.
 
 ### Signed Peer Directory (DIR)
 
@@ -68,14 +77,14 @@ The milestone's hard problem. Replaces v1.0's `peer export` → paste-a-blob-ove
 
 All four concerns explicitly deferred out of v1.0 as open-internet problems. All enforcement lands in `famp-gateway` — **never** in the frozen `famp-envelope`.
 
-- [ ] **INGR-01**: An envelope whose timestamp falls outside the configured clock-skew window is rejected.
-- [ ] **INGR-02**: A bounded, memory-capped replay/nonce cache rejects a replayed envelope. The relationship between cache TTL, the clock-skew window, and the cache size bound is stated as an inequality and **enforced by a test**, not left as a comment.
-- [ ] **INGR-03**: Replay-cache behavior across a gateway restart is either durable, or the restart-reopens-the-window interval is explicitly bounded, documented, and tested.
+- [x] **INGR-01**: An envelope whose timestamp falls outside the configured clock-skew window is rejected.
+- [x] **INGR-02**: A bounded, memory-capped replay/nonce cache rejects a replayed envelope. The relationship between cache TTL, the clock-skew window, and the cache size bound is stated as an inequality and **enforced by a test**, not left as a comment.
+- [x] **INGR-03**: Replay-cache behavior across a gateway restart is either durable, or the restart-reopens-the-window interval is explicitly bounded, documented, and tested.
 - [ ] **INGR-04**: An envelope not addressed to this gateway's own domain **and** a principal it actually backs is rejected (audience binding).
-- [ ] **INGR-05**: Check ordering is cheap-before-expensive: size/format/rate checks precede signature verification, and signature verification precedes **any** state mutation. The order is pinned by a test that fails if a later refactor reorders it.
+- [x] **INGR-05**: Check ordering is cheap-before-expensive: size/format/rate checks precede signature verification, and signature verification precedes **any** state mutation. The order is pinned by a test that fails if a later refactor reorders it.
 - [ ] **INGR-06**: Rate limiting is keyed on something an attacker cannot trivially rotate, and the choice of key is justified in a comment tied to this requirement.
 - [ ] **INGR-07**: Request bodies are bounded — an oversized body is rejected without being fully buffered into memory.
-- [ ] **INGR-08**: Nonce scoping is **per-sender**, not global, so one peer cannot evict or collide with another peer's nonce entries.
+- [x] **INGR-08**: Nonce scoping is **per-sender**, not global, so one peer cannot evict or collide with another peer's nonce entries.
 
 ### Key Revocation (REVK)
 
@@ -140,6 +149,7 @@ Deferred to a future release. Tracked, not in this roadmap.
 
 - **DIR-04**: Directory-based automatic peer discovery (as opposed to the signed key list of DIR-01). Discovery without explicit pinning re-opens exactly the trust question DIR-03 closes.
 - **REACH-06**: NAT hole-punching as an optimization over relay fallback. Build the fallback first; 15–30% of hosts sit behind symmetric NAT that hole-punching cannot solve at all.
+- **INGR-09**: Broker-side recipient-existence check before mailbox auto-vivification. `famp-bus`'s `send_agent`/`AppendMailbox` creates a mailbox for any `to` name with no existence check — found during Phase 17 planning, code-grounded, correctly scoped out of that phase because the fix lands in `famp-bus`, not `famp-gateway`. Severity is bounded, not open: reaching `AppendMailbox` requires passing `verify_inbound_any`, so the sender is an already-pinned peer — this is trust-abuse by a peer deliberately trusted, not anonymous-attacker DoS. Worth closing before the peer set is ever wider than people Ben has personally paired with.
 
 ---
 
@@ -172,8 +182,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REACH-01 | Phase 13 | Pending |
 | REACH-02 | Phase 13 | Pending |
 | REACH-03 | Phase 13 | Pending |
-| REACH-04 | Phase 17 | Pending |
-| REACH-05 | Phase 17 | Pending |
+| REACH-04 | Phase 17 | Complete |
+| REACH-05 | Phase 17 | Complete |
 | KEYR-01 | Phase 15 | Complete |
 | KEYR-02 | Phase 15 | Complete |
 | KEYR-03 | Phase 15 | Complete |
@@ -185,14 +195,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 | DIR-01 | Phase 19 | Pending |
 | DIR-02 | Phase 19 | Pending |
 | DIR-03 | Phase 19 | Pending |
-| INGR-01 | Phase 17 | Pending |
-| INGR-02 | Phase 17 | Pending |
-| INGR-03 | Phase 17 | Pending |
+| INGR-01 | Phase 17 | Complete |
+| INGR-02 | Phase 17 | Complete |
+| INGR-03 | Phase 17 | Complete |
 | INGR-04 | Phase 17 | Pending |
-| INGR-05 | Phase 17 | Pending |
+| INGR-05 | Phase 17 | Complete |
 | INGR-06 | Phase 17 | Pending |
 | INGR-07 | Phase 17 | Pending |
-| INGR-08 | Phase 17 | Pending |
+| INGR-08 | Phase 17 | Complete |
 | REVK-01 | Phase 15 | Complete |
 | REVK-02 | Phase 15 | Complete |
 | REVK-03 | Phase 15 | Complete |

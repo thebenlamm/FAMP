@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase: 15
-current_phase_name: keyring-multi-key-extension-revocation
-status: verifying
-stopped_at: Completed 15-04-PLAN.md — Phase 15 (keyring-multi-key-extension-revocation) fully complete, all 6 requirements done
-last_updated: "2026-07-31T08:45:23.654Z"
+current_phase: 17
+current_phase_name: protocol-grade-ingress-reachability-implementation
+status: executing
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-07-31T18:52:30.560Z"
 last_activity: 2026-07-31
-last_activity_desc: Phase 15 (keyring-multi-key-extension-revocation) fully complete — all 6 requirements (KEYR-01..03, REVK-01..03) shipped
+last_activity_desc: Phase 17 execution started
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_plans: 15
+  completed_plans: 13
+  percent: 67
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 15 — keyring-multi-key-extension-revocation — **COMPLETE** (all 6 requirements shipped, 2026-07-31). Next: Phase 16 (Cross-Person Trust Bootstrap / PAKE pairing), which per 15-04-SUMMARY.md's "Recovery path" section must treat re-pairing after total key loss as a named design scenario.
+**Current focus:** Phase 17 — protocol-grade-ingress-reachability-implementation
 
 ## Current Position
 
-Phase: 15 (keyring-multi-key-extension-revocation) — COMPLETE (all 6 requirements: KEYR-01..03, REVK-01..03)
-Plan: 4 of 4
-Status: Phase complete — ready for verification
-Last activity: 2026-07-31 — Completed 15-04-PLAN.md; Phase 15 fully done
+Phase: 17 (protocol-grade-ingress-reachability-implementation) — EXECUTING
+Plan: 5 of 6
+Status: Ready to execute
+Last activity: 2026-07-31 — Phase 17 execution started
 
 ## v1.1 Phase Map
 
@@ -202,6 +202,12 @@ Last activity: 2026-07-31 — Completed 15-04-PLAN.md; Phase 15 fully done
 - [Phase ?]: [15-03]: rotate_to's no-Active-entry branch treats a fully retired/revoked principal like a first pin (mirrors pin_tofu's existing fallback); the unconditional KeyRevoked guard is what actually prevents a revoked pubkey from resurrecting.
 - [Phase ?]: [15-04]: RevocationStatement.principal parse-failure maps to RevocationBlobMalformed (not the plan's literal NoSuchKeyEntry, which requires a typed Principal it cannot hold) — Rule 1 fix of an internal type contradiction
 - [Phase ?]: [15-04]: Phase 15 (KEYR-01..03, REVK-01..03) is now fully complete — all 6 requirements have a passing named automated test; famp peer revoke/import-revocation ship the REVK-02/REVK-03 remediation path; Phase 16 (PAIR) must treat 're-pair after total key loss' as a named design scenario per 15-04-SUMMARY.md
+- [Phase ?]: [17-01]: ingest_inbound extracted as THE single ingest core (pub(crate)); cheap guard chain (freshness) reordered before verify_inbound_any per INGR-05/D-09, pinned by a falsification-tested reorder-detector test
+- [Phase ?]: [17-01]: ack_bytes test helper now stamps a live now_canonical_utc() timestamp (not a hardcoded literal) so the new freshness gate doesn't reject pre-existing test fixtures as stale
+- [Phase ?]: D-26/D-27 implemented as written: signed fetch (not bearer token) authorizes queue drains, riding famp_crypto::sign_value/verify_value exclusively; queue ownership is explicit --domain config, never TOFU
+- [Phase ?]: 17-06: Fixed T-11-18 self-authorship conflict in relay-failure ack -- from-leaf must equal the backed connection's own bare name, not a synthetic gateway service principal
+- [Phase ?]: 17-02: replay cache eviction tie-break via min_by on (instant, nonce), not BTreeMap/priority queue -- proportionate for the bounded single-relay-scale cache (17-RESEARCH.md Alternatives Considered)
+- [Phase ?]: 17-02: test timestamps use nanosecond, not second, deltas when simulating many recorded instants for one sender -- record()'s now argument is both the entry instant AND the sweep's reference clock, so second-scale deltas across thousands of inserts would age earlier entries past the 600s TTL mid-fill
 
 ## Issues / Blockers
 
@@ -353,16 +359,21 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 15 P02 | 55min | 2 tasks | 13 files |
 | Phase 15 P03 | ~50min | 2 tasks | 9 files |
 | Phase 15 P04 | 1h10min | 2 tasks | 13 files |
+| Phase 17 P01 | 55min | 2 tasks | 3 files |
+| Phase 17 P04 | ~3h | 3 tasks | 9 files |
+| Phase 17 P06 | 45min | 2 tasks | 4 files |
+| Phase 17 P02 | 75min | 2 tasks | 3 files |
 
 ## Session
 
-**Last session:** 2026-07-31T08:45:23.644Z
-**Stopped At:** Completed 15-04-PLAN.md — Phase 15 (keyring-multi-key-extension-revocation) fully complete, all 6 requirements done
+**Last session:** 2026-07-31T18:52:30.549Z
+**Stopped At:** Completed 17-02-PLAN.md
 **Resume File:** None
 
 ## Operator Next Steps
 
-- Run `/gsd-plan-phase 13` to plan the zero-code reachability spike (first v1.1 phase).
+- Phase 13 (reachability decision spike) is DRAFT, not complete — REACH-02 (real symmetric-NAT validation) is still blocked on Ben's carrier hotspot. Phase 17 may finish before Phase 13 formally closes; do not let that read as Phase 13 being skipped.
+- Phase 17 execution in progress — REACH-04's genuinely-different-networks proof and the actual Lightsail provisioning both need Ben; everything else is autonomous.
 
 ## Accumulated Context
 
