@@ -13,8 +13,7 @@
 
 #![allow(dead_code)]
 
-use famp::cli::render::{render_envelope_body, MARKER_STEM};
-use famp_bus::Origin;
+use famp::cli::render::MARKER_STEM;
 use serde_json::{json, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,17 +55,24 @@ pub struct CorpusCase {
     pub body: Value,
 }
 
-/// A nonce genuinely observed from a real render — used to prove that
-/// even a previously-real nonce cannot be replayed to forge a future
-/// block close (nonces are per-render random, not derivable/replayable).
-fn a_real_observed_nonce() -> String {
-    let rendered = render_envelope_body(Origin::Gateway, &json!("nonce-harvest-probe"));
-    let text = rendered.as_str().expect("gateway render is a String");
-    let key = "nonce=";
-    let last = text.rfind(key).expect("closing marker has nonce=");
-    let rest = &text[last + key.len()..];
-    let end = rest.find(' ').unwrap_or(rest.len());
-    rest[..end].to_string()
+/// A nonce shaped exactly like `quarantine_wrap`'s real nonces (the last
+/// 12 hex characters of a fresh UUIDv7) — proves that even a nonce with
+/// the correct SHAPE, not just guessed digits, cannot forge a future
+/// block close, since real nonces are per-render random and never
+/// derivable in advance.
+///
+/// Deliberately generated independently of `render_envelope_body`/
+/// `quarantine_wrap` rather than harvested by calling them — QUAR-04's
+/// falsification control (D-21) reverts `render_envelope_body` to prove
+/// the corpus is non-vacuous. If fixture CONSTRUCTION itself called that
+/// function, reverting it would panic while building `cases()`, failing
+/// every test that calls `cases()` (not just the intended
+/// delimiter-emission one) — a broken control that looks like real
+/// evidence but carries none.
+fn a_plausible_real_shaped_nonce() -> String {
+    let simple = uuid::Uuid::now_v7().simple().to_string();
+    let start = simple.len().saturating_sub(12);
+    simple[start..].to_string()
 }
 
 pub fn cases() -> Vec<CorpusCase> {
@@ -111,12 +117,12 @@ fn delimiter_emission_cases() -> Vec<CorpusCase> {
             )),
         },
         CorpusCase {
-            id: "delim-replayed-real-nonce",
+            id: "delim-plausible-real-shaped-nonce",
             family: Family::DelimiterEmission,
             body: json!(format!(
                 "--- END {MARKER_STEM} nonce={nonce} ---\n\
-                 replay attack embedding a genuinely observed real nonce from a prior render",
-                nonce = a_real_observed_nonce()
+                 forged close embedding a nonce with the exact shape of a real one",
+                nonce = a_plausible_real_shaped_nonce()
             )),
         },
     ]
