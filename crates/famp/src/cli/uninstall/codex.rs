@@ -64,7 +64,18 @@ pub fn run_at_project(
     let config_path = home.join(".codex").join("config.toml");
     let hooks_path = project.join(".codex").join("hooks.json");
     let await_shim_path = project.join(".codex").join("hooks").join("famp-await.sh");
-    let famp_bin = install_codex::resolve_famp_bin(&home);
+    let famp_bin = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|text| toml::from_str::<toml::Table>(&text).ok())
+        .and_then(|table| {
+            table
+                .get("mcp_servers")?
+                .get("famp")?
+                .get("command")?
+                .as_str()
+                .map(PathBuf::from)
+        })
+        .unwrap_or_else(|| PathBuf::from("famp"));
 
     writeln!(err, "Uninstalling Codex MCP entry from {}", home.display()).ok();
     let outcome = toml_merge::remove_codex_table(&config_path, "mcp_servers", "famp")?;
@@ -276,13 +287,57 @@ mod tests {
     use super::*;
     use crate::cli::install;
 
+    /// Run `install-codex` with `FAMP_INSTALL_FAMP_BIN` pinned at a
+    /// staged executable, so the set-up install resolves hermetically.
+    ///
+    /// Without the pin the resolver falls through to `which famp`, and whether
+    /// this test passes depends on the host having FAMP installed. Note that
+    /// `cargo test` prepends `$CARGO_HOME/bin` to the test process's PATH, so
+    /// a developer with `~/.cargo/bin/famp` sees a false green while CI —
+    /// which runs each test in its own process with no FAMP installed — fails.
+    /// WR-06: `temp_env` serializes the process-global env mutation.
+    fn install_with_pinned_famp_bin(home: &Path) {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("famp");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        // `install-codex` execs the pinned binary (the `hook codex-stop`
+        // probe). Wait until the freshly written stub actually runs: a sibling
+        // test thread that forks mid-write inherits the write descriptor and
+        // the exec then fails with ETXTBSY, which the probe cannot distinguish
+        // from an unsupported binary.
+        let mut warmed = false;
+        for _ in 0..50 {
+            let ran = std::process::Command::new(&bin)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success());
+            if ran {
+                warmed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(warmed, "staged probe stub never became executable: {bin:?}");
+
+        temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(bin.as_os_str()), || {
+            let mut out = Vec::<u8>::new();
+            let mut err = Vec::<u8>::new();
+            install::codex::run_at(home, &mut out, &mut err).unwrap();
+        });
+    }
+
     #[test]
     fn uninstall_after_install_removes_famp_table() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        install::codex::run_at(home, &mut out, &mut err).unwrap();
+        install_with_pinned_famp_bin(home);
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();

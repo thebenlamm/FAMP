@@ -1,0 +1,6 @@
+{
+  "name": "famp",
+  "version": "1.0.0",
+  "description": "Local-first messaging between Grok Build sessions — direct messages, IRC-style channels, and a signed task FSM over a shared UDS broker.",
+  "keywords": ["messaging", "multi-agent", "coordination", "mcp"]
+}

@@ -9,6 +9,14 @@ use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
+    /// Install-time resolution of the `famp` binary embedded into generated
+    /// configuration failed. `transparent`: every `FampExecutableError`
+    /// message already names the FAMP executable and the actionable fix, and
+    /// the main binary walks `source()` — a wrapper message here would print
+    /// the same sentence twice. The typed error is still carried (and still
+    /// reachable via `From` / pattern match), only the extra rendering is gone.
+    #[error(transparent)]
+    FampExecutable(#[from] crate::cli::executable::FampExecutableError),
     #[error("FAMP_HOME is not set and $HOME is not set")]
     HomeNotSet,
 
