@@ -27,7 +27,17 @@ use serde_json::Value;
 /// The literal stem that opens/closes a quarantine block. Neutralized
 /// inside untrusted body text (see [`quarantine_wrap`]) so an attacker
 /// cannot forge a matching marker by printing this string verbatim.
-const MARKER_STEM: &str = "FAMP-QUARANTINE";
+///
+/// `pub` (Phase 14 plan 14-04, D-23): the adversarial corpus's
+/// delimiter-emission family must compose attacker payloads that contain
+/// this exact stem at runtime rather than hardcoding a second copy in the
+/// fixture — a hardcoded copy would silently rot the moment this stem
+/// changes, making the whole family vacuous. Integration tests under
+/// `crates/famp/tests/` link against this crate as an external consumer,
+/// so `pub(crate)` (as the plan's action text first suggested) would not
+/// be visible there; full `pub` is required, matching `origin_label`'s
+/// existing precedent below.
+pub const MARKER_STEM: &str = "FAMP-QUARANTINE";
 
 /// Human-readable instruction line inside every quarantine block. Plain
 /// prose, not a machine-parsed sentinel — the machine-checkable signal is
