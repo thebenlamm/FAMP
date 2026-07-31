@@ -792,6 +792,7 @@ dependencies = [
  "famp-bus",
  "famp-crypto",
  "famp-envelope",
+ "famp-fsm",
  "famp-inspect-proto",
  "famp-keyring",
  "famp-transport",

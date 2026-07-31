@@ -24,8 +24,8 @@
 
 use std::sync::Arc;
 
-use famp::{sign_value, CryptoError, FampSigningKey, Principal, TrustedVerifyingKey};
-use famp_bus::{BusMessage, BusReply};
+use famp::{sign_value, CryptoError, FampSigningKey, MessageId, Principal, TrustedVerifyingKey};
+use famp_bus::{BusMessage, BusReply, Target};
 use famp_transport::{Transport, TransportMessage};
 use famp_transport_http::{HttpTransport, HttpTransportError};
 use serde_json::Value;
@@ -66,6 +66,21 @@ const FEDERATION_OWNED_FIELDS: [&str; 7] = [
     "approval",
 ];
 
+/// REACH-05: the stable, greppable, human-legible prefix on the `reason`
+/// of every relay-failure notification [`build_relay_failure_ack`]
+/// produces.
+///
+/// 17-RESEARCH.md Pitfall 5: `AckBody`'s scope is `Standalone`, so a
+/// relay-failure notification and a genuine application-level ack look
+/// superficially alike in a raw mailbox dump — both are just
+/// `class: "ack"` envelopes. A stable, greppable prefix is what lets both
+/// downstream tooling and a person reading `famp inbox` tell them apart
+/// at a glance. This is a documented convention, not a schema change,
+/// precisely because `AckBody` is frozen for this milestone (D-15 does
+/// not cover `famp-gateway`, but `AckBody` itself lives in the frozen
+/// `famp-envelope` and gains no new field either way).
+pub const RELAY_FAILURE_REASON_PREFIX: &str = "famp-gateway relay failed:";
+
 /// Errors produced while federation-signing a drained mailbox `Value`
 /// ([`sign_federation_fields`]).
 #[derive(Debug, thiserror::Error)]
@@ -82,6 +97,16 @@ pub enum EgressError {
     /// `famp::sign_value` failed (canonicalization or signing error).
     #[error("failed to sign envelope: {0}")]
     Sign(#[from] CryptoError),
+    /// REACH-05: [`build_relay_failure_ack`] could not read the drained
+    /// envelope's own `from`/`to` field — malformed upstream data. Never
+    /// propagated past [`notify_relay_failure`], which logs and skips the
+    /// notification rather than panicking or aborting the drain loop.
+    #[error("drained envelope missing '{0}' field")]
+    MissingField(&'static str),
+    /// REACH-05: as [`EgressError::MissingField`], but the field was
+    /// present and not a valid [`Principal`].
+    #[error("drained envelope '{0}' field is not a valid Principal: {1}")]
+    BadPrincipal(&'static str, String),
 }
 
 /// Federation-sign a drained, plain local-bus `Value` in place (D-01/D-03
@@ -282,6 +307,196 @@ async fn relay_one(
         .map_err(RelayError::Transport)
 }
 
+/// Build a bus-legal, unsigned `AckDisposition::Failed` notification for
+/// REACH-05, destined for the ORIGINAL sender of a drained envelope that
+/// [`relay_one`] failed to relay.
+///
+/// `original` is the drained mailbox `Value` that failed — its `from`
+/// becomes this notification's `to` (the notification lands directly in
+/// the original sender's own mailbox), and its `to` (the intended
+/// recipient that could not be reached) is named in the reason text.
+/// `own_domain`, when configured, names the gateway's own authority for
+/// the notification's `from` principal; when unset, the failed
+/// recipient's own authority is reused instead — there is no other
+/// authority to claim, mirroring [`relay_one`]'s own-domain-unset legacy
+/// posture.
+///
+/// Returns `Err` only if `original` itself is malformed (missing/invalid
+/// `from`/`to`) — [`notify_relay_failure`] treats that as "cannot build a
+/// notification", logs, and skips, rather than propagating a panic.
+fn build_relay_failure_ack(
+    original: &Value,
+    own_domain: Option<&str>,
+    detail: &str,
+    now: &str,
+) -> Result<Value, EgressError> {
+    let original_from = original
+        .get("from")
+        .and_then(Value::as_str)
+        .ok_or(EgressError::MissingField("from"))?
+        .parse::<Principal>()
+        .map_err(|e| EgressError::BadPrincipal("from", e.to_string()))?;
+    let original_to = original
+        .get("to")
+        .and_then(Value::as_str)
+        .ok_or(EgressError::MissingField("to"))?
+        .parse::<Principal>()
+        .map_err(|e| EgressError::BadPrincipal("to", e.to_string()))?;
+
+    // The notification's `from`: a gateway-owned service principal on
+    // `own_domain` when configured, otherwise the failed recipient's own
+    // authority.
+    //
+    // Residual: a local agent literally named `gateway` on the same
+    // domain would share this exact principal string. This is a naming
+    // collision, not a security boundary — the notification is delivered
+    // straight to `original_from`'s mailbox by name below and is never
+    // routed to a principal named `gateway`; recorded here rather than
+    // left for a future reader to discover.
+    let authority = own_domain.unwrap_or_else(|| original_to.authority());
+    let from = format!("agent:{authority}/gateway");
+
+    let reason =
+        format!("{RELAY_FAILURE_REASON_PREFIX} could not relay to {original_to}: {detail}");
+
+    let value = serde_json::json!({
+        "famp": famp::FAMP_SPEC_VERSION,
+        "id": MessageId::new_v7().to_string(),
+        "from": from,
+        "to": original_from.to_string(),
+        "scope": "standalone",
+        "class": "ack",
+        "authority": "advisory",
+        "ts": now,
+        "body": {
+            "disposition": "failed",
+            "reason": reason,
+        },
+    });
+
+    // Do NOT sign this value and do NOT add any federation-owned field:
+    // it goes onto the LOCAL bus, where a stray `signature` key makes
+    // the line permanently undecodable (BUS-11,
+    // `famp_envelope::bus::BusEnvelope::decode` ->
+    // `EnvelopeDecodeError::UnexpectedSignature`) — the exact failure
+    // class `ingress.rs::strip_relay_fields` exists to prevent on the
+    // inbound side.
+    Ok(value)
+}
+
+/// T-17-30 loop-guard predicate: `true` when `sender_name` is itself
+/// among `backed_names` (this gateway's own currently-backed principals).
+/// Factored out of [`notify_relay_failure`] as a pure function so the
+/// loop guard is unit-testable without a live broker connection —
+/// `GatewayRegistry` can only be populated through a real UDS
+/// `ProxiedPrincipal::register` call, which a `#[test]` cannot do
+/// without spinning up a broker.
+fn sender_is_itself_backed<'a>(
+    sender_name: &str,
+    mut backed_names: impl Iterator<Item = &'a str>,
+) -> bool {
+    backed_names.any(|n| n == sender_name)
+}
+
+/// Deliver a REACH-05 failure notification onto `original`'s sender's own
+/// mailbox, for every [`RelayError`] `run_egress` hits — never only
+/// transport failures. Skips (and logs) the notification when the
+/// original sender is itself a backed remote principal (T-17-30 loop
+/// guard): that mailbox is itself drained and relayed onward by this same
+/// module's drain loop, so a notification delivered there could be picked
+/// up and relayed to the far side, ping-ponging indefinitely if the far
+/// side also fails. The guard makes that structurally impossible rather
+/// than relying on it never happening.
+///
+/// Mirrors [`run_egress`]'s own `Await` block's short-hold lock
+/// discipline (T-17-34): the registry lock is acquired, one `send_recv`
+/// issued, and dropped immediately — never held across the notification
+/// send, so one down peer's failure notification can never starve
+/// ingress on some OTHER backed principal's connection.
+async fn notify_relay_failure(
+    name: &str,
+    registry: &Arc<Mutex<GatewayRegistry>>,
+    original: &Value,
+    own_domain: Option<&str>,
+    detail: &str,
+) {
+    let Some(original_from_name) = original.get("from").and_then(Value::as_str) else {
+        eprintln!(
+            "famp-gateway: egress[{name}]: cannot notify relay failure: drained envelope has \
+             no 'from' field"
+        );
+        return;
+    };
+
+    // T-17-30 loop guard — short-hold: acquire, read, drop.
+    {
+        let guard = registry.lock().await;
+        if sender_is_itself_backed(original_from_name, guard.names()) {
+            eprintln!(
+                "famp-gateway: egress[{name}]: skipping relay-failure notification — original \
+                 sender '{original_from_name}' is itself a backed principal (loop guard)"
+            );
+            return;
+        }
+    }
+
+    let now = crate::clock::now_canonical_utc();
+    let ack = match build_relay_failure_ack(original, own_domain, detail, &now) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!(
+                "famp-gateway: egress[{name}]: failed to build relay-failure notification: {e:?}"
+            );
+            return;
+        }
+    };
+
+    // Short-hold: acquire, ONE send_recv, drop — mirrors the `Await`
+    // block below exactly. Sent on the SAME backed connection this
+    // egress loop already holds for `name` (the failed recipient's local
+    // stand-in) — any backed connection may `Send` to any local
+    // recipient's mailbox, the same shape `ingress.rs::deliver` already
+    // relies on.
+    let reply = {
+        let mut guard = registry.lock().await;
+        let Some(principal) = guard.get_mut(name) else {
+            drop(guard);
+            eprintln!(
+                "famp-gateway: egress[{name}]: cannot notify relay failure: no longer backed"
+            );
+            return;
+        };
+        let reply = principal
+            .send_recv(BusMessage::Send {
+                to: Target::Agent {
+                    name: original_from_name.to_string(),
+                },
+                envelope: ack,
+            })
+            .await;
+        drop(guard);
+        reply
+    };
+
+    match reply {
+        Ok(BusReply::SendOk { .. }) => {}
+        Ok(other) => {
+            eprintln!(
+                "famp-gateway: egress[{name}]: unexpected Send reply while notifying relay \
+                 failure: {}",
+                other.variant_name()
+            );
+        }
+        // {e:?} (Debug), not {e} (Display) — OBS-01, same rationale as
+        // the drain loop's own relay-failure log line below.
+        Err(e) => {
+            eprintln!(
+                "famp-gateway: egress[{name}]: failed to deliver relay-failure notification: {e:?}"
+            );
+        }
+    }
+}
+
 /// Drain-sign-POST loop for one locally-backed remote principal (D-01/
 /// D-03). Spawnable per backed principal from `main.rs` (09-04).
 ///
@@ -360,6 +575,25 @@ pub async fn run_egress(
                 // every #[source] level, including the TLS/rustls leaf
                 // cause reqwest's own Display can omit (OBS-01).
                 eprintln!("famp-gateway: egress[{name}]: failed to relay envelope: {e:?}");
+                // REACH-05: surface the failure at the SENDER, not only
+                // in this log line the sender will never read. Emitted
+                // for EVERY `RelayError` variant, not only transport
+                // ones — this is a deliberate superset of REACH-05's
+                // literal wording (relay-down/peer-offline/connection-
+                // refused): a client-supplied-federation-field rejection
+                // or an unparseable recipient is an equally silent drop
+                // from the sender's point of view, and there is no
+                // reason to leave those invisible. `{e:?}` (Debug, not
+                // Display) so the log line and the mailbox entry say the
+                // same thing.
+                notify_relay_failure(
+                    &name,
+                    &registry,
+                    &envelope,
+                    own_domain.as_deref(),
+                    &format!("{e:?}"),
+                )
+                .await;
             }
         }
     }
@@ -712,6 +946,157 @@ mod tests {
                 assert!(fields.contains("capability"), "got: {fields}");
             }
             other => panic!("expected ClientSuppliedFederationField, got {other:?}"),
+        }
+    }
+
+    // --- REACH-05: relay-failure notification (17-06) -----------------
+
+    /// BUS-11 regression lock, mirroring `ingress.rs`'s
+    /// `strip_relay_fields_removes_wrapper_keeps_content`:
+    /// [`build_relay_failure_ack`]'s output must decode cleanly as a bus
+    /// envelope and carry none of the federation-owned field names nor a
+    /// `signature` key. A local-bus line carrying a stray signature is
+    /// permanently undecodable by `famp inbox`/`famp inspect` (BUS-11) —
+    /// this would turn a delivery-failure notification into a corrupted
+    /// mailbox entry.
+    #[test]
+    fn relay_failure_ack_is_bus_legal_and_carries_no_federation_fields() {
+        let from: Principal = "agent:hosta.test/alice".parse().unwrap();
+        let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let original = plain_request_value(&from, &to);
+
+        let ack = build_relay_failure_ack(
+            &original,
+            None,
+            "peer connection refused",
+            "2026-07-31T00:00:00Z",
+        )
+        .expect("building a failure ack from a well-formed original must succeed");
+
+        for field in FEDERATION_OWNED_FIELDS {
+            assert!(
+                ack.get(field).is_none(),
+                "relay-failure ack must not carry federation-owned field '{field}': {ack}"
+            );
+        }
+        assert!(
+            ack.get("signature").is_none(),
+            "relay-failure ack must never carry a signature: {ack}"
+        );
+
+        let bytes = serde_json::to_vec(&ack).unwrap();
+        assert!(
+            famp_envelope::AnyBusEnvelope::decode(&bytes).is_ok(),
+            "relay-failure ack must decode cleanly as a local BusEnvelope: {ack}"
+        );
+    }
+
+    /// The ack's `reason` begins with `RELAY_FAILURE_REASON_PREFIX` and
+    /// names both the intended (unreachable) recipient and the failure
+    /// detail, so a human reading `famp inbox` can tell WHICH message
+    /// failed and WHY without reading gateway logs. `to`/`from` route the
+    /// notification back to the ORIGINAL sender's own mailbox. Two calls
+    /// produce two distinct fresh v7 ids.
+    #[test]
+    fn relay_failure_ack_reason_carries_the_greppable_prefix_and_the_recipient() {
+        let from: Principal = "agent:hosta.test/alice".parse().unwrap();
+        let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let original = plain_request_value(&from, &to);
+
+        let ack1 = build_relay_failure_ack(
+            &original,
+            None,
+            "connection refused",
+            "2026-07-31T00:00:00Z",
+        )
+        .unwrap();
+        let ack2 = build_relay_failure_ack(
+            &original,
+            None,
+            "connection refused",
+            "2026-07-31T00:00:00Z",
+        )
+        .unwrap();
+
+        let reason = ack1["body"]["reason"].as_str().unwrap();
+        assert!(
+            reason.starts_with(RELAY_FAILURE_REASON_PREFIX),
+            "reason must start with the greppable prefix, got: {reason}"
+        );
+        assert!(
+            reason.contains(&to.to_string()),
+            "reason must name the intended (unreachable) recipient, got: {reason}"
+        );
+        assert!(
+            reason.contains("connection refused"),
+            "reason must carry the failure detail, got: {reason}"
+        );
+        assert_eq!(ack1["body"]["disposition"], "failed");
+        assert_eq!(
+            ack1["to"],
+            Value::String(from.to_string()),
+            "the notification must route back to the ORIGINAL sender's own mailbox"
+        );
+        assert_ne!(
+            ack1["id"], ack2["id"],
+            "each call must mint a fresh, distinct v7 id"
+        );
+    }
+
+    /// T-17-30 loop guard: [`sender_is_itself_backed`] is the pure
+    /// predicate behind `notify_relay_failure`'s skip decision — `true`
+    /// exactly when the original sender's name is present among this
+    /// gateway's own backed principals, so a notification can never be
+    /// delivered into a mailbox that this same drain loop would itself
+    /// pick up and relay outward (which could ping-pong indefinitely if
+    /// the far side also fails).
+    #[test]
+    fn relay_failure_ack_is_skipped_when_the_sender_is_itself_backed() {
+        assert!(
+            sender_is_itself_backed("bob", ["bob", "carol"].into_iter()),
+            "a sender present among the backed names must be flagged for skip"
+        );
+        assert!(
+            !sender_is_itself_backed("alice", ["bob", "carol"].into_iter()),
+            "a sender absent from the backed names must NOT be flagged for skip"
+        );
+        assert!(
+            !sender_is_itself_backed("alice", std::iter::empty()),
+            "an empty backed-names set must never flag a skip"
+        );
+    }
+
+    /// REACH-05's own must-have, asserted rather than assumed: an
+    /// unsolicited `ack`-class envelope has NO legal transition on
+    /// `famp-fsm`'s own transition surface, from ANY state a task can be
+    /// in — proving a relay-failure notification landing unsolicited in
+    /// a mailbox can never corrupt a task FSM (`AckBody`'s `Standalone`
+    /// scope backs this up structurally; this test proves it against the
+    /// FSM's actual code, not just the scope declaration).
+    #[test]
+    fn ack_class_has_no_fsm_effect() {
+        use famp::MessageClass;
+        use famp_fsm::{TaskFsm, TaskTransitionInput};
+
+        for seed_state in [
+            famp_fsm::TaskState::Requested,
+            famp_fsm::TaskState::Committed,
+        ] {
+            let mut fsm = TaskFsm::resume(seed_state);
+            let before = fsm.state();
+            let result = fsm.step(TaskTransitionInput {
+                class: MessageClass::Ack,
+                terminal_status: None,
+            });
+            assert!(
+                result.is_err(),
+                "ack class must have no legal transition from {seed_state:?}, got {result:?}"
+            );
+            assert_eq!(
+                fsm.state(),
+                before,
+                "an illegal transition attempt must not mutate FSM state"
+            );
         }
     }
 }

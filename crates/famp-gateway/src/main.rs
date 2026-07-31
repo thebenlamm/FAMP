@@ -77,6 +77,12 @@ use assert_cmd as _;
 use famp_inspect_proto as _;
 #[cfg(test)]
 use tempfile as _;
+// REACH-05 (17-06): `famp-fsm` is a dev-dep used only by
+// `egress.rs`'s `ack_class_has_no_fsm_effect` test (the lib target's own
+// test compile unit) — this bin's test compile unit has no direct
+// reference.
+#[cfg(test)]
+use famp_fsm as _;
 
 /// Parsed cross-host CLI surface (09-04). Pure, I/O-free — `$FAMP_HOME`
 /// resolution and the `--socket` env-var default both happen at `main()`

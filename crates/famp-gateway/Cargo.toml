@@ -33,6 +33,12 @@ time       = { version = "0.3", features = ["formatting", "parsing"] }
 assert_cmd = "2.0"
 tempfile = "3"
 famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.0.0" }
+# REACH-05 (17-06): dev-only, for `egress.rs`'s `ack_class_has_no_fsm_effect`
+# unit test, which asserts an unsolicited ack has no legal transition on
+# famp-fsm's own transition surface. Zero source change to the frozen
+# famp-fsm crate itself (D-15) -- this is a dev-dependency EDGE from
+# famp-gateway only.
+famp-fsm = { path = "../famp-fsm", version = "1.0.0" }
 
 [[bin]]
 name = "famp-gateway"
