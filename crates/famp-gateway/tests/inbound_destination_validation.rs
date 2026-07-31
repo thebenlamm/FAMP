@@ -102,6 +102,13 @@ fn wait_for_broker_socket(sock: &Path, deadline: Duration) {
 /// 2026-07-28 literal broke all three tests days later without either the
 /// foreign-domain, misaddressed-recipient, or delivery behavior under test
 /// ever running).
+///
+/// 17-02 (INGR-02) deviation: `ingest_inbound` also now requires a
+/// non-empty peeked `nonce` before signature verification runs. This
+/// helper stamps a fresh, unique `.with_nonce(...)` on every call (the
+/// same federation-wrapper field `egress.rs::sign_federation_fields`
+/// adds on the way out) so these three pre-existing tests reject on the
+/// destination-authority gate under test, never `missing_nonce`.
 fn ack_bytes(sk: &FampSigningKey, from: &Principal, to: &Principal, id: MessageId) -> Vec<u8> {
     let ts = Timestamp(famp_gateway::now_canonical_utc());
     let body = AckBody {
@@ -115,7 +122,8 @@ fn ack_bytes(sk: &FampSigningKey, from: &Principal, to: &Principal, id: MessageI
         AuthorityScope::Advisory,
         ts,
         body,
-    );
+    )
+    .with_nonce(uuid::Uuid::now_v7().to_string());
     unsigned.sign(sk).unwrap().encode().unwrap()
 }
 

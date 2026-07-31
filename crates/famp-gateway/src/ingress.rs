@@ -406,16 +406,28 @@ pub(crate) async fn ingest_inbound(
     {
         let mut guard = state.guard.lock().await;
         ingress_guard::run_cheap_gates(&guard_input, &mut guard).map_err(|reject| {
-            if let GuardReject::StaleTimestamp {
-                ts,
-                now: guard_now,
-                skew_secs,
-            } = &reject
-            {
-                eprintln!(
-                    "famp-gateway: ingress: rejected — stale timestamp ts={ts} now={guard_now} \
-                     skew_secs={skew_secs}"
-                );
+            match &reject {
+                GuardReject::StaleTimestamp {
+                    ts,
+                    now: guard_now,
+                    skew_secs,
+                } => {
+                    eprintln!(
+                        "famp-gateway: ingress: rejected — stale timestamp ts={ts} now={guard_now} \
+                         skew_secs={skew_secs}"
+                    );
+                }
+                GuardReject::ReplayedNonce { principal, nonce } => {
+                    eprintln!(
+                        "famp-gateway: ingress: rejected — replayed nonce '{nonce}' from sender '{principal}'"
+                    );
+                }
+                GuardReject::MissingNonce { principal } => {
+                    eprintln!(
+                        "famp-gateway: ingress: rejected — sender '{principal}' submitted an envelope with no nonce"
+                    );
+                }
+                GuardReject::BadEnvelopeShape => {}
             }
             ingress_error_for_guard(reject)
         })?;
@@ -630,6 +642,17 @@ mod tests {
     /// therefore stamps a live `ts` via `crate::clock::now_canonical_utc()`
     /// on every call; tests that need a deliberately stale envelope use
     /// [`ack_bytes_with_ts`] directly.
+    ///
+    /// Task 2 (17-02, INGR-02) deviation: as of the replay gate,
+    /// `ingest_inbound` also requires a non-empty peeked `nonce` before
+    /// signature verification ever runs. `ack_bytes`/`ack_bytes_with_ts`
+    /// therefore also stamp a fresh, unique `nonce` (`.with_nonce(...)`,
+    /// the same federation-wrapper field `egress.rs::sign_federation_fields`
+    /// adds on the way out) on every call, so a pre-existing reject-path
+    /// test doesn't start failing `missing_nonce` instead of the reject
+    /// reason it actually exercises. Tests that need to control the exact
+    /// nonce value (the replay-precedence and double-POST cases) use
+    /// [`ack_bytes_with_ts_and_nonce`] directly.
     fn ack_bytes(sk: &FampSigningKey, from: &Principal, to: &Principal) -> Vec<u8> {
         ack_bytes_with_ts(sk, from, to, Timestamp(crate::clock::now_canonical_utc()))
     }
@@ -639,6 +662,16 @@ mod tests {
         from: &Principal,
         to: &Principal,
         ts: Timestamp,
+    ) -> Vec<u8> {
+        ack_bytes_with_ts_and_nonce(sk, from, to, ts, &uuid::Uuid::now_v7().to_string())
+    }
+
+    fn ack_bytes_with_ts_and_nonce(
+        sk: &FampSigningKey,
+        from: &Principal,
+        to: &Principal,
+        ts: Timestamp,
+        nonce: &str,
     ) -> Vec<u8> {
         let id: MessageId = "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a71".parse().unwrap();
         let body = AckBody {
@@ -652,7 +685,8 @@ mod tests {
             AuthorityScope::Advisory,
             ts,
             body,
-        );
+        )
+        .with_nonce(nonce.to_string());
         unsigned.sign(sk).unwrap().encode().unwrap()
     }
 
@@ -865,6 +899,7 @@ mod tests {
     /// MAINTENANCE: plans 02 and 03 MUST append one case per new cheap
     /// gate (replay, audience, rate limit) to this same table, so the
     /// chain stays fully pinned rather than pinned only at its head.
+    /// Case 4 (17-02) is the replay gate's entry.
     #[tokio::test]
     async fn cheap_checks_reject_before_signature_verify_ever_runs() {
         let sk = FampSigningKey::from_bytes([50u8; 32]);
@@ -919,6 +954,122 @@ mod tests {
             "malformed JSON must reject on the CHEAP gate, never invalid_signature"
         );
         assert_eq!(registry3.lock().await.names().count(), 0);
+
+        // --- case 4 (17-02, INGR-02): a replay that is ALSO signed with
+        // the wrong key -> replayed_nonce, never invalid_signature. The
+        // first POST records the nonce (replay runs before verify,
+        // regardless of whether verify would ultimately succeed) and
+        // fails on signature as expected; the SECOND, identical POST
+        // must be rejected on the replay gate before signature
+        // verification runs again.
+        let wrong_sk2 = FampSigningKey::from_bytes([52u8; 32]);
+        let mut keyring_wrong2 = Keyring::new();
+        keyring_wrong2
+            .pin_tofu(from.clone(), wrong_sk2.verifying_key())
+            .unwrap();
+        let (router4, registry4) = router_with_keyring(keyring_wrong2);
+        let fresh_bytes = ack_bytes(&sk, &from, &to);
+
+        let first = post_inbox(router4.clone(), &to, fresh_bytes.clone()).await;
+        let first_body = to_bytes(first.into_body(), usize::MAX).await.unwrap();
+        let first_v: Value = serde_json::from_slice(&first_body).unwrap();
+        assert_eq!(
+            first_v["error"], "invalid_signature",
+            "first sighting with the wrong pinned key must still fail signature verification"
+        );
+
+        let second = post_inbox(router4, &to, fresh_bytes).await;
+        assert_eq!(second.status(), StatusCode::BAD_REQUEST);
+        let second_body = to_bytes(second.into_body(), usize::MAX).await.unwrap();
+        let second_v: Value = serde_json::from_slice(&second_body).unwrap();
+        assert_eq!(
+            second_v["error"], "replayed_nonce",
+            "replayed AND wrong-key case must surface replayed_nonce, never invalid_signature"
+        );
+        assert_eq!(registry4.lock().await.names().count(), 0);
+    }
+
+    /// Task 2 (17-02, INGR-02): the same signed envelope POSTed twice is
+    /// accepted past the replay gate the first time and rejected
+    /// `replayed_nonce` the second time. Full end-to-end 202 success
+    /// needs a live backed principal (a real broker connection) this
+    /// unit test does not spin up -- the sender is deliberately left
+    /// unbacked, matching `freshness_boundary_is_inclusive_in_both_directions`'s
+    /// convention, so the first POST reaches as far as
+    /// `sender_not_backed` (BAD_GATEWAY) rather than 202. That is still
+    /// sufficient to prove the nonce was recorded before delivery
+    /// failed: the second, IDENTICAL POST is rejected on the CHEAP
+    /// replay gate, never reaching `sender_not_backed` again.
+    #[tokio::test]
+    async fn replayed_envelope_is_rejected_on_second_delivery_with_no_extra_registry_mutation() {
+        let sk = FampSigningKey::from_bytes([60u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let bytes = ack_bytes(&sk, &from, &to);
+
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let (router, registry) = router_with_keyring(keyring);
+
+        let resp1 = post_inbox(router.clone(), &to, bytes.clone()).await;
+        let body1 = to_bytes(resp1.into_body(), usize::MAX).await.unwrap();
+        let v1: Value = serde_json::from_slice(&body1).unwrap();
+        assert_ne!(
+            v1["error"], "replayed_nonce",
+            "first sighting of a nonce must pass the replay gate"
+        );
+
+        let resp2 = post_inbox(router, &to, bytes).await;
+        assert_eq!(resp2.status(), StatusCode::BAD_REQUEST);
+        let body2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
+        let v2: Value = serde_json::from_slice(&body2).unwrap();
+        assert_eq!(v2["error"], "replayed_nonce");
+
+        assert_eq!(
+            registry.lock().await.names().count(),
+            0,
+            "reject path must perform zero registry mutation (sender deliberately left unbacked)"
+        );
+    }
+
+    /// Task 2 (17-02, INGR-02): an envelope with no `nonce` field at all
+    /// is rejected `missing_nonce`, before signature verification runs.
+    #[tokio::test]
+    async fn envelope_with_no_nonce_is_rejected_missing_nonce() {
+        let sk = FampSigningKey::from_bytes([61u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+
+        let id: MessageId = "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a72".parse().unwrap();
+        let body = AckBody {
+            disposition: AckDisposition::Accepted,
+            reason: None,
+        };
+        let unsigned = UnsignedEnvelope::<AckBody>::new(
+            id,
+            from.clone(),
+            to.clone(),
+            AuthorityScope::Advisory,
+            Timestamp(crate::clock::now_canonical_utc()),
+            body,
+        );
+        // Deliberately no `.with_nonce(...)`.
+        let bytes = unsigned.sign(&sk).unwrap().encode().unwrap();
+
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let (router, registry) = router_with_keyring(keyring);
+
+        let resp = post_inbox(router, &to, bytes).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "missing_nonce");
+        assert_eq!(
+            registry.lock().await.names().count(),
+            0,
+            "reject path must perform zero registry mutation"
+        );
     }
 
     #[tokio::test]
