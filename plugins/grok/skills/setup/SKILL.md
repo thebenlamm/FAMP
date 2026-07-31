@@ -38,13 +38,21 @@ it for them. Recommend rustup; specifically do not suggest `brew install rust`
 on macOS, which pulls a `python@3.14` dependency whose link step can collide
 with an existing python.org framework install.
 
+Use a throwaway directory so a failed or partial run does not leave a sticky
+`/tmp/famp-src` that breaks the next attempt. The trap removes the tree on
+success and on failure:
+
 ```bash
-git clone https://github.com/thebenlamm/FAMP.git /tmp/famp-src \
-  && cargo install --path /tmp/famp-src/crates/famp --locked
+SRC="$(mktemp -d "${TMPDIR:-/tmp}/famp-src.XXXXXX")"
+cleanup() { rm -rf "$SRC"; }
+trap cleanup EXIT
+git clone --depth 1 https://github.com/thebenlamm/FAMP.git "$SRC"
+cargo install --path "$SRC/crates/famp" --locked
 ```
 
 Roughly 90 seconds. Ensure `~/.cargo/bin` is on `PATH`, then re-run
-`famp --version`.
+`famp --version`. Builds whatever the default branch is at clone time until
+release artifacts exist.
 
 ## Step 3 — install the broker service
 

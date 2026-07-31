@@ -3,7 +3,7 @@
 #
 # Activates when the session transcript contains the most recent successful
 # famp_register call with listen:true. Blocks on
-# `famp await --as <identity> --timeout 23h`. On message, emits a
+# the pinned FAMP await command. On message, emits a
 # notification-only {"decision":"block","reason":"..."} so the host calls
 # famp_inbox to retrieve the content — peer bytes never touch `reason`.
 #
@@ -20,6 +20,8 @@
 # default). Bash 3.2 mis-parses <<'DELIM' inside $() when running script
 # files (not -c strings) — a known 3.2 limitation fixed in bash 4.x.
 set -uo pipefail
+
+FAMP_BIN=famp
 
 # --- Read hook metadata from stdin BEFORE redirecting stdin --------------
 STDIN_JSON="$(cat 2>/dev/null || true)"
@@ -137,7 +139,6 @@ fi
 # to the PID-correlated fallback below instead of immediately no-op'ing.
 # Fail-open exit 0 always: never trap the host in a session.
 ACTIVE_IDENTITY=""
-FAMP_BIN="$(command -v famp 2>/dev/null || echo "${HOME:-}/.cargo/bin/famp")"
 
 if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
     log "no transcript_path; trying pid-correlated fallback"
@@ -404,7 +405,7 @@ log "listen mode active: identity=$ACTIVE_IDENTITY bin=$FAMP_BIN"
 
 # --- Per-identity Stop-await singleton (B2 dual-hook guard) ------------
 # Grok may load both ~/.grok/hooks Stop JSON and Claude-compat settings
-# Stop entries. Two shims must not both park `famp await` on the same
+# Stop entries. Two shims must not both park the pinned await on the same
 # identity. mkdir-lock (portable; no flock(1) on macOS default).
 STOP_LOCK_ROOT="${STATE_DIR}/stop-await-locks"
 STOP_LOCK_DIR="${STOP_LOCK_ROOT}/${ACTIVE_IDENTITY}"
@@ -467,12 +468,12 @@ trap 'rm -rf "$STOP_LOCK_DIR" 2>/dev/null || true' EXIT
 #
 # Fix: a background watcher writes one byte to fd 9 when the Claude Code
 # input queue has outstanding input (the most recent JSON-parsed
-# queue-operation record is an `enqueue`). `famp await --abort-on-fd 9`
+# queue-operation record is an `enqueue`). The pinned await with `--abort-on-fd 9`
 # then returns exit 3; we exit 0; the host drains. Listen mode self-heals
 # — the next turn's Stop hook re-arms the await.
 #
 # Everything here is FAIL-OPEN: any setup/watcher/python error means we run
-# a plain `famp await` exactly as before and NEVER abort on uncertainty.
+# a plain pinned await exactly as before and NEVER abort on uncertainty.
 # `famp` itself knows nothing about Claude Code — all host coupling is here.
 ABORT_FD_READY=""
 QWATCH_DIR=""
@@ -482,7 +483,7 @@ QWATCH_PID=""
 
 # fd 9 opened read-write (<>): opening neither blocks for a peer nor reports
 # spurious EOF, and bash does not set CLOEXEC on exec-redirected fds, so
-# `famp await --abort-on-fd 9` inherits it.
+# the pinned await with `--abort-on-fd 9` inherits it.
 QWATCH_DIR="$(mktemp -d "${TMPDIR:-/tmp}/famp-qwatch-XXXXXX" 2>/dev/null || true)"
 if [ -n "$QWATCH_DIR" ]; then
     QWATCH_FIFO="$QWATCH_DIR/abort.fifo"
@@ -556,7 +557,7 @@ sys.exit(0 if last_op == "enqueue" else 1)
 QPYEOF
         # Watcher subshell inherits fd 9. Poll from t=0. On the predicate
         # firing, write one byte and exit. Any python error => loop without
-        # writing (fail-open). Reaped when `famp await` returns regardless.
+        # writing (fail-open). Reaped when the pinned await returns regardless.
         (
             while : ; do
                 if python3 "$QWATCH_PY" "$TRANSCRIPT" 2>/dev/null ; then
@@ -576,7 +577,7 @@ else
     log "abort fifo mktemp failed; running plain await (fail-open)"
 fi
 
-# Run `famp await`, arming --abort-on-fd 9 only when the watcher is up.
+# Run the pinned await, arming --abort-on-fd 9 only when the watcher is up.
 run_await() {
     if [ -n "$ABORT_FD_READY" ]; then
         "$FAMP_BIN" await --as "$ACTIVE_IDENTITY" --timeout 23h --abort-on-fd 9
@@ -613,7 +614,7 @@ if [ -n "$QWATCH_DIR" ]; then
 fi
 
 # --- Abort path (issue #21): host queue has pending input -------------
-# `famp await` exited 3 => a queued host notification is waiting. Exit 0
+# Pinned await exited 3 => a queued host notification is waiting. Exit 0
 # with NO block decision so the turn ends and the host drains its queue.
 # The `{"aborted":true}` sentinel on stdout is NOT forwarded to the host.
 if [ "$STATUS" -eq 3 ]; then
@@ -653,7 +654,7 @@ if [ -z "${MSG//[[:space:]]/}" ]; then
 fi
 
 # --- Extract count + latest sender + mailbox kind/name for notification ---
-# `famp await` now prints a single wrapper JSON object:
+# Pinned await now prints a single wrapper JSON object:
 #   {"mailbox": {"kind": "channel"/"agent", "name": "..."}, "envelopes": [...]}
 # Fallback branch handles legacy raw-envelope lines for backward compat.
 # Single-quoted python3 heredoc is intentional: the shell must NOT expand $ or

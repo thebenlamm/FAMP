@@ -1,0 +1,52 @@
+# Drift gate for host plugin packagings under plugins/.
+#
+# plugins/*/commands and plugins/*/hooks are generated from crates/famp/assets/
+# by scripts/gen-plugin.sh (namespace rewrite + @FAMP_BIN@ render). An assets-
+# only or scripts-only commit can leave committed plugin trees stale, or re-
+# introduce the install-time @FAMP_BIN@ token into static plugin hooks.
+#
+# This workflow does not need the Claude/Codex/Grok CLIs — only bash + git.
+name: plugin-check
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "plugins/**"
+      - "scripts/gen-plugin.sh"
+      - "crates/famp/assets/**"
+      - "Justfile"
+      - ".github/workflows/plugin-check.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "plugins/**"
+      - "scripts/gen-plugin.sh"
+      - "crates/famp/assets/**"
+      - "Justfile"
+      - ".github/workflows/plugin-check.yml"
+
+concurrency:
+  group: plugin-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugin-check:
+    name: plugin-check (all hosts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Regenerate and assert no drift (claude-code, codex, grok)
+        run: |
+          set -euo pipefail
+          for host in claude-code codex grok; do
+            echo "== plugin-check $host =="
+            bash scripts/gen-plugin.sh "$host"
+            git diff --exit-code -- "plugins/$host/commands" "plugins/$host/hooks"
+          done
+          if grep -rq '@FAMP_BIN@' plugins/*/hooks 2>/dev/null; then
+            echo "::error::unresolved @FAMP_BIN@ under plugins/*/hooks"
+            grep -rn '@FAMP_BIN@' plugins/*/hooks || true
+            exit 1
+          fi
+          echo "plugin-check ok"

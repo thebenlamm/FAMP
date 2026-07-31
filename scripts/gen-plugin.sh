@@ -61,12 +61,22 @@
 #   commands/*.md   rewritten tool namespace, and renamed `famp-send.md` ->
 #                   `send.md` because plugin skills are already namespaced by
 #                   the plugin (`/famp:send`, not `/famp:famp-send`).
-#   hooks/*.sh      copied unchanged. They resolve the binary through PATH and
-#                   match tool names with `.endswith()`, so they are already
-#                   namespace-agnostic.
+#   hooks/*.sh      rendered from crates/famp/assets/. Canonical assets pin the
+#                   binary via `FAMP_BIN=@FAMP_BIN@` (see #28 / install path).
+#                   Plugins have no install-time render step, so this script
+#                   substitutes a host-specific value:
+#
+#                     claude-code  FAMP_BIN="${CLAUDE_PLUGIN_ROOT}/bin/famp"
+#                                  (plugin bin/ resolver shim on PATH)
+#                     codex|grok   FAMP_BIN=famp
+#                                  (bare name; /famp:setup puts it on PATH)
+#
+#                   After render, unresolved `@FAMP_BIN@` in hooks/ is a hard
+#                   error, and each shim is syntax-checked with `bash -n`.
 #
 # Outputs are committed, because an installed plugin is a git clone and must
-# contain real files. `just plugin-check` fails if they have drifted.
+# contain real files. `just plugin-check` / `just plugin-check-all` fail if
+# they have drifted.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -126,10 +136,51 @@ else
   fi
 fi
 
-echo "copying Stop-hook shims to $PLUGIN/hooks/"
+# Host-specific render of the #28 asset token. Plugins have no install-time
+# step, so this is the only place @FAMP_BIN@ becomes a real assignment.
+echo "rendering Stop-hook shims to $PLUGIN/hooks/"
 for shim in hook-runner.sh famp-await.sh; do
-  install -m 0755 "$ASSETS/$shim" "$PLUGIN/hooks/$shim"
+  src="$ASSETS/$shim"
+  dest="$PLUGIN/hooks/$shim"
+
+  if ! grep -q '^FAMP_BIN=@FAMP_BIN@$' "$src"; then
+    echo "error: expected a single 'FAMP_BIN=@FAMP_BIN@' assignment in $src" >&2
+    exit 6
+  fi
+
+  case "$HOST" in
+    claude-code)
+      # Expand CLAUDE_PLUGIN_ROOT at hook runtime (same token hooks.json uses).
+      sed 's|^FAMP_BIN=@FAMP_BIN@$|FAMP_BIN="${CLAUDE_PLUGIN_ROOT}/bin/famp"|' \
+        "$src" > "$dest"
+      ;;
+    codex|grok)
+      # No plugin bin/ PATH injection; setup puts a real `famp` on PATH.
+      sed 's|^FAMP_BIN=@FAMP_BIN@$|FAMP_BIN=famp|' \
+        "$src" > "$dest"
+      ;;
+  esac
+
+  chmod 0755 "$dest"
+
+  if grep -q '@FAMP_BIN@' "$dest"; then
+    echo "error: unresolved @FAMP_BIN@ remains in $dest" >&2
+    exit 7
+  fi
+
+  if ! bash -n "$dest"; then
+    echo "error: bash -n failed for $dest" >&2
+    exit 8
+  fi
+
   echo "  $shim"
 done
+
+# Scoped token guard: only generated hooks (not docs that may mention the token).
+if grep -rq '@FAMP_BIN@' "$PLUGIN/hooks" 2>/dev/null; then
+  echo "error: unresolved @FAMP_BIN@ remains under $PLUGIN/hooks" >&2
+  grep -rn '@FAMP_BIN@' "$PLUGIN/hooks" >&2 || true
+  exit 7
+fi
 
 echo "done."

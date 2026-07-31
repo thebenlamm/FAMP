@@ -139,9 +139,15 @@ Beyond namespacing:
   `bin/famp` resolver shim, so its `.mcp.json` can point at
   `${CLAUDE_PLUGIN_ROOT}/bin/famp`. The Codex and Grok packagings invoke a bare
   `famp` and therefore require it on `PATH`; their `/famp:setup` skills say so.
-- **`monitors/` is Claude-Code-only.** Listen mode is declared as a background
-  monitor there. Grok has its own non-blocking wake adapter
-  (`famp listen-wake`), which is in fact what the Claude monitor reuses.
+- **Listen mode is Stop-hook only in v1.** All three packagings (where hooks are
+  wired) park via `famp-await.sh` on turn end. A Claude background monitor /
+  `/famp:listen` skill is not shipped — a second bus waiter would race the Stop
+  hook. Grok's host-native non-blocking wake adapter (`famp listen-wake`) remains
+  available as a CLI for non-plugin workflows.
+- **Hook binary pin is rendered at gen time.** Canonical assets use
+  `FAMP_BIN=@FAMP_BIN@` for `install-*`; `scripts/gen-plugin.sh` renders Claude
+  hooks to `${CLAUDE_PLUGIN_ROOT}/bin/famp` and Codex/Grok hooks to bare `famp`.
+  `just plugin-check-all` fails if the token leaks into `plugins/*/hooks`.
 - **Grok requires explicit trust.** A Grok plugin's hooks and MCP servers stay
   inactive until the plugin is trusted — `grok plugin install <source> --trust`.
 

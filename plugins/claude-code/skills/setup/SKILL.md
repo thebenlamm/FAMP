@@ -48,15 +48,21 @@ that honors this repo's `rust-toolchain.toml` pin:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ```
 
-With a toolchain present, build and install:
+With a toolchain present, build and install. Use a throwaway directory so a
+failed or partial run does not leave a sticky `/tmp/famp-src` that breaks the
+next attempt. The trap removes the tree on success and on failure:
 
 ```bash
-git clone https://github.com/thebenlamm/FAMP.git /tmp/famp-src \
-  && cargo install --path /tmp/famp-src/crates/famp --locked
+SRC="$(mktemp -d "${TMPDIR:-/tmp}/famp-src.XXXXXX")"
+cleanup() { rm -rf "$SRC"; }
+trap cleanup EXIT
+git clone --depth 1 https://github.com/thebenlamm/FAMP.git "$SRC"
+cargo install --path "$SRC/crates/famp" --locked
 ```
 
 This takes roughly 90 seconds. Then re-run `famp --version` to confirm the
-shim now resolves it.
+shim now resolves it. Builds whatever the default branch is at clone time
+until release artifacts exist.
 
 ## Step 3 — install the broker service
 
@@ -87,8 +93,9 @@ Tell the user:
 - that they should now run `/famp:register <name>` in each window they want to
   message from, keeping those windows open — `register` holds the identity for
   the lifetime of the session,
-- and that `/famp:listen` additionally starts a background watcher that
-  surfaces inbound messages without them having to check the inbox.
+- and that with listen mode on (the default for MCP `famp_register`), the
+  plugin Stop hook parks until an inbound message arrives and wakes the
+  window — no separate listen skill is required.
 
 ## Notes
 

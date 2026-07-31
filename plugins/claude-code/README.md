@@ -49,19 +49,19 @@ needing to happen.
 claude-code/
 ├── .claude-plugin/plugin.json   manifest
 ├── .mcp.json                    registers `famp mcp` as the MCP server
-├── bin/
-│   ├── famp                     resolver shim — puts `famp` on the Bash PATH
-│   └── famp-listen-monitor      background listen-mode watcher
+├── bin/famp                     resolver shim — puts `famp` on the Bash PATH
 ├── commands/                    7 slash commands  (generated)
 ├── hooks/
 │   ├── hooks.json               Stop-hook registration
-│   ├── hook-runner.sh           (generated — copied from assets)
-│   └── famp-await.sh            (generated — copied from assets)
-├── monitors/monitors.json       listen-mode monitor declaration
+│   ├── hook-runner.sh           (generated — @FAMP_BIN@ rendered)
+│   └── famp-await.sh            (generated — @FAMP_BIN@ rendered)
 └── skills/
-    ├── setup/SKILL.md           /famp:setup — binary + daemon bootstrap
-    └── listen/SKILL.md          /famp:listen — starts the monitor
+    └── setup/SKILL.md           /famp:setup — binary + daemon bootstrap
 ```
+
+Listen mode uses the Stop-hook path only (`famp-await.sh`). A background
+monitor / `/famp:listen` skill is intentionally not shipped in v1 — a second
+bus waiter would race the Stop hook.
 
 ## Two things the plugin system cannot do
 
@@ -82,8 +82,9 @@ can download the right one and the shim keeps working unchanged.
 ## Generated files
 
 `commands/*.md` and `hooks/*.sh` come from `crates/famp/assets/` via
-`just plugin-gen`; `just plugin-check` fails on drift. They are committed
-because an installed plugin is a git clone and must contain real files.
+`just plugin-gen`; `just plugin-check` / `just plugin-check-all` fail on
+drift. They are committed because an installed plugin is a git clone and must
+contain real files.
 
 The commands cannot be copied verbatim: a plugin-provided MCP server is exposed
 under a scoped tool name. Verified in a live session —
@@ -103,9 +104,11 @@ Files are also renamed (`famp-send.md` → `send.md`) since plugin skills are
 already namespaced by the plugin — the original names would give
 `/famp:famp-send`.
 
-The two Stop-hook shims are copied unchanged: they resolve the binary through
-PATH and match tool names with `.endswith()`, so they are namespace-agnostic
-already.
+The Stop-hook shims are rendered, not copied raw. Canonical assets pin the
+binary with `FAMP_BIN=@FAMP_BIN@` for the `install-*` path; the plugin generator
+substitutes `FAMP_BIN="${CLAUDE_PLUGIN_ROOT}/bin/famp"` so hooks use the
+resolver shim. Unresolved `@FAMP_BIN@` in `hooks/` is a hard generator error.
+
 
 ## Do not run both
 
