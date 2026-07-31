@@ -64,7 +64,18 @@ pub fn run_at_project(
     let config_path = home.join(".codex").join("config.toml");
     let hooks_path = project.join(".codex").join("hooks.json");
     let await_shim_path = project.join(".codex").join("hooks").join("famp-await.sh");
-    let famp_bin = install_codex::resolve_famp_bin(&home);
+    let famp_bin = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|text| toml::from_str::<toml::Table>(&text).ok())
+        .and_then(|table| {
+            table
+                .get("mcp_servers")?
+                .get("famp")?
+                .get("command")?
+                .as_str()
+                .map(PathBuf::from)
+        })
+        .unwrap_or_else(|| PathBuf::from("famp"));
 
     writeln!(err, "Uninstalling Codex MCP entry from {}", home.display()).ok();
     let outcome = toml_merge::remove_codex_table(&config_path, "mcp_servers", "famp")?;

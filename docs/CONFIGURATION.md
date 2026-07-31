@@ -22,6 +22,71 @@ separation is noted where it matters. For the v1.0 gateway setup flow, see
 | `FAMP_INSTALL_TARGET_HOME` | No | `dirs::home_dir()` | Hidden flag (also accepted as a CLI `--home` argument) that redirects `famp install-claude-code` and `famp daemon install` to a custom home directory. Intended for integration tests and CI; not for normal use. |
 | `FAMP_RUN_LAUNCHCTL_TESTS` | No | — | When set (any value), enables launchctl integration tests in `tests/daemon_lifecycle.rs` and `tests/daemon_restart_binary_pickup.rs`. Test-only; not read by the binary at runtime. |
 | `FAMP_OWN_DOMAIN` | No | (none) | This host's own-domain authority for v1.0 gateway federation. Precedence: `--domain` flag > `FAMP_OWN_DOMAIN` > `$FAMP_HOME/own-domain` file; unset in all three is an error. See docs/GATEWAY-SETUP.md. |
+| `FAMP_INSTALL_FAMP_BIN` | No | (resolved — see below) | Pin the absolute `famp` binary path that every installer embeds into generated configuration (Claude, Codex, Grok, and the daemon service file). When set it is used verbatim after validation; there is no fallback if it turns out to be invalid. Intended for integration tests and unusual deployments. |
+
+### Resolution precedence for the installed `famp` binary
+
+`famp install-claude-code`, `famp install-codex`, `famp install-grok`, and
+`famp daemon install` all embed one absolute path to the `famp` executable into
+what they generate. That path is resolved once, before anything is written:
+
+```
+1. $FAMP_INSTALL_FAMP_BIN   Explicit override (when set — used verbatim)
+2. The currently running executable, ONLY when its own file name identifies
+   it as FAMP: exactly `famp` on Unix, exactly `famp.exe` on Windows
+3. `famp` discovered on $PATH
+4. Hard error — nothing is installed
+```
+
+Rules that follow from this:
+
+- **There is no `~/.cargo/bin/famp` fallback.** Earlier versions guessed that
+  path when resolution came up empty; they no longer do. If none of the three
+  candidates resolves, the install command fails and names the fix instead of
+  writing configuration that points at a binary that may not exist.
+- **Cargo installs are still fully supported.** `cargo install --path
+  crates/famp` puts `famp` on `$PATH`, and running that binary makes it the
+  currently-running executable — both are ordinary matches for steps 2 and 3.
+  A `~/.cargo/bin/famp` path is a perfectly normal *result*; it is never an
+  assumed *default*.
+- **Only an exact file name can pin the running executable.** A copy named
+  `famp.bak`, `famp.1`, or `famp-old` is skipped, and resolution continues at
+  step 3 — a backup of the binary never ends up in your configuration.
+- **Paths are validated before any generated configuration is mutated.** The
+  candidate must exist, be a regular file, be executable (Unix), and be valid
+  UTF-8. Resolution failure happens before the first byte is written: no
+  config file, hook script, backup, service file, or `~/.famp/` directory is
+  created or changed, and no service-manager command runs.
+- **An explicitly set override never falls back.** If `FAMP_INSTALL_FAMP_BIN`
+  is set but empty/whitespace-only, missing, not a regular file, not
+  executable, or otherwise invalid, the command fails with that reason. It
+  does not quietly fall through to `$PATH`. Unset the variable to re-enable
+  steps 2–3.
+- Relative override paths are made absolute against the current working
+  directory. Leading and trailing spaces are significant path characters and
+  are preserved, not trimmed. Symlinks are kept as written (not resolved), so
+  a symlinked `famp` stays a symlink in your configuration.
+
+The selected path is embedded into every FAMP-owned generated artifact:
+
+| Command | Artifacts carrying the resolved path |
+|---|---|
+| `famp install-claude-code` | `~/.claude.json :: mcpServers.famp.command`, `~/.famp/hook-runner.sh`, `~/.claude/hooks/famp-await.sh` |
+| `famp install-codex` | `~/.codex/config.toml :: [mcp_servers.famp].command`, the `<project>/.codex/hooks.json` Stop command (`<famp> hook codex-stop`) and its trust entry |
+| `famp install-grok` | `~/.grok/config.toml :: [mcp_servers.famp].command`, `~/.grok/hooks/famp-await.sh` |
+| `famp daemon install` | `~/Library/LaunchAgents/com.famp.broker.plist :: ProgramArguments[0]` (macOS), `~/.config/systemd/user/famp-broker.service :: ExecStart` (Linux) |
+
+The generated hook scripts invoke that exact path (`"$FAMP_BIN" await …`).
+They do **not** search `$PATH` for `famp` at hook time, so moving or deleting
+the pinned binary breaks the hook until you reinstall.
+
+To repoint an integration at a different binary, rerun the corresponding
+install command; it refreshes the FAMP-owned generated paths in place and
+leaves unrelated user configuration untouched. Each installer owns its own
+copy of the hook script, so reinstalling Claude does not repoint Grok's hook,
+and vice versa. For `famp daemon install` on macOS see
+[Daemon Service Files](#daemon-service-files) — the plist is updated, but an
+already-loaded launchd job needs an explicit reload.
 
 ### Resolution precedence for the broker socket
 
@@ -266,7 +331,7 @@ start. Cursor files are managed client-side by `famp inbox ack --offset <N>`.
 |---|---|---|
 | `--home <path>` | `FAMP_INSTALL_TARGET_HOME` | Redirect all install writes to a custom home directory. Hidden; intended for integration tests. |
 | `--project <path>` | `FAMP_INSTALL_CODEX_PROJECT_DIR` | For `install-codex` / `uninstall-codex`, choose the project root whose `.codex/hooks.json` receives or removes the FAMP Stop hook. Defaults to the current git root, or the current directory outside git. |
-| — | `FAMP_INSTALL_FAMP_BIN` | Pin the `famp` binary path wired into the Codex Stop hook, skipping the `current_exe`/`PATH`/`~/.cargo/bin/famp` resolution chain entirely. Intended for integration tests and unusual deployments. |
+| — | `FAMP_INSTALL_FAMP_BIN` | Pin the absolute `famp` binary path embedded by **every** installer (Claude, Codex, Grok, daemon) — not Codex only. Skips the running-executable and `$PATH` steps; an invalid value fails the install rather than falling back. See [Resolution precedence for the installed `famp` binary](#resolution-precedence-for-the-installed-famp-binary). |
 
 ### `famp join <channel>`
 
@@ -295,6 +360,11 @@ In `~/.claude.json` (written by `famp install-claude-code`):
   }
 }
 ```
+
+`command` is whatever the installer resolved (see
+[Resolution precedence for the installed `famp` binary](#resolution-precedence-for-the-installed-famp-binary));
+the cargo path above is one common example, not a default the installer falls
+back to.
 
 No `FAMP_HOME` or `FAMP_BUS_SOCKET` injection is needed — defaults resolve
 from `HOME` at runtime.
@@ -375,6 +445,39 @@ Installed to `~/Library/LaunchAgents/com.famp.broker.plist` by
 
 No `EnvironmentVariables` key is injected. The broker resolves `HOME` from the
 launch context; all paths default normally.
+
+#### Reinstalling with a different `famp` binary (macOS)
+
+`famp daemon install` is idempotent by design: if `com.famp.broker` is already
+registered in `gui/$UID`, it does **not** bootstrap again, because a reload
+drops every in-memory registration and every parked `famp await` waiter.
+
+That has one consequence worth stating plainly:
+
+- Rerunning `famp daemon install` **always updates the plist on disk**,
+  including `ProgramArguments[0]` when the resolved `famp` binary changed.
+- An **already-loaded** launchd job keeps running the `ProgramArguments` it was
+  bootstrapped with. It will continue using the previous executable until the
+  job is explicitly reloaded. (Install prints a note when it detects this.)
+
+To make the new path take effect:
+
+```bash
+famp daemon restart
+```
+
+`famp daemon restart` performs `launchctl bootout` + `bootstrap` + `kickstart`
+against the current plist and then waits for the broker to answer a Hello
+handshake. The full bootout/bootstrap is required — a bare `kickstart -k` does
+not refresh launchd's Lightweight Code Requirement when the binary's cdhash
+changed (issue #20). If restart still fails, `famp daemon uninstall` followed
+by `famp daemon install` is the fallback.
+
+Linux (systemd) is milder but not exempt: `famp daemon install` rewrites the
+unit and runs `systemctl --user daemon-reload` + `enable --now`, so systemd
+re-reads the new `ExecStart` — but a unit that is *already active* keeps the
+process it started. Run `famp daemon restart` there too when you have
+repointed the binary.
 
 ### Linux (systemd --user)
 

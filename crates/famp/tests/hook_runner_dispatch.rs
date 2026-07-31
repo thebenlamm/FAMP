@@ -3,7 +3,7 @@
 
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 fn shim_path() -> PathBuf {
@@ -12,7 +12,23 @@ fn shim_path() -> PathBuf {
         .join("hook-runner.sh")
 }
 
-fn stage_fake_famp(bin_dir: &std::path::Path) -> PathBuf {
+/// Render `hook-runner.sh` the way `hook_runner::install_shim` does, pinning
+/// `FAMP_BIN` at `famp_bin`. The shipped shim no longer consults `PATH`, so a
+/// test that ran the raw asset would try to execute the literal `@FAMP_BIN@`
+/// token. Rendering here exercises the same substitution production performs.
+fn rendered_shim(bin_dir: &Path, famp_bin: &Path) -> PathBuf {
+    let rendered = std::fs::read_to_string(shim_path()).unwrap().replace(
+        "@FAMP_BIN@",
+        &famp::cli::executable::posix_shell_literal(famp_bin.to_str().unwrap()),
+    );
+    assert!(!rendered.contains("@FAMP_BIN@"));
+    let path = bin_dir.join("hook-runner.rendered.sh");
+    std::fs::create_dir_all(bin_dir).unwrap();
+    std::fs::write(&path, rendered).unwrap();
+    path
+}
+
+fn stage_fake_famp(bin_dir: &Path) -> PathBuf {
     std::fs::create_dir_all(bin_dir).unwrap();
     let famp = bin_dir.join("famp");
     std::fs::write(
@@ -24,7 +40,7 @@ fn stage_fake_famp(bin_dir: &std::path::Path) -> PathBuf {
     famp
 }
 
-fn write_transcript(path: &std::path::Path, files: &[&str]) {
+fn write_transcript(path: &Path, files: &[&str]) {
     let mut blocks = Vec::new();
     for f in files {
         blocks.push(format!(
@@ -38,7 +54,7 @@ fn write_transcript(path: &std::path::Path, files: &[&str]) {
     std::fs::write(path, body).unwrap();
 }
 
-fn write_claude_code_transcript(path: &std::path::Path, file: &str) {
+fn write_claude_code_transcript(path: &Path, file: &str) {
     let body = format!(
         r#"{{"type":"user","message":{{"role":"user","content":"edit file"}}}}
 {{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"tool_use","name":"Write","input":{{"file_path":"{file}","content":"uat\n"}}}}]}}}}
@@ -54,7 +70,7 @@ fn shim_dispatches_one_send_per_matching_glob() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let bin_dir = home.join("bin");
-    let _famp = stage_fake_famp(&bin_dir);
+    let famp_bin = stage_fake_famp(&bin_dir);
     let log = home.join("famp.log");
     let famp_local = home.join(".famp-local");
     std::fs::create_dir_all(&famp_local).unwrap();
@@ -76,7 +92,7 @@ fn shim_dispatches_one_send_per_matching_glob() {
     let new_path = format!("{}:{host_path}", bin_dir.display());
 
     let mut child = Command::new("bash")
-        .arg(shim_path())
+        .arg(rendered_shim(&bin_dir, &famp_bin))
         .env_clear()
         .env("HOME", home)
         .env("PATH", &new_path)
@@ -118,7 +134,7 @@ fn shim_dispatches_from_real_claude_code_nested_message_shape() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let bin_dir = home.join("bin");
-    let _famp = stage_fake_famp(&bin_dir);
+    let famp_bin = stage_fake_famp(&bin_dir);
     let log = home.join("famp.log");
     let famp_local = home.join(".famp-local");
     std::fs::create_dir_all(&famp_local).unwrap();
@@ -151,7 +167,7 @@ fn shim_dispatches_from_real_claude_code_nested_message_shape() {
     let new_path = format!("{}:{host_path}", bin_dir.display());
 
     let mut child = Command::new("bash")
-        .arg(shim_path())
+        .arg(rendered_shim(&bin_dir, &famp_bin))
         .env_clear()
         .env("HOME", home)
         .env("PATH", &new_path)
@@ -187,7 +203,7 @@ fn shim_dispatches_zero_when_no_globs_match() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path();
     let bin_dir = home.join("bin");
-    let _ = stage_fake_famp(&bin_dir);
+    let famp_bin = stage_fake_famp(&bin_dir);
     let log = home.join("famp.log");
     let famp_local = home.join(".famp-local");
     std::fs::create_dir_all(&famp_local).unwrap();
@@ -205,7 +221,7 @@ fn shim_dispatches_zero_when_no_globs_match() {
     let host_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{host_path}", bin_dir.display());
     let mut child = Command::new("bash")
-        .arg(shim_path())
+        .arg(rendered_shim(&bin_dir, &famp_bin))
         .env_clear()
         .env("HOME", home)
         .env("PATH", &new_path)

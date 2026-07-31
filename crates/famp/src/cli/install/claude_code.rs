@@ -19,6 +19,7 @@ use clap::Args;
 use serde_json::{json, Value};
 
 use crate::cli::error::CliError;
+use crate::cli::executable::{resolve_for_generated_config, FampExecutable};
 use crate::cli::install::{await_hook, hook_runner, json_merge, slash_commands, stop_entry};
 
 #[derive(Debug, Args)]
@@ -49,15 +50,20 @@ pub fn run(args: InstallClaudeCodeArgs) -> Result<(), CliError> {
 /// Test-facing entry: takes explicit home + writable handles.
 /// Mirrors the `init::run_at` / `setup::run_with_io` pattern.
 pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<(), CliError> {
+    let executable = resolve_for_generated_config()?;
+    run_at_with_executable(home, &executable, err)
+}
+
+fn run_at_with_executable(
+    home: &Path,
+    executable: &FampExecutable,
+    err: &mut dyn Write,
+) -> Result<(), CliError> {
     let claude_json_path = home.join(".claude.json");
     let commands_dir = home.join(".claude").join("commands");
     let settings_path = home.join(".claude").join("settings.json");
     let shim_path = home.join(".famp").join("hook-runner.sh");
     let await_shim_path = home.join(".claude").join("hooks").join("famp-await.sh");
-
-    let famp_bin = which::which("famp")
-        .ok()
-        .unwrap_or_else(|| home.join(".cargo").join("bin").join("famp"));
 
     writeln!(
         err,
@@ -65,11 +71,16 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
         home.display()
     )
     .ok();
-    writeln!(err, "  resolved famp binary: {}", famp_bin.display()).ok();
+    writeln!(
+        err,
+        "  resolved famp binary: {}",
+        executable.path().display()
+    )
+    .ok();
 
     let mcp_value: Value = json!({
         "type": "stdio",
-        "command": famp_bin.display().to_string(),
+        "command": executable.utf8(),
         "args": ["mcp"],
     });
     let outcome = json_merge::upsert_user_json(&claude_json_path, "mcpServers", "famp", mcp_value)?;
@@ -89,7 +100,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     )
     .ok();
 
-    hook_runner::install_shim(&shim_path)?;
+    hook_runner::install_shim(&shim_path, executable)?;
     writeln!(
         err,
         "  [3/5] {} :: bash shim installed (mode 0755)",
@@ -112,7 +123,7 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     )
     .ok();
 
-    await_hook::install_shim(&await_shim_path)?;
+    await_hook::install_shim(&await_shim_path, executable)?;
     writeln!(
         err,
         "  [5/5] {} :: listen-mode await shim installed (mode 0755)",
@@ -128,13 +139,6 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
          (mcpServers.famp) only takes effect after restarting Claude Code."
     )
     .ok();
-    if which::which("famp").is_err() {
-        writeln!(
-            err,
-            "  hint: famp binary not on PATH; run `cargo install famp` to install it."
-        )
-        .ok();
-    }
     Ok(())
 }
 
@@ -202,13 +206,115 @@ fn build_stop_array(
 mod tests {
     use super::*;
 
+    fn stage_executable(path: &Path) -> PathBuf {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        path.to_path_buf()
+    }
+
+    fn test_executable(dir: &Path) -> FampExecutable {
+        let path = stage_executable(&dir.join("bin with space").join("famp's-tool"));
+        FampExecutable::validate(path).unwrap()
+    }
+
+    /// Pin `FAMP_INSTALL_FAMP_BIN` at a staged executable so the public
+    /// `run_at` path resolves hermetically. Without this the resolver would
+    /// fall through to `which famp`, making the test pass or fail depending
+    /// on whether the host happens to have FAMP installed (CI does not).
+    /// WR-06: `temp_env` serializes the process-global env mutation.
+    fn with_pinned_famp_bin<T>(test: impl FnOnce() -> T) -> T {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = stage_executable(&dir.path().join("famp"));
+        temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(bin.as_os_str()), test)
+    }
+
+    #[test]
+    fn injected_executable_is_pinned_in_mcp_and_both_rendered_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let executable = test_executable(dir.path());
+        let mut err = Vec::new();
+        run_at_with_executable(&home, &executable, &mut err).unwrap();
+        let config: Value =
+            serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
+                .unwrap();
+        assert_eq!(config["mcpServers"]["famp"]["command"], executable.utf8());
+        for script in [
+            home.join(".famp/hook-runner.sh"),
+            home.join(".claude/hooks/famp-await.sh"),
+        ] {
+            let rendered = std::fs::read_to_string(script).unwrap();
+            assert!(rendered.contains(&format!(
+                "FAMP_BIN={}",
+                crate::cli::executable::posix_shell_literal(executable.utf8())
+            )));
+            assert!(!rendered.contains("@FAMP_BIN@"));
+            assert!(!rendered.contains("command -v famp"));
+            assert!(!rendered.contains(".cargo/bin/famp"));
+        }
+    }
+
+    /// M2: the guarantee this whole abstraction exists for — a resolution
+    /// failure happens BEFORE any generated configuration, hook asset or
+    /// backup is touched. Exercises the real public `run_at` (which calls
+    /// `resolve_for_generated_config`), not the executable-injecting
+    /// `run_at_with_executable` seam the other tests use.
+    ///
+    /// WR-06: env mutation is process-global; `temp_env::with_var` holds the
+    /// crate-wide lock so parallel tests cannot observe the override.
+    #[test]
+    fn public_run_at_fails_before_any_mutation_when_executable_is_unresolvable() {
+        use crate::cli::executable::test_support::{
+            assert_tree_unchanged, snapshot_tree, MISSING_FAMP_BIN,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        // Representative pre-existing user state the installer would otherwise
+        // rewrite: MCP config, Stop-hook settings, and an already-installed
+        // shim carrying a *different* binary.
+        std::fs::create_dir_all(home.join(".claude/hooks")).unwrap();
+        std::fs::create_dir_all(home.join(".famp")).unwrap();
+        std::fs::write(home.join(".claude.json"), "{\"numStartups\":7}\n").unwrap();
+        std::fs::write(
+            home.join(".claude/settings.json"),
+            "{\"hooks\":{\"Stop\":[]}}\n",
+        )
+        .unwrap();
+        std::fs::write(home.join(".famp/hook-runner.sh"), "#!/bin/sh\n# prior\n").unwrap();
+        std::fs::write(
+            home.join(".claude/hooks/famp-await.sh"),
+            "#!/bin/sh\n# prior await\n",
+        )
+        .unwrap();
+        let before = snapshot_tree(home);
+
+        for value in [MISSING_FAMP_BIN, "   ", home.to_str().unwrap()] {
+            let result = temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(value), || {
+                let mut out = Vec::<u8>::new();
+                let mut err = Vec::<u8>::new();
+                run_at(home, &mut out, &mut err)
+            });
+            assert!(
+                matches!(result, Err(CliError::FampExecutable(_))),
+                "FAMP_INSTALL_FAMP_BIN={value:?} must fail resolution, got {result:?}"
+            );
+            assert_tree_unchanged(home, &before, &format!("install-claude-code {value:?}"));
+        }
+    }
+
     #[test]
     fn install_writes_all_five_artifacts_under_tempdir_home() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out, &mut err)).unwrap();
 
         assert!(home.join(".claude.json").exists());
         assert!(home.join(".claude/commands/famp-register.md").exists());
@@ -265,7 +371,7 @@ mod tests {
 
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out, &mut err)).unwrap();
 
         let post: Value =
             serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap())
@@ -281,19 +387,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
 
-        let mut out = Vec::<u8>::new();
-        let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        // One pinned binary for BOTH runs: idempotency compares the generated
+        // files byte-for-byte, so the resolved path must not move between runs.
+        let (claude_after_first, settings_after_first) = with_pinned_famp_bin(|| {
+            let mut out = Vec::<u8>::new();
+            let mut err = Vec::<u8>::new();
+            run_at(home, &mut out, &mut err).unwrap();
 
-        let claude_after_first = std::fs::read_to_string(home.join(".claude.json")).unwrap();
-        let settings_after_first =
-            std::fs::read_to_string(home.join(".claude/settings.json")).unwrap();
+            let first = (
+                std::fs::read_to_string(home.join(".claude.json")).unwrap(),
+                std::fs::read_to_string(home.join(".claude/settings.json")).unwrap(),
+            );
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let mut out2 = Vec::<u8>::new();
-        let mut err2 = Vec::<u8>::new();
-        run_at(home, &mut out2, &mut err2).unwrap();
+            let mut out2 = Vec::<u8>::new();
+            let mut err2 = Vec::<u8>::new();
+            run_at(home, &mut out2, &mut err2).unwrap();
+            first
+        });
 
         assert_eq!(
             claude_after_first,
@@ -312,11 +424,11 @@ mod tests {
 
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out, &mut err)).unwrap();
 
         let mut out2 = Vec::<u8>::new();
         let mut err2 = Vec::<u8>::new();
-        run_at(home, &mut out2, &mut err2).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out2, &mut err2)).unwrap();
 
         let settings: Value = serde_json::from_str(
             &std::fs::read_to_string(home.join(".claude/settings.json")).unwrap(),
@@ -351,7 +463,7 @@ mod tests {
 
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out, &mut err)).unwrap();
 
         let post: Value = serde_json::from_str(
             &std::fs::read_to_string(home.join(".claude/settings.json")).unwrap(),
@@ -431,7 +543,7 @@ mod tests {
 
         let mut out = Vec::<u8>::new();
         let mut err = Vec::<u8>::new();
-        run_at(home, &mut out, &mut err).unwrap();
+        with_pinned_famp_bin(|| run_at(home, &mut out, &mut err)).unwrap();
 
         let post: Value = serde_json::from_str(
             &std::fs::read_to_string(home.join(".claude/settings.json")).unwrap(),

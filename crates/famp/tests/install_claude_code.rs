@@ -12,13 +12,28 @@ use std::os::unix::fs::PermissionsExt;
 
 use serde_json::Value;
 
+/// Pin `FAMP_INSTALL_FAMP_BIN` at the cargo-built `famp` so the installer's
+/// executable resolution is hermetic. Without this the resolver falls through
+/// to `which famp`, and the test would pass or fail depending on whether the
+/// host happens to have FAMP installed (CI does not). Same convention as
+/// `install_codex.rs`; `temp_env` serializes the process-global env mutation
+/// (WR-06).
+fn with_pinned_famp_bin<T>(test: impl FnOnce() -> T) -> T {
+    let bin = assert_cmd::cargo::cargo_bin("famp");
+    temp_env::with_var(
+        "FAMP_INSTALL_FAMP_BIN",
+        Some(bin.to_string_lossy().into_owned()),
+        test,
+    )
+}
+
 #[test]
 fn install_claude_code_writes_all_artifacts() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path();
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::claude_code::run_at(home, &mut out, &mut err)
+    with_pinned_famp_bin(|| famp::cli::install::claude_code::run_at(home, &mut out, &mut err))
         .expect("install-claude-code happy path");
 
     let claude_json = home.join(".claude.json");
@@ -106,13 +121,15 @@ fn install_claude_code_is_idempotent() {
     let home = tmp.path();
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::claude_code::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::claude_code::run_at(home, &mut out, &mut err))
+        .unwrap();
     let claude_first = std::fs::read_to_string(home.join(".claude.json")).unwrap();
     let settings_first = std::fs::read_to_string(home.join(".claude/settings.json")).unwrap();
     std::thread::sleep(std::time::Duration::from_secs(1));
     let mut out2 = Vec::<u8>::new();
     let mut err2 = Vec::<u8>::new();
-    famp::cli::install::claude_code::run_at(home, &mut out2, &mut err2).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::claude_code::run_at(home, &mut out2, &mut err2))
+        .unwrap();
     assert_eq!(
         claude_first,
         std::fs::read_to_string(home.join(".claude.json")).unwrap()
@@ -135,7 +152,8 @@ fn install_claude_code_preserves_unrelated_top_level_keys() {
     .unwrap();
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::claude_code::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::claude_code::run_at(home, &mut out, &mut err))
+        .unwrap();
     let post: Value =
         serde_json::from_str(&std::fs::read_to_string(home.join(".claude.json")).unwrap()).unwrap();
     assert_eq!(post["numStartups"], serde_json::json!(42));

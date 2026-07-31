@@ -4,13 +4,29 @@
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, unused_crate_dependencies)]
 
+/// Pin `FAMP_INSTALL_FAMP_BIN` at the cargo-built `famp` so the installer's
+/// executable resolution is hermetic. Without this the resolver falls through
+/// to `which famp`, and the test would pass or fail depending on whether the
+/// host happens to have FAMP installed (CI does not). Same convention as
+/// `install_codex.rs`; `temp_env` serializes the process-global env mutation
+/// (WR-06).
+fn with_pinned_famp_bin<T>(test: impl FnOnce() -> T) -> T {
+    let bin = assert_cmd::cargo::cargo_bin("famp");
+    temp_env::with_var(
+        "FAMP_INSTALL_FAMP_BIN",
+        Some(bin.to_string_lossy().into_owned()),
+        test,
+    )
+}
+
 #[test]
 fn install_grok_writes_mcp_servers_famp_table_under_tempdir_home() {
     let tmp = tempfile::TempDir::new().unwrap();
     let home = tmp.path();
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::grok::run_at(home, &mut out, &mut err).expect("install-grok happy path");
+    with_pinned_famp_bin(|| famp::cli::install::grok::run_at(home, &mut out, &mut err))
+        .expect("install-grok happy path");
 
     let cfg = home.join(".grok/config.toml");
     assert!(cfg.exists(), "config.toml missing");
@@ -79,7 +95,7 @@ fn install_grok_preserves_unrelated_mcp_servers() {
 
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::grok::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::grok::run_at(home, &mut out, &mut err)).unwrap();
 
     let parsed: toml::Table =
         toml::from_str(&std::fs::read_to_string(home.join(".grok/config.toml")).unwrap()).unwrap();
@@ -96,14 +112,14 @@ fn install_grok_is_idempotent() {
     let home = tmp.path();
     let mut out = Vec::<u8>::new();
     let mut err = Vec::<u8>::new();
-    famp::cli::install::grok::run_at(home, &mut out, &mut err).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::grok::run_at(home, &mut out, &mut err)).unwrap();
     let first = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let mut out2 = Vec::<u8>::new();
     let mut err2 = Vec::<u8>::new();
-    famp::cli::install::grok::run_at(home, &mut out2, &mut err2).unwrap();
+    with_pinned_famp_bin(|| famp::cli::install::grok::run_at(home, &mut out2, &mut err2)).unwrap();
     let second = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
     assert_eq!(first, second);
 }

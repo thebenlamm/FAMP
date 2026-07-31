@@ -98,7 +98,9 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     writeln!(err, "uninstall-claude-code complete.").ok();
     writeln!(
         err,
-        "  note: the famp binary remains in ~/.cargo/bin; run `cargo uninstall famp` to remove it."
+        "  note: the famp binary itself is not removed. If it came from \
+         `cargo install` (the usual `~/.cargo/bin/famp`), `cargo uninstall famp` \
+         removes it; otherwise delete the copy you installed."
     )
     .ok();
     writeln!(

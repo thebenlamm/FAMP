@@ -21,6 +21,7 @@ use serde_json::{json, Map, Value as JsonValue};
 use toml::Value as TomlValue;
 
 use crate::cli::error::CliError;
+use crate::cli::executable::{posix_shell_literal, resolve_for_generated_config, FampExecutable};
 use crate::cli::install::{await_hook, json_merge, stop_entry, toml_merge};
 
 const CODEX_AWAIT_TIMEOUT_SEC: i64 = 86_400;
@@ -85,18 +86,28 @@ pub fn run_at_project(
     _out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<(), CliError> {
+    let executable = resolve_for_generated_config()?;
+    run_at_project_with_executable(home, project, &executable, err)
+}
+
+fn run_at_project_with_executable(
+    home: &Path,
+    project: &Path,
+    executable: &FampExecutable,
+    err: &mut dyn Write,
+) -> Result<(), CliError> {
     let home = normalize_absolute_path(home)?;
     let project = normalize_absolute_path(project)?;
     let config_path = home.join(".codex").join("config.toml");
     let hooks_path = project.join(".codex").join("hooks.json");
     let await_shim_path = project.join(".codex").join("hooks").join("famp-await.sh");
-    let famp_bin = resolve_famp_bin(&home);
+    let famp_bin = executable.path();
 
     // Probe BEFORE any mutation: a failing probe must leave every file
     // (MCP entry, legacy shim, hooks.json, hook-trust state) untouched.
     // Writing partial state (e.g. MCP entry written + shim pruned but no
     // Stop hook wired) would be strictly worse than not running at all.
-    probe_codex_stop_support(&famp_bin)?;
+    probe_codex_stop_support(famp_bin)?;
 
     writeln!(err, "Installing Codex MCP entry into {}", home.display()).ok();
     writeln!(err, "Installing Codex Stop hook into {}", project.display()).ok();
@@ -132,8 +143,8 @@ pub fn run_at_project(
     )
     .ok();
 
-    let command = codex_stop_command(&famp_bin);
-    let new_stop_array = build_stop_array(&hooks_path, &famp_bin, &await_shim_path, &command)?;
+    let command = codex_stop_command(famp_bin);
+    let new_stop_array = build_stop_array(&hooks_path, famp_bin, &await_shim_path, &command)?;
     let stop_index = new_stop_array.len().saturating_sub(1);
     let outcome = json_merge::upsert_user_json(
         &hooks_path,
@@ -152,7 +163,7 @@ pub fn run_at_project(
     let trust_key = codex_hook_key(&hooks_path, CODEX_STOP_EVENT_LABEL, stop_index, 0);
     let trusted_hash =
         codex_command_hook_hash(CODEX_STOP_EVENT_LABEL, &command, CODEX_AWAIT_TIMEOUT_SEC);
-    let trusted_hashes = famp_trusted_hashes(CODEX_STOP_EVENT_LABEL, &famp_bin, &await_shim_path);
+    let trusted_hashes = famp_trusted_hashes(CODEX_STOP_EVENT_LABEL, famp_bin, &await_shim_path);
     let removed_stale = remove_stale_codex_hook_trust(
         &config_path,
         &hooks_path,
@@ -185,13 +196,6 @@ pub fn run_at_project(
          the project Stop hook is ready for new turns."
     )
     .ok();
-    if which::which("famp").is_err() {
-        writeln!(
-            err,
-            "  hint: famp binary not on PATH; run `cargo install famp` to install it."
-        )
-        .ok();
-    }
     Ok(())
 }
 
@@ -205,38 +209,6 @@ pub(crate) fn normalize_absolute_path(path: &Path) -> Result<PathBuf, CliError> 
     }
 }
 
-/// Resolve the `famp` binary path for install-time hook wiring.
-///
-/// Checks `FAMP_INSTALL_FAMP_BIN` first: if set and non-empty, that path
-/// (normalized) is used directly and the `current_exe`/`PATH`/fallback chain
-/// below is skipped entirely. Intended for integration tests (so the probe
-/// exercises a real, freshly-built `famp` rather than whatever stale binary
-/// happens to be first on the developer's `PATH`) and unusual deployments
-/// that need to pin the wired binary explicitly.
-///
-/// Otherwise: prefer the running executable when it is literally named
-/// `famp` (so `./target/release/famp install-codex` wires the freshly built
-/// binary instead of a possibly-stale one elsewhere on `PATH`), then `PATH`
-/// (`which famp`), else `~/.cargo/bin/famp`. Never use a test-harness exe.
-pub(crate) fn resolve_famp_bin(home: &Path) -> PathBuf {
-    if let Ok(pinned) = std::env::var("FAMP_INSTALL_FAMP_BIN") {
-        if !pinned.is_empty() {
-            let pinned = PathBuf::from(pinned);
-            return normalize_absolute_path(&pinned).unwrap_or(pinned);
-        }
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if exe.file_name().and_then(|n| n.to_str()) == Some("famp") {
-            return normalize_absolute_path(&exe).unwrap_or(exe);
-        }
-    }
-    if let Ok(p) = which::which("famp") {
-        return normalize_absolute_path(&p).unwrap_or(p);
-    }
-    let fallback = home.join(".cargo").join("bin").join("famp");
-    normalize_absolute_path(&fallback).unwrap_or(fallback)
-}
-
 /// Verify the resolved `famp` binary actually supports `hook codex-stop`
 /// before wiring it into the Stop hook, so `install-codex` fails loudly
 /// instead of shipping a hook command Codex will treat as a blocking error.
@@ -246,15 +218,13 @@ pub(crate) fn resolve_famp_bin(home: &Path) -> PathBuf {
 /// subcommand help when `hook codex-stop` is recognized, and exits 2 for an
 /// unrecognized subcommand.
 ///
-/// Skipped when `famp_bin` does not exist on disk: a nonexistent resolved
-/// path is already an unrunnable-binary case, and the existing `run_at`
-/// install tests (which resolve a non-`famp`-named test-harness exe via
-/// `current_exe`/`PATH` fallback against a tempdir `home`) depend on
-/// tolerating that rather than failing at this probe.
+/// Never skipped: `famp_bin` reaches this function only as a validated
+/// `FampExecutable`, so the resolver has already proved the path exists, is a
+/// regular file, and is executable. Executing the resolved binary is the
+/// intended contract of "install with this binary" — including a path pinned
+/// through `FAMP_INSTALL_FAMP_BIN`, which is trusted exactly as much as the
+/// installer invocation itself.
 fn probe_codex_stop_support(famp_bin: &Path) -> Result<(), CliError> {
-    if !famp_bin.is_file() {
-        return Ok(());
-    }
     let mut child = std::process::Command::new(famp_bin)
         .args(["hook", "codex-stop", "--help"])
         .stdin(std::process::Stdio::null())
@@ -358,14 +328,14 @@ pub(crate) fn famp_hook_command_patterns(famp_bin: &Path, await_shim_path: &Path
 }
 
 pub(crate) fn shell_quote_path(path: &Path) -> String {
-    let raw = path.display().to_string();
+    let raw = path.to_str().unwrap_or_default();
     if raw
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '/' | '.' | '_' | '-'))
     {
-        return raw;
+        return raw.to_string();
     }
-    format!("'{}'", raw.replace('\'', "'\\''"))
+    posix_shell_literal(raw)
 }
 
 pub(crate) fn codex_hook_key(
@@ -487,37 +457,55 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    /// Path to the cargo-built `famp` binary (genuinely has `hook
-    /// codex-stop`). Pinned via `FAMP_INSTALL_FAMP_BIN` so `run_at`'s
-    /// pre-write probe exercises a real success path instead of resolving
-    /// whatever `famp` happens to be first on the developer's/CI's `PATH`.
-    ///
-    /// Wrapped in `temp_env::with_var` (WR-06 convention, see `Cargo.toml`)
-    /// so the process-global env mutation is serialized across parallel
-    /// test threads rather than racing via a bare `std::env::set_var`.
-    fn with_pinned_famp_bin<F: FnOnce()>(test: F) {
-        let bin = assert_cmd::cargo::cargo_bin("famp");
-        temp_env::with_var(
-            "FAMP_INSTALL_FAMP_BIN",
-            Some(bin.to_string_lossy().into_owned()),
-            test,
-        );
+    fn with_probe_capable_famp<F: FnOnce(&FampExecutable)>(test: F) {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("famp test binary");
+        std::fs::write(&bin, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        // Warm up the stub before handing it to the installer's probe. A test
+        // thread that forks while this file is being written inherits the open
+        // write descriptor, and the exec then fails with ETXTBSY ("Text file
+        // busy") — which `probe_codex_stop_support` cannot distinguish from a
+        // genuinely unsupported binary. Waiting until the stub actually runs
+        // keeps that race out of the assertion.
+        let mut warmed = false;
+        for _ in 0..50 {
+            let ran = std::process::Command::new(&bin)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success());
+            if ran {
+                warmed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(warmed, "staged probe stub never became executable: {bin:?}");
+
+        let executable = FampExecutable::validate(bin).unwrap();
+        test(&executable);
     }
 
     #[test]
     fn install_codex_writes_mcp_and_stop_hook() {
-        with_pinned_famp_bin(|| {
+        with_probe_capable_famp(|executable| {
             let dir = tempfile::tempdir().unwrap();
             let home = dir.path();
-            let mut out = Vec::<u8>::new();
             let mut err = Vec::<u8>::new();
-            run_at(home, &mut out, &mut err).unwrap();
+            run_at_project_with_executable(home, home, executable, &mut err).unwrap();
 
             let cfg = home.join(".codex/config.toml");
             assert!(cfg.exists());
             let parsed: toml::Table =
                 toml::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
             let famp_t = parsed["mcp_servers"]["famp"].as_table().unwrap();
+            assert_eq!(famp_t["command"].as_str(), Some(executable.utf8()));
             assert_eq!(
                 famp_t["args"].as_array().unwrap()[0].as_str().unwrap(),
                 "mcp"
@@ -532,6 +520,7 @@ mod tests {
             let stop = hooks["hooks"]["Stop"].as_array().unwrap();
             assert_eq!(stop.len(), 1);
             let command = stop[0]["hooks"][0]["command"].as_str().unwrap();
+            assert_eq!(command, codex_stop_command(executable.path()));
             assert!(
                 command.contains("hook codex-stop"),
                 "expected native codex-stop command, got {command}"
@@ -557,9 +546,92 @@ mod tests {
         });
     }
 
+    /// M2 (Codex half): resolution failure on the public `run_at_project`
+    /// path must precede every mutation — including the two Codex-specific
+    /// ones the other installers do not have: pruning the legacy
+    /// `famp-await.sh` shim and rewriting `hooks.state` trust entries.
+    #[test]
+    fn public_run_at_project_fails_before_any_mutation_when_executable_is_unresolvable() {
+        use crate::cli::executable::test_support::{
+            assert_tree_unchanged, snapshot_tree, MISSING_FAMP_BIN,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::create_dir_all(project.join(".codex/hooks")).unwrap();
+        // Legacy shim install would prune, plus a FAMP-shaped trust entry
+        // install would rewrite.
+        let legacy_shim = project.join(".codex/hooks/famp-await.sh");
+        std::fs::write(&legacy_shim, "#!/bin/sh\n# legacy shim\n").unwrap();
+        let hooks_path = project.join(".codex/hooks.json");
+        std::fs::write(
+            &hooks_path,
+            "{\"hooks\":{\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"echo stop\"}]}]}}\n",
+        )
+        .unwrap();
+        let config_path = home.join(".codex/config.toml");
+        let trust_key = codex_hook_key(&hooks_path, CODEX_STOP_EVENT_LABEL, 0, 0);
+        std::fs::write(
+            &config_path,
+            format!(
+                "[mcp_servers.famp]\ncommand = \"/prior/famp\"\n\n\
+                 [hooks.state.\"{trust_key}\"]\ntrusted_hash = \"sha256:prior\"\nenabled = true\n"
+            ),
+        )
+        .unwrap();
+        let before = snapshot_tree(dir.path());
+
+        for value in [MISSING_FAMP_BIN, "\t ", home.to_str().unwrap()] {
+            let result = temp_env::with_var("FAMP_INSTALL_FAMP_BIN", Some(value), || {
+                let mut out = Vec::<u8>::new();
+                let mut err = Vec::<u8>::new();
+                run_at_project(&home, &project, &mut out, &mut err)
+            });
+            assert!(
+                matches!(result, Err(CliError::FampExecutable(_))),
+                "FAMP_INSTALL_FAMP_BIN={value:?} must fail resolution, got {result:?}"
+            );
+            assert_tree_unchanged(dir.path(), &before, &format!("install-codex {value:?}"));
+            assert!(
+                legacy_shim.exists(),
+                "legacy shim must not be pruned when resolution fails"
+            );
+            let config: toml::Table =
+                toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+            assert_eq!(
+                config["hooks"]["state"][trust_key.as_str()]["trusted_hash"].as_str(),
+                Some("sha256:prior"),
+                "hook trust state must be untouched when resolution fails"
+            );
+            assert_eq!(
+                config["mcp_servers"]["famp"]["command"].as_str(),
+                Some("/prior/famp")
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_probe_fails_before_any_mutation() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let bin = dir.path().join("unsupported famp");
+        std::fs::write(&bin, "#!/bin/sh\nexit 1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let executable = FampExecutable::validate(bin).unwrap();
+        let mut err = Vec::new();
+        assert!(run_at_project_with_executable(&home, &home, &executable, &mut err).is_err());
+        assert!(!home.exists());
+    }
+
     #[test]
     fn install_codex_preserves_unrelated_top_level_sections() {
-        with_pinned_famp_bin(|| {
+        with_probe_capable_famp(|executable| {
             let dir = tempfile::tempdir().unwrap();
             let home = dir.path();
             std::fs::create_dir_all(home.join(".codex")).unwrap();
@@ -569,9 +641,8 @@ mod tests {
             )
             .unwrap();
 
-            let mut out = Vec::<u8>::new();
             let mut err = Vec::<u8>::new();
-            run_at(home, &mut out, &mut err).unwrap();
+            run_at_project_with_executable(home, home, executable, &mut err).unwrap();
 
             let parsed: toml::Table =
                 toml::from_str(&std::fs::read_to_string(home.join(".codex/config.toml")).unwrap())
@@ -590,7 +661,7 @@ mod tests {
 
     #[test]
     fn install_codex_preserves_unrelated_project_hooks() {
-        with_pinned_famp_bin(|| {
+        with_probe_capable_famp(|executable| {
             let dir = tempfile::tempdir().unwrap();
             let home = dir.path();
             std::fs::create_dir_all(home.join(".codex")).unwrap();
@@ -606,9 +677,8 @@ mod tests {
         )
         .unwrap();
 
-            let mut out = Vec::<u8>::new();
             let mut err = Vec::<u8>::new();
-            run_at(home, &mut out, &mut err).unwrap();
+            run_at_project_with_executable(home, home, executable, &mut err).unwrap();
 
             let hooks: JsonValue = serde_json::from_str(
                 &std::fs::read_to_string(home.join(".codex/hooks.json")).unwrap(),
@@ -630,19 +700,17 @@ mod tests {
 
     #[test]
     fn install_codex_is_idempotent() {
-        with_pinned_famp_bin(|| {
+        with_probe_capable_famp(|executable| {
             let dir = tempfile::tempdir().unwrap();
             let home = dir.path();
-            let mut out = Vec::<u8>::new();
             let mut err = Vec::<u8>::new();
-            run_at(home, &mut out, &mut err).unwrap();
+            run_at_project_with_executable(home, home, executable, &mut err).unwrap();
             let first = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
 
             std::thread::sleep(std::time::Duration::from_secs(1));
 
-            let mut out2 = Vec::<u8>::new();
             let mut err2 = Vec::<u8>::new();
-            run_at(home, &mut out2, &mut err2).unwrap();
+            run_at_project_with_executable(home, home, executable, &mut err2).unwrap();
             let second = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
             assert_eq!(first, second);
 
