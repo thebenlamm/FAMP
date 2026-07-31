@@ -45,8 +45,8 @@ Public reachability over the open internet. The model is decided **first**, in a
 Load-bearing prerequisite: the keyring is hard-coded to exactly one key per principal today, which blocks rotation, revocation, and any new bootstrap path.
 
 - [x] **KEYR-01**: The keyring stores multiple keys per principal with explicit active/retired state, and **existing single-key keyring files load unchanged** (backward compatibility proven by a fixture test).
-- [ ] **KEYR-02**: A peer's key can be rotated — a new key is pinned for a known peer without dropping the previous key until it is explicitly retired.
-- [ ] **KEYR-03**: "Key **CHANGED** for a known peer" is a structurally distinct path from "new peer, first pin" — a different exit code and a different operator confirmation, not a warning line in a stream the operator has learned to ignore.
+- [x] **KEYR-02**: A peer's key can be rotated — a new key is pinned for a known peer without dropping the previous key until it is explicitly retired.
+- [x] **KEYR-03**: "Key **CHANGED** for a known peer" is a structurally distinct path from "new peer, first pin" — a different exit code and a different operator confirmation, not a warning line in a stream the operator has learned to ignore.
 
 ### Cross-Person Trust Bootstrap (PAIR)
 
@@ -175,8 +175,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REACH-04 | Phase 17 | Pending |
 | REACH-05 | Phase 17 | Pending |
 | KEYR-01 | Phase 15 | Complete |
-| KEYR-02 | Phase 15 | Pending |
-| KEYR-03 | Phase 15 | Pending |
+| KEYR-02 | Phase 15 | Complete |
+| KEYR-03 | Phase 15 | Complete |
 | PAIR-01 | Phase 16 | Pending |
 | PAIR-02 | Phase 16 | Pending |
 | PAIR-03 | Phase 16 | Pending |
