@@ -15,7 +15,7 @@
 #
 # Cross-checked against the seven rendering surfaces named in
 # 14-RESEARCH.md line 36 (2026-07-31): the query found exactly those
-# seven, plus two non-rendering hits that are allowlisted below with
+# seven, plus three non-rendering hits that are allowlisted below with
 # justification (not an eighth surface). Records map onto the seven as:
 #
 #   1. famp_inbox (MCP)            -> crates/famp/src/cli/mcp/tools/inbox.rs:186,197
@@ -35,8 +35,10 @@
 #                                      (shares write_outcome with #5)
 #
 # Non-rendering hits carried with justification (verified NOT an eighth
-# surface — neither emits received-content text to any output a human or
-# downstream consumer reads):
+# surface — each is safe either because it emits no received-content text
+# to any output a human or downstream consumer reads, or because the
+# content it does emit was already wrapped and origin-tagged by an
+# upstream render step before this site ever sees it):
 #
 # justification: crates/famp/src/cli/await_cmd/poll.rs:88 (`find_match`) is
 #   confirmed dead code — zero call sites anywhere in the tree (grepped
@@ -91,6 +93,16 @@ crates/famp/src/cli/await_cmd/mod.rs:203:envelopes-field
 crates/famp/src/cli/await_cmd/mod.rs:227:write-outcome
 crates/famp/src/cli/await_cmd/mod.rs:362:envelope-body
 crates/famp/src/cli/await_cmd/poll.rs:88:envelope-body
+# justification: crates/famp/src/cli/hook/codex_stop.rs:229 (`backup_outcome`)
+#   receives `&await_cmd::AwaitOutcome`, whose `envelopes` field is
+#   assigned `render_stamped_envelopes(envelopes)` at
+#   `crates/famp/src/cli/await_cmd/mod.rs` before any caller observes it.
+#   The values written to the backup JSONL are therefore already wrapped
+#   and origin-tagged; `backup_outcome` performs no un-tagged rendering of
+#   its own. This is a *content-bearing but already-quarantined* sink — a
+#   different justification class from the other two — and if the render
+#   step upstream is ever bypassed, this record stops being justified and
+#   must be re-triaged.
 crates/famp/src/cli/hook/codex_stop.rs:229:envelopes-field
 crates/famp/src/cli/inbox/list.rs:72:envelope-body
 crates/famp/src/cli/mcp/tools/await_.rs:91:envelopes-field
