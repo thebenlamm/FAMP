@@ -343,18 +343,33 @@ fn build_relay_failure_ack(
         .parse::<Principal>()
         .map_err(|e| EgressError::BadPrincipal("to", e.to_string()))?;
 
-    // The notification's `from`: a gateway-owned service principal on
-    // `own_domain` when configured, otherwise the failed recipient's own
-    // authority.
+    // The notification's `from`: authority is `own_domain` when
+    // configured, otherwise the failed recipient's own authority; the
+    // NAME leaf is the failed recipient's own bare name
+    // (`original_to.name()`), NOT a synthetic "gateway" service name.
     //
-    // Residual: a local agent literally named `gateway` on the same
-    // domain would share this exact principal string. This is a naming
-    // collision, not a security boundary — the notification is delivered
-    // straight to `original_from`'s mailbox by name below and is never
-    // routed to a principal named `gateway`; recorded here rather than
-    // left for a future reader to discover.
+    // This is load-bearing, not cosmetic: `notify_relay_failure` issues
+    // this `Send` on the SAME backed `ProxiedPrincipal` connection this
+    // egress loop already holds for the failed recipient (`name` in
+    // `notify_relay_failure`, always equal to `original_to.name()` by
+    // construction — every envelope drained from that connection's
+    // mailbox was itself addressed `to` that same bare name). The local
+    // broker's own T-11-18 self-authorship check
+    // (`famp-bus/src/broker/handle.rs::send` -> `is_self_authored`)
+    // rejects any `Send` whose envelope `from` leaf does not match the
+    // AUTHENTICATED CONNECTION's own registered identity — so a `from`
+    // leaf of anything other than the failed recipient's own bare name
+    // would make this very notification undeliverable (`BusReply::Err`,
+    // discovered empirically: an earlier `/gateway`-suffixed `from`
+    // was rejected by exactly this check when driven through a live
+    // broker). The notification necessarily reads as coming FROM the
+    // unreachable recipient itself (a bounce-message framing, like an
+    // email `mailer-daemon@<domain>`) — this is a direct consequence of
+    // reusing that recipient's own backed connection to deliver it,
+    // documented here rather than left for a future reader to
+    // rediscover via a live-broker failure.
     let authority = own_domain.unwrap_or_else(|| original_to.authority());
-    let from = format!("agent:{authority}/gateway");
+    let from = format!("agent:{authority}/{}", original_to.name());
 
     let reason =
         format!("{RELAY_FAILURE_REASON_PREFIX} could not relay to {original_to}: {detail}");
@@ -420,18 +435,37 @@ async fn notify_relay_failure(
     own_domain: Option<&str>,
     detail: &str,
 ) {
-    let Some(original_from_name) = original.get("from").and_then(Value::as_str) else {
+    // The local bus's `Target::Agent { name }` addresses a BARE
+    // registered name (e.g. "alice"), never a full `agent:<domain>/<name>`
+    // principal string — mirrors `ingress.rs::deliver`'s own
+    // `Target::Agent { name: recipient.name().to_string() }`. Parsing
+    // `original`'s `from` into a `Principal` first (rather than using the
+    // raw field string directly) is load-bearing here: using the raw
+    // string would target a Target::Agent name the broker never
+    // registered anything under, and the notification would silently
+    // fail with a `BusReply::Err` no caller ever sees.
+    let Some(original_from_raw) = original.get("from").and_then(Value::as_str) else {
         eprintln!(
             "famp-gateway: egress[{name}]: cannot notify relay failure: drained envelope has \
              no 'from' field"
         );
         return;
     };
+    let original_from_name = match original_from_raw.parse::<Principal>() {
+        Ok(p) => p.name().to_string(),
+        Err(e) => {
+            eprintln!(
+                "famp-gateway: egress[{name}]: cannot notify relay failure: drained envelope's \
+                 'from' ('{original_from_raw}') is not a valid Principal: {e}"
+            );
+            return;
+        }
+    };
 
     // T-17-30 loop guard — short-hold: acquire, read, drop.
     {
         let guard = registry.lock().await;
-        if sender_is_itself_backed(original_from_name, guard.names()) {
+        if sender_is_itself_backed(&original_from_name, guard.names()) {
             eprintln!(
                 "famp-gateway: egress[{name}]: skipping relay-failure notification — original \
                  sender '{original_from_name}' is itself a backed principal (loop guard)"
@@ -469,7 +503,7 @@ async fn notify_relay_failure(
         let reply = principal
             .send_recv(BusMessage::Send {
                 to: Target::Agent {
-                    name: original_from_name.to_string(),
+                    name: original_from_name.clone(),
                 },
                 envelope: ack,
             })
