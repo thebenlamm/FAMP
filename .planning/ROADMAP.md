@@ -24,7 +24,7 @@ expanded, backlog at the bottom.
 ### 🚧 v1.1 Open-Internet Federation (Phases 13–20) — IN PROGRESS
 
 - [ ] **Phase 13: Public Reachability Decision (Spike)** - Zero-code decision record naming the reachability model, live-verified cost/month, named operator, and what the relay/tunnel can and cannot observe.
-- [ ] **Phase 14: Inbound-Content-Is-DATA Quarantine** - Structural, harness-agnostic provenance tagging at all five rendering surfaces, proven by a FAMP-native adversarial corpus and an independent diff-only review. BLOCKING GATE — must be verified complete before Phase 18.
+- [ ] **Phase 14: Inbound-Content-Is-DATA Quarantine** - Structural, harness-agnostic, fail-closed provenance tagging at all seven rendering surfaces, proven by a FAMP-native adversarial corpus with a falsification control and closed out by an independent diff-only review. BLOCKING GATE — must be verified complete before Phase 18.
 - [ ] **Phase 15: Keyring Multi-Key Extension + Revocation** - Multi-key-per-principal keyring with rotation and expiry/revocation, backward-compatible with existing single-key files. Must land before Phases 16 and 19.
 - [ ] **Phase 16: Cross-Person Trust Bootstrap (Pairing)** - Fail-loud, PAKE-backed short-code pairing between two people with no prior shared secret, replacing v1.0's paste-a-blob TOFU.
 - [ ] **Phase 17: Protocol-Grade Ingress + Reachability Implementation** - Replay cache, freshness enforcement, audience binding, DoS-safe ordering, and the live reachability path from Phase 13 — shipped together, never one without the other.
@@ -119,18 +119,28 @@ Ed25519/INV-10 at the boundary itself.
 ### Phase 14: Inbound-Content-Is-DATA Quarantine
 
 **Goal:** A remote agent cannot steer a local agent's behavior by sending it message text — remote-origin content is structurally, unforgeably tagged at every surface that renders it, proven non-vacuous by a FAMP-native adversarial corpus and closed out by an independent diff-only review. This is the milestone's blocking security gate: it must be verified complete before Phase 18 lets a second person's traffic reach this host.
-**Depends on:** Nothing — technically independent of reachability, keyring, and pairing (it touches `famp-bus`'s `Register` frame, Layer 1, plus five CLI/MCP read sites), so it is deliberately sequenced early rather than left until the gate that needs it.
-**Requirements:** QUAR-01, QUAR-02, QUAR-03, QUAR-04, QUAR-05, QUAR-06, QUAR-07, QUAR-08
+**Depends on:** Nothing — technically independent of reachability, keyring, and pairing (it touches `famp-bus`'s `Register` frame and reply shapes, Layer 1, plus seven CLI/MCP read sites), so it is deliberately sequenced early rather than left until the gate that needs it.
+**Requirements:** QUAR-01, QUAR-02, QUAR-03, QUAR-04, QUAR-05, QUAR-06, QUAR-07, QUAR-08, QUAR-09, QUAR-10, QUAR-11
 **Success Criteria** (what must be TRUE):
 
   1. Remote origin survives to the mailbox via a new additive field on `famp-bus`'s `Register` frame — `famp-envelope` and `famp-canonical` stay untouched.
-  2. Every one of the five known rendering surfaces (`famp_inbox`, `famp_await`, `famp_channel_log`, CLI `inbox list`, CLI `await`) visibly marks remote-origin content as such; a new rendering surface added later without tagging fails a regression gate automatically.
-  3. A FAMP-native adversarial corpus (not a borrowed tool-calling-agent benchmark) runs in CI, proven non-vacuous by a named test that FAILS when the quarantine is reverted and a named test that still PASSES under the same revert.
-  4. The wake-up notification payload continues to carry no attacker-controlled body text (the existing Stop-hook shim is the model, not the gap).
-  5. An independent, diff-only adversarial review (reviewer sees the diff and threat model only, never the author's own findings) has passed, and shipped documentation states plainly what this boundary does not protect against.
+  2. Provenance is fail-closed: the broker stamps EVERY mailbox append at `Out::AppendMailbox`, and a missing stamp renders as `unknown — untrusted`, never as local (QUAR-09).
+  3. Every one of the seven rendering surfaces (`famp_inbox`, `famp_await`, `famp_channel_log`, CLI `inbox list`, CLI `await`, CLI `register --tail`, CLI `wait-reply`) visibly marks remote-origin content, all through one shared render helper; the surface list is generated mechanically, and a new surface added later without tagging fails a regression gate automatically.
+  4. `BUS_PROTO_VERSION` moves 1 → 2 with a hard reject of proto-1 clients whose error names the remedy, plus a README/migration note stating that proto 2 requires reinstalling the client and restarting the daemon (QUAR-10).
+  5. A FAMP-native adversarial corpus (not a borrowed tool-calling-agent benchmark), including payloads that emit the tagging delimiter itself, runs in CI, proven non-vacuous by a named test that FAILS when the quarantine is reverted and a named test that still PASSES under the same revert.
+  6. The wake-up notification payload continues to carry no attacker-controlled body text (the existing Stop-hook shim is the model, not the gap).
+  7. A laundering test PASSES documenting that the tag is one-hop, and shipped documentation states plainly what this boundary does not protect against — explicitly NOT claiming it prevents a remote agent from steering a local agent (QUAR-08, QUAR-11).
+  8. An independent, diff-only adversarial review (reviewer sees the diff and threat model only, never the author's own findings) has passed.
 
-**Plans:** TBD
-**Constraint:** All work lands in `famp-bus` (additive `Register` field) and the CLI/MCP surface. `famp-envelope`, `famp-canonical`, `famp-crypto`, `famp-core`, `famp-fsm` are frozen this milestone and must not be touched.
+**Plans:** 5 plans
+Plans:
+- [ ] 14-01-PLAN.md — Tracer: fail-closed provenance spine, gateway to `famp_inbox`, plus the proto 1 → 2 bump
+- [ ] 14-02-PLAN.md — Expand to the remaining six rendering surfaces through one shared render helper
+- [ ] 14-03-PLAN.md — Mechanical surface enumeration + QUAR-05 regression gate in `just ci` and GitHub Actions
+- [ ] 14-04-PLAN.md — FAMP-native adversarial corpus, falsification control patch, one-hop laundering test
+- [ ] 14-05-PLAN.md — Falsification run captured, version-skew tests, QUAR-08 docs + proto-2 migration note, QUAR-07 handoff
+
+**Constraint:** All work lands in `famp-bus` (additive `Register` field, stamped reply/record shape) and the CLI/MCP surface. `famp-envelope`, `famp-canonical`, `famp-crypto`, `famp-core`, `famp-fsm` are frozen this milestone and must not be touched. QUAR-07 is run externally by famp-lead-730, not by the executing session.
 
 ### Phase 15: Keyring Multi-Key Extension + Revocation
 
