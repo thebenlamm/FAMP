@@ -49,8 +49,13 @@ fn channel_log_reads_channel_mailbox_without_registration() {
 
     assert_eq!(body["channel"], "#planning");
     assert_eq!(body["envelopes"].as_array().unwrap().len(), 1);
+    // Phase 14 plan 14-02 (D-04/D-05, mechanical rendering surface #5 of
+    // 7): each entry is now `{"origin":...,"envelope":...}`, not a bare
+    // envelope — these fixture lines predate the on-disk stamp format, so
+    // they resolve to `Origin::Unknown` (fail-closed, never `Local`).
+    assert_eq!(body["envelopes"][0]["origin"], "unknown");
     assert_eq!(
-        body["envelopes"][0]["id"],
+        body["envelopes"][0]["envelope"]["id"],
         "019d9ba2-2d30-7ae2-ba77-9e55863ac7f7"
     );
     assert_eq!(body["next_offset"], first_offset);
@@ -62,8 +67,9 @@ fn channel_log_reads_channel_mailbox_without_registration() {
     let body = Harness::ok_content(&resp);
 
     assert_eq!(body["envelopes"].as_array().unwrap().len(), 1);
+    assert_eq!(body["envelopes"][0]["origin"], "unknown");
     assert_eq!(
-        body["envelopes"][0]["id"],
+        body["envelopes"][0]["envelope"]["id"],
         "019d9ba2-2d31-7ae2-ba77-9e55863ac7f7"
     );
     assert!(body["next_offset"].as_u64().unwrap() > first_offset);
