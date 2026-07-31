@@ -80,8 +80,8 @@ All four concerns explicitly deferred out of v1.0 as open-internet problems. All
 ### Key Revocation (REVK)
 
 - [x] **REVK-01**: Pinned keys carry a validity window; a key past its window is rejected at verify time regardless of whether any revocation record was ever received.
-- [ ] **REVK-02**: A signed revocation statement, distributed over the same channel as the original pin, is verifiable and fail-closed — defense in depth on top of REVK-01, not the primary mechanism.
-- [ ] **REVK-03**: An envelope signed before a revocation takes effect is rejected **after** it takes effect (no pre-revocation replay window).
+- [x] **REVK-02**: A signed revocation statement, distributed over the same channel as the original pin, is verifiable and fail-closed — defense in depth on top of REVK-01, not the primary mechanism.
+- [x] **REVK-03**: An envelope signed before a revocation takes effect is rejected **after** it takes effect (no pre-revocation replay window).
 
 ### Inbound-Content-Is-DATA Boundary (QUAR) — **BLOCKING GATE**
 
@@ -194,8 +194,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INGR-07 | Phase 17 | Pending |
 | INGR-08 | Phase 17 | Pending |
 | REVK-01 | Phase 15 | Complete |
-| REVK-02 | Phase 15 | Pending |
-| REVK-03 | Phase 15 | Pending |
+| REVK-02 | Phase 15 | Complete |
+| REVK-03 | Phase 15 | Complete |
 | QUAR-01 | Phase 14 | Complete |
 | QUAR-02 | Phase 14 | Complete |
 | QUAR-03 | Phase 14 | Complete |

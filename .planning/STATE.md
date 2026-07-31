@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Open-Internet Federation
 current_phase: 15
 current_phase_name: keyring-multi-key-extension-revocation
-status: executing
-stopped_at: Completed 15-03-PLAN.md (keyring rotate_to/retire + famp peer rotate/retire CLI)
-last_updated: "2026-07-31T08:02:48.268Z"
+status: verifying
+stopped_at: Completed 15-04-PLAN.md — Phase 15 (keyring-multi-key-extension-revocation) fully complete, all 6 requirements done
+last_updated: "2026-07-31T08:45:23.654Z"
 last_activity: 2026-07-31
-last_activity_desc: Phase 15 execution started
+last_activity_desc: Phase 15 (keyring-multi-key-extension-revocation) fully complete — all 6 requirements (KEYR-01..03, REVK-01..03) shipped
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
-  percent: 50
+  completed_plans: 9
+  percent: 100
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 15 — keyring-multi-key-extension-revocation
+**Current focus:** Phase 15 — keyring-multi-key-extension-revocation — **COMPLETE** (all 6 requirements shipped, 2026-07-31). Next: Phase 16 (Cross-Person Trust Bootstrap / PAKE pairing), which per 15-04-SUMMARY.md's "Recovery path" section must treat re-pairing after total key loss as a named design scenario.
 
 ## Current Position
 
-Phase: 15 (keyring-multi-key-extension-revocation) — EXECUTING
+Phase: 15 (keyring-multi-key-extension-revocation) — COMPLETE (all 6 requirements: KEYR-01..03, REVK-01..03)
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-07-31 — Phase 15 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-31 — Completed 15-04-PLAN.md; Phase 15 fully done
 
 ## v1.1 Phase Map
 
@@ -200,6 +200,8 @@ Last activity: 2026-07-31 — Phase 15 execution started
 - [Phase ?]: 15-02: verify_inbound/verify_inbound_any gain a now:&str parameter and route through Keyring::active_key(principal, now) for REVK-01 expiry enforcement, DuplicatePrincipal check ordered before pubkey-duplication checks to keep rt3 unmodified, save-format rule keeps untouched legacy keyrings byte-identical (T-15-08).
 - [Phase ?]: [15-03]: Added a 5th KeyringError variant, NonCanonicalTimestamp, beyond the plan's four literally-named variants -- required by rotate_to's own behavior spec, no existing variant fit.
 - [Phase ?]: [15-03]: rotate_to's no-Active-entry branch treats a fully retired/revoked principal like a first pin (mirrors pin_tofu's existing fallback); the unconditional KeyRevoked guard is what actually prevents a revoked pubkey from resurrecting.
+- [Phase ?]: [15-04]: RevocationStatement.principal parse-failure maps to RevocationBlobMalformed (not the plan's literal NoSuchKeyEntry, which requires a typed Principal it cannot hold) — Rule 1 fix of an internal type contradiction
+- [Phase ?]: [15-04]: Phase 15 (KEYR-01..03, REVK-01..03) is now fully complete — all 6 requirements have a passing named automated test; famp peer revoke/import-revocation ship the REVK-02/REVK-03 remediation path; Phase 16 (PAIR) must treat 're-pair after total key loss' as a named design scenario per 15-04-SUMMARY.md
 
 ## Issues / Blockers
 
@@ -350,11 +352,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 15 P01 | ~5m (checkpoint pause excluded) | 2 tasks | 1 files |
 | Phase 15 P02 | 55min | 2 tasks | 13 files |
 | Phase 15 P03 | ~50min | 2 tasks | 9 files |
+| Phase 15 P04 | 1h10min | 2 tasks | 13 files |
 
 ## Session
 
-**Last session:** 2026-07-31T08:02:48.258Z
-**Stopped At:** Completed 15-03-PLAN.md (keyring rotate_to/retire + famp peer rotate/retire CLI)
+**Last session:** 2026-07-31T08:45:23.644Z
+**Stopped At:** Completed 15-04-PLAN.md — Phase 15 (keyring-multi-key-extension-revocation) fully complete, all 6 requirements done
 **Resume File:** None
 
 ## Operator Next Steps
