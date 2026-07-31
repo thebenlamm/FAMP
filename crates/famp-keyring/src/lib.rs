@@ -24,13 +24,14 @@ pub mod entry;
 pub mod error;
 mod file_format;
 pub mod peer_flag;
+pub mod revocation;
 
 pub use entry::{KeyEntry, KeyState};
 pub use error::KeyringError;
 pub use peer_flag::parse_peer_flag;
 
 use famp_core::Principal;
-use famp_crypto::TrustedVerifyingKey;
+use famp_crypto::{FampSignature, TrustedVerifyingKey};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -479,5 +480,150 @@ impl Keyring {
             self.map.remove(principal);
         }
         Ok(())
+    }
+
+    /// Local unilateral revocation (REVK-02): transition `key_id` for
+    /// `principal` to `Revoked`, requiring no signature. An operator may
+    /// always stop trusting a key in their own trust store without
+    /// needing anyone's permission — this is the opposite end of the
+    /// spectrum from [`Keyring::apply_signed_revocation`], which is the
+    /// verified, fail-closed remote-remediation path.
+    ///
+    /// Every check below runs BEFORE any mutation: `now` must be canonical
+    /// UTC ([`KeyringError::NonCanonicalTimestamp`]), and `key_id` must
+    /// name an existing entry for `principal`
+    /// ([`KeyringError::NoSuchKeyEntry`]). Idempotent: revoking an
+    /// already-`Revoked` entry returns `Ok(())` with no further state
+    /// change — revocation is monotonic (T-15-04).
+    pub fn revoke(
+        &mut self,
+        principal: &Principal,
+        key_id: &str,
+        now: &str,
+    ) -> Result<(), KeyringError> {
+        if !entry::is_canonical_utc(now) {
+            return Err(KeyringError::NonCanonicalTimestamp {
+                value: now.to_string(),
+            });
+        }
+        let entries = self
+            .map
+            .get_mut(principal)
+            .ok_or_else(|| KeyringError::NoSuchKeyEntry {
+                principal: principal.clone(),
+                key_id: key_id.to_string(),
+            })?;
+        let idx = entries
+            .iter()
+            .position(|e| e.key_id() == key_id)
+            .ok_or_else(|| KeyringError::NoSuchKeyEntry {
+                principal: principal.clone(),
+                key_id: key_id.to_string(),
+            })?;
+
+        if entries[idx].state() == KeyState::Revoked {
+            return Ok(());
+        }
+
+        let old = entries[idx].clone();
+        entries[idx] = KeyEntry::new(
+            old.key().clone(),
+            KeyState::Revoked,
+            old.valid_until().map(ToString::to_string),
+            old.pinned_at().map(ToString::to_string),
+            Some(now.to_string()),
+        );
+        Ok(())
+    }
+
+    /// Verified, fail-closed revocation (REVK-02): apply a peer-signed
+    /// [`revocation::SignedRevocation`] statement. Every check below runs
+    /// BEFORE any mutation, so every `Err` path leaves the keyring
+    /// byte-identical:
+    /// 1. `now` and the statement's `revoked_at` must both be canonical
+    ///    UTC, else [`KeyringError::NonCanonicalTimestamp`].
+    /// 2. `principal` must parse and have at least one entry, else
+    ///    [`KeyringError::NoSuchKeyEntry`].
+    /// 3. `revoked_key_id` must match an existing entry for `principal`,
+    ///    else [`KeyringError::NoSuchKeyEntry`].
+    /// 4. [`revocation::authorized_signer_for`] must return at least one
+    ///    candidate, else [`KeyringError::RevocationSignerNotAuthorized`]
+    ///    (D15-B).
+    /// 5. The statement's signature must `verify_strict` against at least
+    ///    one candidate, else [`KeyringError::RevocationSignatureInvalid`].
+    /// 6. Delegates to [`Keyring::revoke`] using the STATEMENT's own
+    ///    `revoked_at` (the instant the signer asserts the key stopped
+    ///    being trustworthy) as `state_since`. The caller-supplied `now`
+    ///    is validated for canonical shape and reserved for the caller's
+    ///    own freshness policy — it is NEVER used to grandfather a stale
+    ///    statement.
+    pub fn apply_signed_revocation(
+        &mut self,
+        signed: &revocation::SignedRevocation,
+        now: &str,
+    ) -> Result<(), KeyringError> {
+        if !entry::is_canonical_utc(now) {
+            return Err(KeyringError::NonCanonicalTimestamp {
+                value: now.to_string(),
+            });
+        }
+        let statement = &signed.statement;
+        if !entry::is_canonical_utc(&statement.revoked_at) {
+            return Err(KeyringError::NonCanonicalTimestamp {
+                value: statement.revoked_at.clone(),
+            });
+        }
+
+        let principal: Principal =
+            statement
+                .principal
+                .parse()
+                .map_err(|e: famp_core::ParsePrincipalError| {
+                    KeyringError::RevocationBlobMalformed {
+                        reason: format!("invalid principal '{}': {e}", statement.principal),
+                    }
+                })?;
+
+        if self.entries(&principal).is_empty() {
+            return Err(KeyringError::NoSuchKeyEntry {
+                principal: principal.clone(),
+                key_id: statement.revoked_key_id.clone(),
+            });
+        }
+        if !self
+            .entries(&principal)
+            .iter()
+            .any(|e| e.key_id() == statement.revoked_key_id)
+        {
+            return Err(KeyringError::NoSuchKeyEntry {
+                principal: principal.clone(),
+                key_id: statement.revoked_key_id.clone(),
+            });
+        }
+
+        let verified = {
+            let candidates =
+                revocation::authorized_signer_for(self, &principal, &statement.revoked_key_id);
+            if candidates.is_empty() {
+                return Err(KeyringError::RevocationSignerNotAuthorized {
+                    principal: principal.clone(),
+                });
+            }
+            let sig = FampSignature::from_b64url(&signed.sig).map_err(|_| {
+                KeyringError::RevocationSignatureInvalid {
+                    principal: principal.clone(),
+                }
+            })?;
+            candidates
+                .iter()
+                .any(|vk| famp_crypto::verify_value(vk, statement, &sig).is_ok())
+        };
+        if !verified {
+            return Err(KeyringError::RevocationSignatureInvalid {
+                principal: principal.clone(),
+            });
+        }
+
+        self.revoke(&principal, &statement.revoked_key_id, &statement.revoked_at)
     }
 }

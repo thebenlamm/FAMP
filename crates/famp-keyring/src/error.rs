@@ -73,6 +73,29 @@ pub enum KeyringError {
     #[error("non-canonical timestamp: {value:?}")]
     NonCanonicalTimestamp { value: String },
 
+    /// `apply_signed_revocation` found the D15-B candidate set
+    /// (`revocation::authorized_signer_for`) empty for this principal —
+    /// there is no key currently eligible to sign a revocation of the
+    /// named `revoked_key_id` (this happens once a principal's only entry
+    /// matching the target is already `Revoked` and no `Active` sibling
+    /// exists). Zero mutation on this path.
+    #[error("revocation signer not authorized for {principal}")]
+    RevocationSignerNotAuthorized { principal: Principal },
+
+    /// `apply_signed_revocation`'s signature failed to `verify_strict`
+    /// against every D15-B candidate signer — a tampered statement field,
+    /// a signature from a key that is not an authorized candidate, or a
+    /// malformed `sig` encoding. Zero mutation on this path.
+    #[error("revocation signature invalid for {principal}")]
+    RevocationSignatureInvalid { principal: Principal },
+
+    /// A `revocation::SignedRevocation` blob failed `from_blob`/`to_blob`
+    /// (malformed JSON, an unknown field under `deny_unknown_fields`), or
+    /// a `RevocationStatement.principal` string failed to parse as a
+    /// `Principal`. Carries only a diagnostic string — never key bytes.
+    #[error("revocation blob malformed: {reason}")]
+    RevocationBlobMalformed { reason: String },
+
     #[error("invalid --peer flag: {reason}")]
     InvalidPeerFlag { reason: String },
 

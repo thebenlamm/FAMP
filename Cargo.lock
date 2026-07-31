@@ -865,6 +865,8 @@ version = "1.0.0"
 dependencies = [
  "famp-core",
  "famp-crypto",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.18",
 ]
