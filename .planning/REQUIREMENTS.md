@@ -87,7 +87,7 @@ All four concerns explicitly deferred out of v1.0 as open-internet problems. All
 
 Settled before any outside person connects. A remote agent must not be able to steer a local agent by sending it text. Structural and harness-agnostic — **not** a prompt convention, and **not** enforced in `~/.claude` wiring.
 
-- [ ] **QUAR-01**: Remote origin survives to the mailbox. `strip_relay_fields` currently erases every field that could mark an envelope as relayed before the local bus write; provenance is carried instead as a new **additive** field on `famp-bus`'s `Register` frame (Layer 1 — not frozen), leaving `famp-envelope` untouched.
+- [x] **QUAR-01**: Remote origin survives to the mailbox. `strip_relay_fields` currently erases every field that could mark an envelope as relayed before the local bus write; provenance is carried instead as a new **additive** field on `famp-bus`'s `Register` frame (Layer 1 — not frozen), leaving `famp-envelope` untouched.
 - [ ] **QUAR-02**: **Every** surface that renders received content marks remote-origin content structurally. The surface list MUST be generated **mechanically** — every call site reaching `EnvelopeView::body()`, `write_outcome`, `emit_tail_line`, or serializing an `envelopes: Vec<Value>` — never hand-curated. Known surfaces: `famp_inbox`, `famp_await`, `famp_channel_log`, CLI `inbox list`, CLI `await`, **CLI `register --tail`** (`cli/register.rs:199-201`, `:270-272`, body rendered at `emit_tail_line` `:347`), and **CLI `wait-reply`** (`cli/wait_reply.rs:33-34`, plus its own inbox-first path `:53-67`). All content must flow through **one shared render helper**, not N ad-hoc implementations. *(Corrected 2026-07-30: the original five-surface list omitted `register --tail` and `wait-reply`. By this requirement's own standard — a boundary covering five of seven is not a boundary — the hand-curated list failed its own test. Hence the mechanical-generation mandate.)*
 - [ ] **QUAR-03**: A **FAMP-native** adversarial corpus runs in CI. Published benchmarks (AgentDojo, InjecAgent, WASP) are tool-calling-agent-shaped, not message-relay-shaped — the corpus must be built for this threat model, including payloads that emit the tagging delimiter itself.
 - [ ] **QUAR-04**: The corpus is proven **non-vacuous** by a falsification control: a named test that must FAIL when the quarantine is reverted, alongside a named test that must still PASS. Green under both states carries zero information.
@@ -95,14 +95,15 @@ Settled before any outside person connects. A remote agent must not be able to s
 - [ ] **QUAR-06**: The wake-up notification payload carries **no** attacker-controlled body text. (`famp-await.sh` is already correct on this and is the model to preserve.)
 - [ ] **QUAR-07**: An independent, **diff-only** adversarial review of the quarantine passes. The reviewer receives the diff and the threat model, not the author's own findings.
 - [ ] **QUAR-08**: Documentation states plainly what this does **not** protect against, naming delimiter-emission and prompt-level mitigation as known-insufficient, so no future reader over-trusts it. It must **not** claim that a remote agent is prevented from steering a local agent — see QUAR-11. Honest wording: this delivers machine-checkable provenance and untrusted-marking at every rendering surface; steering-resistance remains the harness's job.
-- [ ] **QUAR-09**: Provenance is **fail-closed**. The broker stamps **every** mailbox append explicitly (`origin: local` | `origin: gateway`) at `Out::AppendMailbox` (`famp-bus/src/broker/handle.rs:455-460`); a **missing** stamp renders as `unknown — untrusted`, never as local. Absence must be anomalous. Proven by a **version-skew test**: an old gateway binary against a new broker must not produce unmarked remote content. *(An opt-in flag whose only setter is `ProxiedPrincipal::register` would silently evaporate under exactly the binary-skew this repo hits routinely — the daemon on the dev machine was running a stale build during this very milestone's planning.)*
-- [ ] **QUAR-10**: The provenance wire shape is carried by a **`BUS_PROTO_VERSION` bump 1 → 2 with a hard reject of proto-1 clients** *(decided 2026-07-30, Ben approved)*. The stamp cannot ride inside the envelope `Value` because `WireEnvelope` is `deny_unknown_fields` on decode — **preserve that**, since it is what makes the tag unforgeable by a remote sender. The rejection error must name the remedy (`just install` / `famp daemon restart`), matching the existing VER-01 precedent, and be pinned by a test. A README/CHANGELOG note must state that proto 2 requires reinstalling the client and restarting the daemon, and that a v1.0 client against a v1.1 broker fails loudly by design.
+- [x] **QUAR-09**: Provenance is **fail-closed**. The broker stamps **every** mailbox append explicitly (`origin: local` | `origin: gateway`) at `Out::AppendMailbox` (`famp-bus/src/broker/handle.rs:455-460`); a **missing** stamp renders as `unknown — untrusted`, never as local. Absence must be anomalous. Proven by a **version-skew test**: an old gateway binary against a new broker must not produce unmarked remote content. *(An opt-in flag whose only setter is `ProxiedPrincipal::register` would silently evaporate under exactly the binary-skew this repo hits routinely — the daemon on the dev machine was running a stale build during this very milestone's planning.)*
+- [x] **QUAR-10**: The provenance wire shape is carried by a **`BUS_PROTO_VERSION` bump 1 → 2 with a hard reject of proto-1 clients** *(decided 2026-07-30, Ben approved)*. The stamp cannot ride inside the envelope `Value` because `WireEnvelope` is `deny_unknown_fields` on decode — **preserve that**, since it is what makes the tag unforgeable by a remote sender. The rejection error must name the remedy (`just install` / `famp daemon restart`), matching the existing VER-01 precedent, and be pinned by a test. A README/CHANGELOG note must state that proto 2 requires reinstalling the client and restarting the daemon, and that a v1.0 client against a v1.1 broker fails loudly by design.
 
   **Why hard-reject rather than graceful degradation — this is a security decision, not a cost one.** An old client *cannot render provenance*. Serving it anyway means deliberately handing unmarked remote content to a client blind to it, which is exactly the fail-open hole QUAR-09 exists to close: **graceful degradation here IS the vulnerability.** Version-gated serving would have been real new broker-side state spent preserving a capability we specifically do not want.
 
   **Two options were considered and rejected**, both on evidence found in the tree rather than assumed: (a) an *additive sibling array* parallel to `envelopes` — **not actually additive**, because `BusReply` also carries `deny_unknown_fields` (`famp-bus/src/proto.rs:206`), so every shipped pre-v1.1 client hard-fails deserializing `InboxOk`/`AwaitOk`/`RegisterOk` the moment the field appears rather than ignoring it; (b) *Hello-version-gated serving* — not an existing mechanism to extend, since the Hello check today is a hard reject (`handle.rs:186`), so this meant new per-connection broker state.
 
   Known breakage, accepted: every unupgraded `famp` binary talking to a v1.1 broker, including `famp_channel_log` (which reads the JSONL **directly from disk, bypassing the broker**) and Grok's foreign implementation, which has already wedged a mailbox once. Judged acceptable because Gate B is still open with no named second implementer, and the failure is loud and self-describing rather than silent.
+
 - [ ] **QUAR-11**: A **laundering test** exists and PASSES, documenting a real limitation rather than hiding it: a remote-tagged message read by local agent A, whose body A then quotes into a message to local agent B, arrives at B **untagged**. The tag is one-hop. This must be stated in QUAR-08's documentation.
 
 ### Push Notification Adapter (WATCH) — SEED-002
@@ -195,7 +196,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REVK-01 | Phase 15 | Pending |
 | REVK-02 | Phase 15 | Pending |
 | REVK-03 | Phase 15 | Pending |
-| QUAR-01 | Phase 14 | Pending |
+| QUAR-01 | Phase 14 | Complete |
 | QUAR-02 | Phase 14 | Pending |
 | QUAR-03 | Phase 14 | Pending |
 | QUAR-04 | Phase 14 | Pending |
@@ -203,8 +204,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | QUAR-06 | Phase 14 | Pending |
 | QUAR-07 | Phase 14 | Pending |
 | QUAR-08 | Phase 14 | Pending |
-| QUAR-09 | Phase 14 | Pending |
-| QUAR-10 | Phase 14 | Pending |
+| QUAR-09 | Phase 14 | Complete |
+| QUAR-10 | Phase 14 | Complete |
 | QUAR-11 | Phase 14 | Pending |
 | WATCH-01 | Phase 20 | Pending |
 | WATCH-02 | Phase 20 | Pending |
@@ -216,6 +217,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | UAT-02 | Phase 18 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 46 total. *(Count history, since it moved twice: 41 was recorded at definition time and was simply wrong — exhaustive ID extraction during roadmap creation found 43. It then became 46 when the independent design review added QUAR-09 (fail-closed provenance), QUAR-10 (wire compat with old clients and foreign implementations), and QUAR-11 (one-hop laundering limitation). Only the QUAR additions changed requirement text; the 41→43 move was a tally correction alone.)*
 - Mapped to phases: 46/46 ✓
 - Unmapped: 0 ✓

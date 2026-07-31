@@ -2,14 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
+current_phase_name: roadmap created, Phase 13 not yet planned
 status: planning
-last_updated: "2026-07-30T16:00:00.000Z"
+stopped_at: Completed 14-01-PLAN.md (fail-closed provenance spine, Tasks 1-3)
+last_updated: "2026-07-31T02:45:36.430Z"
 last_activity: 2026-07-30
+last_activity_desc: v1.1 roadmap created (Phases 13–20)
 progress:
-  total_phases: 8
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 5
+  completed_plans: 1
   percent: 0
 ---
 
@@ -23,14 +26,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** v1.1 roadmap defined, no phase planned yet. Next: `/gsd-plan-phase 13` (the zero-code reachability spike). Open non-blocking gate: **Gate B** (conformance vector pack; fires when a 2nd implementer commits to interop) — independent of v1.1 and not scheduled by this roadmap.
+**Current focus:** Phase 14 (Inbound-Content-Is-DATA Quarantine) in progress — plan 01 of 5 complete. Phase 13 (reachability spike) not yet planned but does not block Phase 14 (technically independent, per roadmap invariant #1). Open non-blocking gate: **Gate B** (conformance vector pack; fires when a 2nd implementer commits to interop) — independent of v1.1 and not scheduled by this roadmap.
 
 ## Current Position
 
-Phase: Not started (roadmap created, Phase 13 not yet planned)
-Plan: —
-Status: Roadmap created — 8 phases (13–20), 43/43 requirements mapped, 0 plans
-Last activity: 2026-07-30 — v1.1 roadmap created (Phases 13–20)
+Phase: 14-inbound-content-is-data-quarantine
+Plan: 01 of 5 complete (14-02 through 14-05 not yet planned)
+Status: 14-01 (fail-closed provenance spine) landed — BUS_PROTO_VERSION 1->2, Origin/StampedEnvelope stamping, 4/7 mechanical rendering surfaces wired (famp_inbox, CLI inbox list, CLI register --tail, CLI wait-reply). QUAR-01/QUAR-09/QUAR-10 complete. Remaining surfaces (famp_await, CLI await, famp_channel_log) and AwaitOk/RegisterOk/JoinOk stamping deferred to 14-02 per plan.
+Last activity: 2026-07-30 — Phase 14 plan 01 executed and committed (718df83)
 
 ## v1.1 Phase Map
 
@@ -183,6 +186,8 @@ Last activity: 2026-07-30 — v1.1 roadmap created (Phases 13–20)
 - [Phase ?]: [12-03]: REL-04 resolved ADDR-04 by append-only pointer addendum in 11-VERIFICATION.md citing REQUIREMENTS.md:49-56, not by minting a new requirement ID
 - [Phase ?]: 12-04: version bump uses the corrected test path cli::tests::version_strings_unified (plan's literal cli::mod::tests:: never matches, would have vacuously passed)
 - [Phase ?]: quick-260730-d9h: corrected 3 stale 'deferred to v1' MCP tool-description strings (v1.0.0 already shipped without the terminal-FSM filter) and deleted 2 chronically flaky archived-script tests (docs/** is CI paths-ignore'd, so they could never fail for a real regression); also removed the orphaned already_migrated.mcp.json fixture not named in the plan, to satisfy the plan's own empty-directory criterion.
+- [Phase ?]: [14-01]: Local canonical holders (famp register CLI, famp_register MCP tool) declare origin: Some(Local) at Register time — plan only specified the gateway's declaration; without this every local-to-local message would fail-closed to Unknown and render quarantine-wrapped
+- [Phase ?]: [14-01]: decode_line/WalkOutcome thread (Origin, Value) through the shared drain_walk path; only Inbox builds StampedEnvelope from it — Register/Join/Await stay Vec<Value>, origin dropped, per the plan's explicit 14-02 deferral
 
 ## Issues / Blockers
 
@@ -324,11 +329,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 12 P02 | ~2h | 2 tasks | 5 files |
 | Phase 12 P03 | 12min | 2 tasks | 3 files |
 | Phase 12 P04 | 55min | 2 tasks | 18 files |
+| Phase 14 P01 | 3h | 3 tasks | 40 files |
 
 ## Session
 
-**Last session:** 2026-07-29T23:47:49.426Z
-**Stopped At:** v1.0 milestone closed and archived (`override_closeout`); `v1.0.0` tagged and pushed at `5edff41`
+**Last session:** 2026-07-31T02:45:36.421Z
+**Stopped At:** Completed 14-01-PLAN.md (fail-closed provenance spine, Tasks 1-3)
 **Resume File:** None
 
 ## Operator Next Steps
