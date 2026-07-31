@@ -47,6 +47,33 @@
 #   routed through render_envelope_body because it is unreachable, not
 #   because it is exempt from the rule — if it is ever wired up, route it
 #   through the shared helper first and remove this justification.
+# justification: crates/famp-bus/src/broker/handle/tests.rs (8 records,
+#   QUAR-07 F2/reply-debug family) — every hit is a `BusReply` bound in a
+#   `panic!("expected ..., got {other:?}")` test-assertion arm inside
+#   `crates/famp-bus/src/broker/handle/tests.rs`. That file is included
+#   only via a `#[cfg(test)] mod tests;` declaration in the sibling
+#   `mod.rs`; the `#[cfg(test)]` annotation lives in the parent file, not
+#   in `tests.rs` itself, so this script's single-file `strip_noise` brace
+#   tracker cannot see the boundary and treats the whole file as
+#   production source. It is not: none of these panics ever compile into
+#   a non-test binary, and a `panic!` message is observed only by the
+#   `cargo test` harness, never by a production error string, stderr
+#   line, or MCP tool result. `famp-bus` is one of the six crates frozen
+#   for the whole v1.1 milestone (byte-identical pre/post this plan), so
+#   restructuring the file to give the mechanical query file-local
+#   visibility into the `#[cfg(test)]` boundary is out of scope here — if
+#   `famp-bus` is ever unfrozen, split `tests.rs` so it carries its own
+#   `#[cfg(test)]` line, or teach `strip_noise` to look at the includer,
+#   and remove this justification.
+#
+crates/famp-bus/src/broker/handle/tests.rs:1870:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:2139:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:221:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:2222:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:251:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:286:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:420:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:436:reply-debug
 # justification: crates/famp-inspect-server/src/messages.rs:66
 #   (`message_row`) calls `EnvelopeView::body()` only to compute a
 #   SHA-256 digest of the raw body for `famp_verify` / `famp inspect

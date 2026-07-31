@@ -110,3 +110,69 @@ pub fn quarantine_gate_temp_probe(v: &serde_json::Value) {\n    \
         String::from_utf8_lossy(&after.stderr),
     );
 }
+
+/// QUAR-07 F2: non-vacuity control for the fifth (`reply-debug`) family,
+/// added to close the blind spot that let F1's 14 whole-reply Debug-format
+/// leak sites evade the original four families entirely. Same
+/// green/red/green discipline as `gate_goes_red_on_an_unregistered_surface`.
+#[test]
+fn gate_goes_red_on_a_reply_debug_leak() {
+    let _lock = QUARANTINE_GATE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = repo_root();
+
+    // 1. Green on the current, unmodified tree.
+    let before = run_gate(&root);
+    assert!(
+        before.status.success(),
+        "gate should be green before the probe file exists: stdout={} stderr={}",
+        String::from_utf8_lossy(&before.stdout),
+        String::from_utf8_lossy(&before.stderr),
+    );
+
+    // 2. Fabricate an unregistered call site matching the `reply-debug`
+    // family: a file referencing `BusReply` (the per-file gate) containing
+    // a whole-reply Debug interpolation in inline-capture form.
+    let probe_name = "quarantine_gate_test_temp_reply_probe.rs";
+    let probe_path = root.join("crates/famp/src").join(probe_name);
+    // The fabricated probe source deliberately contains the leak shape this
+    // family exists to catch, which trips clippy's "looks like a formatting
+    // argument" heuristic on the surrounding raw string — it is not a real
+    // format! call in this test file, just probe text written to disk.
+    #[allow(clippy::literal_string_with_formatting_args)]
+    let probe_src = r#"use famp_bus::BusReply;
+pub fn quarantine_gate_reply_debug_temp_probe(other: &BusReply) -> String {
+    format!("unexpected reply: {other:?}")
+}
+"#;
+    let guard = TempSourceFile::create(probe_path, probe_src);
+
+    // 3. The gate must now fail and name both the fabricated file and the
+    // `reply-debug` kind token in its output.
+    let during = run_gate(&root);
+    assert!(
+        !during.status.success(),
+        "gate should exit nonzero while the reply-debug probe file exists"
+    );
+    let during_stdout = String::from_utf8_lossy(&during.stdout);
+    let during_stderr = String::from_utf8_lossy(&during.stderr);
+    assert!(
+        during_stdout.contains(probe_name) || during_stderr.contains(probe_name),
+        "gate failure output should name the fabricated file {probe_name}: stdout={during_stdout} stderr={during_stderr}"
+    );
+    assert!(
+        during_stdout.contains("reply-debug") || during_stderr.contains("reply-debug"),
+        "gate failure output should name the reply-debug kind token: stdout={during_stdout} stderr={during_stderr}"
+    );
+
+    // 4. Remove the fabricated file; the gate must go green again.
+    drop(guard);
+    let after = run_gate(&root);
+    assert!(
+        after.status.success(),
+        "gate should be green again once the reply-debug probe file is removed: stdout={} stderr={}",
+        String::from_utf8_lossy(&after.stdout),
+        String::from_utf8_lossy(&after.stderr),
+    );
+}

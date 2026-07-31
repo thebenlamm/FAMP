@@ -26,7 +26,7 @@
 #     register as a call site. This is the forbidden
 #     bare-`grep -c`-on-an-unfiltered-file pattern's fix.
 #
-# FOUR DETECTED FAMILIES (each tagged with a distinct `kind` token):
+# FIVE DETECTED FAMILIES (each tagged with a distinct `kind` token):
 #   envelope-body   - a `.body()` call in a file that references
 #                      `EnvelopeView` (the only type in this tree exposing
 #                      that accessor over received envelope content; the
@@ -46,6 +46,18 @@
 #                      several MCP tools report `"drained": drained.len()`)
 #                      from actual envelope *values* per this family's
 #                      definition in 14-03-PLAN.md Task 1.
+#   reply-debug     - the whole-reply rendering blind spot the first four
+#                      families cannot see: a bus reply, or any binding
+#                      that transitively carries a `StampedEnvelope`
+#                      payload, being Debug-formatted, JSON-serialized, or
+#                      captured by a `tracing::` macro in Debug-sigil form
+#                      wholesale, rather than through a typed accessor.
+#                      Gated per-file on the file referencing `BusReply` or
+#                      `StampedEnvelope` — this is what keeps
+#                      `mcp/tools/send.rs`'s unrelated mode-string Debug
+#                      out of scope, since that file references neither
+#                      type. Named QUAR-07 finding F2 (this family did not
+#                      exist when F1's 14 leak sites were introduced).
 #
 # Every record is `path:line:kind`, one per line, sorted.
 #
@@ -101,6 +113,10 @@ emit_records() {
     if grep -q 'EnvelopeView' "$f" 2>/dev/null; then
       has_envelope_view=1
     fi
+    has_reply_type=0
+    if grep -q 'BusReply\|StampedEnvelope' "$f" 2>/dev/null; then
+      has_reply_type=1
+    fi
     strip_noise "$f" | while IFS=: read -r lineno content; do
       if [ "$has_envelope_view" = "1" ]; then
         case "$content" in
@@ -121,6 +137,44 @@ emit_records() {
           esac
           ;;
       esac
+      if [ "$has_reply_type" = "1" ]; then
+        # Pure shell `case` glob matching, no per-line subprocess spawn
+        # (a `grep -qE` fork per line here would be O(lines) forks across
+        # every BusReply/StampedEnvelope-referencing file in the tree,
+        # dominated by famp-bus's own multi-thousand-line test modules —
+        # observed to make the query pathologically slow at plan time).
+        reply_debug_hit=0
+        case "$content" in
+          *'{reply:?}'*|*'{other:?}'*|*'{stamped:?}'*|*'{envelope:?}'*|*'{envelopes:?}'*|*'{resp:?}'*)
+            reply_debug_hit=1 ;;
+        esac
+        if [ "$reply_debug_hit" = "0" ]; then
+          case "$content" in
+            *'serde_json::to_string(&'*|*'serde_json::to_string_pretty(&'*|*'serde_json::to_value(&'*)
+              case "$content" in
+                *'reply)'*|*'other)'*|*'stamped)'*|*'envelope)'*|*'envelopes)'*|*'resp)'*)
+                  reply_debug_hit=1 ;;
+              esac
+              ;;
+          esac
+        fi
+        if [ "$reply_debug_hit" = "0" ]; then
+          case "$content" in
+            *'tracing::'*'!('*)
+              case "$content" in
+                # `?envelope` also matches `?envelopes` as a substring —
+                # no separate alternative needed (avoids shellcheck
+                # SC2221/SC2222 on a pattern that can never be reached).
+                *'?reply'*|*'?other'*|*'?stamped'*|*'?envelope'*|*'?resp'*)
+                  reply_debug_hit=1 ;;
+              esac
+              ;;
+          esac
+        fi
+        if [ "$reply_debug_hit" = "1" ]; then
+          printf '%s:%s:reply-debug\n' "$rel" "$lineno"
+        fi
+      fi
     done
   done
 }
