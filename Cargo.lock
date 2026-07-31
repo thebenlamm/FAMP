@@ -872,6 +872,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "famp-relay"
+version = "1.0.0"
+dependencies = [
+ "axum",
+ "base64",
+ "famp-crypto",
+ "famp-transport-http",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tower",
+ "tower-http",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "famp-taskdir"
 version = "1.0.0"
 dependencies = [

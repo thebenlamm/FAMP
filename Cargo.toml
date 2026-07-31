@@ -16,6 +16,7 @@ members = [
   # v1.0 federation internals
   "crates/famp-transport-http",
   "crates/famp-gateway",
+  "crates/famp-relay",
   "crates/famp-inbox",
   "crates/famp-taskdir",
   "crates/famp",

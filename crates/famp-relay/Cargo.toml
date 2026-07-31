@@ -1,0 +1,51 @@
+[package]
+name = "famp-relay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FAMP v0.5.2 — famp-relay crate (store-and-forward relay for REACH-04; holds no secret, drains authorized by signed fetch per D-26)"
+
+[lints]
+workspace = true
+
+[dependencies]
+# D-26: famp-crypto is present for exactly one purpose — verifying a
+# fetch-AUTHORIZATION signature, which is an access-control decision about
+# who may drain a queue. It is NOT here to make any trust decision about a
+# message; that decision stays exclusively `verify_inbound_any` at the
+# receiving gateway.
+famp-crypto = { path = "../famp-crypto", version = "1.0.0" }
+# Present for `INBOX_ROUTE` (the enqueue route string, reused verbatim so a
+# sending gateway needs zero egress change) and the TLS server helpers
+# only. This transitively pulls the envelope and keyring crates into this
+# crate's dependency tree; that transitivity is unavoidable and is NOT the
+# boundary D-26/D-02 draw. The boundary is enforced at the SOURCE level: no
+# file in this crate names `famp-envelope`'s or `famp-keyring`'s module
+# paths or calls the receiving gateway's inbound envelope verification.
+famp-transport-http = { path = "../famp-transport-http", version = "1.0.0" }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "signal", "time"] }
+thiserror  = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+base64     = { workspace = true }
+uuid       = { workspace = true }
+axum       = "0.8"
+tower      = "0.5"
+tower-http = { version = "0.6", features = ["limit"] }
+url        = "2"
+time       = { version = "0.3", features = ["formatting", "parsing"] }
+
+[dev-dependencies]
+# NOT `workspace = true`: the root workspace's `[workspace.dependencies]
+# reqwest` entry names a feature set no crate in this tree actually uses
+# (a pre-existing stale entry — `famp-transport-http` declares its own
+# `reqwest` directly, below, for the same reason). Mirror
+# `famp-transport-http`'s exact feature set so this test client is built
+# from the identical rustls/TLS stack `HttpTransport` uses.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+
+# The `[[bin]]` target (`src/main.rs`) is added by Task 3 alongside the
+# file itself.
