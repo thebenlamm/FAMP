@@ -143,7 +143,10 @@ pub async fn run_at_structured(sock: &Path, args: ListArgs) -> Result<ListOutcom
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::Io {
             path: sock.to_path_buf(),
-            source: std::io::Error::other(format!("unexpected broker reply: {other:?}")),
+            source: std::io::Error::other(format!(
+                "unexpected broker reply: {}",
+                other.variant_name()
+            )),
         }),
     }
 }

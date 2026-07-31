@@ -99,7 +99,9 @@ fn classify_hello_reply(reply: BusReply) -> Result<(), BusClientError> {
         BusReply::HelloErr { kind, message } | BusReply::Err { kind, message } => {
             Err(BusClientError::HelloFailed { kind, message })
         }
-        other => Err(BusClientError::UnexpectedReply(format!("{other:?}"))),
+        other => Err(BusClientError::UnexpectedReply(
+            other.variant_name().to_string(),
+        )),
     }
 }
 

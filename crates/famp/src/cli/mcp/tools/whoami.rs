@@ -97,7 +97,7 @@ pub async fn call(_input: &Value) -> Result<Value, ToolError> {
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         other => Err(ToolError::new(
             BusErrorKind::Internal,
-            format!("unexpected reply to Whoami: {other:?}"),
+            format!("unexpected reply to Whoami: {}", other.variant_name()),
         )),
     }
 }

@@ -403,7 +403,7 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
         // (e.g. SessionsOk in response to Send). Surface as a typed bus
         // client error for the operator to inspect.
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Send: {other:?}"),
+            detail: format!("unexpected reply to Send: {}", other.variant_name()),
         }),
     }
 }

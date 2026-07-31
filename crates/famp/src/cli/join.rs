@@ -127,7 +127,7 @@ pub async fn run_at_structured(sock: &Path, args: JoinArgs) -> Result<JoinOutcom
         } => Err(CliError::NotRegisteredHint { name: identity }),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Join: {other:?}"),
+            detail: format!("unexpected reply to Join: {}", other.variant_name()),
         }),
     }
 }

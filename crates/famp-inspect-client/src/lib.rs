@@ -130,7 +130,7 @@ pub async fn raw_connect_probe(sock_path: &Path) -> ProbeOutcome {
     match reply {
         Ok(BusReply::HelloOk { .. }) => ProbeOutcome::Healthy { stream },
         Ok(other) => ProbeOutcome::OrphanHolder {
-            hello_reject_summary: format!("unexpected reply: {other:?}"),
+            hello_reject_summary: format!("unexpected reply: {}", other.variant_name()),
         },
         Err(e) => ProbeOutcome::OrphanHolder {
             hello_reject_summary: format!("non-FAMP reply: {e}"),
@@ -153,7 +153,9 @@ pub async fn call(
         .map_err(|e| InspectClientError::Canonical(e.to_string()))?;
     match reply {
         BusReply::InspectOk { payload } => Ok(payload),
-        other => Err(InspectClientError::UnexpectedReply(format!("{other:?}"))),
+        other => Err(InspectClientError::UnexpectedReply(
+            other.variant_name().to_string(),
+        )),
     }
 }
 

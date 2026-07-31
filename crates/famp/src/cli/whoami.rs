@@ -82,7 +82,7 @@ pub async fn run_at_structured(sock: &Path, args: WhoamiArgs) -> Result<WhoamiOu
         } => Err(CliError::NotRegisteredHint { name: identity }),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Whoami: {other:?}"),
+            detail: format!("unexpected reply to Whoami: {}", other.variant_name()),
         }),
     }
 }

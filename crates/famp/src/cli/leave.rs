@@ -85,7 +85,7 @@ pub async fn run_at_structured(sock: &Path, args: LeaveArgs) -> Result<LeaveOutc
         } => Err(CliError::NotRegisteredHint { name: identity }),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Leave: {other:?}"),
+            detail: format!("unexpected reply to Leave: {}", other.variant_name()),
         }),
     }
 }

@@ -564,7 +564,10 @@ pub(crate) async fn inbox_has_reply_for_task(
             .any(|stamped| is_reply_for_task(&stamped.envelope, task))),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Inbox diagnostic: {other:?}"),
+            detail: format!(
+                "unexpected reply to Inbox diagnostic: {}",
+                other.variant_name()
+            ),
         }),
     }
 }

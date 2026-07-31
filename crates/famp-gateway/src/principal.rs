@@ -61,7 +61,9 @@ impl ProxiedPrincipal {
         {
             BusReply::RegisterOk { .. } => Ok(Self { client, name }),
             BusReply::Err { kind, message } => Err(GatewayError::RegisterFailed { kind, message }),
-            other => Err(GatewayError::UnexpectedReply(format!("{other:?}"))),
+            other => Err(GatewayError::UnexpectedReply(
+                other.variant_name().to_string(),
+            )),
         }
     }
 

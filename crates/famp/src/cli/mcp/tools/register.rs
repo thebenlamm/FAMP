@@ -160,7 +160,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         // Internal so the JSON-RPC layer projects to -32109.
         other => Err(ToolError::new(
             BusErrorKind::Internal,
-            format!("unexpected reply to Register: {other:?}"),
+            format!("unexpected reply to Register: {}", other.variant_name()),
         )),
     };
     drop(guard);

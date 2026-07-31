@@ -340,7 +340,10 @@ async fn inbox_handler(
     match reply {
         Ok(BusReply::SendOk { .. }) => StatusCode::ACCEPTED.into_response(),
         Ok(other) => {
-            eprintln!("famp-gateway: ingress: unexpected Send reply: {other:?}");
+            eprintln!(
+                "famp-gateway: ingress: unexpected Send reply: {}",
+                other.variant_name()
+            );
             IngressError::Internal.into_response()
         }
         Err(e) => {

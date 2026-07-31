@@ -116,7 +116,7 @@ pub async fn run_at_structured(
         }),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::BusClient {
-            detail: format!("unexpected reply to Sessions: {other:?}"),
+            detail: format!("unexpected reply to Sessions: {}", other.variant_name()),
         }),
     }
 }
