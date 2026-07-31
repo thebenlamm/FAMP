@@ -132,14 +132,14 @@ Ed25519/INV-10 at the boundary itself.
   7. A laundering test PASSES documenting that the tag is one-hop, and shipped documentation states plainly what this boundary does not protect against — explicitly NOT claiming it prevents a remote agent from steering a local agent (QUAR-08, QUAR-11).
   8. An independent, diff-only adversarial review (reviewer sees the diff and threat model only, never the author's own findings) has passed.
 
-**Plans:** 1/5 plans executed
+**Plans:** 5/5 plans executed
 Plans:
 
 - [x] 14-01-PLAN.md — Tracer: fail-closed provenance spine, gateway to `famp_inbox`, plus the proto 1 → 2 bump
-- [ ] 14-02-PLAN.md — Expand to the remaining six rendering surfaces through one shared render helper
-- [ ] 14-03-PLAN.md — Mechanical surface enumeration + QUAR-05 regression gate in `just ci` and GitHub Actions
-- [ ] 14-04-PLAN.md — FAMP-native adversarial corpus, falsification control patch, one-hop laundering test
-- [ ] 14-05-PLAN.md — Falsification run captured, version-skew tests, QUAR-08 docs + proto-2 migration note, QUAR-07 handoff
+- [x] 14-02-PLAN.md — Expand to the remaining six rendering surfaces through one shared render helper
+- [x] 14-03-PLAN.md — Mechanical surface enumeration + QUAR-05 regression gate in `just ci` and GitHub Actions
+- [x] 14-04-PLAN.md — FAMP-native adversarial corpus, falsification control patch, one-hop laundering test
+- [x] 14-05-PLAN.md — Falsification run captured, version-skew tests, QUAR-08 docs + proto-2 migration note, QUAR-07 handoff
 
 **Constraint:** All work lands in `famp-bus` (additive `Register` field, stamped reply/record shape) and the CLI/MCP surface. `famp-envelope`, `famp-canonical`, `famp-crypto`, `famp-core`, `famp-fsm` are frozen this milestone and must not be touched. QUAR-07 is run externally by famp-lead-730, not by the executing session.
 
@@ -265,7 +265,7 @@ Plans:
 | 11. Shipping-Client Remote Addressing + Setup Hardening | v1.0 | 8/8 | Complete | 2026-07-29 |
 | 12. v1.0.0 Release Gate | v1.0 | 5/5 | Complete | 2026-07-29 |
 | 13. Public Reachability Decision (Spike) | v1.1 | 0/0 | Not started | - |
-| 14. Inbound-Content-Is-DATA Quarantine | v1.1 | 1/5 | In Progress|  |
+| 14. Inbound-Content-Is-DATA Quarantine | v1.1 | 5/5 | In Progress|  |
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 0/0 | Not started | - |
 | 16. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 0/0 | Not started | - |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 0/0 | Not started | - |

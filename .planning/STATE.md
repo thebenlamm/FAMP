@@ -2,18 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase_name: roadmap created, Phase 13 not yet planned
+current_phase: 14
 status: planning
-stopped_at: Completed 14-01-PLAN.md (fail-closed provenance spine, Tasks 1-3)
-last_updated: "2026-07-31T02:45:36.430Z"
+stopped_at: Completed 14-05-PLAN.md — Phase 14 (Inbound-Content-Is-DATA Quarantine) plans complete; QUAR-07 external review pending with famp-lead-730
+last_updated: "2026-07-31T04:52:23.493Z"
 last_activity: 2026-07-30
-last_activity_desc: v1.1 roadmap created (Phases 13–20)
+last_activity_desc: Phase 14 plan 01 executed and committed (718df83)
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 1
-  percent: 0
+  completed_plans: 5
+  percent: 100
+current_phase_name: roadmap created, Phase 13 not yet planned
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -31,7 +32,7 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 14-inbound-content-is-data-quarantine
-Plan: 01 of 5 complete (14-02 through 14-05 not yet planned)
+Plan: 5 of 5 complete (14-02 through 14-05 not yet planned)
 Status: 14-01 (fail-closed provenance spine) landed — BUS_PROTO_VERSION 1->2, Origin/StampedEnvelope stamping, 4/7 mechanical rendering surfaces wired (famp_inbox, CLI inbox list, CLI register --tail, CLI wait-reply). QUAR-01/QUAR-09/QUAR-10 complete. Remaining surfaces (famp_await, CLI await, famp_channel_log) and AwaitOk/RegisterOk/JoinOk stamping deferred to 14-02 per plan.
 Last activity: 2026-07-30 — Phase 14 plan 01 executed and committed (718df83)
 
@@ -188,6 +189,13 @@ Last activity: 2026-07-30 — Phase 14 plan 01 executed and committed (718df83)
 - [Phase ?]: quick-260730-d9h: corrected 3 stale 'deferred to v1' MCP tool-description strings (v1.0.0 already shipped without the terminal-FSM filter) and deleted 2 chronically flaky archived-script tests (docs/** is CI paths-ignore'd, so they could never fail for a real regression); also removed the orphaned already_migrated.mcp.json fixture not named in the plan, to satisfy the plan's own empty-directory criterion.
 - [Phase ?]: [14-01]: Local canonical holders (famp register CLI, famp_register MCP tool) declare origin: Some(Local) at Register time — plan only specified the gateway's declaration; without this every local-to-local message would fail-closed to Unknown and render quarantine-wrapped
 - [Phase ?]: [14-01]: decode_line/WalkOutcome thread (Origin, Value) through the shared drain_walk path; only Inbox builds StampedEnvelope from it — Register/Join/Await stay Vec<Value>, origin dropped, per the plan's explicit 14-02 deferral
+- [Phase ?]: Plan 14-02 landed all 3 tasks in one commit (StampedEnvelope on AwaitOk/RegisterOk/JoinOk + seven-surface render closure + D-06/QUAR-06 pinning tests), matching 14-01's precedent; poll::find_match confirmed dead code and left untouched; AwaitOutcome.envelopes kept as pre-rendered flat Vec<Value> to avoid a large blast-radius refactor across wake/hook consumers
+- [Phase ?]: Family 4 (envelopes/drained JSON keys) excludes .len()-suffixed lines to distinguish a count from actual envelope values, avoiding false-positive justification entries for already-proven-clean MCP count outputs
+- [Phase ?]: No eighth rendering surface found; two non-rendering hits (poll.rs dead code, inspect-server digest-only body read) carried in .quarantine-surfaces.allow with individual justification comments
+- [Phase ?]: 14-04: FAMP-native adversarial corpus (24 cases, 6 families) drives render_envelope_body/render_body_text directly rather than re-spinning a live broker per surface per case; QUAR-04 falsification control actually run in both states (not just smoke-checked) and caught a real broken-control bug in the fixture's own nonce-harvesting helper before it could ship
+- [Phase ?]: 14-05: reframed D-03 old-gateway-binary skew test as a two-branch fail-closed disjunction (rejected-before-delivery vs. stale-writer-still-marked), since proto-2 hard reject means an actual old binary can never deliver at all
+- [Phase ?]: 14-05: docs/QUARANTINE.md ships the required QUAR-08 claim and non-claim with equal prominence, corrects the retracted 'conversation-only removes the tool leg' justification and the strip_relay_fields unforgeability misattribution by name
+- [Phase ?]: 14-05: Option A vs Option B scope call (harness-level tool-gating) treated as resolved to Option B per famp-lead-730's kickoff wording, flagged to Ben as an open scope decision rather than silently assumed
 
 ## Issues / Blockers
 
@@ -330,11 +338,15 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 12 P03 | 12min | 2 tasks | 3 files |
 | Phase 12 P04 | 55min | 2 tasks | 18 files |
 | Phase 14 P01 | 3h | 3 tasks | 40 files |
+| Phase 14 P02 | ~1h | 3 tasks | 19 files |
+| Phase 14 P03 | ~1h | 2 tasks | 5 files |
+| Phase 14 P04 | ~50min | 3 tasks | 6 files |
+| Phase 14 P05 | ~2h | 4 tasks | 6 files |
 
 ## Session
 
-**Last session:** 2026-07-31T02:45:36.421Z
-**Stopped At:** Completed 14-01-PLAN.md (fail-closed provenance spine, Tasks 1-3)
+**Last session:** 2026-07-31T04:52:23.484Z
+**Stopped At:** Completed 14-05-PLAN.md — Phase 14 (Inbound-Content-Is-DATA Quarantine) plans complete; QUAR-07 external review pending with famp-lead-730
 **Resume File:** None
 
 ## Operator Next Steps
