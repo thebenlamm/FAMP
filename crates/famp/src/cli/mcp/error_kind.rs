@@ -28,10 +28,10 @@ use crate::cli::error::CliError::{
     HomeNotSet, IdentityIncomplete, Inbox, InvalidAgentName, InvalidDuration, InvalidIdentityName,
     InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
     JsonMergeRead, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented, NotRegistered,
-    NotRegisteredHint, OwnDomainInvalid, OwnDomainNotSet, PeerBlobMalformed, PeerKeyConflict,
-    PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal,
-    TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse, TomlSerialize, TomlTableExpected,
-    UnknownIdentity,
+    NotRegisteredHint, OwnDomainInvalid, OwnDomainNotSet, PeerBlobMalformed, PeerCannotRetire,
+    PeerKeyConflict, PeerKeyRevoked, PeerNoSuchKey, PeerNotPinned, PrincipalInvalid,
+    SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal, TlsFingerprintMismatch,
+    TofuBootstrapRefused, TomlParse, TomlSerialize, TomlTableExpected, UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -103,6 +103,10 @@ impl crate::cli::error::CliError {
             PeerKeyConflict { .. } => "peer_key_conflict",
             OwnDomainNotSet => "own_domain_not_set",
             OwnDomainInvalid { .. } => "own_domain_invalid",
+            PeerNotPinned { .. } => "peer_not_pinned",
+            PeerKeyRevoked { .. } => "peer_key_revoked",
+            PeerNoSuchKey { .. } => "peer_no_such_key",
+            PeerCannotRetire { .. } => "peer_cannot_retire",
         }
     }
 }

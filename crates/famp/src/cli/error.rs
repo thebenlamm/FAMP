@@ -317,6 +317,37 @@ pub enum CliError {
     /// typed reject rather than a panic or a silent fallback.
     #[error("invalid own-domain {value:?}: {reason}")]
     OwnDomainInvalid { value: String, reason: String },
+
+    /// `famp peer rotate` was invoked for a principal with no existing
+    /// keyring entry at all. Rotation presupposes a pin — first-sight
+    /// pinning has exactly one entry point, `famp peer import`; the two
+    /// paths never merge (KEYR-03).
+    #[error(
+        "{principal} is not pinned — rotation presupposes an existing pin. \
+         Use `famp peer import` for a first-sight pin."
+    )]
+    PeerNotPinned { principal: String },
+
+    /// `famp peer rotate` targeted a pubkey already recorded as `revoked`
+    /// for this principal. Revocation is monotonic — a revoked key can
+    /// never return via rotation (T-15-04).
+    #[error("{principal}'s incoming key {key_id} is a revoked entry and cannot be re-pinned")]
+    PeerKeyRevoked { principal: String, key_id: String },
+
+    /// `famp peer retire` was given a `key_id` that does not exist for
+    /// the named principal.
+    #[error("no such key entry {key_id} for principal {principal}")]
+    PeerNoSuchKey { principal: String, key_id: String },
+
+    /// `famp peer retire` refused to remove an `active` or `revoked`
+    /// entry — only a `retired` entry may ever be deleted (KEYR-02,
+    /// T-15-14).
+    #[error("cannot retire {key_id} for {principal}: entry is {state}")]
+    PeerCannotRetire {
+        principal: String,
+        key_id: String,
+        state: String,
+    },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

@@ -10,13 +10,25 @@
 //! material ever crosses FAMP itself; the blob transport is the
 //! operator's own clipboard/Signal (TRUST-01, T-08-13).
 //!
-//! **Scope note (RESEARCH Pitfall 4):** the trust model here is **one
-//! signing key per remote principal name**. Do NOT design for a single
-//! machine key shared across multiple principal names —
-//! `Keyring::load_from_file` rejects duplicate pubkeys across distinct
-//! principals and would hard-fail on the next gateway restart. If two
-//! agent names on the same remote machine both need simultaneous trust,
-//! each needs its own keypair; generalizing this is deferred to v1.1.
+//! **Scope note (RESEARCH Pitfall 4, updated Phase 15):** the trust model
+//! here started as **one signing key per remote principal name**; Phase
+//! 15 (KEYR-02/KEYR-03) extends that to an explicit
+//! active/retired/revoked lifecycle PER principal — a principal may hold
+//! multiple keys at once, but at most one is ever `Active`. The
+//! duplicate-pubkey-across-DIFFERENT-principals rejection still stands
+//! unchanged: `Keyring::load_from_file` rejects the same pubkey pinned
+//! under two distinct principals and would hard-fail on the next gateway
+//! restart. If two agent names on the same remote machine both need
+//! simultaneous trust, each still needs its own keypair.
+//!
+//! **`import` vs `rotate` (KEYR-03):** `famp peer import` is first-sight
+//! pinning ONLY — it fails closed (exit 1, `PeerKeyConflict`) on ANY key
+//! change for an already-pinned principal, exactly as before this phase.
+//! `famp peer rotate` is the ONLY path that accepts a changed key for a
+//! known principal, and only with explicit `--confirm-rotation` (exit 2
+//! without it, naming both key fingerprints). The two paths never merge.
+//! `famp peer retire` is the only path that removes key material from the
+//! trust store.
 
 use clap::{Args, Subcommand};
 
@@ -25,6 +37,8 @@ use crate::cli::error::CliError;
 pub mod export;
 pub mod identity;
 pub mod import;
+pub mod retire;
+pub mod rotate;
 
 #[derive(Args, Debug)]
 pub struct PeerArgs {
@@ -40,9 +54,20 @@ pub enum PeerSubcommand {
     /// peer machine — no key material ever crosses FAMP itself (TRUST-01).
     Export(export::PeerExportArgs),
     /// Parse a `famp peer export` blob (from a file or stdin) and
-    /// TOFU-pin the peer's key into the gateway peer keyring. Fails
-    /// closed on a conflicting re-pin (T-08-11).
+    /// TOFU-pin the peer's key into the gateway peer keyring. First-sight
+    /// pinning ONLY — fails closed on any key change for an
+    /// already-pinned principal (T-08-11). Never accepts a key change;
+    /// use `rotate` for that.
     Import(import::PeerImportArgs),
+    /// Accept a NEW key for an already-pinned peer (KEYR-02). The ONLY
+    /// path that accepts a changed key for a known principal, and only
+    /// with explicit `--confirm-rotation` — without it, exits 2 with a
+    /// `KEY CHANGED` block naming both key fingerprints and mutates
+    /// nothing (KEYR-03).
+    Rotate(rotate::PeerRotateArgs),
+    /// Remove a `retired` key entry from the trust store — the ONLY path
+    /// that deletes key material. Refuses an `active` or `revoked` entry.
+    Retire(retire::PeerRetireArgs),
 }
 
 /// Sync dispatcher — pure file I/O, no broker/tokio dependency.
@@ -50,5 +75,7 @@ pub fn run(args: PeerArgs) -> Result<(), CliError> {
     match args.command {
         PeerSubcommand::Export(args) => export::run(&args),
         PeerSubcommand::Import(args) => import::run(&args),
+        PeerSubcommand::Rotate(args) => rotate::run(&args),
+        PeerSubcommand::Retire(args) => retire::run(&args),
     }
 }
