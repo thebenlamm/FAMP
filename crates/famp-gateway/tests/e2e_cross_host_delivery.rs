@@ -111,8 +111,16 @@ fn two_key_bounds() -> Bounds {
     }
 }
 
+/// Live, not fixed: Phase 17's freshness gate (`ingress_guard::run_cheap_gates`,
+/// INGR-01) rejects any envelope whose `ts` is more than `CLOCK_SKEW_WINDOW_SECS`
+/// away from the real wall clock, and this file's envelopes flow through a real
+/// `inbox_handler` on a real running gateway — a fixed literal here goes stale
+/// the moment it ages past that window (it did: a hardcoded 2026-07-27 value
+/// silently broke this test days later). Mirrors `famp_gateway::now_canonical_utc()`'s
+/// exact canonical form via the same public re-export other tests already use
+/// (see `revocation.rs::now_canonical_utc_shape`).
 fn ts() -> Timestamp {
-    Timestamp("2026-07-27T00:00:00Z".to_string())
+    Timestamp(famp_gateway::now_canonical_utc())
 }
 
 /// Sign an `UnsignedEnvelope<B>` with a throwaway key then strip the

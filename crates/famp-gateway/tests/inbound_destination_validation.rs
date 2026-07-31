@@ -93,8 +93,17 @@ fn wait_for_broker_socket(sock: &Path, deadline: Duration) {
 /// A signed `ack`-class envelope (mirrors `ingress.rs`'s own private
 /// `ack_bytes` unit-test helper — duplicated here since that helper is
 /// private to the lib's `#[cfg(test)]` module).
+///
+/// `ts` is live, not fixed: these envelopes go through the real
+/// `inbox_handler` → `ingest_inbound` → `ingress_guard::run_cheap_gates`
+/// path, which now runs Phase 17's freshness gate (INGR-01) against the
+/// real wall clock before anything else. A fixed literal here goes stale
+/// the moment it ages past `CLOCK_SKEW_WINDOW_SECS` (it did — this file's
+/// 2026-07-28 literal broke all three tests days later without either the
+/// foreign-domain, misaddressed-recipient, or delivery behavior under test
+/// ever running).
 fn ack_bytes(sk: &FampSigningKey, from: &Principal, to: &Principal, id: MessageId) -> Vec<u8> {
-    let ts = Timestamp("2026-07-28T00:00:00Z".to_string());
+    let ts = Timestamp(famp_gateway::now_canonical_utc());
     let body = AckBody {
         disposition: AckDisposition::Accepted,
         reason: None,
