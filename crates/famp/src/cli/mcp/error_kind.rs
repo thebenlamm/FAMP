@@ -29,9 +29,10 @@ use crate::cli::error::CliError::{
     InvalidTaskState, Io, JsonMergeBackup, JsonMergeNotObject, JsonMergeParse, JsonMergePersist,
     JsonMergeRead, KeyringBuildFailed, NameTaken, NoIdentityBound, NotImplemented, NotRegistered,
     NotRegisteredHint, OwnDomainInvalid, OwnDomainNotSet, PeerBlobMalformed, PeerCannotRetire,
-    PeerKeyConflict, PeerKeyRevoked, PeerNoSuchKey, PeerNotPinned, PrincipalInvalid,
-    SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal, TlsFingerprintMismatch,
-    TofuBootstrapRefused, TomlParse, TomlSerialize, TomlTableExpected, UnknownIdentity,
+    PeerKeyConflict, PeerKeyRevoked, PeerNoSuchKey, PeerNotPinned, PeerRevocationRejected,
+    PrincipalInvalid, SendArgsInvalid, SendFailed, TaskDir, TaskNotFound, TaskTerminal,
+    TlsFingerprintMismatch, TofuBootstrapRefused, TomlParse, TomlSerialize, TomlTableExpected,
+    UnknownIdentity,
 };
 
 impl crate::cli::error::CliError {
@@ -107,6 +108,7 @@ impl crate::cli::error::CliError {
             PeerKeyRevoked { .. } => "peer_key_revoked",
             PeerNoSuchKey { .. } => "peer_no_such_key",
             PeerCannotRetire { .. } => "peer_cannot_retire",
+            PeerRevocationRejected { .. } => "peer_revocation_rejected",
         }
     }
 }

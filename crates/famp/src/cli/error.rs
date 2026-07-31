@@ -348,6 +348,13 @@ pub enum CliError {
         key_id: String,
         state: String,
     },
+
+    /// `famp peer import-revocation` rejected a `SignedRevocation` blob:
+    /// an unparseable blob, an unauthorized signer, an invalid signature,
+    /// or a malformed statement (REVK-02). Carries only strings — never
+    /// key bytes. The keyring file is left byte-identical on this path.
+    #[error("revocation rejected for {principal}: {reason}")]
+    PeerRevocationRejected { principal: String, reason: String },
 }
 
 /// Parse a user-supplied duration string via `humantime`. Accepts the

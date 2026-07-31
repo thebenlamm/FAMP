@@ -29,6 +29,13 @@
 //! without it, naming both key fingerprints). The two paths never merge.
 //! `famp peer retire` is the only path that removes key material from the
 //! trust store.
+//!
+//! **`revoke` vs `import-revocation` (REVK-02):** `famp peer revoke` is a
+//! LOCAL unilateral decision needing no signature — an operator may always
+//! stop trusting a key in their own trust store. `famp peer
+//! import-revocation` consumes a statement SIGNED by the peer and is
+//! fail-closed, verified against the D15-B authorized-signer set before it
+//! changes anything.
 
 use clap::{Args, Subcommand};
 
@@ -37,7 +44,9 @@ use crate::cli::error::CliError;
 pub mod export;
 pub mod identity;
 pub mod import;
+pub mod import_revocation;
 pub mod retire;
+pub mod revoke;
 pub mod rotate;
 
 #[derive(Args, Debug)]
@@ -68,6 +77,16 @@ pub enum PeerSubcommand {
     /// Remove a `retired` key entry from the trust store — the ONLY path
     /// that deletes key material. Refuses an `active` or `revoked` entry.
     Retire(retire::PeerRetireArgs),
+    /// LOCAL unilateral revocation (REVK-02) — transitions a key entry to
+    /// `revoked` in THIS machine's own trust store, requiring no
+    /// signature. Optionally `--emit`s a signed statement for the peer's
+    /// own trust store.
+    Revoke(revoke::PeerRevokeArgs),
+    /// Consume a peer-signed revocation statement and apply it,
+    /// fail-closed (REVK-02) — verified against the D15-B
+    /// authorized-signer set before it changes anything.
+    #[command(name = "import-revocation")]
+    ImportRevocation(import_revocation::PeerImportRevocationArgs),
 }
 
 /// Sync dispatcher — pure file I/O, no broker/tokio dependency.
@@ -77,5 +96,7 @@ pub fn run(args: PeerArgs) -> Result<(), CliError> {
         PeerSubcommand::Import(args) => import::run(&args),
         PeerSubcommand::Rotate(args) => rotate::run(&args),
         PeerSubcommand::Retire(args) => retire::run(&args),
+        PeerSubcommand::Revoke(args) => revoke::run(&args),
+        PeerSubcommand::ImportRevocation(args) => import_revocation::run(&args),
     }
 }
