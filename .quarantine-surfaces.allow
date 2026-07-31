@@ -1,0 +1,78 @@
+# .quarantine-surfaces.allow
+#
+# QUAR-05 / D-22: checked-in output of scripts/quarantine-surfaces.sh.
+# GENERATED — do not hand-edit except to add a justification comment for a
+# deliberate exclusion. Regenerate with:
+#   sh scripts/quarantine-surfaces.sh > /tmp/regen && \
+#     tail -n +N /tmp/regen  # (paste the record block back in below, sorted)
+# or simply run `sh scripts/quarantine-surfaces.sh` and diff its stdout
+# against the record block below.
+#
+# `sh scripts/quarantine-surfaces.sh --check` diffs the live tree against
+# this exact file (comment/blank lines skipped) — this is QUAR-05's
+# regression gate, and it consumes this list verbatim, never a re-derived
+# copy (D-05).
+#
+# Cross-checked against the seven rendering surfaces named in
+# 14-RESEARCH.md line 36 (2026-07-31): the query found exactly those
+# seven, plus two non-rendering hits that are allowlisted below with
+# justification (not an eighth surface). Records map onto the seven as:
+#
+#   1. famp_inbox (MCP)            -> crates/famp/src/cli/mcp/tools/inbox.rs:186,197
+#   2. famp_await (MCP)            -> crates/famp/src/cli/mcp/tools/await_.rs:91
+#                                      (renders via await_cmd::render_stamped_envelopes,
+#                                      crates/famp/src/cli/await_cmd/mod.rs:362)
+#   3. famp_channel_log (MCP)      -> crates/famp/src/cli/mcp/tools/channel_log.rs:109,123
+#   4. CLI inbox list              -> crates/famp/src/cli/inbox/list.rs:72
+#   5. CLI await                   -> crates/famp/src/cli/await_cmd/mod.rs:137,156,203,227,362
+#                                      (156 is write_outcome's own definition —
+#                                      the shared helper anchor, not a second
+#                                      implementation)
+#   6. CLI register --tail         -> crates/famp/src/cli/register.rs:211,288,353,376
+#                                      (353 is emit_tail_line's own definition —
+#                                      same helper-anchor note as above)
+#   7. CLI wait-reply              -> crates/famp/src/cli/wait_reply.rs:35
+#                                      (shares write_outcome with #5)
+#
+# Non-rendering hits carried with justification (verified NOT an eighth
+# surface — neither emits received-content text to any output a human or
+# downstream consumer reads):
+#
+# justification: crates/famp/src/cli/await_cmd/poll.rs:88 (`find_match`) is
+#   confirmed dead code — zero call sites anywhere in the tree (grepped
+#   2026-07-31; also documented in 14-02-SUMMARY.md's key-decisions: "the
+#   real live path is famp::cli::await_cmd::run_at_structured's AwaitOk
+#   arm ... poll.rs was left untouched"). It matches the `envelope-body`
+#   family only because `EnvelopeView` is in scope in this file. Not
+#   routed through render_envelope_body because it is unreachable, not
+#   because it is exempt from the rule — if it is ever wired up, route it
+#   through the shared helper first and remove this justification.
+# justification: crates/famp-inspect-server/src/messages.rs:66
+#   (`message_row`) calls `EnvelopeView::body()` only to compute a
+#   SHA-256 digest of the raw body for `famp_verify` / `famp inspect
+#   messages` (`famp_canonical::canonicalize(&body_value)` then
+#   `Sha256::digest`) — the raw body Value itself is never serialized
+#   into any output. Confirmed clean by
+#   crates/famp/tests/quarantine_surfaces.rs's
+#   `inspect_messages_emits_no_body_text` and
+#   `verify_tool_emits_no_body_text` (14-02).
+#
+crates/famp-inspect-server/src/messages.rs:66:envelope-body
+crates/famp/src/cli/await_cmd/mod.rs:137:write-outcome
+crates/famp/src/cli/await_cmd/mod.rs:156:write-outcome
+crates/famp/src/cli/await_cmd/mod.rs:203:envelopes-field
+crates/famp/src/cli/await_cmd/mod.rs:227:write-outcome
+crates/famp/src/cli/await_cmd/mod.rs:362:envelope-body
+crates/famp/src/cli/await_cmd/poll.rs:88:envelope-body
+crates/famp/src/cli/hook/codex_stop.rs:229:envelopes-field
+crates/famp/src/cli/inbox/list.rs:72:envelope-body
+crates/famp/src/cli/mcp/tools/await_.rs:91:envelopes-field
+crates/famp/src/cli/mcp/tools/channel_log.rs:109:envelope-body
+crates/famp/src/cli/mcp/tools/channel_log.rs:123:envelopes-field
+crates/famp/src/cli/mcp/tools/inbox.rs:186:envelope-body
+crates/famp/src/cli/mcp/tools/inbox.rs:197:envelope-body
+crates/famp/src/cli/register.rs:211:emit-tail-line
+crates/famp/src/cli/register.rs:288:emit-tail-line
+crates/famp/src/cli/register.rs:353:emit-tail-line
+crates/famp/src/cli/register.rs:376:envelope-body
+crates/famp/src/cli/wait_reply.rs:35:write-outcome
