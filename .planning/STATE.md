@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase: 14
-status: planning
-stopped_at: Completed 14-05-PLAN.md — Phase 14 (Inbound-Content-Is-DATA Quarantine) plans complete; QUAR-07 external review pending with famp-lead-730
-last_updated: "2026-07-31T04:52:23.493Z"
-last_activity: 2026-07-30
-last_activity_desc: Phase 14 plan 01 executed and committed (718df83)
+current_phase: 15
+current_phase_name: keyring-multi-key-extension-revocation
+status: executing
+stopped_at: Completed 15-01-PLAN.md (D15-A/D15-B decisions locked in 15-DECISIONS.md)
+last_updated: "2026-07-31T06:58:15.156Z"
+last_activity: 2026-07-31
+last_activity_desc: Phase 15 execution started
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
-  total_plans: 5
+  total_plans: 9
   completed_plans: 5
-  percent: 100
-current_phase_name: roadmap created, Phase 13 not yet planned
+  percent: 50
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 14 (Inbound-Content-Is-DATA Quarantine) in progress — plan 01 of 5 complete. Phase 13 (reachability spike) not yet planned but does not block Phase 14 (technically independent, per roadmap invariant #1). Open non-blocking gate: **Gate B** (conformance vector pack; fires when a 2nd implementer commits to interop) — independent of v1.1 and not scheduled by this roadmap.
+**Current focus:** Phase 15 — keyring-multi-key-extension-revocation
 
 ## Current Position
 
-Phase: 14-inbound-content-is-data-quarantine
-Plan: 5 of 5 complete (14-02 through 14-05 not yet planned)
-Status: 14-01 (fail-closed provenance spine) landed — BUS_PROTO_VERSION 1->2, Origin/StampedEnvelope stamping, 4/7 mechanical rendering surfaces wired (famp_inbox, CLI inbox list, CLI register --tail, CLI wait-reply). QUAR-01/QUAR-09/QUAR-10 complete. Remaining surfaces (famp_await, CLI await, famp_channel_log) and AwaitOk/RegisterOk/JoinOk stamping deferred to 14-02 per plan.
-Last activity: 2026-07-31 - Completed quick task 260731-2j9: QUAR-07 closeout (F1/F2/F3 fixed, Phase 14 quarantine review closed)
+Phase: 15 (keyring-multi-key-extension-revocation) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-07-31 — Phase 15 execution started
 
 ## v1.1 Phase Map
 
@@ -196,6 +196,7 @@ Last activity: 2026-07-31 - Completed quick task 260731-2j9: QUAR-07 closeout (F
 - [Phase ?]: 14-05: reframed D-03 old-gateway-binary skew test as a two-branch fail-closed disjunction (rejected-before-delivery vs. stale-writer-still-marked), since proto-2 hard reject means an actual old binary can never deliver at all
 - [Phase ?]: 14-05: docs/QUARANTINE.md ships the required QUAR-08 claim and non-claim with equal prominence, corrects the retracted 'conversation-only removes the tool leg' justification and the strip_relay_fields unforgeability misattribution by name
 - [Phase ?]: 14-05: Option A vs Option B scope call (harness-level tool-gating) treated as resolved to Option B per famp-lead-730's kickoff wording, flagged to Ben as an open scope decision rather than silently assumed
+- [Phase 15]: [15-01]: D15-A approved as written (legacy 2-field / v1.1 6-field keyring grammar, revocation+expiry fields present from day one, legacy save-format rule bounds forward-compat blast radius); D15-B: signer-self-allowed (option B) - any currently-pinned non-revoked key including the one being revoked may sign a REVK-02 revocation, encoded in famp_keyring::revocation::authorized_signer_for, REVK-01 expiry remains primary per D-06
 
 ## Issues / Blockers
 
@@ -343,11 +344,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 14 P03 | ~1h | 2 tasks | 5 files |
 | Phase 14 P04 | ~50min | 3 tasks | 6 files |
 | Phase 14 P05 | ~2h | 4 tasks | 6 files |
+| Phase 15 P01 | ~5m (checkpoint pause excluded) | 2 tasks | 1 files |
 
 ## Session
 
-**Last session:** 2026-07-31T04:52:23.484Z
-**Stopped At:** Completed 14-05-PLAN.md — Phase 14 (Inbound-Content-Is-DATA Quarantine) plans complete; QUAR-07 external review pending with famp-lead-730
+**Last session:** 2026-07-31T06:58:15.145Z
+**Stopped At:** Completed 15-01-PLAN.md (D15-A/D15-B decisions locked in 15-DECISIONS.md)
 **Resume File:** None
 
 ## Operator Next Steps
