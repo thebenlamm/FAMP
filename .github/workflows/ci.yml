@@ -118,6 +118,17 @@ jobs:
           tool: cargo-nextest
       - run: cargo nextest run --workspace --profile ci
 
+  quarantine-surfaces:
+    name: quarantine-surfaces
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: QUAR-05 rendering-surface allowlist gate
+        run: just check-quarantine-surfaces
+
   doc-test:
     name: doc-test
     runs-on: ubuntu-latest
