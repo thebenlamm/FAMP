@@ -252,6 +252,21 @@ pub(crate) enum IngressError {
         now: String,
         skew_secs: i64,
     },
+    /// Task 1 (17-02, INGR-02/D-06): a nonce previously recorded for the
+    /// same peeked sender, within `ingress_guard::REPLAY_CACHE_TTL_SECS`
+    /// seconds, was submitted again. Produced BEFORE `verify_inbound_any`
+    /// runs, keyed on the peeked (not yet cryptographically confirmed)
+    /// sender — a correctly-signed replay maps here too, by design.
+    /// Carries the nonce (a public routing token, never a secret) and
+    /// the peeked sender name; never key bytes or signature material.
+    #[error("nonce '{nonce}' from sender '{principal}' was already seen within the replay window")]
+    ReplayedNonce { principal: String, nonce: String },
+    /// Task 1 (17-02, INGR-02): the peeked `nonce` field is absent or
+    /// empty. Produced BEFORE `verify_inbound_any` runs; the replay
+    /// cache is never asked to key on nothing. Carries only the peeked
+    /// sender name.
+    #[error("sender '{principal}' submitted an envelope with an absent or empty nonce")]
+    MissingNonce { principal: String },
     #[error("internal error")]
     Internal,
 }
@@ -274,6 +289,8 @@ impl IntoResponse for IngressError {
             }
             Self::BadEnvelopeShape => (StatusCode::BAD_REQUEST, "bad_envelope_shape"),
             Self::StaleTimestamp { .. } => (StatusCode::BAD_REQUEST, "stale_timestamp"),
+            Self::ReplayedNonce { .. } => (StatusCode::BAD_REQUEST, "replayed_nonce"),
+            Self::MissingNonce { .. } => (StatusCode::BAD_REQUEST, "missing_nonce"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         let body = serde_json::json!({ "error": slug, "detail": self.to_string() });
@@ -315,6 +332,10 @@ fn ingress_error_for_guard(reject: GuardReject) -> IngressError {
         GuardReject::StaleTimestamp { ts, now, skew_secs } => {
             IngressError::StaleTimestamp { ts, now, skew_secs }
         }
+        GuardReject::ReplayedNonce { principal, nonce } => {
+            IngressError::ReplayedNonce { principal, nonce }
+        }
+        GuardReject::MissingNonce { principal } => IngressError::MissingNonce { principal },
     }
 }
 

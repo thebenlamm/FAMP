@@ -85,6 +85,29 @@ pub enum GuardReject {
         now: String,
         skew_secs: i64,
     },
+
+    /// INGR-02/D-06: a nonce previously recorded for the same peeked
+    /// sender, within `REPLAY_CACHE_TTL_SECS` seconds, was submitted
+    /// again. Does NOT imply the second submission is unsigned or
+    /// forged — a correctly-signed replay of an already-accepted
+    /// envelope maps here too (that is the entire point: this check
+    /// runs BEFORE signature verification, per INGR-05/D-09, keyed on
+    /// the peeked, not yet cryptographically confirmed, identity).
+    /// Carries the nonce because a nonce is a public routing token,
+    /// never a secret — this variant must never be extended to carry
+    /// signature or key material.
+    #[error("nonce '{nonce}' from sender '{principal}' was already seen within the replay window")]
+    ReplayedNonce { principal: String, nonce: String },
+
+    /// INGR-02: the peeked `nonce` field is absent or empty. Does NOT
+    /// imply anything about the envelope's signature — a correctly
+    /// signed envelope with no nonce maps here too. The replay cache is
+    /// never asked to key on nothing: this rejection happens before
+    /// [`ReplayCache::record`] is ever called with an empty key. Carries
+    /// only the peeked sender name, never key bytes or signature
+    /// material.
+    #[error("sender '{principal}' submitted an envelope with an absent or empty nonce")]
+    MissingNonce { principal: String },
 }
 
 /// Fields peeked from unverified inbound bytes, cheaply, before any
@@ -199,24 +222,207 @@ pub fn freshness_check(ts: &str, now: &str, skew_secs: i64) -> Result<(), GuardR
     }
 }
 
+/// INGR-02's replay-cache entry lifetime, in seconds.
+///
+/// Colocated with [`REPLAY_CACHE_MAX_PER_SENDER`] and [`ReplayCache`]
+/// itself (the way `egress.rs`'s `EXPIRY_WINDOW_MINUTES` sits directly
+/// above its consumer): all three knobs plus `CLOCK_SKEW_WINDOW_SECS`
+/// must jointly satisfy [`replay_bounds_ok`], and drifting any one of
+/// them without checking the others is exactly the silent-breakage
+/// scenario D-06 exists to prevent.
+pub const REPLAY_CACHE_TTL_SECS: i64 = 600;
+
+/// INGR-02/INGR-08's per-sender replay-cache capacity.
+///
+/// This bounds memory per sender (T-17-07): once a single sender's
+/// cache reaches this many live entries, [`ReplayCache::record`] evicts
+/// the oldest before inserting. See [`replay_bounds_ok`] for the sizing
+/// relation this constant must satisfy relative to
+/// [`REPLAY_CACHE_TTL_SECS`] and the rate-limit constants plan 03 adds.
+pub const REPLAY_CACHE_MAX_PER_SENDER: usize = 4096;
+
+/// INGR-02/D-06: the TTL/skew/size relationship, stated as one
+/// machine-checked inequality rather than a comment.
+///
+/// Returns `true` only when BOTH relations hold:
+///
+/// - **Relation (a):** `ttl_secs >= 2 * skew_secs`. An envelope with a
+///   fixed `ts` is admissible over the whole wall-clock interval running
+///   from `ts` minus the skew window to `ts` plus the skew window — a
+///   span of twice the skew window. A cache entry that expires sooner
+///   than that span would let a genuine replay slip through after
+///   eviction but before the freshness gate closes, which defeats
+///   tracking it at all.
+/// - **Relation (b):** `max_per_sender >= ttl_secs * rate_max /
+///   rate_window_secs`, i.e. the per-sender cap must be at least the
+///   number of distinct nonces one sender could legitimately emit
+///   within one TTL at the maximum admitted rate. If the cap is smaller,
+///   the cache starts evicting live entries early under load, reopening
+///   a replay window exactly when traffic is highest.
+///
+/// `rate_max`/`rate_window_secs` correspond to plan 03's
+/// `RATE_LIMIT_MAX_PER_WINDOW`/`RATE_LIMIT_WINDOW_SECS`, which do not
+/// exist yet this plan — callers (this module's own tests) pass them as
+/// literals matching plan 03's planned shipped values (120 per 60s)
+/// until plan 03 lands those constants for real.
+///
+/// Guards against a zero (or negative) `rate_window_secs` by returning
+/// `false` rather than dividing by zero.
+#[must_use]
+pub const fn replay_bounds_ok(
+    skew_secs: i64,
+    ttl_secs: i64,
+    max_per_sender: usize,
+    rate_max: u32,
+    rate_window_secs: i64,
+) -> bool {
+    if rate_window_secs <= 0 {
+        return false;
+    }
+    let relation_a = ttl_secs >= 2 * skew_secs;
+    let max_nonces_within_ttl = (ttl_secs as i128 * rate_max as i128) / rate_window_secs as i128;
+    let relation_b = max_per_sender as i128 >= max_nonces_within_ttl;
+    relation_a && relation_b
+}
+
+/// INGR-02/INGR-03/INGR-08: bounded, per-sender, in-memory nonce replay
+/// cache.
+///
+/// The OUTER key is the peeked sender name (INGR-08/D-12 per-sender
+/// scoping); the INNER key is the nonce. This outer key is load-bearing:
+/// it is what makes one peer structurally unable to evict or collide
+/// with another peer's entries. A flattened single-map design (nonce ->
+/// instant, with no sender dimension) would silently reintroduce exactly
+/// the cross-tenant failure INGR-08 exists to prevent — do not collapse
+/// these two levels.
+///
+/// **INGR-03/D-07 durability decision:** this cache is IN-MEMORY ONLY
+/// and is lost on process restart. The restart-reopened replay window is
+/// nevertheless BOUNDED, at most `2 * CLOCK_SKEW_WINDOW_SECS` seconds,
+/// because the INGR-01 freshness gate ([`freshness_check`]) rejects any
+/// envelope outside that band regardless of what this cache remembers —
+/// see `restart_reopened_window_is_bounded_by_the_freshness_check` in
+/// this module's tests for the executable form of that bound. The
+/// honest tradeoff (D-07/D-20): this buys zero new on-disk gateway state
+/// (the gateway's first ever would be a materially larger lift) at the
+/// cost of a bounded window in which a replay captured just before a
+/// restart can be re-accepted just after one.
+pub struct ReplayCache {
+    entries: std::collections::HashMap<String, std::collections::HashMap<String, OffsetDateTime>>,
+}
+
+impl ReplayCache {
+    /// An empty cache, as constructed on gateway startup (and therefore
+    /// on every restart — see the INGR-03 doc above).
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Record a `(sender, nonce)` sighting at `now`, rejecting a replay.
+    ///
+    /// - An empty `nonce` is rejected with [`GuardReject::MissingNonce`]
+    ///   before the map is touched at all.
+    /// - This sender's inner map is lazily swept first, dropping entries
+    ///   whose age is at least `REPLAY_CACHE_TTL_SECS`.
+    /// - If the nonce is still present after the sweep, this is a
+    ///   genuine replay: [`GuardReject::ReplayedNonce`].
+    /// - If the sender's inner map is at [`REPLAY_CACHE_MAX_PER_SENDER`]
+    ///   after the sweep, the OLDEST entry by recorded instant is
+    ///   evicted first, breaking a tie on identical instants by the
+    ///   lexicographically smaller nonce — this tie rule is a tested
+    ///   contract (`replay_cache_eviction_is_oldest_first_and_deterministic_on_ties`),
+    ///   not an implementation detail free to vary with `HashMap`
+    ///   iteration order.
+    /// - Otherwise the sighting is inserted and this returns `Ok`.
+    pub fn record(
+        &mut self,
+        sender: &str,
+        nonce: &str,
+        now: OffsetDateTime,
+    ) -> Result<(), GuardReject> {
+        if nonce.is_empty() {
+            return Err(GuardReject::MissingNonce {
+                principal: sender.to_string(),
+            });
+        }
+
+        let inner = self.entries.entry(sender.to_string()).or_default();
+        inner.retain(|_, recorded_at| (now - *recorded_at).whole_seconds() < REPLAY_CACHE_TTL_SECS);
+
+        if inner.contains_key(nonce) {
+            return Err(GuardReject::ReplayedNonce {
+                principal: sender.to_string(),
+                nonce: nonce.to_string(),
+            });
+        }
+
+        if inner.len() >= REPLAY_CACHE_MAX_PER_SENDER {
+            if let Some(oldest) = inner
+                .iter()
+                .min_by(|a, b| a.1.cmp(b.1).then_with(|| a.0.cmp(b.0)))
+                .map(|(k, _)| k.clone())
+            {
+                inner.remove(&oldest);
+            }
+        }
+
+        inner.insert(nonce.to_string(), now);
+        Ok(())
+    }
+
+    /// Sweep every sender's inner map of entries older than
+    /// `REPLAY_CACHE_TTL_SECS`, and drop any sender whose inner map is
+    /// left empty — so a churn of one-shot senders cannot grow the outer
+    /// map without bound.
+    pub fn sweep(&mut self, now: OffsetDateTime) {
+        self.entries.retain(|_, inner| {
+            inner.retain(|_, recorded_at| {
+                (now - *recorded_at).whole_seconds() < REPLAY_CACHE_TTL_SECS
+            });
+            !inner.is_empty()
+        });
+    }
+
+    /// The number of live entries recorded for `sender`. Test-only
+    /// visibility need, `pub` for use from this module's `#[cfg(test)]`
+    /// submodule.
+    #[must_use]
+    pub fn len_for(&self, sender: &str) -> usize {
+        self.entries
+            .get(sender)
+            .map_or(0, std::collections::HashMap::len)
+    }
+}
+
+impl Default for ReplayCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Process-lifetime pre-verify guard state.
 ///
-/// This plan's only field is `started_at`, the anchor plan 02 uses to
-/// bound and document INGR-03's restart-reopened replay window (a fresh
-/// `IngressGuard` — and therefore a fresh, empty replay cache — is
-/// exactly what a gateway restart produces). Constructed once per
-/// gateway process (`build_gateway_router`) and threaded through every
-/// inbound request via `GatewayIngressState`.
+/// `started_at` is the anchor for INGR-03's restart-reopened replay-window
+/// documentation (a fresh `IngressGuard` — and therefore a fresh, empty
+/// `replay` cache — is exactly what a gateway restart produces).
+/// Constructed once per gateway process (`build_gateway_router`) and
+/// threaded through every inbound request via `GatewayIngressState`.
 pub struct IngressGuard {
     started_at: OffsetDateTime,
+    replay: ReplayCache,
 }
 
 impl IngressGuard {
-    /// Capture the current instant as this guard's `started_at`.
+    /// Capture the current instant as this guard's `started_at`, with a
+    /// fresh, empty [`ReplayCache`].
     #[must_use]
     pub fn new() -> Self {
         Self {
             started_at: OffsetDateTime::now_utc(),
+            replay: ReplayCache::new(),
         }
     }
 
@@ -253,29 +459,48 @@ pub struct GuardInput<'a> {
 
 /// The single ordered call site every cheap gate is added to.
 ///
-/// This plan runs exactly one gate: [`freshness_check`]. The required
+/// This plan runs two gates in order: [`freshness_check`], then the
+/// replay check ([`ReplayCache::record`] on `guard.replay`). The required
 /// order later plans MUST preserve when adding their own gate: audience
-/// binding, then freshness, then replay, then rate limit — matching the
-/// order 17-CONTEXT.md's D-08/D-05/D-06/D-10 discuss them. Returns on the
-/// FIRST reject; later gates never run once an earlier one has failed
-/// (INGR-05: cheap-before-expensive applies within this chain too, not
-/// just relative to signature verification).
+/// binding, then freshness, then replay (this plan), then rate limit —
+/// matching the order 17-CONTEXT.md's D-08/D-05/D-06/D-10 discuss them.
+/// Returns on the FIRST reject; later gates never run once an earlier
+/// one has failed (INGR-05: cheap-before-expensive applies within this
+/// chain too, not just relative to signature verification).
 ///
-/// `guard` is `&mut` even though this plan's body never mutates it — the
-/// signature is intentionally forward-shaped for plan 02's replay cache,
-/// which lives on `IngressGuard` and must be checked/updated from this
-/// same call site. `#[allow(...)]` below is scoped to this one fact, not
-/// a blanket suppression.
-#[allow(clippy::needless_pass_by_ref_mut)]
+/// Replay keys on the PEEKED sender name (`input.peeked.from`), not a
+/// verified identity — consistent with every other gate in this chain
+/// running before `verify_inbound_any` ever confirms a signature.
 pub fn run_cheap_gates(
     input: &GuardInput<'_>,
-    _guard: &mut IngressGuard,
+    guard: &mut IngressGuard,
 ) -> Result<(), GuardReject> {
-    freshness_check(input.peeked.ts.as_str(), input.now, CLOCK_SKEW_WINDOW_SECS)
+    freshness_check(input.peeked.ts.as_str(), input.now, CLOCK_SKEW_WINDOW_SECS)?;
+
+    let nonce = input
+        .peeked
+        .nonce
+        .as_deref()
+        .ok_or_else(|| GuardReject::MissingNonce {
+            principal: input.peeked.from.name().to_string(),
+        })?;
+
+    let parsed_now =
+        OffsetDateTime::parse(input.now, &Rfc3339).map_err(|_| GuardReject::BadEnvelopeShape)?;
+
+    guard
+        .replay
+        .record(input.peeked.from.name(), nonce, parsed_now)
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
 mod tests {
     use super::*;
 
@@ -399,6 +624,240 @@ mod tests {
         assert!(matches!(
             peek_guard_fields(bytes),
             Err(GuardReject::BadEnvelopeShape)
+        ));
+    }
+
+    // --- Task 2 (17-02): ReplayCache / replay_bounds_ok ---
+
+    #[test]
+    fn empty_cache_accepts_first_sighting_and_rejects_immediate_replay() {
+        let mut cache = ReplayCache::new();
+        let now = OffsetDateTime::now_utc();
+        assert_eq!(cache.len_for("agent:hosta.test/alice"), 0);
+        assert!(cache
+            .record("agent:hosta.test/alice", "first-nonce", now)
+            .is_ok());
+        assert!(matches!(
+            cache.record("agent:hosta.test/alice", "first-nonce", now),
+            Err(GuardReject::ReplayedNonce { .. })
+        ));
+    }
+
+    #[test]
+    fn replay_cache_rejects_second_sighting_of_same_nonce() {
+        let mut cache = ReplayCache::new();
+        let now = OffsetDateTime::now_utc();
+        assert!(cache
+            .record("agent:hosta.test/alice", "nonce-1", now)
+            .is_ok());
+        assert!(matches!(
+            cache.record("agent:hosta.test/alice", "nonce-1", now),
+            Err(GuardReject::ReplayedNonce { .. })
+        ));
+    }
+
+    #[test]
+    fn replay_cache_rejects_empty_nonce_before_touching_the_map() {
+        let mut cache = ReplayCache::new();
+        let now = OffsetDateTime::now_utc();
+        assert!(matches!(
+            cache.record("agent:hosta.test/alice", "", now),
+            Err(GuardReject::MissingNonce { .. })
+        ));
+        assert_eq!(
+            cache.len_for("agent:hosta.test/alice"),
+            0,
+            "an empty-nonce rejection must never insert into the map"
+        );
+    }
+
+    #[test]
+    fn replay_cache_record_after_ttl_elapsed_is_ok_again() {
+        let mut cache = ReplayCache::new();
+        let base = OffsetDateTime::now_utc();
+        assert!(cache
+            .record("agent:hosta.test/alice", "nonce-1", base)
+            .is_ok());
+        let after_ttl = base + time::Duration::seconds(REPLAY_CACHE_TTL_SECS + 1);
+        assert!(
+            cache
+                .record("agent:hosta.test/alice", "nonce-1", after_ttl)
+                .is_ok(),
+            "an entry older than the TTL must be treated as expired, not replayed"
+        );
+    }
+
+    #[test]
+    fn per_sender_scoping_allows_identical_nonce_from_two_senders() {
+        let mut cache = ReplayCache::new();
+        let now = OffsetDateTime::now_utc();
+        assert!(cache
+            .record("agent:hosta.test/alice", "shared-nonce", now)
+            .is_ok());
+        assert!(cache
+            .record("agent:hosta.test/bob", "shared-nonce", now)
+            .is_ok());
+        assert_eq!(cache.len_for("agent:hosta.test/alice"), 1);
+        assert_eq!(cache.len_for("agent:hosta.test/bob"), 1);
+    }
+
+    #[test]
+    fn per_sender_flood_evicts_only_the_flooding_senders_entries() {
+        let mut cache = ReplayCache::new();
+        let base = OffsetDateTime::now_utc();
+
+        assert!(cache
+            .record("agent:hosta.test/bob", "bob-nonce", base)
+            .is_ok());
+
+        for i in 0..=REPLAY_CACHE_MAX_PER_SENDER {
+            let nonce = format!("alice-nonce-{i:05}");
+            // Nanosecond deltas keep the whole flood microseconds wide,
+            // nowhere near REPLAY_CACHE_TTL_SECS, so no in-flight sweep
+            // removes an entry while the flood is still filling.
+            let ts = base + time::Duration::nanoseconds(i as i64);
+            assert!(cache.record("agent:hosta.test/alice", &nonce, ts).is_ok());
+        }
+
+        assert_eq!(
+            cache.len_for("agent:hosta.test/alice"),
+            REPLAY_CACHE_MAX_PER_SENDER,
+            "sender A must be capped at its own limit, never grow past it"
+        );
+        assert_eq!(
+            cache.len_for("agent:hosta.test/bob"),
+            1,
+            "sender A's flood must not touch sender B's entries"
+        );
+        assert!(
+            matches!(
+                cache.record("agent:hosta.test/bob", "bob-nonce", base),
+                Err(GuardReject::ReplayedNonce { .. })
+            ),
+            "sender B's single entry must still be replay-detectable after A's flood"
+        );
+    }
+
+    #[test]
+    fn replay_cache_eviction_is_oldest_first_and_deterministic_on_ties() {
+        let mut cache = ReplayCache::new();
+        let base = OffsetDateTime::now_utc();
+        let sender = "agent:hosta.test/alice";
+
+        // Two entries sharing the OLDEST instant, distinct nonces.
+        assert!(cache.record(sender, "zzz-tie", base).is_ok());
+        assert!(cache.record(sender, "aaa-tie", base).is_ok());
+
+        // Fill to N entries at strictly later, strictly increasing
+        // instants than the tie pair -- nanosecond deltas so the whole
+        // fill stays microseconds wide, nowhere near the TTL, and no
+        // in-flight sweep removes anything while filling.
+        for i in 0..(REPLAY_CACHE_MAX_PER_SENDER - 2) {
+            let nonce = format!("later-{i:05}");
+            let ts = base + time::Duration::nanoseconds(i as i64 + 1);
+            assert!(cache.record(sender, &nonce, ts).is_ok());
+        }
+        assert_eq!(cache.len_for(sender), REPLAY_CACHE_MAX_PER_SENDER);
+
+        // One more insert triggers eviction: the oldest instant wins,
+        // and on that tie the lexicographically smaller nonce
+        // ("aaa-tie") must be the one evicted -- never HashMap
+        // iteration order.
+        let trigger_ts = base + time::Duration::seconds(1);
+        assert!(cache.record(sender, "trigger", trigger_ts).is_ok());
+        assert_eq!(cache.len_for(sender), REPLAY_CACHE_MAX_PER_SENDER);
+
+        assert!(
+            matches!(
+                cache.record(sender, "zzz-tie", base),
+                Err(GuardReject::ReplayedNonce { .. })
+            ),
+            "zzz-tie must still be present -- it was not the one evicted"
+        );
+        assert!(
+            cache.record(sender, "aaa-tie", base).is_ok(),
+            "aaa-tie must have been evicted -- re-recording it must succeed as first-seen"
+        );
+    }
+
+    #[test]
+    fn replay_cache_shipped_constants_satisfy_the_inequality() {
+        // Plan 03's shipped rate-limit constants (RATE_LIMIT_MAX_PER_WINDOW
+        // = 120, RATE_LIMIT_WINDOW_SECS = 60) don't exist in this module
+        // yet -- passed as literals matching plan 03's planned values, per
+        // `replay_bounds_ok`'s own doc comment.
+        assert!(replay_bounds_ok(
+            CLOCK_SKEW_WINDOW_SECS,
+            REPLAY_CACHE_TTL_SECS,
+            REPLAY_CACHE_MAX_PER_SENDER,
+            120,
+            60,
+        ));
+    }
+
+    #[test]
+    fn replay_cache_inequality_rejects_misconfigured_constants() {
+        // Relation (a): ttl one second below 2 * skew must fail.
+        assert!(!replay_bounds_ok(
+            CLOCK_SKEW_WINDOW_SECS,
+            2 * CLOCK_SKEW_WINDOW_SECS - 1,
+            REPLAY_CACHE_MAX_PER_SENDER,
+            120,
+            60,
+        ));
+
+        // Relation (b): max_per_sender one below ttl * rate_max /
+        // rate_window_secs must fail.
+        let required = REPLAY_CACHE_TTL_SECS * 120 / 60;
+        assert!(!replay_bounds_ok(
+            CLOCK_SKEW_WINDOW_SECS,
+            REPLAY_CACHE_TTL_SECS,
+            (required - 1) as usize,
+            120,
+            60,
+        ));
+
+        // Zero rate_window_secs must not panic (divide-by-zero) -- it must
+        // simply return false.
+        assert!(!replay_bounds_ok(
+            CLOCK_SKEW_WINDOW_SECS,
+            REPLAY_CACHE_TTL_SECS,
+            REPLAY_CACHE_MAX_PER_SENDER,
+            120,
+            0,
+        ));
+    }
+
+    /// Task 2 (17-02, INGR-03/D-07): the executable form of the
+    /// restart-reopened-window bound. A fresh `IngressGuard` (simulating
+    /// a restart) has an empty replay cache that would happily accept a
+    /// nonce it has never seen -- but `freshness_check` rejects the same
+    /// envelope regardless, because its `ts` is older than
+    /// `2 * CLOCK_SKEW_WINDOW_SECS`. The cache's emptiness never widens
+    /// the accepted window; the freshness gate is what bounds it.
+    #[test]
+    fn restart_reopened_window_is_bounded_by_the_freshness_check() {
+        let mut guard = IngressGuard::new();
+        let sender = "agent:hosta.test/oscar";
+        assert_eq!(guard.replay.len_for(sender), 0);
+
+        let base = OffsetDateTime::now_utc();
+        let now = to_canonical_rfc3339(base);
+        let too_old_instant = base - time::Duration::seconds(2 * CLOCK_SKEW_WINDOW_SECS + 1);
+        let too_old = to_canonical_rfc3339(too_old_instant);
+
+        // The empty cache would accept this as a first-seen nonce.
+        assert!(guard
+            .replay
+            .record(sender, "replay-nonce", too_old_instant)
+            .is_ok());
+
+        // The freshness gate rejects it regardless of what the cache
+        // remembers -- this is the executable bound on the
+        // restart-reopened window.
+        assert!(matches!(
+            freshness_check(&too_old, &now, CLOCK_SKEW_WINDOW_SECS),
+            Err(GuardReject::StaleTimestamp { .. })
         ));
     }
 }
