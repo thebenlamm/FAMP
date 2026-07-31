@@ -202,6 +202,16 @@ check-inspect-version-aligned:
 check-mcp-deps:
     bash scripts/check-mcp-deps.sh
 
+# QUAR-05 / D-22: assert the checked-in rendering-surface allowlist still
+# matches the mechanical query (scripts/quarantine-surfaces.sh). Fails
+# nonzero with a delta listing when a new call site reaching received
+# content appears without being routed through the shared render helper
+# or explicitly justified in .quarantine-surfaces.allow.
+check-quarantine-surfaces:
+    @echo "Verifying rendering-surface allowlist matches the mechanical query..."
+    @command -v sh >/dev/null || { echo "ERROR: sh not found in PATH"; exit 1; }
+    @sh scripts/quarantine-surfaces.sh --check
+
 # AUDIT-05: prevent split-commit between FAMP_SPEC_VERSION bump and impl.
 check-spec-version-coherence:
     @if grep -q 'pub const FAMP_SPEC_VERSION: &str = "0.5.2"' crates/famp-envelope/src/version.rs; then \
@@ -215,7 +225,7 @@ check-spec-version-coherence:
     fi
 
 # Full local CI-parity gate. A green `just ci` implies a green GitHub Actions run.
-ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-no-io-in-inspect-proto check-inspect-readonly check-inspect-version-aligned check-spec-version-coherence check-mcp-deps check-shellcheck publish-workspace-dry-run
+ci: fmt-check lint build test-canonical-strict test-crypto test test-doc spec-lint check-no-tokio-in-bus check-no-io-in-inspect-proto check-inspect-readonly check-inspect-version-aligned check-spec-version-coherence check-mcp-deps check-shellcheck check-quarantine-surfaces publish-workspace-dry-run
     @echo "✓ local CI-parity checks passed"
 
 # Start two famp daemons in the background for the Phase 4 E2E-02
