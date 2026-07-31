@@ -227,6 +227,7 @@ mod tests {
             timed_out: true,
             diagnostic: None,
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         };
         let mut buf = Vec::new();
         assert!(!emit_block_decision_at(&dead_sock(), &outcome, "dk", &mut buf).await);
@@ -242,6 +243,7 @@ mod tests {
             timed_out: false,
             diagnostic: None,
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         };
         // No listener on this socket, so the #26 inspect probe fails open and
         // the await-batch count is kept.

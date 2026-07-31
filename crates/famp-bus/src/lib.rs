@@ -51,6 +51,7 @@ pub mod env;
 pub mod error;
 pub mod liveness;
 pub mod mailbox;
+pub mod origin;
 pub mod proto;
 
 pub use broker::{Broker, BrokerInput, BrokerStateView, ClientStateView, Out, WaiterStateView};
@@ -63,6 +64,7 @@ pub use mailbox::{
     DrainResult, DrainedRecord, InMemoryMailbox, MailboxErr, MailboxName, MailboxRead,
     JSONL_RECORD_TERMINATOR_LEN,
 };
+pub use origin::{split_stamped, stamp_line, Origin, StampedEnvelope};
 pub use proto::{
     AwaitFilter, BusMessage, BusReply, ClientId, Delivered, MemberInfo, SessionRow, Target,
     BUS_PROTO_VERSION,

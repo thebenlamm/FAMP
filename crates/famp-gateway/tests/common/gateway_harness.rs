@@ -367,13 +367,20 @@ pub fn poll_inbox_contains(
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
                     continue;
                 };
-                let matches_id = v.get("id").and_then(serde_json::Value::as_str) == Some(task_id)
-                    || v.get("causality")
+                // Phase 14 (D-04/D-05): `famp inbox list` JSONL lines are
+                // now `{"origin": ..., "envelope": {...}}` rather than
+                // the bare envelope — the CLI is one of the seven
+                // mechanical rendering surfaces this phase tags. Read
+                // envelope fields from the nested `"envelope"` object.
+                let env = v.get("envelope").unwrap_or(&v);
+                let matches_id = env.get("id").and_then(serde_json::Value::as_str) == Some(task_id)
+                    || env
+                        .get("causality")
                         .and_then(|c| c.get("ref"))
                         .and_then(serde_json::Value::as_str)
                         == Some(task_id);
                 let matches_class =
-                    v.get("class").and_then(serde_json::Value::as_str) == Some(class_wanted);
+                    env.get("class").and_then(serde_json::Value::as_str) == Some(class_wanted);
                 if matches_id && matches_class {
                     return;
                 }

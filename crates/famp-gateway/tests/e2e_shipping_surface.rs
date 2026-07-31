@@ -202,17 +202,22 @@ fn inbox_line_from(
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        let matches_id = v.get("id").and_then(serde_json::Value::as_str) == Some(task_id)
-            || v.get("causality")
+        // Phase 14 (D-04/D-05): `famp inbox list` JSONL lines are now
+        // `{"origin": ..., "envelope": {...}}` rather than the bare
+        // envelope.
+        let env = v.get("envelope").unwrap_or(&v);
+        let matches_id = env.get("id").and_then(serde_json::Value::as_str) == Some(task_id)
+            || env
+                .get("causality")
                 .and_then(|c| c.get("ref"))
                 .and_then(serde_json::Value::as_str)
                 == Some(task_id);
         let matches_class =
-            v.get("class").and_then(serde_json::Value::as_str) == Some(class_wanted);
+            env.get("class").and_then(serde_json::Value::as_str) == Some(class_wanted);
         if matches_id && matches_class {
-            return v["from"]
+            return env["from"]
                 .as_str()
-                .unwrap_or_else(|| panic!("matching line has no 'from': {v}"))
+                .unwrap_or_else(|| panic!("matching line has no 'from': {env}"))
                 .to_string();
         }
     }
@@ -240,18 +245,21 @@ fn assert_never_delivered(
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
                     continue;
                 };
-                let matches_id = v.get("id").and_then(serde_json::Value::as_str) == Some(task_id)
-                    || v.get("causality")
+                // Phase 14 (D-04/D-05): see `inbox_line_from` above.
+                let env = v.get("envelope").unwrap_or(&v);
+                let matches_id = env.get("id").and_then(serde_json::Value::as_str) == Some(task_id)
+                    || env
+                        .get("causality")
                         .and_then(|c| c.get("ref"))
                         .and_then(serde_json::Value::as_str)
                         == Some(task_id);
                 let matches_class =
-                    v.get("class").and_then(serde_json::Value::as_str) == Some(class_wanted);
+                    env.get("class").and_then(serde_json::Value::as_str) == Some(class_wanted);
                 assert!(
                     !(matches_id && matches_class),
                     "task {task_id} (class={class_wanted}) WAS delivered into {as_name}'s inbox \
                      despite the mismatched-authority `from` — the federated path failed to \
-                     reject it: {v}"
+                     reject it: {env}"
                 );
             }
         }

@@ -251,7 +251,10 @@ fn drain_await_batch<E: BrokerEnv>(
         },
     );
     let mut next_offset = outcome.next_offset;
-    let mut envelopes = outcome.delivered;
+    // AwaitOk stays `Vec<serde_json::Value>` in this plan (D-17 defers
+    // converting it to plan 14-02); drop the per-record origin half.
+    let mut envelopes: Vec<serde_json::Value> =
+        outcome.delivered.into_iter().map(|(_, v)| v).collect();
     let fully_drained = outcome.fully_drained;
 
     // The wake-trigger envelope is only safe to fold in when this call

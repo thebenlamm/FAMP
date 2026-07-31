@@ -99,7 +99,12 @@ pub async fn raw_connect_probe(sock_path: &Path) -> ProbeOutcome {
     };
 
     let hello = BusMessage::Hello {
-        bus_proto: 1,
+        // Phase 14 fix: this MUST track the live `BUS_PROTO_VERSION`, not
+        // a frozen literal. A hardcoded `1` here would make every raw
+        // probe against a v1.1+ broker fail Hello with
+        // `BrokerProtoMismatch`, which the match below misclassifies as
+        // `ORPHAN_HOLDER` — a healthy broker misdiagnosed as dead.
+        bus_proto: famp_bus::BUS_PROTO_VERSION,
         client: "famp-inspect-client/0.10.0".into(),
         bind_as: None,
     };

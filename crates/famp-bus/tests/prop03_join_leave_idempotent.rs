@@ -17,7 +17,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, now: Instant) {
         BrokerInput::Wire {
             client: ClientId::from(1),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: "alice".into(),
                 bind_as: None,
             },
@@ -32,6 +32,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, now: Instant) {
                 pid: 3001,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,

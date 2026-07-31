@@ -9,7 +9,7 @@ mod state;
 
 use std::time::Instant;
 
-use crate::{AwaitFilter, BrokerEnv, BusMessage, BusReply, ClientId, MailboxName};
+use crate::{AwaitFilter, BrokerEnv, BusMessage, BusReply, ClientId, MailboxName, Origin};
 
 pub use state::{BrokerStateView, ClientStateView, WaiterStateView};
 
@@ -26,6 +26,14 @@ pub enum Out {
     AppendMailbox {
         target: MailboxName,
         line: Vec<u8>,
+        /// D-02 (Phase 14): provenance to stamp onto this record. Resolved
+        /// from the SENDING client's `ClientState.origin` via the
+        /// `client_origin` helper in `handle.rs`, which returns
+        /// `Origin::Unknown` for any client absent from `broker.state`
+        /// (fail-closed). The executor (`famp::cli::broker::mod`) calls
+        /// `famp_bus::stamp_line(&line, origin)` before writing to disk —
+        /// `famp-bus` itself never touches the filesystem.
+        origin: Origin,
     },
     AdvanceCursor {
         name: MailboxName,

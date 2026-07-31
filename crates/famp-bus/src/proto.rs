@@ -8,6 +8,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
+use crate::origin::{Origin, StampedEnvelope};
 use crate::{BusErrorKind, MailboxName};
 
 /// Current local bus protocol version.
@@ -15,8 +16,17 @@ use crate::{BusErrorKind, MailboxName};
 /// **Bump this ONLY when the wire frame changes** (new message field,
 /// removed field, changed semantics). Never bump automatically. Never
 /// wire this to `CARGO_PKG_VERSION` — these are separate axes.
-/// Stays at 1 through Phase 5.
-pub const BUS_PROTO_VERSION: u32 = 1;
+///
+/// Bumped 1 -> 2 in Phase 14 (QUAR-10, D-09) for the v1.1 quarantine
+/// record shape: `Register` gains an `origin` field and
+/// `BusReply::InboxOk.envelopes` changes from `Vec<serde_json::Value>`
+/// to `Vec<StampedEnvelope>`. Proto-1 clients are rejected at Hello BY
+/// DESIGN (not a bug to work around) — an old client cannot render
+/// provenance, so serving it anyway would hand unmarked remote content
+/// to a client blind to it, which is exactly the fail-open hole QUAR-09
+/// exists to close. See `hello()` in `broker/handle.rs` for the reject
+/// path and its actionable error message.
+pub const BUS_PROTO_VERSION: u32 = 2;
 
 const CHANNEL_PATTERN: &str = "^#[a-z0-9][a-z0-9_-]{0,31}$";
 static CHANNEL_RE: LazyLock<Regex> = LazyLock::new(|| match Regex::new(CHANNEL_PATTERN) {
@@ -145,6 +155,15 @@ pub enum BusMessage {
         /// would change the canonical form for pre-v0.10 round-trips.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         listen: bool,
+        /// D-01/D-17 (Phase 14): declared provenance for this connection.
+        /// `None` means the sender did not declare an origin, and the
+        /// broker MUST resolve it to [`Origin::Unknown`] — NEVER
+        /// [`Origin::Local`] (D-01 fail-closed polarity). Additive field
+        /// following the exact `cwd`/`listen` precedent above: pre-Phase-14
+        /// senders that omit this field continue to serialize/deserialize
+        /// byte-exactly under BUS-02.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Origin>,
     },
     Send {
         to: Target,
@@ -226,8 +245,13 @@ pub enum BusReply {
         task_id: uuid::Uuid,
         delivered: Vec<Delivered>,
     },
+    // D-17 (Phase 14): `envelopes` changed from `Vec<serde_json::Value>`
+    // to `Vec<StampedEnvelope>` — every `famp_inbox` / `inbox list` reply
+    // now carries the fail-closed provenance stamp per element. AwaitOk /
+    // RegisterOk / JoinOk stay on `Vec<serde_json::Value>` in this plan;
+    // plan 14-02 converts them.
     InboxOk {
-        envelopes: Vec<serde_json::Value>,
+        envelopes: Vec<StampedEnvelope>,
         next_offset: u64,
     },
     AwaitOk {
@@ -328,6 +352,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::{BusMessage, BusReply, Delivered, MemberInfo, SessionRow, Target};
+    use crate::origin::{Origin, StampedEnvelope};
     use crate::{BusErrorKind, MailboxName};
     use serde_json::json;
 
@@ -417,6 +442,7 @@ mod tests {
             pid: 12345,
             cwd: Some("/Users/alice/proj".into()),
             listen: true,
+            origin: Some(Origin::Local),
         };
         let bytes = famp_canonical::canonicalize(&v).unwrap();
         let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
@@ -425,20 +451,22 @@ mod tests {
 
     #[test]
     fn roundtrip_register_without_cwd_or_listen_byte_exact() {
-        // BUS-02 byte-exact: a Register frame omitting cwd and
-        // listen serializes IDENTICALLY to a pre-v0.10 frame.
+        // BUS-02 byte-exact: a Register frame omitting cwd, listen, and
+        // origin serializes IDENTICALLY to a pre-v0.10 frame.
         let v = BusMessage::Register {
             name: "alice".into(),
             pid: 12345,
             cwd: None,
             listen: false,
+            origin: None,
         };
         let bytes = famp_canonical::canonicalize(&v).unwrap();
         let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
         assert_eq!(v, decoded);
-        // Wire MUST NOT contain "cwd" or "listen" keys when both are
-        // at default values - otherwise pre-v0.10 peers (which used
-        // deny_unknown_fields with no cwd/listen) would reject.
+        // Wire MUST NOT contain "cwd", "listen", or "origin" keys when
+        // all are at default values - otherwise pre-v0.10 peers (which
+        // used deny_unknown_fields with no cwd/listen/origin) would
+        // reject.
         let wire = String::from_utf8(bytes).unwrap();
         assert!(
             !wire.contains("\"cwd\""),
@@ -448,6 +476,44 @@ mod tests {
             !wire.contains("\"listen\""),
             "listen must be omitted at default; got {wire}"
         );
+        assert!(
+            !wire.contains("\"origin\""),
+            "origin must be omitted at default; got {wire}"
+        );
+    }
+
+    /// D-01 fail-closed pin at the wire layer: a `Register` frame
+    /// deserialized from JSON with no `origin` key produces `origin ==
+    /// None` (which the broker's `register()` handler then resolves via
+    /// `unwrap_or_default()` to `Origin::Unknown`, never `Origin::Local`).
+    #[test]
+    fn register_without_origin_field_deserializes_to_none() {
+        let wire = br#"{"name":"alice","op":"register","pid":12345}"#;
+        let decoded: BusMessage = famp_canonical::from_slice_strict(wire).unwrap();
+        assert_eq!(
+            decoded,
+            BusMessage::Register {
+                name: "alice".into(),
+                pid: 12345,
+                cwd: None,
+                listen: false,
+                origin: None,
+            }
+        );
+    }
+
+    #[test]
+    fn roundtrip_inbox_ok_stamped() {
+        let v = BusReply::InboxOk {
+            envelopes: vec![StampedEnvelope {
+                origin: Origin::Gateway,
+                envelope: json!({"body": "hello"}),
+            }],
+            next_offset: 7,
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
     }
 
     #[test]

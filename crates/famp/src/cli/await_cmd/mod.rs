@@ -47,7 +47,7 @@ use std::io::Write;
 use std::os::fd::{AsFd, FromRawFd, OwnedFd};
 use std::path::Path;
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName};
+use famp_bus::{BusErrorKind, BusMessage, BusReply, MailboxName, Origin};
 use serde_json::Value;
 use tokio::io::unix::AsyncFd;
 
@@ -123,6 +123,15 @@ pub struct AwaitOutcome {
     /// set; the MCP tool never sets it, so this stays `false` there.
     /// Drives the `{"aborted":true}` stdout line and the exit-code-3 return.
     pub aborted: bool,
+    /// Phase 14 (D-17): provenance of `envelopes`, when known. `AwaitOk`
+    /// itself stays untyped (`Vec<serde_json::Value>`) in this plan — this
+    /// field exists so a caller that discovered its result via `InboxOk`
+    /// (which IS typed) can carry that origin through `write_outcome`.
+    /// Defaults to `Origin::Unknown` (fail-closed, D-01) — NEVER
+    /// `Origin::Local` — for the genuine `AwaitOk`/`AwaitTimeout` paths,
+    /// which have no stamped origin to report yet; plan 14-02 converts
+    /// `AwaitOk` itself and removes this interim default.
+    pub origin: Origin,
 }
 
 /// Top-level entry point for `Commands::Await`.
@@ -268,6 +277,7 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
                     timed_out: false,
                     diagnostic: None,
                     aborted: true,
+                    origin: Origin::Unknown,
                 });
             }
         }
@@ -294,6 +304,7 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
             timed_out: false,
             diagnostic: None,
             aborted: false,
+            origin: Origin::Unknown,
         }),
         BusReply::AwaitTimeout {} => {
             let diagnostic = timeout_diagnostic(&mut bus, &identity, args.task).await;
@@ -304,6 +315,7 @@ pub async fn run_at_structured(sock: &Path, args: AwaitArgs) -> Result<AwaitOutc
                 timed_out: true,
                 diagnostic: Some(diagnostic),
                 aborted: false,
+                origin: Origin::Unknown,
             })
         }
         BusReply::Err {
@@ -505,7 +517,7 @@ pub(crate) async fn inbox_has_reply_for_task(
     match reply {
         BusReply::InboxOk { envelopes, .. } => Ok(envelopes
             .iter()
-            .any(|envelope| is_reply_for_task(envelope, task))),
+            .any(|stamped| is_reply_for_task(&stamped.envelope, task))),
         BusReply::Err { kind, message } => Err(CliError::BusError { kind, message }),
         other => Err(CliError::BusClient {
             detail: format!("unexpected reply to Inbox diagnostic: {other:?}"),

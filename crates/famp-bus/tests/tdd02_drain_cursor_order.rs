@@ -5,7 +5,10 @@ mod common;
 use std::time::Instant;
 
 use common::TestEnv;
-use famp_bus::{Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName, Out, Target};
+use famp_bus::{
+    Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName, Out, Target,
+    BUS_PROTO_VERSION,
+};
 use serde_json::json;
 
 fn audit_log_envelope(seq: u64, from: &str) -> serde_json::Value {
@@ -30,7 +33,7 @@ fn hello(broker: &mut Broker<TestEnv>, client: u64, now: Instant) {
         BrokerInput::Wire {
             client: ClientId::from(client),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: format!("client-{client}"),
                 bind_as: None,
             },
@@ -61,6 +64,7 @@ fn register_drain_replies_before_cursor_advance() {
                 pid: 1234,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
@@ -96,6 +100,7 @@ fn send_emits_append_before_reply() {
                 pid: 1234,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
@@ -108,6 +113,7 @@ fn send_emits_append_before_reply() {
                 pid: 5678,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,

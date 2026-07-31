@@ -154,6 +154,7 @@ async fn register_real(sock: &Path, name: &str) -> BusClient {
             pid: std::process::id(),
             cwd: None,
             listen: false,
+            origin: None,
         })
         .await
         .expect("register");

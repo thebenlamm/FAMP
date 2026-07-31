@@ -34,7 +34,7 @@ fn hello(broker: &mut Broker<TestEnv>, client: ClientId, now: Instant) {
         BrokerInput::Wire {
             client,
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: format!("client-{}", client.0),
                 bind_as: None,
             },
@@ -85,7 +85,7 @@ proptest! {
                                 name: format!("agent-{name}"),
                                 pid,
                                 cwd: None,
-                                listen: false,
+                                listen: false, origin: None,
                             },
                         },
                         now,

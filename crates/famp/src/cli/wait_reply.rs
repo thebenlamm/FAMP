@@ -50,17 +50,22 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
 
     match inbox_reply {
         BusReply::InboxOk { envelopes, .. } => {
-            if let Some(envelope) = envelopes
+            // D-17: `is_reply_for_task` reads task-matching metadata from
+            // the INNER envelope; the origin travels forward into
+            // `AwaitOutcome` so plan 14-02's `write_outcome` has
+            // something real to render with.
+            if let Some(stamped) = envelopes
                 .into_iter()
-                .find(|envelope| is_reply_for_task(envelope, args.task))
+                .find(|stamped| is_reply_for_task(&stamped.envelope, args.task))
             {
                 return Ok(AwaitOutcome {
-                    envelopes: vec![envelope],
+                    envelopes: vec![stamped.envelope],
                     mailbox: Some(MailboxName::Agent(identity.clone())),
                     next_offset: None,
                     timed_out: false,
                     diagnostic: None,
                     aborted: false,
+                    origin: stamped.origin,
                 });
             }
         }
@@ -102,6 +107,7 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
             timed_out: false,
             diagnostic: None,
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         }),
         BusReply::AwaitTimeout {} => Ok(AwaitOutcome {
             envelopes: Vec::new(),
@@ -113,6 +119,7 @@ pub async fn run_structured(args: WaitReplyArgs) -> Result<AwaitOutcome, CliErro
                 args.task
             )),
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         }),
         BusReply::Err {
             kind: BusErrorKind::NotRegistered,

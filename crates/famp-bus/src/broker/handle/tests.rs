@@ -33,7 +33,7 @@ fn hello_canonical(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: I
         BrokerInput::Wire {
             client: ClientId::from(client),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: name.into(),
                 bind_as: None,
             },
@@ -51,6 +51,7 @@ fn register(broker: &mut Broker<TestEnv>, client: u64, name: &str, pid: u32, now
                 pid,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
@@ -62,7 +63,7 @@ fn hello_proxy(broker: &mut Broker<TestEnv>, client: u64, bound: &str, now: Inst
         BrokerInput::Wire {
             client: ClientId::from(client),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: "proxy".into(),
                 bind_as: Some(bound.into()),
             },
@@ -116,7 +117,7 @@ fn audit_log_reply_envelope(
 
 fn apply_mailbox(env: &TestEnv, outs: &[Out]) {
     for out in outs {
-        if let Out::AppendMailbox { target, line } = out {
+        if let Out::AppendMailbox { target, line, .. } = out {
             env.mailbox.append(target, line.clone());
         }
     }
@@ -240,10 +241,90 @@ fn hello_rejects_unsupported_bus_proto() {
     match &outs[0] {
         Out::Reply(_, BusReply::HelloErr { kind, message }) => {
             assert_eq!(*kind, BusErrorKind::BrokerProtoMismatch);
-            assert!(message.contains("expected bus_proto=1"));
+            // Built at runtime (not a literal "expected bus_proto=2") so a
+            // future BUS_PROTO_VERSION bump cannot silently make this
+            // assertion vacuous — matches the convention introduced by
+            // `hello_proto_1_is_rejected_with_expected_version_named`
+            // below.
+            assert!(message.contains(&format!("expected bus_proto={BUS_PROTO_VERSION}")));
         }
         other => panic!("expected HelloErr BrokerProtoMismatch, got {other:?}"),
     }
+}
+
+/// D-09/D-09a.1/QUAR-10 (Phase 14, Task 3): a Hello frame declaring the
+/// OLD proto version (`BUS_PROTO_VERSION - 1`, i.e. proto 1 now that the
+/// broker is at 2) is rejected the same way any other mismatch is — the
+/// hard version bump actually blocks an old client, it does not silently
+/// degrade. The needle is built at runtime from `BUS_PROTO_VERSION` so a
+/// future bump cannot silently make this assertion vacuous.
+#[test]
+fn hello_proto_1_is_rejected_with_expected_version_named() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Hello {
+                bus_proto: BUS_PROTO_VERSION - 1,
+                client: "old-client".into(),
+                bind_as: None,
+            },
+        },
+        now,
+    );
+    match &outs[0] {
+        Out::Reply(_, BusReply::HelloErr { kind, message }) => {
+            assert_eq!(*kind, BusErrorKind::BrokerProtoMismatch);
+            let needle = format!("expected bus_proto={BUS_PROTO_VERSION}");
+            assert!(
+                message.contains(&needle),
+                "expected message to name the current version ({needle}); got: {message}"
+            );
+        }
+        other => panic!("expected HelloErr BrokerProtoMismatch, got {other:?}"),
+    }
+}
+
+/// D-01/D-02 fail-closed polarity pinned at the broker (Phase 14, Task
+/// 3), independent of any render surface: a `Register` frame with no
+/// `origin` key on the wire deserializes to `origin == None`, and once
+/// driven through the broker's `register` handler the resulting
+/// `ClientState.origin` is `Origin::Unknown` — never `Origin::Local`.
+#[test]
+fn register_without_origin_field_resolves_unknown() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+
+    // Wire bytes with no `origin` key at all (the pre-Phase-14 shape).
+    let wire = br#"{"cwd":null,"name":"alice","op":"register","pid":100}"#;
+    let msg: BusMessage = famp_canonical::from_slice_strict(wire).unwrap();
+    assert!(
+        matches!(&msg, BusMessage::Register { origin: None, .. }),
+        "wire frame with no origin key must deserialize to origin: None; got {msg:?}"
+    );
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg,
+        },
+        now,
+    );
+    assert!(
+        outs.iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::RegisterOk { .. }))),
+        "register must succeed: {outs:?}"
+    );
+    let state = &broker.state.clients[&ClientId::from(1_u64)];
+    assert_eq!(
+        state.origin,
+        Origin::Unknown,
+        "a Register frame omitting `origin` must resolve to Origin::Unknown, never Origin::Local"
+    );
 }
 
 #[test]
@@ -317,6 +398,7 @@ fn test_self_reregister_is_idempotent_but_others_are_rejected() {
                     pid: 999,
                     cwd: None,
                     listen,
+                    origin: None,
                 },
             },
             now,
@@ -409,6 +491,7 @@ fn register_oversized_register_ok_does_not_bind_name() {
                 pid: 100,
                 cwd: None,
                 listen: true,
+                origin: None,
             },
         },
         now,
@@ -449,6 +532,7 @@ fn register_oversized_register_ok_does_not_bind_name() {
                 pid: 100,
                 cwd: None,
                 listen: true,
+                origin: None,
             },
         },
         now,
@@ -488,6 +572,7 @@ fn self_reregister_oversized_register_ok_preserves_existing_bind() {
                 pid: 100,
                 cwd: None,
                 listen: true, // would flip listen if commit ran
+                origin: None,
             },
         },
         now,
@@ -1645,6 +1730,9 @@ fn handshake_register_join(
     apply_mailbox(env, &join_outs);
 }
 
+/// Returns the INNER envelope values (origin stripped) so every existing
+/// call site can keep asserting on envelope JSON shape unchanged. Origin
+/// itself is pinned by the dedicated Phase 14 tests instead.
 fn inbox_reply(outs: &[Out], client: u64) -> Option<(Vec<serde_json::Value>, u64)> {
     outs.iter().find_map(|out| match out {
         Out::Reply(
@@ -1653,7 +1741,10 @@ fn inbox_reply(outs: &[Out], client: u64) -> Option<(Vec<serde_json::Value>, u64
                 envelopes,
                 next_offset,
             },
-        ) if *c == client => Some((envelopes.clone(), *next_offset)),
+        ) if *c == client => Some((
+            envelopes.iter().map(|s| s.envelope.clone()).collect(),
+            *next_offset,
+        )),
         _ => None,
     })
 }
@@ -2784,6 +2875,7 @@ fn live01_shared_pid_clients_survive_sweep_and_reap_together() {
                 pid: SHARED_PID,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
@@ -2804,6 +2896,7 @@ fn live01_shared_pid_clients_survive_sweep_and_reap_together() {
                 pid: SHARED_PID,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,

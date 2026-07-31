@@ -100,6 +100,15 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             pid,
             cwd,
             listen,
+            // Phase 14 D-01/D-02: an MCP-registered session IS the
+            // canonical local holder (per the module doc above, it is
+            // never a proxy). Declaring `Local` explicitly here is what
+            // keeps this identity's OWN outbound `Send`s from resolving
+            // to `Origin::Unknown` (which every rendering surface
+            // treats as untrusted) — omission is fail-closed, not a
+            // free pass, so this declaration is required for normal
+            // local-to-local traffic to render unwrapped.
+            origin: Some(famp_bus::Origin::Local),
         })
         .await
         .map_err(|e| {

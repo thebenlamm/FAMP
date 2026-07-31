@@ -21,8 +21,7 @@
 
 use std::path::Path;
 
-use famp_bus::{BusErrorKind, BusMessage, BusReply};
-use serde_json::Value;
+use famp_bus::{BusErrorKind, BusMessage, BusReply, StampedEnvelope};
 
 use crate::bus_client::{resolve_sock_path, BusClient, BusClientError};
 use crate::cli::error::CliError;
@@ -45,7 +44,7 @@ pub struct ListArgs {
 /// Structured outcome — same shape as `BusReply::InboxOk`. Used by
 /// the MCP `famp_inbox` tool wrapper (plan 02-09).
 pub struct ListOutcome {
-    pub envelopes: Vec<Value>,
+    pub envelopes: Vec<StampedEnvelope>,
     pub next_offset: u64,
 }
 
@@ -54,14 +53,35 @@ pub struct ListOutcome {
 /// Writes one JSONL line per envelope to `out`, followed by a
 /// `{"next_offset":N}` footer. `out` is `Send` so the future composes
 /// inside multi-threaded runtimes (D-clippy `future_not_send`).
+///
+/// Phase 14 (D-04/D-05, mechanical rendering surface #4 of 7): each
+/// output line is now `{"origin": ..., "envelope": <envelope with body
+/// rendered per origin>}` rather than the bare envelope `Value` — a
+/// gateway/unknown-origin envelope's body is quarantine-wrapped via
+/// `render::render_envelope_body` (D-07: the one shared helper) before
+/// it ever reaches this JSONL surface.
 pub async fn run_at(
     sock: &Path,
     args: ListArgs,
     out: &mut (dyn std::io::Write + Send),
 ) -> Result<(), CliError> {
     let outcome = run_at_structured(sock, args).await?;
-    for env in &outcome.envelopes {
-        let line = serde_json::to_string(env).map_err(|e| CliError::Io {
+    for stamped in &outcome.envelopes {
+        let mut rendered_envelope = stamped.envelope.clone();
+        if let Some(body) = famp_envelope::EnvelopeView::new(&stamped.envelope)
+            .body()
+            .cloned()
+        {
+            let rendered_body = crate::cli::render::render_envelope_body(stamped.origin, &body);
+            if let Some(obj) = rendered_envelope.as_object_mut() {
+                obj.insert("body".to_string(), rendered_body);
+            }
+        }
+        let tagged = serde_json::json!({
+            "origin": stamped.origin,
+            "envelope": rendered_envelope,
+        });
+        let line = serde_json::to_string(&tagged).map_err(|e| CliError::Io {
             path: sock.to_path_buf(),
             source: std::io::Error::other(format!("serialize envelope: {e}")),
         })?;

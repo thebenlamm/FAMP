@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Instant, SystemTime};
 
-use crate::{AwaitFilter, ClientId, MailboxName};
+use crate::{AwaitFilter, ClientId, MailboxName, Origin};
 
 #[derive(Debug, Clone)]
 pub(super) struct ClientState {
@@ -30,6 +30,13 @@ pub(super) struct ClientState {
     /// pre-v0.10 senders that didn't include the field. Surfaced
     /// in `famp inspect identities` rows (INSP-IDENT-01).
     pub(super) listen_mode: bool,
+    /// D-01/D-02 (Phase 14): declared provenance for this connection.
+    /// Set from `BusMessage::Register.origin` via `.unwrap_or_default()`
+    /// in `register()` — `Origin::default()` is `Unknown`, so a Register
+    /// frame that omits the field can NEVER produce `Origin::Local`. A
+    /// bare `Hello` (before `Register`) also leaves this at its default
+    /// `Unknown`; only `Register` ever sets it explicitly.
+    pub(super) origin: Origin,
     /// Wall-clock registration time. Set in the Register handler
     /// arm so `famp inspect identities` can compute registered-at
     /// per row. `Instant` is NOT used because Instant has no

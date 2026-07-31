@@ -753,6 +753,7 @@ mod tests {
             timed_out: false,
             diagnostic: None,
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         };
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -776,6 +777,7 @@ mod tests {
             timed_out: false,
             diagnostic: None,
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         };
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -793,6 +795,7 @@ mod tests {
             timed_out: true,
             diagnostic: None,
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         };
         let mut out = Vec::new();
         let mut err = Vec::new();
@@ -812,6 +815,7 @@ mod tests {
             timed_out: true,
             diagnostic: None,
             aborted: false,
+            origin: famp_bus::Origin::Unknown,
         };
         let mut out = Vec::new();
         let mut err = Vec::new();

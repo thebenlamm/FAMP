@@ -150,6 +150,8 @@ famp --version
 
 Then restart any open Claude Code windows — they pick up the new binary on next launch. A client that hits a not-yet-restarted long-lived daemon gets a version-skew (ProtocolMismatch) error telling it to run `famp daemon restart` (VER-01).
 
+**v1.1 bus protocol bump (`BUS_PROTO_VERSION` 1 → 2, QUAR-10):** v1.1 adds fail-closed provenance stamping to every mailbox record (Phase 14, inbound-content-is-DATA quarantine), which changes the wire shape of `famp_inbox`'s reply. This is a **hard, by-design break**: a pre-v1.1 client cannot render the new provenance stamp, so the broker refuses it at Hello rather than silently serving unmarked remote content to a client blind to it — graceful degradation here would BE the vulnerability the quarantine boundary exists to close. Upgrading requires both steps above: reinstall the client (`cargo install --path crates/famp`, or `just install` from a contributor checkout) **and** `famp daemon restart` to pick up the new broker. Skipping either half fails loudly with a `ProtocolMismatch` error naming both remedies — it does not silently degrade.
+
 ## When NOT to Use FAMP
 
 FAMP is dev-time coordination between agents. It is not a production data-sync layer.

@@ -24,6 +24,7 @@ pub mod paths;
 pub mod peer;
 pub mod perms;
 pub mod register;
+pub mod render;
 pub mod send;
 pub mod sessions;
 pub mod uninstall;

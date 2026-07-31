@@ -260,8 +260,17 @@ fn scan_files(
                 ));
             }
         };
+        // Phase 14 D-17: raw mailbox lines are now `StampedEnvelope`
+        // wrapper records (`{"envelope":...,"origin":...}`), not bare
+        // envelopes. Unwrap through `split_stamped` before matching —
+        // `envelope_matches`/`message_row` both read top-level envelope
+        // fields (`id`, `causality.ref`, `from`, `to`, ...), which now
+        // live one level deeper for stamped lines. `split_stamped`'s
+        // fail-closed default returns the line unchanged for legacy
+        // (unstamped) records, so this is a no-op for those.
         if let Some(env) = entries
-            .into_iter()
+            .iter()
+            .map(|line| famp_bus::split_stamped(line).1.clone())
             .find(|env| envelope_matches(env, task_id, envelope_id))
         {
             let row = famp_inspect_server::message_row(&env);

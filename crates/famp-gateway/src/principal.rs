@@ -39,11 +39,20 @@ impl ProxiedPrincipal {
             .await
             .map_err(map_bus_client_err)?;
 
+        // Phase 14 D-01/D-17: this is the SOLE place the gateway declares
+        // provenance. Its absence would be safe either way — the broker
+        // defaults an omitted `origin` to `Origin::Unknown` (fail-closed,
+        // D-01), never `Origin::Local` — but declaring `Gateway`
+        // explicitly is what lets every downstream rendering surface
+        // mark cross-host content as untrusted rather than merely
+        // "unknown". This is the D-01 correction to the original
+        // (rejected) opt-in design.
         let register = BusMessage::Register {
             name: name.clone(),
             pid: std::process::id(),
             cwd: None,
             listen: false,
+            origin: Some(famp_bus::Origin::Gateway),
         };
         match client
             .send_recv(register)

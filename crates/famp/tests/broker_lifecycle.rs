@@ -8,7 +8,7 @@
 // BROKER-05 NFS detector public-API gate (`test_nfs_warning`).
 
 use famp::bus_client::codec;
-use famp_bus::{BusMessage, BusReply};
+use famp_bus::{BusMessage, BusReply, BUS_PROTO_VERSION};
 use std::time::Duration;
 use tokio::net::{UnixListener, UnixStream};
 
@@ -55,14 +55,14 @@ fn test_broker_accepts_connection() {
         // Connect + Hello.
         let mut stream = UnixStream::connect(&sock).await.unwrap();
         let hello = BusMessage::Hello {
-            bus_proto: 1,
+            bus_proto: BUS_PROTO_VERSION,
             client: "broker-lifecycle-test/0.0.1".into(),
             bind_as: None,
         };
         codec::write_frame(&mut stream, &hello).await.unwrap();
         let reply: BusReply = codec::read_frame(&mut stream).await.unwrap();
         match reply {
-            BusReply::HelloOk { bus_proto } => assert_eq!(bus_proto, 1),
+            BusReply::HelloOk { bus_proto } => assert_eq!(bus_proto, BUS_PROTO_VERSION),
             other => panic!("expected HelloOk, got {other:?}"),
         }
 
@@ -105,7 +105,7 @@ async fn test_broker_idle_exit() {
     {
         let mut stream = UnixStream::connect(&sock).await.unwrap();
         let hello = BusMessage::Hello {
-            bus_proto: 1,
+            bus_proto: BUS_PROTO_VERSION,
             client: "idle-exit-test/0.0.1".into(),
             bind_as: None,
         };
@@ -245,7 +245,7 @@ async fn test_sessions_jsonl_diagnostic_only() {
     // Register a real client (Hello with bind_as: None, then Register).
     let mut s = tokio::net::UnixStream::connect(&sock).await.unwrap();
     let hello = BusMessage::Hello {
-        bus_proto: 1,
+        bus_proto: BUS_PROTO_VERSION,
         client: "ghost-test/0.0.1".into(),
         bind_as: None,
     };
@@ -256,6 +256,7 @@ async fn test_sessions_jsonl_diagnostic_only() {
         pid: std::process::id(),
         cwd: None,
         listen: false,
+        origin: None,
     };
     codec::write_frame(&mut s, &reg).await.unwrap();
     let _: BusReply = codec::read_frame(&mut s).await.unwrap();
@@ -263,7 +264,7 @@ async fn test_sessions_jsonl_diagnostic_only() {
     // Query Sessions on a second connection.
     let mut peek = tokio::net::UnixStream::connect(&sock).await.unwrap();
     let hello2 = BusMessage::Hello {
-        bus_proto: 1,
+        bus_proto: BUS_PROTO_VERSION,
         client: "peek/0.0.1".into(),
         bind_as: None,
     };

@@ -5,7 +5,7 @@ mod common;
 use std::time::Instant;
 
 use common::TestEnv;
-use famp_bus::{Broker, BrokerInput, BusMessage, BusReply, ClientId, Out};
+use famp_bus::{Broker, BrokerInput, BusMessage, BusReply, ClientId, Out, BUS_PROTO_VERSION};
 use proptest::prelude::*;
 
 fn hello(broker: &mut Broker<TestEnv>, client: u64, now: Instant) {
@@ -13,7 +13,7 @@ fn hello(broker: &mut Broker<TestEnv>, client: u64, now: Instant) {
         BrokerInput::Wire {
             client: ClientId::from(client),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: format!("client-{client}"),
                 bind_as: None,
             },
@@ -38,6 +38,7 @@ fn pid_reuse_does_not_block_new_registration_after_disconnect() {
                 pid: 1234,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
@@ -53,6 +54,7 @@ fn pid_reuse_does_not_block_new_registration_after_disconnect() {
                 pid: 1234,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
@@ -75,7 +77,7 @@ proptest! {
         let _ = broker.handle(
             BrokerInput::Wire {
                 client: ClientId::from(1),
-                msg: BusMessage::Register { name: name.clone(), pid, cwd: None, listen: false },
+                msg: BusMessage::Register { name: name.clone(), pid, cwd: None, listen: false, origin: None },
             },
             now,
         );
@@ -85,7 +87,7 @@ proptest! {
         let out = broker.handle(
             BrokerInput::Wire {
                 client: ClientId::from(2),
-                msg: BusMessage::Register { name: name.clone(), pid, cwd: None, listen: false },
+                msg: BusMessage::Register { name: name.clone(), pid, cwd: None, listen: false, origin: None },
             },
             now,
         );

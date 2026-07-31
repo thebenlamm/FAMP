@@ -10,7 +10,7 @@
 //! Synchronous, allocation-light, tokio-free (BUS-01).
 
 use crate::broker::handle::decode_line;
-use crate::{AwaitFilter, DrainResult, MailboxName};
+use crate::{AwaitFilter, DrainResult, MailboxName, Origin};
 
 /// How a walk is allowed to stop early. The two variants are NOT
 /// interchangeable and collapsing them into one `usize` silently changes
@@ -47,7 +47,13 @@ pub(super) struct DrainPolicy<'a> {
 }
 
 pub(super) struct WalkOutcome {
-    pub delivered: Vec<serde_json::Value>,
+    /// D-17 (Phase 14): each delivered record's declared [`Origin`]
+    /// travels alongside its inner envelope `Value`, decoded by
+    /// `decode_line`'s `split_stamped` call. Callers that stay on
+    /// `Vec<serde_json::Value>` this plan (Register/Join/AwaitOk) simply
+    /// drop the origin half; the `Inbox` handler is the one consumer
+    /// that keeps it, building `StampedEnvelope` elements from it.
+    pub delivered: Vec<(Origin, serde_json::Value)>,
     /// The cursor value the caller should persist. Never advances past a
     /// record this walk did not either deliver or prove permanently
     /// unmatchable (Debug 999.1 invariant).
@@ -89,7 +95,7 @@ pub(super) fn walk(
         _ => None,
     };
 
-    let mut delivered: Vec<serde_json::Value> = Vec::new();
+    let mut delivered: Vec<(Origin, serde_json::Value)> = Vec::new();
     // Fix 260708-l1x (#11): the mailbox can shrink beneath our cursor —
     // `/famp-clear` truncates mailbox files while the broker holds in-memory
     // offsets into them. The drain is authoritative about where the file now
@@ -120,6 +126,14 @@ pub(super) fn walk(
     for record in scan {
         match decode_line(&record.bytes) {
             Err(error) => {
+                // Phase 14 D-17: `decode_line` now combines strict-parse +
+                // `split_stamped` + `AnyBusEnvelope::decode` on the INNER
+                // value. A record whose stamp shape is malformed but whose
+                // inner envelope is otherwise fine is NOT distinguished
+                // from a genuinely malformed envelope here — both are
+                // skipped and logged, matching the pre-Phase-14 posture of
+                // failing closed on anything `decode_line` cannot resolve.
+                //
                 // Head-of-line resilience (fix 260611): a single undecodable
                 // record must NOT wedge the drain. The pre-fix `?` returned
                 // BEFORE the cursor advanced, so a listen-mode agent's inbox
@@ -138,7 +152,7 @@ pub(super) fn walk(
                 );
                 next_offset = record.end;
             }
-            Ok(value) => {
+            Ok((origin, value)) => {
                 if is_self_authored(&value, policy.skip_self_authored) {
                     // Permanently unmatchable under ANY filter (a subscriber
                     // never receives its own posts) — safe to advance past
@@ -147,7 +161,7 @@ pub(super) fn walk(
                     continue;
                 }
                 if filter_matches(policy.filter, &value) {
-                    delivered.push(value);
+                    delivered.push((origin, value));
                     next_offset = record.end;
                     if delivered_cap == Some(delivered.len()) {
                         // Cap reached, not a filter-mismatch stop: there may

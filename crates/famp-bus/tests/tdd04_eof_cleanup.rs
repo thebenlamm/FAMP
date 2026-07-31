@@ -5,7 +5,10 @@ mod common;
 use std::time::Instant;
 
 use common::TestEnv;
-use famp_bus::{Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName, Out, Target};
+use famp_bus::{
+    Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName, Out, Target,
+    BUS_PROTO_VERSION,
+};
 use proptest::prelude::*;
 use serde_json::json;
 
@@ -14,7 +17,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
         BrokerInput::Wire {
             client: ClientId::from(client),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: format!("client-{client}"),
                 bind_as: None,
             },
@@ -29,6 +32,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
                 pid: 1000 + u32::try_from(client).unwrap(),
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,

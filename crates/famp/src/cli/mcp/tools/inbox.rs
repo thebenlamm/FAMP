@@ -158,10 +158,22 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // causality is absent — fall back to `envelope.id`, which the
             // broker uses as the canonical task identifier (see task_id_from
             // in broker/handle.rs). This ensures task_id is always non-null.
+            //
+            // Phase 14 (D-04/D-05, mechanical rendering surface #1 of 7):
+            // `task_id` / `thread_state` are derived from the INNER
+            // envelope (metadata, not attacker-rendered prose) — this is
+            // safe to read directly even for gateway/unknown-origin
+            // envelopes. The `"envelope"` field's body, in contrast, is
+            // exactly the untrusted-content surface this phase closes:
+            // it is replaced with `render::render_envelope_body`'s output
+            // (D-07: the one shared helper), and a sibling `"origin"`
+            // field is added so a machine consumer can check provenance
+            // without string-matching the quarantine marker.
             let entries: Vec<Value> = out
                 .envelopes
                 .iter()
-                .map(|env| {
+                .map(|stamped| {
+                    let env = &stamped.envelope;
                     let task_id = env
                         .get("causality")
                         .and_then(|c| c.get("ref"))
@@ -181,10 +193,19 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
                                 "OPEN"
                             }
                         });
+                    let mut rendered_env = env.clone();
+                    if let Some(body) = EnvelopeView::new(env).body().cloned() {
+                        let rendered_body =
+                            crate::cli::render::render_envelope_body(stamped.origin, &body);
+                        if let Some(obj) = rendered_env.as_object_mut() {
+                            obj.insert("body".to_string(), rendered_body);
+                        }
+                    }
                     serde_json::json!({
                         "task_id": task_id,
                         "thread_state": thread_state,
-                        "envelope": env,
+                        "origin": stamped.origin,
+                        "envelope": rendered_env,
                     })
                 })
                 .collect();

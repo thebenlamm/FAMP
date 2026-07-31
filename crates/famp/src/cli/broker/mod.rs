@@ -339,6 +339,12 @@ pub async fn run_on_listener_with_opts(
 /// The match below is EXHAUSTIVE — adding a new `Out` variant in
 /// `famp_bus::Broker` MUST fail to compile here until handled. Do NOT
 /// add a `_ =>` wildcard arm.
+// Phase 14 D-02 pushed this over the 100-line pedantic threshold (the
+// `Out::AppendMailbox` arm now calls `famp_bus::stamp_line` and branches
+// on its result). Splitting the exhaustive match's arms into separate
+// functions would obscure the single ordered dispatch point this
+// function exists to be — not worth it for a threshold lint.
+#[allow(clippy::too_many_lines)]
 async fn execute_outs(
     outs: Vec<Out>,
     reply_senders: &mut HashMap<ClientId, mpsc::Sender<BusReply>>,
@@ -355,15 +361,36 @@ async fn execute_outs(
                     let _ = tx.send(reply).await;
                 }
             }
-            Out::AppendMailbox { target, line } => {
-                if let Err(e) = env.append(&target, line).await {
-                    // Mailbox append failure on the durability path is
-                    // a hard error — but we cannot return from a
-                    // single Out execution because the broker still
-                    // wants the rest of the vec executed in order.
-                    // Log loudly; future work (Phase 4) may convert
-                    // this into a broker-internal Err reply.
-                    eprintln!("AppendMailbox failure: {e}");
+            Out::AppendMailbox {
+                target,
+                line,
+                origin,
+            } => {
+                // D-02 (Phase 14): `famp-bus` never touches the
+                // filesystem or does business logic about the on-disk
+                // wrapper shape — the executor stamps the origin here,
+                // just before the durability write. On a stamp failure,
+                // log loudly and SKIP the append rather than silently
+                // writing an unstamped line (an unstamped line would
+                // still resolve to `Origin::Unknown` on read per D-02's
+                // fail-closed polarity, but silently dropping the
+                // caller's intended provenance is its own bug worth
+                // surfacing).
+                match famp_bus::stamp_line(&line, origin) {
+                    Ok(stamped_line) => {
+                        if let Err(e) = env.append(&target, stamped_line).await {
+                            // Mailbox append failure on the durability path is
+                            // a hard error — but we cannot return from a
+                            // single Out execution because the broker still
+                            // wants the rest of the vec executed in order.
+                            // Log loudly; future work (Phase 4) may convert
+                            // this into a broker-internal Err reply.
+                            eprintln!("AppendMailbox failure: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("AppendMailbox failure: stamp_line: {e}");
+                    }
                 }
             }
             Out::AdvanceCursor { name, offset } => {
@@ -576,6 +603,17 @@ fn walk_taskdir(bus_dir: &Path) -> Option<famp_inspect_server::TaskSnapshot> {
 /// matching the direct-read posture taken by `famp_verify` (see
 /// `famp-inspect-server/src/messages.rs` doc-comment for the same bug
 /// class).
+///
+/// Phase 14 D-17: `famp_inbox::read::read_all` reads raw JSONL lines,
+/// which are now `StampedEnvelope` wrapper records
+/// (`{"envelope":...,"origin":...}`), not bare envelopes. Unwrap each
+/// line through `famp_bus::split_stamped` before handing it to
+/// `message_row`'s `EnvelopeView` projection — `inspect messages` stays
+/// metadata-only (D-06: no origin field added here), so dropping the
+/// origin half and keeping only the inner envelope preserves this
+/// surface's exact pre-Phase-14 output shape for both stamped and
+/// legacy-unstamped lines alike (`split_stamped`'s fail-closed default
+/// returns the line itself unchanged when it isn't stamp-shaped).
 fn read_message_snapshot(
     bus_dir: &Path,
     view: &famp_bus::BrokerStateView,
@@ -584,7 +622,7 @@ fn read_message_snapshot(
     let mailboxes_dir = bus_dir.join("mailboxes");
     for client in &view.clients {
         let path = mailboxes_dir.join(format!("{}.jsonl", client.name));
-        let entries = famp_inbox::read::read_all(&path).unwrap_or_default();
+        let entries = read_all_unwrapped(&path);
         by_recipient.insert(client.name.clone(), entries);
     }
     if let Ok(dir_entries) = std::fs::read_dir(&mailboxes_dir) {
@@ -602,11 +640,21 @@ fn read_message_snapshot(
             if by_recipient.contains_key(channel) {
                 continue;
             }
-            let rows = famp_inbox::read::read_all(entry.path()).unwrap_or_default();
+            let rows = read_all_unwrapped(entry.path());
             by_recipient.insert(channel.to_owned(), rows);
         }
     }
     famp_inspect_server::MessageSnapshot { by_recipient }
+}
+
+/// `famp_inbox::read::read_all` + `split_stamped` unwrap, one call site
+/// (see `read_message_snapshot` doc above).
+fn read_all_unwrapped(path: impl AsRef<Path>) -> Vec<serde_json::Value> {
+    famp_inbox::read::read_all(path)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|line| famp_bus::split_stamped(&line).1.clone())
+        .collect()
 }
 
 fn inspect_budget_exceeded_payload(elapsed_ms: u64) -> serde_json::Value {
@@ -631,11 +679,21 @@ fn read_mailbox_meta_for(bus_dir: &Path, name: &str) -> MailboxMeta {
     let total = entries.len() as u64;
     let unread = famp_inbox::read::read_from(&path, cursor_offset)
         .map_or(0, |entries| entries.len().try_into().unwrap_or(u64::MAX));
-    let last_sender = entries
+    // Phase 14 D-17: raw mailbox lines are now `StampedEnvelope` wrapper
+    // records (`{"envelope":...,"origin":...}`), not bare envelopes.
+    // Unwrap the LAST entry through `split_stamped` before reading
+    // `from`/`ts` — both are metadata reads, not attacker-rendered prose,
+    // so no quarantine rendering applies here (matches D-06's posture:
+    // identities metadata stays unwrapped-but-unrendered). `split_stamped`
+    // returns the line unchanged for legacy (unstamped) records.
+    let last_entry = entries
         .last()
+        .map(|line| famp_bus::split_stamped(line).1.clone());
+    let last_sender = last_entry
+        .as_ref()
         .and_then(|value| EnvelopeView::new(value).from_str().map(String::from));
-    let last_received_at_unix_seconds = entries
-        .last()
+    let last_received_at_unix_seconds = last_entry
+        .as_ref()
         .and_then(|value| value.get("ts").and_then(serde_json::Value::as_str))
         .and_then(|ts| {
             time::OffsetDateTime::parse(ts, &time::format_description::well_known::Rfc3339).ok()

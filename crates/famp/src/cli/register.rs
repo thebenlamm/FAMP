@@ -168,6 +168,12 @@ async fn run_one_session(
             pid,
             cwd,
             listen: args.tail,
+            // Phase 14 D-01/D-02: `famp register` IS the canonical
+            // local holder (module doc above). Declaring `Local`
+            // explicitly is what keeps this identity's own outbound
+            // `Send`s from resolving to `Origin::Unknown` (untrusted) —
+            // absence is fail-closed by design, not a free pass.
+            origin: Some(famp_bus::Origin::Local),
         })
         .await
         .map_err(|e| map_bus_client_err(e, sock))?;
@@ -196,8 +202,15 @@ async fn run_one_session(
                 // the broker's full mailbox snapshot at register
                 // time; subsequent Inbox polls advance from the
                 // broker's reported `next_offset`.
+                //
+                // `RegisterOk.drained` stays `Vec<serde_json::Value>` in
+                // this plan (D-17 defers converting it to plan 14-02), so
+                // there is no real per-record origin to pass here.
+                // `Origin::Unknown` renders these lines wrapped/untrusted
+                // — fail-closed, not fail-open — rather than defaulting
+                // to `Local`.
                 for env in &drained {
-                    emit_tail_line(env);
+                    emit_tail_line(famp_bus::Origin::Unknown, env);
                 }
                 tail_loop(&mut client, &args.name, sock).await
             } else {
@@ -267,8 +280,8 @@ async fn tail_loop(
             }) => {
                 match res {
                     Ok(BusReply::InboxOk { envelopes, next_offset }) => {
-                        for env in &envelopes {
-                            emit_tail_line(env);
+                        for stamped in &envelopes {
+                            emit_tail_line(stamped.origin, &stamped.envelope);
                         }
                         if next_offset > cursor {
                             // Persist cursor advance to disk (mirrors
@@ -321,7 +334,13 @@ async fn tail_loop(
 /// from the canonical-JSON value. Missing fields fall back to a
 /// placeholder so a malformed envelope still prints one tail line and
 /// the loop keeps running.
-fn emit_tail_line(envelope: &serde_json::Value) {
+///
+/// Phase 14 (D-04/D-05, mechanical rendering surface #6 of 7): `origin`
+/// gates whether `body` is rendered raw or quarantine-wrapped via
+/// `render::render_body_text` (D-07: the one shared helper) BEFORE
+/// truncation — a wrapped-then-truncated line is still a wrapped line,
+/// never a truncated-then-unwrapped one.
+fn emit_tail_line(origin: famp_bus::Origin, envelope: &serde_json::Value) {
     let now = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_string());
@@ -347,8 +366,9 @@ fn emit_tail_line(envelope: &serde_json::Value) {
     let body_raw = view.body().map_or_else(String::new, |b| {
         b.as_str().map_or_else(|| b.to_string(), str::to_string)
     });
+    let rendered_body = crate::cli::render::render_body_text(origin, &body_raw);
 
-    let body = truncate_for_tail(&body_raw);
+    let body = truncate_for_tail(&rendered_body);
     eprintln!("< {now} from={from} to={to} task={task} body=\"{body}\"");
 }
 
@@ -472,7 +492,7 @@ mod tests {
         // The function prints to stderr; we only verify it does not
         // panic on a degenerate envelope (e.g. missing every field).
         let env = serde_json::json!({});
-        emit_tail_line(&env);
+        emit_tail_line(famp_bus::Origin::Local, &env);
     }
 
     #[test]

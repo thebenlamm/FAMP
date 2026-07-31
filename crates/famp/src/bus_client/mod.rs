@@ -49,10 +49,15 @@ pub enum BusClientError {
     #[error("Hello handshake refused: {kind:?}: {message}")]
     HelloFailed { kind: BusErrorKind, message: String },
     /// Bus protocol version mismatch. The daemon is running an old protocol
-    /// version. D-02: error MUST name `famp daemon restart`.
+    /// version, OR this client binary is stale relative to the daemon.
+    /// D-02/D-09a.1 (Phase 14): error MUST name BOTH remedies — reinstalling
+    /// this client via `just install` (this binary is a v1.0 client talking
+    /// to a v1.1+ broker) AND restarting the daemon via `famp daemon
+    /// restart` (the daemon is the one running the old protocol version).
     #[error(
         "bus protocol mismatch ({broker_message}); \
-         run `famp daemon restart` to pick up the new binary"
+         run `just install` to rebuild this client and `famp daemon restart` \
+         to restart the daemon"
     )]
     ProtocolMismatch { broker_message: String },
     #[error("unexpected broker reply: {0}")]
@@ -335,19 +340,25 @@ mod tests {
     use super::*;
     use famp_bus::BusReply;
 
-    /// VER-01: A `HelloErr { BrokerProtoMismatch }` reply must produce
-    /// `BusClientError::ProtocolMismatch` whose Display contains both
-    /// "famp daemon restart" (D-02) and the broker's original message body.
+    /// VER-01/D-09a.1 (Phase 14): A `HelloErr { BrokerProtoMismatch }`
+    /// reply must produce `BusClientError::ProtocolMismatch` whose Display
+    /// contains BOTH remedies — `just install` (reinstall this client) and
+    /// `famp daemon restart` (restart the daemon) — plus the broker's
+    /// original message body.
     #[test]
-    fn proto_mismatch_names_restart() {
+    fn proto_mismatch_names_reinstall_and_restart() {
         let broker_msg =
-            "client bus_proto=2 is not supported by this broker; expected bus_proto=1".to_owned();
+            "client bus_proto=3 is not supported by this broker; expected bus_proto=2".to_owned();
         let reply = BusReply::HelloErr {
             kind: famp_bus::BusErrorKind::BrokerProtoMismatch,
             message: broker_msg.clone(),
         };
         let err = classify_hello_reply(reply).unwrap_err();
         let display = err.to_string();
+        assert!(
+            display.contains("just install"),
+            "error must name `just install`; got: {display}"
+        );
         assert!(
             display.contains("famp daemon restart"),
             "error must name `famp daemon restart`; got: {display}"

@@ -7,8 +7,8 @@ use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_o
 use crate::broker::state::ClientState;
 use crate::{
     encode_frame, AwaitFilter, Broker, BrokerEnv, BrokerInput, BusErrorKind, BusMessage, BusReply,
-    ClientId, Delivered, DrainResult, DrainedRecord, MailboxName, MemberInfo, Out, SessionRow,
-    Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
+    ClientId, Delivered, DrainResult, DrainedRecord, MailboxName, MemberInfo, Origin, Out,
+    SessionRow, StampedEnvelope, Target, BUS_PROTO_VERSION, MAX_FRAME_BYTES,
 };
 
 pub(crate) fn handle<E: BrokerEnv>(
@@ -78,7 +78,8 @@ fn handle_wire<E: BrokerEnv>(
             pid,
             cwd,
             listen,
-        } => register(broker, client, name, pid, cwd, listen),
+            origin,
+        } => register(broker, client, name, pid, cwd, listen, origin),
         BusMessage::Send { to, envelope } => send(broker, client, to, &envelope),
         BusMessage::Inbox {
             since,
@@ -221,6 +222,10 @@ fn hello<E: BrokerEnv>(
                 bind_as: Some(name),
                 cwd: None,
                 listen_mode: false,
+                // D-01/D-02: Hello never carries an origin; only Register
+                // declares one. `Origin::Unknown` here is the fail-closed
+                // default, not a special case for the proxy path.
+                origin: Origin::Unknown,
                 registered_at: std::time::SystemTime::now(),
                 last_activity: std::time::SystemTime::now(),
                 await_offsets: BTreeMap::default(),
@@ -245,6 +250,9 @@ fn hello<E: BrokerEnv>(
             bind_as: None,
             cwd: None,
             listen_mode: false,
+            // D-01/D-02: Hello never carries an origin; only Register
+            // declares one.
+            origin: Origin::Unknown,
             registered_at: std::time::SystemTime::now(),
             last_activity: std::time::SystemTime::now(),
             await_offsets: BTreeMap::default(),
@@ -266,6 +274,7 @@ fn register<E: BrokerEnv>(
     pid: u32,
     cwd: Option<String>,
     listen: bool,
+    origin: Option<Origin>,
 ) -> Vec<Out> {
     // BL-05: PID 0 has POSIX-special semantics for `kill(2)` (targets
     // the calling pgrp). A client claiming PID 0 would always pass
@@ -323,7 +332,13 @@ fn register<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, &drained);
+    // RegisterOk.drained stays `Vec<serde_json::Value>` in this plan
+    // (D-17 defers converting it to plan 14-02); drop the per-record
+    // origin half decode_lines now carries.
+    let decoded: Vec<serde_json::Value> = decode_lines(&mailbox, since, &drained)
+        .into_iter()
+        .map(|(_, envelope)| envelope)
+        .collect();
 
     // Peers snapshot is taken BEFORE binding so a first-time register does
     // not list itself (matches pre-#14 behaviour). A self re-register still
@@ -359,6 +374,11 @@ fn register<E: BrokerEnv>(
     state.connected = true;
     state.cwd = cwd;
     state.listen_mode = listen;
+    // D-01: `unwrap_or_default()` resolves an absent `origin` field to
+    // `Origin::Unknown` (the enum's `Default`), NEVER `Origin::Local`. A
+    // Register frame that omits `origin` can never produce a trusted
+    // stamp.
+    state.origin = origin.unwrap_or_default();
     let now_wall = std::time::SystemTime::now();
     state.registered_at = now_wall;
     state.last_activity = now_wall;
@@ -451,12 +471,16 @@ fn send_agent<E: BrokerEnv>(
     let waiters = waiting_clients_for_name(broker, &name, envelope);
     let woken = !waiters.is_empty();
     let line_len = line.len();
+    // D-02: resolve the SENDER's declared origin before mutating any
+    // state below (the borrow is immutable and short-lived).
+    let origin = client_origin(broker, sender);
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply.
     let mut out = Vec::with_capacity(2 + 2 * waiters.len());
     out.push(Out::AppendMailbox {
         target: MailboxName::Agent(name.clone()),
         line,
+        origin,
     });
 
     if !waiters.is_empty() {
@@ -498,6 +522,9 @@ fn send_channel<E: BrokerEnv>(
     let members = broker.state.channels.get(name).cloned().unwrap_or_default();
     let task_id = task_id_from(envelope);
     let line_len = line.len();
+    // D-02: resolve the SENDER's declared origin before mutating any
+    // state below.
+    let origin = client_origin(broker, sender);
     let mut out = Vec::new();
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply. Previously
@@ -506,6 +533,7 @@ fn send_channel<E: BrokerEnv>(
     out.push(Out::AppendMailbox {
         target: MailboxName::Channel(name.to_owned()),
         line,
+        origin,
     });
 
     for member in &members {
@@ -569,6 +597,16 @@ fn send_channel<E: BrokerEnv>(
 /// to match Await's batching posture (see `awaiting::drain_await_batch`).
 const CHANNEL_DRAIN_CAP: usize = 256;
 
+// Phase 14 D-17 pushed this over the 100-line pedantic threshold (the
+// agent-mailbox and per-channel drain loops now build `StampedEnvelope`
+// elements instead of bare `Value`s). Matches the existing precedent for
+// this lint in the workspace (`famp-inspect-server::tasks`,
+// `famp::cli::daemon::status`, `famp::cli::mcp::server`,
+// `famp::cli::send`) — splitting the per-channel drain loop into its own
+// function here would separate the cursor-advance bookkeeping from the
+// `envelopes` accumulation it is tightly coupled to, which is a real risk
+// in security-critical code, not a stylistic win.
+#[allow(clippy::too_many_lines)]
 fn inbox<E: BrokerEnv>(
     broker: &mut Broker<E>,
     client: ClientId,
@@ -602,7 +640,13 @@ fn inbox<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let mut envelopes = decode_lines(&agent_mailbox, agent_since, &agent_drained);
+    // D-17: InboxOk carries `StampedEnvelope` elements — build them from
+    // decode_lines' per-record origin.
+    let mut envelopes: Vec<StampedEnvelope> =
+        decode_lines(&agent_mailbox, agent_since, &agent_drained)
+            .into_iter()
+            .map(|(origin, envelope)| StampedEnvelope { origin, envelope })
+            .collect();
     let agent_next_offset = agent_drained.next_offset;
 
     // Scope B (260619): merge each joined channel's new envelopes into
@@ -709,7 +753,12 @@ fn inbox<E: BrokerEnv>(
                 cap: Some(DrainCap::Scanned(CHANNEL_DRAIN_CAP)),
             },
         );
-        envelopes.extend(outcome.delivered);
+        envelopes.extend(
+            outcome
+                .delivered
+                .into_iter()
+                .map(|(origin, envelope)| StampedEnvelope { origin, envelope }),
+        );
         // When un-truncated, outcome.next_offset equals drained.next_offset
         // by construction (we walked every record); the explicit branch
         // keeps intent local to the cap path.
@@ -780,7 +829,12 @@ fn join<E: BrokerEnv>(
         Ok(drained) => drained,
         Err(error) => return vec![err(client, BusErrorKind::Internal, error.to_string())],
     };
-    let decoded = decode_lines(&mailbox, since, &drained);
+    // JoinOk.drained stays `Vec<serde_json::Value>` in this plan (D-17
+    // defers converting it to plan 14-02); drop the origin half.
+    let decoded: Vec<serde_json::Value> = decode_lines(&mailbox, since, &drained)
+        .into_iter()
+        .map(|(_, envelope)| envelope)
+        .collect();
 
     // Prospective members list as it will look after this join commits
     // (existing members + self, with role applied only when provided).
@@ -1032,6 +1086,35 @@ fn tick<E: BrokerEnv>(broker: &mut Broker<E>, now: Instant) -> Vec<Out> {
     out
 }
 
+/// D-02/T-14-06 (Phase 14): resolve `client`'s declared [`Origin`] at
+/// `Out::AppendMailbox` time.
+///
+/// Fail-closed: a client absent from `broker.state.clients` resolves to
+/// `Origin::Unknown`, matching every other absence path in this module.
+///
+/// A canonical holder's own `ClientState.origin` (set by `register()`)
+/// is authoritative. A proxy (`bind_as`) connection resolves through the
+/// canonical holder it is bound to — the SAME lookup convention
+/// `resolve_op_identity` uses — so a `famp send` issued over a proxy
+/// connection on behalf of a gateway-registered holder carries that
+/// holder's `Gateway` origin forward, rather than laundering it down to
+/// `Unknown` (T-14-06: a proxy connection must not silently downgrade
+/// provenance).
+fn client_origin<E: BrokerEnv>(broker: &Broker<E>, client: ClientId) -> Origin {
+    let Some(state) = broker.state.clients.get(&client) else {
+        return Origin::Unknown;
+    };
+    if state.name.is_some() {
+        return state.origin;
+    }
+    let Some(bound) = state.bind_as.as_deref() else {
+        return Origin::Unknown;
+    };
+    canonical_holder_id(&broker.state, bound)
+        .and_then(|holder_id| broker.state.clients.get(&holder_id))
+        .map_or(Origin::Unknown, |holder| holder.origin)
+}
+
 fn connected_names(clients: &std::collections::BTreeMap<ClientId, ClientState>) -> Vec<String> {
     clients
         .values()
@@ -1097,7 +1180,7 @@ fn decode_lines(
     mailbox: &MailboxName,
     start_offset: u64,
     drained: &DrainResult,
-) -> Vec<serde_json::Value> {
+) -> Vec<(crate::Origin, serde_json::Value)> {
     warn_if_drain_oversized(mailbox, start_offset, &drained.records);
     walk(
         mailbox,
@@ -1165,10 +1248,23 @@ fn warn_if_drain_oversized(mailbox: &MailboxName, start_offset: u64, records: &[
     }
 }
 
-pub(super) fn decode_line(line: &[u8]) -> Result<serde_json::Value, String> {
-    famp_envelope::AnyBusEnvelope::decode(line)
+/// D-17 (Phase 14): the single drain-decode site. Strict-parses `line`,
+/// splits off any [`Origin`] stamp via [`crate::split_stamped`], and
+/// validates the INNER envelope value against
+/// `famp_envelope::AnyBusEnvelope::decode` — never `famp-envelope` itself
+/// (frozen, D-16). A legacy pre-Phase-14 line (no stamp) and a
+/// stamp-shaped line both flow through the same path; `split_stamped`'s
+/// own fail-closed polarity (D-02) is what decides `Origin::Unknown` vs
+/// an explicit stamp — this function does not re-decide it.
+pub(super) fn decode_line(line: &[u8]) -> Result<(crate::Origin, serde_json::Value), String> {
+    let raw: serde_json::Value =
+        famp_canonical::from_slice_strict(line).map_err(|error| error.to_string())?;
+    let (origin, inner) = crate::split_stamped(&raw);
+    let inner_bytes = famp_canonical::canonicalize(inner)
+        .map_err(|error| format!("re-canonicalizing inner envelope failed: {error}"))?;
+    famp_envelope::AnyBusEnvelope::decode(&inner_bytes)
         .map_err(|error| format!("drain line rejected by AnyBusEnvelope::decode: {error}"))?;
-    famp_canonical::from_slice_strict::<serde_json::Value>(line).map_err(|error| error.to_string())
+    Ok((origin, inner.clone()))
 }
 
 fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool, woken: bool) -> Out {

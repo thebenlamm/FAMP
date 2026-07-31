@@ -35,7 +35,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
         BrokerInput::Wire {
             client: ClientId::from(client),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: name.into(),
                 bind_as: None,
             },
@@ -50,6 +50,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
                 pid: 40_000 + u32::try_from(client).unwrap(),
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
@@ -58,7 +59,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
 
 fn apply_mailbox(env: &TestEnv, out: &[Out]) {
     for item in out {
-        if let Out::AppendMailbox { target, line } = item {
+        if let Out::AppendMailbox { target, line, .. } = item {
             env.mailbox().append(target, line.clone());
         }
     }
@@ -101,7 +102,7 @@ proptest! {
             BrokerInput::Wire {
                 client: ClientId::from(client),
                 msg: BusMessage::Hello {
-                    bus_proto: 1,
+                    bus_proto: BUS_PROTO_VERSION,
                     client: "alice-reconnect".into(),
                     bind_as: None,
                 },
@@ -115,7 +116,7 @@ proptest! {
                     name: "alice".into(),
                     pid: 40_000 + u32::try_from(client).unwrap(),
                 cwd: None,
-                listen: false,
+                listen: false, origin: None,
                 },
             },
             now,
@@ -182,7 +183,7 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_register() {
         BrokerInput::Wire {
             client: ClientId::from(1),
             msg: BusMessage::Hello {
-                bus_proto: 1,
+                bus_proto: BUS_PROTO_VERSION,
                 client: "alice".into(),
                 bind_as: None,
             },
@@ -197,6 +198,7 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_register() {
                 pid: 40_001,
                 cwd: None,
                 listen: false,
+                origin: None,
             },
         },
         now,
