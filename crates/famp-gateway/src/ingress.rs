@@ -1,20 +1,29 @@
-//! Inbound HTTP listener: wire -> local bus (Phase 9 D-04/D-05).
+//! Inbound HTTP listener: wire -> local bus (Phase 9 D-04/D-05; reordered
+//! Phase 17 D-09/INGR-05).
 //!
 //! A gateway-owned axum router (NOT `famp_transport_http::build_router`,
 //! whose own sig-verify middleware layer would introduce a second trust
 //! source — 09-RESEARCH.md §3 Pitfall 1) that extracts the raw request
-//! body, verifies it with [`crate::verify::verify_inbound_any`] against
+//! body, runs it through [`crate::ingress_guard`]'s cheap pre-verify gate
+//! chain, verifies it with [`crate::verify::verify_inbound_any`] against
 //! the gateway's own peers keyring, and on success delivers the verified
 //! envelope onto the local bus via the backed *sender* stand-in's
 //! [`crate::ProxiedPrincipal::send_recv`] (D-05). A rejected envelope
 //! produces zero bus writes and surfaces as an HTTP 4xx.
 //!
-//! `verify_inbound_any` is the ONLY signature check on this path — the
-//! handler never mounts the transport's own sig-verify middleware and
-//! never calls `build_router` (D-04). The registry lock is held only for
-//! the single delivery `send_recv` call, mirroring 09-02 egress's
-//! shared-connection contract so neither direction starves the other on
-//! the same backed principal's UDS connection.
+//! `verify_inbound_any` remains the ONLY signature check on this path —
+//! the handler never mounts the transport's own sig-verify middleware and
+//! never calls `build_router` (D-04) — but as of Phase 17 (INGR-05) it no
+//! longer runs first: [`ingest_inbound`] runs the cheap guard chain
+//! ([`crate::ingress_guard::run_cheap_gates`]) BEFORE `verify_inbound_any`,
+//! and `verify_inbound_any` itself still runs BEFORE any registry
+//! mutation. A cheap-to-send request can therefore never force an
+//! expensive Ed25519 verify (D-09) — see
+//! `cheap_checks_reject_before_signature_verify_ever_runs` in this
+//! module's test suite for the pinned proof. The registry lock is held
+//! only for the single delivery `send_recv` call, mirroring 09-02
+//! egress's shared-connection contract so neither direction starves the
+//! other on the same backed principal's UDS connection.
 
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -38,6 +47,7 @@ use tokio::sync::Mutex;
 use tower::ServiceBuilder;
 
 use crate::error::RejectReason;
+use crate::ingress_guard::{self, GuardInput, GuardReject, IngressGuard};
 use crate::registry::GatewayRegistry;
 use crate::verify::verify_inbound_any;
 
@@ -47,8 +57,15 @@ use crate::verify::verify_inbound_any;
 const ONE_MIB: usize = 1_048_576;
 
 /// Shared state for the gateway-owned inbox router.
+///
+/// `pub(crate)` (not private): Task 1 of Phase 17 plan 01 extracts
+/// [`ingest_inbound`] as `pub(crate)` so plan 05's relay-fetch loop can
+/// call it directly, and that function's signature names this type —
+/// callers in other modules of this crate must be able to name it too.
+/// Never widened to `pub`: this stays an internal wiring detail of
+/// `famp-gateway`, not part of any published API.
 #[derive(Clone)]
-struct GatewayIngressState {
+pub(crate) struct GatewayIngressState {
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
     /// T-11-23/T-11-24: this host's own-domain federation authority
@@ -58,6 +75,14 @@ struct GatewayIngressState {
     /// != `d`; `None` means that check is skipped (T-11-29, mirroring
     /// 11-07's enforced-when-configured egress posture).
     own_domain: Option<Arc<str>>,
+    /// Task 1 (INGR-01/INGR-05): process-lifetime pre-verify guard state,
+    /// shared across every inbound request this router serves.
+    /// `started_at` (see [`IngressGuard`]) anchors plan 02's
+    /// restart-reopened replay-window documentation (INGR-03). The mutex
+    /// is held only for the single [`crate::ingress_guard::run_cheap_gates`]
+    /// call per request, mirroring the registry lock's short-hold
+    /// contract below.
+    guard: Arc<Mutex<IngressGuard>>,
 }
 
 /// Build the gateway-owned inbound router.
@@ -78,6 +103,7 @@ pub fn build_gateway_router(
         registry,
         keyring,
         own_domain,
+        guard: Arc::new(Mutex::new(IngressGuard::new())),
     };
     Router::new()
         .route(INBOX_ROUTE, post(inbox_handler))
@@ -165,7 +191,7 @@ fn strip_relay_fields(value: &mut Value) {
 /// (`InvalidSignature` vs `UnpinnedKey`) must stay operator-visible at
 /// the HTTP layer, not collapsed into one flat reject.
 #[derive(Debug, thiserror::Error)]
-enum IngressError {
+pub(crate) enum IngressError {
     #[error("bad principal in inbox path")]
     BadPrincipal,
     #[error("invalid or missing signature")]
@@ -202,6 +228,30 @@ enum IngressError {
     /// inbound `nonce`/`expiry`.
     #[error("envelope failed federation format validation (nonce/expiry)")]
     MalformedFederationFields,
+    /// Task 1 (INGR-01/INGR-05, D-05/D-09): the pre-verify raw peek of
+    /// `from`/`to`/`ts` failed — malformed JSON, a duplicate object key,
+    /// or a missing/non-string `from`/`to`/`ts` field. Produced BEFORE
+    /// `verify_inbound_any` ever runs; never implies anything about
+    /// whether a valid signature is present.
+    #[error(
+        "envelope failed pre-verify shape check (malformed JSON, duplicate key, or missing/invalid from/to/ts)"
+    )]
+    BadEnvelopeShape,
+    /// Task 1 (INGR-01/INGR-05, D-05/D-09): the envelope's `ts` differs
+    /// from this gateway's own wall clock by more than `skew_secs`
+    /// seconds, in either direction. Produced BEFORE `verify_inbound_any`
+    /// runs — a stale-but-validly-signed envelope is rejected here,
+    /// never reaching signature verification. Carries only the two
+    /// timestamps and the window size — never key bytes or signature
+    /// material.
+    #[error(
+        "envelope timestamp {ts} is outside this gateway's {skew_secs}s clock-skew window of its own now ({now})"
+    )]
+    StaleTimestamp {
+        ts: String,
+        now: String,
+        skew_secs: i64,
+    },
     #[error("internal error")]
     Internal,
 }
@@ -222,6 +272,8 @@ impl IntoResponse for IngressError {
             Self::MalformedFederationFields => {
                 (StatusCode::BAD_REQUEST, "malformed_federation_fields")
             }
+            Self::BadEnvelopeShape => (StatusCode::BAD_REQUEST, "bad_envelope_shape"),
+            Self::StaleTimestamp { .. } => (StatusCode::BAD_REQUEST, "stale_timestamp"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         let body = serde_json::json!({ "error": slug, "detail": self.to_string() });
@@ -249,13 +301,31 @@ fn ingress_error_for_reject(reason: RejectReason) -> IngressError {
     }
 }
 
+/// Map a [`GuardReject`] onto its ingress-layer [`IngressError`]. Kept as
+/// a standalone function, mirroring [`ingress_error_for_reject`], so
+/// [`ingest_inbound`] stays under the workspace `too_many_lines` lint
+/// budget — the two reject families (pre-verify guard vs. post-verify
+/// trust) stay visibly distinct call sites rather than a collapsed
+/// generic reject. Pure translation, no logging: callers log the
+/// concrete reject values at the call site (matching the existing
+/// `MisaddressedRecipient`/`ForeignDomain` convention).
+fn ingress_error_for_guard(reject: GuardReject) -> IngressError {
+    match reject {
+        GuardReject::BadEnvelopeShape => IngressError::BadEnvelopeShape,
+        GuardReject::StaleTimestamp { ts, now, skew_secs } => {
+            IngressError::StaleTimestamp { ts, now, skew_secs }
+        }
+    }
+}
+
 /// `POST /famp/v0.5.1/inbox/{principal}` handler.
 ///
-/// No `Extension<Arc<AnySignedEnvelope>>` parameter — nothing upstream
-/// pre-verifies (that is the entire point of not mounting the
-/// transport's own sig-verify middleware). [`verify_inbound_any`] runs
-/// FIRST and is the only signature check on this path; any reject
-/// returns before the registry is ever touched (zero bus writes, D-08).
+/// Thin per Task 1's extraction: parses the path principal, then delegates
+/// the entire ingest to [`ingest_inbound`] (THE single ingest core — plan
+/// 05's relay-fetch loop calls this same function, so no ingest path can
+/// bypass the guard chain). No `Extension<Arc<AnySignedEnvelope>>`
+/// parameter — nothing upstream pre-verifies (that is the entire point of
+/// not mounting the transport's own sig-verify middleware).
 async fn inbox_handler(
     Path(principal_str): Path<String>,
     State(state): State<GatewayIngressState>,
@@ -265,45 +335,120 @@ async fn inbox_handler(
         return IngressError::BadPrincipal.into_response();
     };
 
+    match ingest_inbound(&recipient, &body, &state).await {
+        Ok(()) => StatusCode::ACCEPTED.into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+/// THE single ingest core (Task 1, INGR-01/INGR-05): wire bytes in,
+/// verified-and-delivered (or a distinct reject) out. `inbox_handler`
+/// above is the only caller today; plan 05's relay-fetch loop is
+/// documented (17-01-PLAN.md) to become the second, so no ingest path can
+/// bypass this function's guard chain.
+///
+/// Order (D-09, pinned by `cheap_checks_reject_before_signature_verify_ever_runs`):
+/// (1) peek unverified fields, (2) run the cheap pre-verify guard chain
+/// ([`crate::ingress_guard::run_cheap_gates`]), (3) ONLY THEN
+/// `verify_inbound_any` (the expensive Ed25519 verify), (4) the existing
+/// audience/format checks, (5) delivery. The registry lock for
+/// `sender_is_backed` (step 1's forward-shaped context) is taken and
+/// dropped immediately — no mutation, matching the module's short-hold
+/// contract.
+pub(crate) async fn ingest_inbound(
+    recipient: &Principal,
+    body: &[u8],
+    state: &GatewayIngressState,
+) -> Result<(), IngressError> {
     let now = crate::clock::now_canonical_utc();
-    let envelope = match verify_inbound_any(&body, &state.keyring, &now) {
-        Ok(e) => e,
-        Err(reason) => return ingress_error_for_reject(reason).into_response(),
+
+    let peeked = ingress_guard::peek_guard_fields(body).map_err(|reject| {
+        eprintln!(
+            "famp-gateway: ingress: rejected — pre-verify peek failed (malformed envelope shape)"
+        );
+        ingress_error_for_guard(reject)
+    })?;
+
+    // Short-hold: acquire, read, drop — no mutation, mirroring the
+    // delivery lock's contract below.
+    let sender_is_backed = {
+        let registry = state.registry.lock().await;
+        registry.get(peeked.from.name()).is_some()
     };
 
-    let sender = envelope_sender(&envelope).clone();
+    let guard_input = GuardInput {
+        peeked: &peeked,
+        now: now.as_str(),
+        own_domain: state.own_domain.as_deref(),
+        sender_is_backed,
+    };
+    {
+        let mut guard = state.guard.lock().await;
+        ingress_guard::run_cheap_gates(&guard_input, &mut guard).map_err(|reject| {
+            if let GuardReject::StaleTimestamp {
+                ts,
+                now: guard_now,
+                skew_secs,
+            } = &reject
+            {
+                eprintln!(
+                    "famp-gateway: ingress: rejected — stale timestamp ts={ts} now={guard_now} \
+                     skew_secs={skew_secs}"
+                );
+            }
+            ingress_error_for_guard(reject)
+        })?;
+    }
 
-    // F-1 (T-11-23/T-11-24/T-11-26): the gateway is authoritative ONLY for
-    // its own domain and the mailbox the sender actually signed for. All
-    // three checks run BEFORE the registry lock is ever taken (~:218
-    // below) — nothing reaches a mailbox on any of these rejects. Each
-    // gets its own distinct 4xx + log line (operator-facing security
-    // boundary; a single generic 400 is not enough to debug a misrouted
-    // federation).
-    let envelope_to = envelope_recipient(&envelope).clone();
-    if envelope_to != recipient {
+    // EXPENSIVE: only reached once every cheap gate above has passed
+    // (D-09/INGR-05).
+    let envelope =
+        verify_inbound_any(body, &state.keyring, &now).map_err(ingress_error_for_reject)?;
+
+    check_audience_and_format(&envelope, recipient, state.own_domain.as_ref())?;
+
+    let sender = envelope_sender(&envelope).clone();
+    deliver(&sender, recipient, body, &state.registry).await
+}
+
+/// F-1 (T-11-23/T-11-24/T-11-26): the gateway is authoritative ONLY for
+/// its own domain and the mailbox the sender actually signed for. Each
+/// check gets its own distinct 4xx + log line (operator-facing security
+/// boundary; a single generic 400 is not enough to debug a misrouted
+/// federation). Extracted from `inbox_handler` (Task 1) so
+/// [`ingest_inbound`] stays under the workspace `too_many_lines` budget —
+/// behaviorally identical to the pre-Phase-17 inline checks, just now
+/// running AFTER `verify_inbound_any` (D-09 only reorders the *cheap*
+/// checks ahead of the *expensive* verify; these three checks are
+/// themselves cheap but need the verified envelope's own `to`, so they
+/// stay here, after verify, exactly as before).
+fn check_audience_and_format(
+    envelope: &AnySignedEnvelope,
+    recipient: &Principal,
+    own_domain: Option<&Arc<str>>,
+) -> Result<(), IngressError> {
+    let envelope_to = envelope_recipient(envelope).clone();
+    if envelope_to != *recipient {
         eprintln!(
             "famp-gateway: ingress: rejected — envelope 'to' ({envelope_to}) != URL-path \
              recipient ({recipient})"
         );
-        return IngressError::MisaddressedRecipient {
+        return Err(IngressError::MisaddressedRecipient {
             to: envelope_to,
-            recipient,
-        }
-        .into_response();
+            recipient: recipient.clone(),
+        });
     }
-    if let Some(own_domain) = &state.own_domain {
+    if let Some(own_domain) = own_domain {
         let got = envelope_to.authority();
         if got != own_domain.as_ref() {
             eprintln!(
                 "famp-gateway: ingress: rejected — envelope 'to' domain '{got}' != this \
                  gateway's own-domain '{own_domain}'"
             );
-            return IngressError::ForeignDomain {
+            return Err(IngressError::ForeignDomain {
                 expected: own_domain.to_string(),
                 got: got.to_string(),
-            }
-            .into_response();
+            });
         }
     } else {
         eprintln!(
@@ -311,11 +456,24 @@ async fn inbox_handler(
              (T-11-29 residual — accepted posture until own-domain is configured)"
         );
     }
-    if !envelope_federation_format_ok(&envelope) {
+    if !envelope_federation_format_ok(envelope) {
+        let sender = envelope_sender(envelope);
         eprintln!("famp-gateway: ingress: rejected — federation_format_ok() failed for envelope from {sender}");
-        return IngressError::MalformedFederationFields.into_response();
+        return Err(IngressError::MalformedFederationFields);
     }
+    Ok(())
+}
 
+/// Content-transparent delivery of an already-verified envelope onto the
+/// local bus. Extracted from `inbox_handler` (Task 1) for the same
+/// `too_many_lines` reason as [`check_audience_and_format`] — behavior is
+/// byte-identical to the pre-Phase-17 inline delivery block.
+async fn deliver(
+    sender: &Principal,
+    recipient: &Principal,
+    body: &[u8],
+    registry: &Arc<Mutex<GatewayRegistry>>,
+) -> Result<(), IngressError> {
     // Content-transparent delivery: re-parse the already-verified,
     // already-strict-parsed bytes into a plain `Value` for `Send` — no
     // typed reconstruction, task_id/class/body stay byte-exact
@@ -323,11 +481,11 @@ async fn inbox_handler(
     // that just verified were somehow not valid JSON, which
     // `verify_inbound_any`'s `AnySignedEnvelope::decode` already ruled
     // out via `from_slice_strict` internally.
-    let mut value: Value = match serde_json::from_slice(&body) {
+    let mut value: Value = match serde_json::from_slice(body) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("famp-gateway: ingress: verified bytes failed to re-parse as JSON: {e}");
-            return IngressError::Internal.into_response();
+            return Err(IngressError::Internal);
         }
     };
     // BUS-11 fix: the verified bytes still carry the outer federation
@@ -350,10 +508,10 @@ async fn inbox_handler(
     // ingress and egress never starve each other on the same backed
     // principal's connection.
     let reply = {
-        let mut guard = state.registry.lock().await;
+        let mut guard = registry.lock().await;
         let Some(principal) = guard.get_mut(sender.name()) else {
             drop(guard);
-            return IngressError::SenderNotBacked.into_response();
+            return Err(IngressError::SenderNotBacked);
         };
         let reply = principal
             .send_recv(BusMessage::Send {
@@ -368,17 +526,17 @@ async fn inbox_handler(
     };
 
     match reply {
-        Ok(BusReply::SendOk { .. }) => StatusCode::ACCEPTED.into_response(),
+        Ok(BusReply::SendOk { .. }) => Ok(()),
         Ok(other) => {
             eprintln!(
                 "famp-gateway: ingress: unexpected Send reply: {}",
                 other.variant_name()
             );
-            IngressError::Internal.into_response()
+            Err(IngressError::Internal)
         }
         Err(e) => {
             eprintln!("famp-gateway: ingress: delivery failed: {e}");
-            IngressError::Internal.into_response()
+            Err(IngressError::Internal)
         }
     }
 }
@@ -441,9 +599,27 @@ mod tests {
     use famp_keyring::Keyring;
     use tower::ServiceExt;
 
+    /// Task 1 (INGR-01) deviation: prior to this plan, every helper in
+    /// this module hardcoded a literal past `ts` ("2026-07-27T00:00:00Z")
+    /// because nothing enforced freshness. Now that `ingest_inbound` runs
+    /// [`crate::ingress_guard::freshness_check`] before signature
+    /// verification, a stale hardcoded `ts` would make every pre-existing
+    /// reject-path test in this module fail with `stale_timestamp`
+    /// instead of the reject reason it's actually testing. `ack_bytes`
+    /// therefore stamps a live `ts` via `crate::clock::now_canonical_utc()`
+    /// on every call; tests that need a deliberately stale envelope use
+    /// [`ack_bytes_with_ts`] directly.
     fn ack_bytes(sk: &FampSigningKey, from: &Principal, to: &Principal) -> Vec<u8> {
+        ack_bytes_with_ts(sk, from, to, Timestamp(crate::clock::now_canonical_utc()))
+    }
+
+    fn ack_bytes_with_ts(
+        sk: &FampSigningKey,
+        from: &Principal,
+        to: &Principal,
+        ts: Timestamp,
+    ) -> Vec<u8> {
         let id: MessageId = "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a71".parse().unwrap();
-        let ts = Timestamp("2026-07-27T00:00:00Z".to_string());
         let body = AckBody {
             disposition: AckDisposition::Accepted,
             reason: None,
@@ -549,6 +725,105 @@ mod tests {
 
         // Two distinct status codes, per D-08.
         assert_ne!(StatusCode::BAD_REQUEST, StatusCode::FORBIDDEN);
+    }
+
+    /// Task 1 (INGR-01/INGR-05, D-05/D-09): an otherwise-valid,
+    /// correctly-signed envelope (the sender's key is pinned to the SAME
+    /// key that signed — verification WOULD succeed if it were ever
+    /// reached) with a one-hour-old `ts` is rejected `stale_timestamp`
+    /// with zero registry mutation. Proves the freshness gate is real,
+    /// not a side effect of signature failure.
+    #[tokio::test]
+    async fn stale_timestamp_rejected_before_verify_with_no_registry_mutation() {
+        let sk = FampSigningKey::from_bytes([40u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+
+        let one_hour_ago = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+        let stale_ts = crate::clock::strip_subseconds(
+            &one_hour_ago
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap(),
+        );
+        let bytes = ack_bytes_with_ts(&sk, &from, &to, Timestamp(stale_ts));
+
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let (router, registry) = router_with_keyring(keyring);
+
+        let resp = post_inbox(router, &to, bytes).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"], "stale_timestamp");
+        assert_eq!(
+            registry.lock().await.names().count(),
+            0,
+            "reject path must perform zero registry mutation"
+        );
+    }
+
+    /// Task 1 (INGR-01/INGR-02 boundary probe): exactly
+    /// `CLOCK_SKEW_WINDOW_SECS` from `now`, in either direction, must NOT
+    /// be classified `stale_timestamp` (inclusive bound); one second
+    /// beyond, in either direction, MUST be. The in-window cases assert
+    /// the response is anything OTHER than `stale_timestamp` rather than
+    /// asserting full delivery success, because full delivery requires a
+    /// live broker connection this unit test does not spin up — the
+    /// sender is deliberately left unbacked, so an in-window envelope
+    /// still gets rejected downstream (`sender_not_backed`), just not by
+    /// the freshness gate. That is sufficient to prove the freshness gate
+    /// itself passed the boundary case.
+    #[tokio::test]
+    async fn freshness_boundary_is_inclusive_in_both_directions() {
+        let sk = FampSigningKey::from_bytes([41u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let skew = crate::ingress_guard::CLOCK_SKEW_WINDOW_SECS;
+
+        let mk_ts = |delta_secs: i64| -> Timestamp {
+            let instant = time::OffsetDateTime::now_utc() + time::Duration::seconds(delta_secs);
+            Timestamp(crate::clock::strip_subseconds(
+                &instant
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap(),
+            ))
+        };
+
+        for delta in [-skew, skew] {
+            let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
+            let mut keyring = Keyring::new();
+            keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+            let (router, registry) = router_with_keyring(keyring);
+            let resp = post_inbox(router, &to, bytes).await;
+            let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+            let v: Value = serde_json::from_slice(&body).unwrap();
+            assert_ne!(
+                v["error"], "stale_timestamp",
+                "delta {delta}s is within the inclusive skew window and must pass the freshness gate"
+            );
+            assert_eq!(
+                registry.lock().await.names().count(),
+                0,
+                "no registry mutation expected (sender deliberately left unbacked)"
+            );
+        }
+
+        for delta in [-(skew + 1), skew + 1] {
+            let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
+            let mut keyring = Keyring::new();
+            keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+            let (router, registry) = router_with_keyring(keyring);
+            let resp = post_inbox(router, &to, bytes).await;
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+            let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+            let v: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                v["error"], "stale_timestamp",
+                "delta {delta}s is one second beyond the inclusive skew window"
+            );
+            assert_eq!(registry.lock().await.names().count(), 0);
+        }
     }
 
     #[tokio::test]

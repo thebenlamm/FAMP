@@ -48,6 +48,7 @@ pub mod clock;
 pub mod egress;
 pub mod error;
 pub mod ingress;
+pub mod ingress_guard;
 pub mod principal;
 pub mod registry;
 pub mod verify;
