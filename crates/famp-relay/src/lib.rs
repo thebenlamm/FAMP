@@ -29,15 +29,12 @@
 
 #![forbid(unsafe_code)]
 
-// Silencer: consumed by Task 3's fetch-route response encoding
-// (`http.rs`) — remove each line as that module lands.
-use base64 as _;
-use serde_json as _;
-
-// Silencer: `reqwest` is a dev-dependency consumed only by
-// `tests/relay_store_and_forward.rs` (Task 3's live-process test client)
-// — a separate compilation unit from this lib target's own `#[cfg(test)]`
-// unit tests.
+// Silencer: `reqwest` and `assert_cmd` are dev-dependencies consumed
+// only by `tests/relay_store_and_forward.rs` (this crate's live-process
+// test client and subprocess spawner) — a separate compilation unit
+// from this lib target's own `#[cfg(test)]` unit tests.
+#[cfg(test)]
+use assert_cmd as _;
 #[cfg(test)]
 use reqwest as _;
 

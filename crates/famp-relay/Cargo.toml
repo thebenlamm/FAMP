@@ -45,7 +45,9 @@ time       = { version = "0.3", features = ["formatting", "parsing"] }
 # `reqwest` directly, below, for the same reason). Mirror
 # `famp-transport-http`'s exact feature set so this test client is built
 # from the identical rustls/TLS stack `HttpTransport` uses.
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+reqwest    = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+assert_cmd = "2.0"
 
-# The `[[bin]]` target (`src/main.rs`) is added by Task 3 alongside the
-# file itself.
+[[bin]]
+name = "famp-relay"
+path = "src/main.rs"

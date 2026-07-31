@@ -15,8 +15,11 @@
 #
 # Cross-checked against the seven rendering surfaces named in
 # 14-RESEARCH.md line 36 (2026-07-31): the query found exactly those
-# seven, plus three non-rendering hits that are allowlisted below with
-# justification (not an eighth surface). Records map onto the seven as:
+# seven, plus four non-rendering hits that are allowlisted below with
+# justification (not an eighth surface — the fourth, `famp-relay`'s wire
+# response, postdates 14-RESEARCH.md; it is Phase 17's own machine-to-
+# machine relay protocol, added and justified in that phase's plan 04).
+# Records map onto the seven as:
 #
 #   1. famp_inbox (MCP)            -> crates/famp/src/cli/mcp/tools/inbox.rs:186,197
 #   2. famp_await (MCP)            -> crates/famp/src/cli/mcp/tools/await_.rs:91
@@ -87,6 +90,20 @@ crates/famp-bus/src/broker/handle/tests.rs:436:reply-debug
 #   `verify_tool_emits_no_body_text` (14-02).
 #
 crates/famp-inspect-server/src/messages.rs:66:envelope-body
+# justification: crates/famp-relay/src/http.rs:291 (`ingest_fetch`'s
+#   `Ok(Json(json!({ "envelopes": envelopes })).into_response())`) is a
+#   machine-to-machine WIRE response consumed only by a peer gateway's
+#   fetch client (Phase 17 plan 04/05) — it is never rendered to a
+#   human. The `body` values inside are base64-opaque bytes this relay
+#   never parses (D-25, crates/famp-relay/src/lib.rs's module doc), and
+#   the human-facing quarantine boundary sits downstream, at the
+#   RECEIVING gateway's own local-bus ingestion (Phase 14's additive
+#   `famp-bus` `Register`-frame provenance tag), which this relay's
+#   fetch response arrives strictly BEFORE — this wire hop has no
+#   render step to bypass. `famp-relay` has no dependency on the `famp`
+#   crate (by design — see its Cargo.toml), so routing through
+#   `render_envelope_body`/`render_body_text` is not applicable here.
+crates/famp-relay/src/http.rs:291:envelopes-field
 crates/famp/src/cli/await_cmd/mod.rs:137:write-outcome
 crates/famp/src/cli/await_cmd/mod.rs:156:write-outcome
 crates/famp/src/cli/await_cmd/mod.rs:203:envelopes-field

@@ -875,6 +875,7 @@ dependencies = [
 name = "famp-relay"
 version = "1.0.0"
 dependencies = [
+ "assert_cmd",
  "axum",
  "base64",
  "famp-crypto",
