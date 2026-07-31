@@ -5,15 +5,15 @@ milestone_name: Open-Internet Federation
 current_phase: 15
 current_phase_name: keyring-multi-key-extension-revocation
 status: executing
-stopped_at: Completed 15-01-PLAN.md (D15-A/D15-B decisions locked in 15-DECISIONS.md)
-last_updated: "2026-07-31T06:58:15.156Z"
+stopped_at: Completed 15-02-PLAN.md (multi-key keyring + verifier-clock expiry rejection)
+last_updated: "2026-07-31T07:21:52.955Z"
 last_activity: 2026-07-31
 last_activity_desc: Phase 15 execution started
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 9
-  completed_plans: 5
+  completed_plans: 7
   percent: 50
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 15 (keyring-multi-key-extension-revocation) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-07-31 — Phase 15 execution started
 
@@ -197,6 +197,7 @@ Last activity: 2026-07-31 — Phase 15 execution started
 - [Phase ?]: 14-05: docs/QUARANTINE.md ships the required QUAR-08 claim and non-claim with equal prominence, corrects the retracted 'conversation-only removes the tool leg' justification and the strip_relay_fields unforgeability misattribution by name
 - [Phase ?]: 14-05: Option A vs Option B scope call (harness-level tool-gating) treated as resolved to Option B per famp-lead-730's kickoff wording, flagged to Ben as an open scope decision rather than silently assumed
 - [Phase 15]: [15-01]: D15-A approved as written (legacy 2-field / v1.1 6-field keyring grammar, revocation+expiry fields present from day one, legacy save-format rule bounds forward-compat blast radius); D15-B: signer-self-allowed (option B) - any currently-pinned non-revoked key including the one being revoked may sign a REVK-02 revocation, encoded in famp_keyring::revocation::authorized_signer_for, REVK-01 expiry remains primary per D-06
+- [Phase ?]: 15-02: verify_inbound/verify_inbound_any gain a now:&str parameter and route through Keyring::active_key(principal, now) for REVK-01 expiry enforcement, DuplicatePrincipal check ordered before pubkey-duplication checks to keep rt3 unmodified, save-format rule keeps untouched legacy keyrings byte-identical (T-15-08).
 
 ## Issues / Blockers
 
@@ -345,11 +346,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 14 P04 | ~50min | 3 tasks | 6 files |
 | Phase 14 P05 | ~2h | 4 tasks | 6 files |
 | Phase 15 P01 | ~5m (checkpoint pause excluded) | 2 tasks | 1 files |
+| Phase 15 P02 | 55min | 2 tasks | 13 files |
 
 ## Session
 
-**Last session:** 2026-07-31T06:58:15.145Z
-**Stopped At:** Completed 15-01-PLAN.md (D15-A/D15-B decisions locked in 15-DECISIONS.md)
+**Last session:** 2026-07-31T07:21:52.945Z
+**Stopped At:** Completed 15-02-PLAN.md (multi-key keyring + verifier-clock expiry rejection)
 **Resume File:** None
 
 ## Operator Next Steps

@@ -156,12 +156,12 @@ Plans:
   4. A pinned key past its validity window is rejected at verify time regardless of whether any revocation record was ever received.
   5. A signed revocation statement is verifiable and fail-closed as defense-in-depth on top of the expiry mechanism, and an envelope signed before a revocation takes effect is rejected once delivered after the revocation takes effect — no pre-revocation replay window.
 
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 
 - [x] 15-01-PLAN.md — Lock the on-disk record shape (one-way door) and the REVK-02 authorized-signer rule; write 15-DECISIONS.md
-- [ ] 15-02-PLAN.md — Tracer: multi-key + revocation record shape end-to-end, expired key rejected at gateway ingress, KEYR-01 fixture proof
+- [x] 15-02-PLAN.md — Tracer: multi-key + revocation record shape end-to-end, expired key rejected at gateway ingress, KEYR-01 fixture proof
 - [ ] 15-03-PLAN.md — `rotate_to`/`retire` plus `famp peer rotate`/`retire`; unconfirmed key change exits 2 with zero mutation
 - [ ] 15-04-PLAN.md — Signed revocation statement, `famp peer revoke`/`import-revocation`, REVK-03 no-replay-window proof
 
@@ -274,7 +274,7 @@ Plans:
 | 12. v1.0.0 Release Gate | v1.0 | 5/5 | Complete | 2026-07-29 |
 | 13. Public Reachability Decision (Spike) | v1.1 | 0/0 | Not started | - |
 | 14. Inbound-Content-Is-DATA Quarantine | v1.1 | 5/5 | In Progress|  |
-| 15. Keyring Multi-Key Extension + Revocation | v1.1 | 1/4 | In Progress|  |
+| 15. Keyring Multi-Key Extension + Revocation | v1.1 | 2/4 | In Progress|  |
 | 16. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 0/0 | Not started | - |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 0/0 | Not started | - |
 | 18. Human Acceptance Gate | v1.1 | 0/0 | Not started | - |

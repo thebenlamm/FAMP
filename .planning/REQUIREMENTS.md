@@ -44,7 +44,7 @@ Public reachability over the open internet. The model is decided **first**, in a
 
 Load-bearing prerequisite: the keyring is hard-coded to exactly one key per principal today, which blocks rotation, revocation, and any new bootstrap path.
 
-- [ ] **KEYR-01**: The keyring stores multiple keys per principal with explicit active/retired state, and **existing single-key keyring files load unchanged** (backward compatibility proven by a fixture test).
+- [x] **KEYR-01**: The keyring stores multiple keys per principal with explicit active/retired state, and **existing single-key keyring files load unchanged** (backward compatibility proven by a fixture test).
 - [ ] **KEYR-02**: A peer's key can be rotated — a new key is pinned for a known peer without dropping the previous key until it is explicitly retired.
 - [ ] **KEYR-03**: "Key **CHANGED** for a known peer" is a structurally distinct path from "new peer, first pin" — a different exit code and a different operator confirmation, not a warning line in a stream the operator has learned to ignore.
 
@@ -79,7 +79,7 @@ All four concerns explicitly deferred out of v1.0 as open-internet problems. All
 
 ### Key Revocation (REVK)
 
-- [ ] **REVK-01**: Pinned keys carry a validity window; a key past its window is rejected at verify time regardless of whether any revocation record was ever received.
+- [x] **REVK-01**: Pinned keys carry a validity window; a key past its window is rejected at verify time regardless of whether any revocation record was ever received.
 - [ ] **REVK-02**: A signed revocation statement, distributed over the same channel as the original pin, is verifiable and fail-closed — defense in depth on top of REVK-01, not the primary mechanism.
 - [ ] **REVK-03**: An envelope signed before a revocation takes effect is rejected **after** it takes effect (no pre-revocation replay window).
 
@@ -174,7 +174,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REACH-03 | Phase 13 | Pending |
 | REACH-04 | Phase 17 | Pending |
 | REACH-05 | Phase 17 | Pending |
-| KEYR-01 | Phase 15 | Pending |
+| KEYR-01 | Phase 15 | Complete |
 | KEYR-02 | Phase 15 | Pending |
 | KEYR-03 | Phase 15 | Pending |
 | PAIR-01 | Phase 16 | Pending |
@@ -193,7 +193,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INGR-06 | Phase 17 | Pending |
 | INGR-07 | Phase 17 | Pending |
 | INGR-08 | Phase 17 | Pending |
-| REVK-01 | Phase 15 | Pending |
+| REVK-01 | Phase 15 | Complete |
 | REVK-02 | Phase 15 | Pending |
 | REVK-03 | Phase 15 | Pending |
 | QUAR-01 | Phase 14 | Complete |
