@@ -172,6 +172,18 @@ enum IngressError {
     InvalidSignature,
     #[error("sender principal '{principal}' has no pinned key")]
     UnpinnedKey { principal: Principal },
+    /// REVK-01: the sender's pinned key verified cryptographically, but
+    /// its validity window has closed as of this gateway's own wall
+    /// clock — enforced regardless of whether any revocation record was
+    /// ever received.
+    #[error("sender principal '{principal}' key expired at {valid_until}")]
+    ExpiredKey {
+        principal: Principal,
+        valid_until: String,
+    },
+    /// REVK-02: the sender's pinned key has been explicitly revoked.
+    #[error("sender principal '{principal}' key revoked")]
+    RevokedKey { principal: Principal },
     #[error("verified sender is not backed by this gateway")]
     SenderNotBacked,
     /// T-11-23: the envelope's signed `to` does not match the URL-path
@@ -200,6 +212,8 @@ impl IntoResponse for IngressError {
             Self::BadPrincipal => (StatusCode::BAD_REQUEST, "bad_principal"),
             Self::InvalidSignature => (StatusCode::BAD_REQUEST, "invalid_signature"),
             Self::UnpinnedKey { .. } => (StatusCode::FORBIDDEN, "unpinned_key"),
+            Self::ExpiredKey { .. } => (StatusCode::FORBIDDEN, "expired_key"),
+            Self::RevokedKey { .. } => (StatusCode::FORBIDDEN, "revoked_key"),
             Self::SenderNotBacked => (StatusCode::BAD_GATEWAY, "sender_not_backed"),
             Self::MisaddressedRecipient { .. } => {
                 (StatusCode::BAD_REQUEST, "misaddressed_recipient")
@@ -212,6 +226,26 @@ impl IntoResponse for IngressError {
         };
         let body = serde_json::json!({ "error": slug, "detail": self.to_string() });
         (code, Json(body)).into_response()
+    }
+}
+
+/// Map a [`RejectReason`] onto its ingress-layer [`IngressError`]. Kept as
+/// a standalone function so [`inbox_handler`] itself stays under the
+/// workspace's `too_many_lines` lint budget — the two error enums are
+/// deliberately distinct (see `IngressError`'s module doc) so this is a
+/// pure translation, not a collapse.
+fn ingress_error_for_reject(reason: RejectReason) -> IngressError {
+    match reason {
+        RejectReason::InvalidSignature => IngressError::InvalidSignature,
+        RejectReason::UnpinnedKey { principal } => IngressError::UnpinnedKey { principal },
+        RejectReason::ExpiredKey {
+            principal,
+            valid_until,
+        } => IngressError::ExpiredKey {
+            principal,
+            valid_until,
+        },
+        RejectReason::RevokedKey { principal, .. } => IngressError::RevokedKey { principal },
     }
 }
 
@@ -231,14 +265,10 @@ async fn inbox_handler(
         return IngressError::BadPrincipal.into_response();
     };
 
-    let envelope = match verify_inbound_any(&body, &state.keyring) {
+    let now = crate::clock::now_canonical_utc();
+    let envelope = match verify_inbound_any(&body, &state.keyring, &now) {
         Ok(e) => e,
-        Err(RejectReason::InvalidSignature) => {
-            return IngressError::InvalidSignature.into_response()
-        }
-        Err(RejectReason::UnpinnedKey { principal }) => {
-            return IngressError::UnpinnedKey { principal }.into_response()
-        }
+        Err(reason) => return ingress_error_for_reject(reason).into_response(),
     };
 
     let sender = envelope_sender(&envelope).clone();

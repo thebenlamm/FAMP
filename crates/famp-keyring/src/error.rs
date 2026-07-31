@@ -15,6 +15,9 @@ pub enum KeyringError {
     #[error("duplicate pubkey at line {line}: already pinned to {existing}")]
     DuplicatePubkey { existing: Principal, line: usize },
 
+    #[error("duplicate key entry at line {line}: pubkey already present for {principal}")]
+    DuplicateKeyEntry { principal: Principal, line: usize },
+
     #[error("malformed entry at line {line}: {reason}")]
     MalformedEntry { line: usize, reason: String },
 

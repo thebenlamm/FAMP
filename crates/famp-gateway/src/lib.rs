@@ -44,6 +44,7 @@ use famp_inspect_proto as _;
 #[cfg(test)]
 use tempfile as _;
 
+pub mod clock;
 pub mod egress;
 pub mod error;
 pub mod ingress;
@@ -51,6 +52,7 @@ pub mod principal;
 pub mod registry;
 pub mod verify;
 
+pub use clock::now_canonical_utc;
 pub use error::{GatewayError, RejectReason};
 pub use principal::ProxiedPrincipal;
 pub use registry::GatewayRegistry;

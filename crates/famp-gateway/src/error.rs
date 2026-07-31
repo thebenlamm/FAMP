@@ -45,13 +45,15 @@ pub enum GatewayError {
     DuplicatePrincipal(String),
 }
 
-/// Ingress-verification rejection reason (WIRE-01 / TRUST-02, D-08).
+/// Ingress-verification rejection reason (WIRE-01 / TRUST-02, D-08;
+/// extended by REVK-01/REVK-02 in Phase 15).
 ///
-/// Exactly two variants, deliberately never collapsed into one flat
-/// "rejected" — an operator (and the Phase 9 E2E) must be able to tell
-/// "the bytes were tampered / unsigned" apart from "I never imported that
-/// peer." `verify_inbound` performs zero local-bus writes and zero
-/// pinned/registry state mutation on either path.
+/// Four variants, deliberately never collapsed into one flat "rejected" —
+/// an operator (and the Phase 9 E2E) must be able to tell "the bytes were
+/// tampered / unsigned" apart from "I never imported that peer" apart from
+/// "the key I have for them expired" apart from "the key I have for them
+/// was revoked". `verify_inbound`/`verify_inbound_any` perform zero
+/// local-bus writes and zero pinned/registry state mutation on any path.
 #[derive(Debug, thiserror::Error)]
 pub enum RejectReason {
     /// Bad crypto or unsigned: the envelope failed strict-parse, failed
@@ -68,4 +70,26 @@ pub enum RejectReason {
     /// only — it has NOT been cryptographically confirmed.
     #[error("sender principal '{principal}' has no pinned key")]
     UnpinnedKey { principal: famp::Principal },
+
+    /// The sender's pinned key verified cryptographically, but its
+    /// `valid_until` window has closed as of the verifier's own clock
+    /// (REVK-01: expiry is the PRIMARY revocation mechanism, enforced
+    /// regardless of whether any revocation record was ever received).
+    /// Carries only the principal and the expiry timestamp — never key
+    /// bytes.
+    #[error("sender principal '{principal}' key expired at {valid_until}")]
+    ExpiredKey {
+        principal: famp::Principal,
+        valid_until: String,
+    },
+
+    /// The sender's pinned key verified cryptographically, but has been
+    /// explicitly revoked (REVK-02, defense-in-depth alongside REVK-01).
+    /// Carries only the principal and (if recorded) the revocation
+    /// instant — never key bytes.
+    #[error("sender principal '{principal}' key revoked{}", revoked_at.as_deref().map(|t| format!(" at {t}")).unwrap_or_default())]
+    RevokedKey {
+        principal: famp::Principal,
+        revoked_at: Option<String>,
+    },
 }

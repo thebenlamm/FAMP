@@ -1,19 +1,30 @@
-//! Pure, transport-agnostic gateway ingress verification (WIRE-01, TRUST-02).
+//! Pure, transport-agnostic gateway ingress verification (WIRE-01, TRUST-02;
+//! extended by REVK-01/REVK-02 in Phase 15).
 //!
-//! `verify_inbound` takes `(bytes, &Keyring)` as *input* — data-as-input per
-//! D-07, not synthetic wire routing — so it is unit-testable in-process here
-//! and Phase 9's HTTP transport handler just feeds it the request body.
+//! `verify_inbound` takes `(bytes, &Keyring, now)` as *input* — data-as-input
+//! per D-07, not synthetic wire routing — so it is unit-testable in-process
+//! here and Phase 9's HTTP transport handler just feeds it the request body
+//! plus the gateway's own wall-clock reading.
 //!
-//! Flow (the two-pass shape D-07 locks): [`famp_envelope::peek_sender`]
-//! extracts the `from` principal WITHOUT verifying anything, then the
-//! peeked principal is looked up in the pinned `Keyring` — only once the
-//! verifying key is known does [`famp::SignedEnvelope::decode`] run
-//! `verify_strict` over the canonical bytes. There is no raw
-//! `ed25519_dalek::VerifyingKey` construction anywhere on this path; the
-//! only crypto surface touched is `TrustedVerifyingKey` /
-//! `SignedEnvelope::decode` (`famp-crypto`'s `verify_strict`-only contract).
+//! Flow (the two-pass shape D-07 locks, extended with a time-aware trust
+//! query): [`famp_envelope::peek_sender`] extracts the `from` principal
+//! WITHOUT verifying anything, then the peeked principal is looked up via
+//! `keyring.active_key(from, now)` — only once a usable, non-expired,
+//! non-revoked verifying key is confirmed does
+//! [`famp::SignedEnvelope::decode`] run `verify_strict` over the canonical
+//! bytes. There is no raw `ed25519_dalek::VerifyingKey` construction
+//! anywhere on this path; the only crypto surface touched is
+//! `TrustedVerifyingKey` / `SignedEnvelope::decode` (`famp-crypto`'s
+//! `verify_strict`-only contract).
 //!
-//! D-08: on EITHER reject path this function performs zero local-bus writes
+//! T-15-02 (critical): the expiry and revocation decision is made
+//! EXCLUSIVELY against the verifier-supplied `now` — no field decoded from
+//! the envelope itself (`ts`, `expiry`, or anything else) ever participates
+//! in this decision. `famp-envelope`'s `ts`/`expiry` fields are
+//! sender-asserted and only format-validated; trusting them here would let
+//! a compromised sender assert a pre-expiry `ts` forever.
+//!
+//! D-08: on EVERY reject path this function performs zero local-bus writes
 //! and zero pinned/registry state mutation — it is a pure `Result`-returning
 //! function. TRUST-02: an unpinned sender key is a hard reject with no
 //! auto-pin, no fallback trust path.
@@ -23,45 +34,78 @@ use famp::SignedEnvelope;
 use famp_envelope::body::BodySchema;
 use famp_envelope::peek_sender;
 use famp_envelope::AnySignedEnvelope;
-use famp_keyring::Keyring;
+use famp_keyring::{KeyLookupOutcome, Keyring};
 
-/// Verify inbound cross-host envelope bytes against the pinned keyring.
+/// Map every non-`Active` [`KeyLookupOutcome`] to its [`RejectReason`].
+/// `Retired` and `NonCanonicalNow` both fail closed as `UnpinnedKey` —
+/// neither implies a usable pinned key exists. Both `verify_inbound` and
+/// `verify_inbound_any` call the time-aware lookup directly (not through
+/// a shared lookup wrapper) and pass the outcome here, so the trust query
+/// itself stays visibly inline at both call sites.
+fn reject_for_outcome(from: &famp::Principal, outcome: KeyLookupOutcome<'_>) -> RejectReason {
+    match outcome {
+        KeyLookupOutcome::Active(_) => unreachable!("Active is handled by the caller before this"),
+        KeyLookupOutcome::Unpinned | KeyLookupOutcome::Retired { .. } => {
+            RejectReason::UnpinnedKey {
+                principal: from.clone(),
+            }
+        }
+        KeyLookupOutcome::Expired { valid_until } => RejectReason::ExpiredKey {
+            principal: from.clone(),
+            valid_until: valid_until.to_string(),
+        },
+        KeyLookupOutcome::Revoked { revoked_at } => RejectReason::RevokedKey {
+            principal: from.clone(),
+            revoked_at: revoked_at.map(str::to_string),
+        },
+        KeyLookupOutcome::NonCanonicalNow => RejectReason::UnpinnedKey {
+            principal: from.clone(),
+        },
+    }
+}
+
+/// Verify inbound cross-host envelope bytes against the pinned keyring at
+/// verifier instant `now`.
 ///
 /// Two-pass flow (D-07): peek the sender principal from unverified bytes,
-/// look it up in `keyring` (TRUST-02 hard-reject gate on `None` — no
-/// auto-pin, no fallback), then `SignedEnvelope::decode` (which runs
-/// `verify_strict` internally) against the pinned key. Returns the typed,
-/// verified `SignedEnvelope<B>` on success, or one of two distinct
-/// [`RejectReason`]s (D-08) on failure. Performs no I/O and mutates no
-/// state on any path.
+/// resolve its usable key via the time-aware lookup (TRUST-02
+/// hard-reject on `Unpinned`; REVK-01 hard-reject on `Expired`; REVK-02
+/// hard-reject on `Revoked` — no auto-pin, no fallback), then
+/// `SignedEnvelope::decode` (which runs `verify_strict` internally) against
+/// the resolved key. Returns the typed, verified `SignedEnvelope<B>` on
+/// success, or one of four distinct [`RejectReason`]s (D-08) on failure.
+/// Performs no I/O and mutates no state on any path.
 pub fn verify_inbound<B: BodySchema>(
     bytes: &[u8],
     keyring: &Keyring,
+    now: &str,
 ) -> Result<SignedEnvelope<B>, RejectReason> {
     let from = peek_sender(bytes).map_err(|_| RejectReason::InvalidSignature)?;
-    let Some(vk) = keyring.get(&from) else {
-        return Err(RejectReason::UnpinnedKey { principal: from });
+    let vk = match keyring.active_key(&from, now) {
+        KeyLookupOutcome::Active(vk) => vk,
+        outcome => return Err(reject_for_outcome(&from, outcome)),
     };
     SignedEnvelope::decode(bytes, vk).map_err(|_| RejectReason::InvalidSignature)
 }
 
 /// Verify inbound cross-host envelope bytes whose body class is not known
-/// in advance.
+/// in advance, at verifier instant `now`.
 ///
 /// Phase 9 HTTP ingress sees mixed request/commit/deliver/ack traffic —
-/// [`verify_inbound`] is generic over exactly one class. Identical two-gate
-/// flow and reject contract as [`verify_inbound`] (D-07/
-/// D-08: unpinned-key hard-reject BEFORE decode; `InvalidSignature` on any
-/// decode failure) — the only difference is the decode call itself, which
-/// routes through [`AnySignedEnvelope::decode`] so the wire `class` field
-/// picks the typed body. Performs no I/O and mutates no state on any path.
+/// [`verify_inbound`] is generic over exactly one class. Identical
+/// time-aware flow and reject contract as [`verify_inbound`] (D-07/D-08) —
+/// the only difference is the decode call itself, which routes through
+/// [`AnySignedEnvelope::decode`] so the wire `class` field picks the typed
+/// body. Performs no I/O and mutates no state on any path.
 pub fn verify_inbound_any(
     bytes: &[u8],
     keyring: &Keyring,
+    now: &str,
 ) -> Result<AnySignedEnvelope, RejectReason> {
     let from = peek_sender(bytes).map_err(|_| RejectReason::InvalidSignature)?;
-    let Some(vk) = keyring.get(&from) else {
-        return Err(RejectReason::UnpinnedKey { principal: from });
+    let vk = match keyring.active_key(&from, now) {
+        KeyLookupOutcome::Active(vk) => vk,
+        outcome => return Err(reject_for_outcome(&from, outcome)),
     };
     AnySignedEnvelope::decode(bytes, vk).map_err(|_| RejectReason::InvalidSignature)
 }
@@ -76,6 +120,11 @@ mod tests {
         Bounds, Budget, CommitBody, DeliverBody, RequestBody, TerminalStatus,
     };
     use famp_envelope::UnsignedEnvelope;
+
+    /// A literal, canonical `now` used across this module's tests. No test
+    /// reads a clock — every legacy-pinned key here carries no
+    /// `valid_until`, so any canonical `now` verifies `Active`.
+    const NOW: &str = "2026-07-27T00:00:00Z";
 
     fn signed_bytes(sk: &FampSigningKey, from: &Principal, to: &Principal) -> Vec<u8> {
         let id: MessageId = "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a6b".parse().unwrap();
@@ -200,7 +249,7 @@ mod tests {
         keyring.pin_tofu(from.clone(), vk).unwrap();
         let len_before = keyring.len();
 
-        let result = verify_inbound::<AckBody>(&bytes, &keyring);
+        let result = verify_inbound::<AckBody>(&bytes, &keyring, NOW);
         let envelope = result.expect("pinned-valid envelope must verify");
         assert_eq!(envelope.from_principal(), &from);
         assert_eq!(
@@ -223,7 +272,7 @@ mod tests {
         keyring.pin_tofu(from, vk).unwrap();
         let len_before = keyring.len();
 
-        let result = verify_inbound::<AckBody>(&unsigned_bytes, &keyring);
+        let result = verify_inbound::<AckBody>(&unsigned_bytes, &keyring, NOW);
         assert!(matches!(result, Err(RejectReason::InvalidSignature)));
         assert_eq!(
             keyring.len(),
@@ -247,7 +296,7 @@ mod tests {
         keyring.pin_tofu(from, wrong_vk).unwrap();
         let len_before = keyring.len();
 
-        let result = verify_inbound::<AckBody>(&bytes, &keyring);
+        let result = verify_inbound::<AckBody>(&bytes, &keyring, NOW);
         assert!(matches!(result, Err(RejectReason::InvalidSignature)));
         assert_eq!(
             keyring.len(),
@@ -267,7 +316,7 @@ mod tests {
         let keyring = Keyring::new();
         let len_before = keyring.len();
 
-        let result = verify_inbound::<AckBody>(&bytes, &keyring);
+        let result = verify_inbound::<AckBody>(&bytes, &keyring, NOW);
         match result {
             Err(RejectReason::UnpinnedKey { principal }) => assert_eq!(principal, from),
             other => panic!("expected UnpinnedKey{{ principal }}, got {other:?}"),
@@ -309,7 +358,7 @@ mod tests {
             keyring.pin_tofu(from.clone(), vk).unwrap();
             let len_before = keyring.len();
 
-            let result = verify_inbound_any(&bytes, &keyring);
+            let result = verify_inbound_any(&bytes, &keyring, NOW);
             let envelope = result.unwrap_or_else(|e| panic!("class {class} must verify: {e:?}"));
             assert_eq!(
                 envelope.class(),
@@ -338,7 +387,7 @@ mod tests {
             keyring.pin_tofu(from, vk).unwrap();
             let len_before = keyring.len();
 
-            let result = verify_inbound_any(&unsigned_bytes, &keyring);
+            let result = verify_inbound_any(&unsigned_bytes, &keyring, NOW);
             assert!(
                 matches!(result, Err(RejectReason::InvalidSignature)),
                 "class {class}: expected InvalidSignature, got {result:?}"
@@ -364,7 +413,7 @@ mod tests {
             let keyring = Keyring::new();
             let len_before = keyring.len();
 
-            let result = verify_inbound_any(&bytes, &keyring);
+            let result = verify_inbound_any(&bytes, &keyring, NOW);
             match result {
                 Err(RejectReason::UnpinnedKey { principal }) => assert_eq!(principal, from),
                 other => {

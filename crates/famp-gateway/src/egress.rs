@@ -176,23 +176,7 @@ fn federation_expiry() -> Result<String, EgressError> {
     let raw = (OffsetDateTime::now_utc() + FederationDuration::minutes(EXPIRY_WINDOW_MINUTES))
         .format(&Rfc3339)
         .map_err(EgressError::ExpiryFormat)?;
-    Ok(strip_subseconds(&raw))
-}
-
-/// Strip any subsecond component `time`'s `Rfc3339` formatter may emit,
-/// rebuilding as the trimmed `YYYY-MM-DDTHH:MM:SSZ` form — identical
-/// trimming logic to `crates/famp/src/cli/send/mod.rs`.
-fn strip_subseconds(ts: &str) -> String {
-    let Some(dot_idx) = ts.find('.') else {
-        return ts.to_string();
-    };
-    let tail_idx = ts[dot_idx..]
-        .find(['Z', '+', '-'])
-        .map_or(ts.len(), |i| dot_idx + i);
-    let mut out = String::with_capacity(ts.len() - (tail_idx - dot_idx));
-    out.push_str(&ts[..dot_idx]);
-    out.push_str(&ts[tail_idx..]);
-    out
+    Ok(crate::clock::strip_subseconds(&raw))
 }
 
 /// Errors relaying one drained envelope. Never propagated past
@@ -470,15 +454,15 @@ mod tests {
         let mut keyring = Keyring::new();
         keyring.pin_tofu(from.clone(), vk).unwrap();
 
-        let decoded =
-            verify_inbound_any(&bytes, &keyring).expect("signed bytes must verify_inbound_any");
+        let decoded = verify_inbound_any(&bytes, &keyring, "2026-07-27T00:00:00Z")
+            .expect("signed bytes must verify_inbound_any");
         assert_eq!(decoded.class(), MessageClass::Request);
 
         // Single-byte body tamper must reject.
         let mut tampered: Value = serde_json::from_slice(&bytes).unwrap();
         tampered["body"]["scope"]["task"] = Value::String("tampered".to_string());
         let tampered_bytes = serde_json::to_vec(&tampered).unwrap();
-        let result = verify_inbound_any(&tampered_bytes, &keyring);
+        let result = verify_inbound_any(&tampered_bytes, &keyring, "2026-07-27T00:00:00Z");
         assert!(
             matches!(result, Err(RejectReason::InvalidSignature)),
             "tampered body must fail verification, got {result:?}"
