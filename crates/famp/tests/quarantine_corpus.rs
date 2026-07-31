@@ -20,6 +20,8 @@
 mod fixtures;
 #[path = "quarantine/harness.rs"]
 mod harness;
+#[path = "quarantine/laundering.rs"]
+mod laundering;
 
 use fixtures::{cases, Family};
 use harness::run_all_surfaces;
