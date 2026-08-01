@@ -148,7 +148,8 @@ pub enum Commands {
     /// `famp inspect broker` distinguishes `HEALTHY` / `DOWN_CLEAN` /
     /// `STALE_SOCKET` / `ORPHAN_HOLDER` / `PERMISSION_DENIED`. `famp
     /// inspect identities` lists registered sessions with mailbox
-    /// metadata. D-06: `tasks` and `messages` ship in Phase 2.
+    /// metadata; `famp inspect wake --identity <name>` separates broker
+    /// listen intent from Codex host wake readiness.
     Inspect(inspect::InspectArgs),
     /// Manage the FAMP broker as a persistent user-level service.
     /// `famp daemon install/uninstall/status/restart` — launchd on macOS,

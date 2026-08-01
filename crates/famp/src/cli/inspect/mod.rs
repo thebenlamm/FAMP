@@ -1,8 +1,8 @@
 //! `famp inspect` subcommand surface (v0.10).
 //!
-//! D-06: Phase 1 ships ONLY `broker` and `identities` sub-subcommands.
-//! `tasks` and `messages` are absent from the CLI in Phase 1. Phase 2
-//! adds them after the server answers with real task/message data.
+//! Broker-backed inspectors expose liveness, identities, tasks, messages,
+//! and waiters. `wake` composes those broker facts with local Codex project
+//! configuration to diagnose the cross-layer automatic-wake path.
 
 use clap::{Args, Subcommand};
 
@@ -13,6 +13,7 @@ pub mod identities;
 pub mod messages;
 pub mod tasks;
 pub mod waiters;
+pub mod wake;
 
 #[derive(Args, Debug)]
 pub struct InspectArgs {
@@ -32,6 +33,8 @@ pub enum InspectSubcommand {
     Messages(messages::InspectMessagesArgs),
     /// List clients currently parked in `famp_await`.
     Waiters(waiters::InspectWaitersArgs),
+    /// Diagnose whether a registered identity can wake a Codex window.
+    Wake(wake::InspectWakeArgs),
 }
 
 pub async fn run(args: InspectArgs) -> Result<(), CliError> {
@@ -41,5 +44,6 @@ pub async fn run(args: InspectArgs) -> Result<(), CliError> {
         InspectSubcommand::Tasks(args) => tasks::run(args).await,
         InspectSubcommand::Messages(args) => messages::run(args).await,
         InspectSubcommand::Waiters(args) => waiters::run(args).await,
+        InspectSubcommand::Wake(args) => wake::run(args).await,
     }
 }

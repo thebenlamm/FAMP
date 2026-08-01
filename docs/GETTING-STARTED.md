@@ -85,7 +85,15 @@ famp install-codex
 ```
 
 This writes the MCP server config plus a project-local Stop hook that wakes
-listen-mode Codex sessions when FAMP messages arrive.
+listen-mode Codex sessions when FAMP messages arrive. Run it from each project
+that needs automatic wake, then restart Codex; an already-open window is not
+proven to have loaded a newly installed hook.
+
+After registering through the MCP tool (not `famp register --tail`), verify:
+
+```bash
+famp inspect wake --identity <name>
+```
 
 ---
 

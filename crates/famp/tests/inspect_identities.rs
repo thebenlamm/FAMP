@@ -11,6 +11,9 @@ use std::time::{Duration, Instant};
 #[path = "common/child_guard.rs"]
 mod child_guard;
 use child_guard::ChildGuard;
+#[path = "common/mcp_harness.rs"]
+mod mcp_harness;
+use mcp_harness::Harness as McpHarness;
 
 struct Bus {
     tmp: tempfile::TempDir,
@@ -130,8 +133,8 @@ fn inspect_identities_two_registered_renders_two_data_rows() {
     let lines = data_lines(&stdout);
     assert!(lines[0].contains("NAME"), "missing NAME header: {stdout}");
     assert!(
-        lines[0].contains("LISTEN"),
-        "missing LISTEN header: {stdout}"
+        lines[0].contains("BROKER_LISTEN"),
+        "missing BROKER_LISTEN header: {stdout}"
     );
     assert!(lines[0].contains("CWD"), "missing CWD header: {stdout}");
     assert!(
@@ -260,6 +263,119 @@ fn inspect_identities_json_emits_documented_schema() {
     );
 
     kill_and_wait(alice.as_mut().unwrap());
+}
+
+#[test]
+fn inspect_wake_rejects_cli_tail_as_codex_ready() {
+    let bus = Bus::new();
+    let project = bus.tmp.path().join("wake_project");
+    std::fs::create_dir_all(&project).unwrap();
+    let mut holder = bus.famp_spawn_in(&project, &["register", "cli-tail", "--tail"]);
+    bus.wait_for_register("cli-tail");
+
+    let out = bus.famp_cmd_in(
+        &project,
+        &[
+            "inspect",
+            "wake",
+            "--identity",
+            "cli-tail",
+            "--project",
+            project.to_str().unwrap(),
+            "--home",
+            bus.tmp.path().to_str().unwrap(),
+            "--json",
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["broker"], "healthy", "{value}");
+    assert_eq!(value["delivery"], "healthy", "{value}");
+    assert_eq!(value["holder_kind"], "cli_register", "{value}");
+    assert_eq!(value["broker_listen"], true, "{value}");
+    assert_eq!(value["configured"], false, "{value}");
+    assert_eq!(value["parked"], false, "{value}");
+    assert_eq!(value["wake_ready"], "false", "{value}");
+    assert!(
+        value["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("cannot bind a Codex MCP session")),
+        "{value}"
+    );
+
+    kill_and_wait(holder.as_mut().unwrap());
+}
+
+#[test]
+fn inspect_wake_missing_identity_is_actionable() {
+    let bus = Bus::new();
+    let mut broker_seed = bus.famp_spawn_in(bus.tmp.path(), &["register", "someone"]);
+    bus.wait_for_register("someone");
+
+    let out = bus.famp_cmd(&["inspect", "wake", "--identity", "missing"]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("identity `missing` is not registered"),
+        "unexpected stderr: {stderr}"
+    );
+
+    kill_and_wait(broker_seed.as_mut().unwrap());
+}
+
+#[test]
+fn inspect_wake_reports_mcp_with_missing_project_hook_not_configured() {
+    let root = tempfile::tempdir().unwrap();
+    let project = root.path().join("partial_codex_project");
+    std::fs::create_dir_all(&project).unwrap();
+    let mut mcp = McpHarness::with_local_root(root.path(), None);
+    let register = mcp.tool_call(
+        "famp_register",
+        &serde_json::json!({ "identity": "partial-mcp", "listen": true }),
+    );
+    let register_body = McpHarness::ok_content(&register);
+    assert_eq!(register_body["wake_readiness"], "unknown");
+
+    let out = Command::cargo_bin("famp")
+        .unwrap()
+        .env("FAMP_BUS_SOCKET", root.path().join("bus.sock"))
+        .env("HOME", root.path())
+        .current_dir(&project)
+        .args([
+            "inspect",
+            "wake",
+            "--identity",
+            "partial-mcp",
+            "--project",
+            project.to_str().unwrap(),
+            "--home",
+            root.path().to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["holder_kind"], "mcp", "{value}");
+    assert_eq!(value["broker_listen"], true, "{value}");
+    assert_eq!(value["hook"]["present"], false, "{value}");
+    assert_eq!(value["configured"], false, "{value}");
+    assert_eq!(value["armed"], "unknown", "{value}");
+    assert_eq!(value["wake_ready"], "false", "{value}");
+    assert!(
+        value["remediation"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("install-codex")),
+        "{value}"
+    );
 }
 
 #[test]

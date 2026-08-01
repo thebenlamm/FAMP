@@ -37,20 +37,42 @@ auto-wake by reacting to `FAMP_WAKE` lines (stdout or the `.wake` file).
 | Host | Install | Wake mechanism | Blocking UI? |
 |---|---|---|---|
 | **Claude Code** | `famp install-claude-code` | Stop hook → `famp-await.sh` → `decision: block` | Yes (by design) |
-| **Codex** | `famp install-codex` | Project Stop hook → same `famp-await.sh` | Yes (by design) |
+| **Codex** | `famp install-codex` | Project Stop hook → native `famp hook codex-stop` | Yes (by design) |
 | **Grok** | `famp install-grok` | Stop hook → `famp-await.sh` → `decision: block` (same as Claude) | Yes (by design) |
 
 ### Claude / Codex / Grok (blocking Stop)
 
 1. Agent registers with `listen: true` (MCP default). User says "register
    with famp" → `famp_register` only (no monitor memory required).
-2. Host Stop fires `famp-await.sh` (timeout 86400).
+2. Host Stop fires its FAMP adapter (Codex uses native `famp hook codex-stop`;
+   Claude and Grok use `famp-await.sh`, timeout 86400).
 3. Hook parks on `famp await --as <id> --timeout 23h`.
 4. On message, emits `{"decision":"block","reason":"..."}` so the agent
    calls `famp_inbox` (or channel tools). Peer bytes never enter `reason`.
 
 When the host omits `transcript_path` / `transcriptPath`, the hook still
 tries the PID-correlated fallback before no-op'ing (fail-open exit 0).
+
+`listen: true` is broker intent, not an end-to-end readiness guarantee. For
+Codex, the MCP entry is global in `~/.codex/config.toml`, while the Stop hook
+is project-local in `<repo>/.codex/hooks.json`; having MCP tools available
+does not prove that the current project hook exists or that an already-open
+window loaded it. Diagnose one identity with:
+
+```bash
+famp inspect wake --identity <name>
+```
+
+The command reports the holder kind, broker listen intent, hook/trust state,
+MCP arming, and current waiter separately. `wake_ready: unknown` with valid
+configuration and no waiter is intentional: the turn may still be active, or
+the hook may have been installed after the window opened. Restart Codex after
+every `install-codex`, then re-register through MCP. A parked waiter is also
+reported as independent evidence: the current broker protocol cannot prove
+whether it came from the Codex Stop hook, a manual CLI await, or direct MCP
+await, so it does not by itself promote readiness to `true`. A standalone
+`famp register <name> --tail` can display mailbox events but cannot bind or
+wake a Codex window.
 
 **Grok specifics:**
 

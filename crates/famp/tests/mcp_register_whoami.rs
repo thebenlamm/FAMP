@@ -47,6 +47,17 @@ fn register_valid_identity_succeeds() {
             "drained must be a count, got: {body}"
         );
         assert!(body["peers"].is_array(), "peers must be array: {body}");
+        assert_eq!(body["listen_mode"], true, "register response: {body}");
+        assert_eq!(
+            body["wake_readiness"], "unknown",
+            "listen intent must not claim host readiness: {body}"
+        );
+        assert!(
+            body["warning"]
+                .as_str()
+                .is_some_and(|warning| warning.contains("Stop hook")),
+            "missing host-hook prerequisite warning: {body}"
+        );
 
         let w = h.tool_call("famp_whoami", &serde_json::json!({}));
         let wb = Harness::ok_content(&w);
@@ -146,6 +157,21 @@ fn tools_list_returns_expected_tools() {
             assert!(
                 names.contains(&expected),
                 "missing tool: {expected}; got {names:?}"
+            );
+        }
+        for name in ["famp_register", "famp_set_listen"] {
+            let description = tools
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .and_then(|tool| tool["description"].as_str())
+                .unwrap();
+            assert!(
+                description.contains("Stop hook"),
+                "{name} must state the host-hook prerequisite: {description}"
+            );
+            assert!(
+                !description.contains("wake Claude"),
+                "{name} must use host-neutral wording: {description}"
             );
         }
     });
