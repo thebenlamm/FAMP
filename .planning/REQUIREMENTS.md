@@ -37,7 +37,7 @@ Public reachability over the open internet. The model is decided **first**, in a
 - [ ] **REACH-01**: A decision record names the chosen reachability model, its **re-verified live** cost/month (vendor pricing pages, not aggregators), the named operator, and explicitly what the relay/tunnel **can and cannot observe** about FAMP traffic.
 - [ ] **REACH-02**: The spike's viability finding is validated against a **real symmetric-NAT network** (e.g. a carrier hotspot), not only networks Ben controls.
 - [ ] **REACH-03**: `iroh` is explicitly weighed as the single-crate alternative and its rejection rationale (transport-migration cost against a shipped, Gate-A-proven axum/rustls transport) is recorded in the decision record rather than silently dropped.
-- [x] **REACH-04**: Two gateways on different networks, with no shared VPN, establish a working bidirectional path under the chosen model.
+- [ ] **REACH-04**: Two gateways on different networks, with no shared VPN, establish a working bidirectional path under the chosen model.
 - [x] **REACH-05**: A reachability failure (relay down, hole-punch failed, peer offline) surfaces at the sender as a distinct, actionable error — never as a silent fire-and-forget success.
 
 ### Keyring Format Extension (KEYR)
@@ -182,7 +182,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REACH-01 | Phase 13 | Pending |
 | REACH-02 | Phase 13 | Pending |
 | REACH-03 | Phase 13 | Pending |
-| REACH-04 | Phase 17 | Complete |
+| REACH-04 | Phase 17 | In progress — relay (17-04) built; 17-05 (relay-fetch loop + 3-process bidirectional e2e proof) not yet run |
 | REACH-05 | Phase 17 | Complete |
 | KEYR-01 | Phase 15 | Complete |
 | KEYR-02 | Phase 15 | Complete |
