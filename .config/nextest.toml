@@ -49,7 +49,29 @@ test-group = "gateway-subprocess"
 filter = "package(famp) and (test(/inspect_broker/) or test(/inspect_identities/) or test(/inspect_tasks/) or test(/inspect_messages/) or test(/inspect_cancel_1000/) or test(/inspect_load_test/))"
 test-group = "inspect-subprocess"
 
+# QUAR-05 / D-22: the two non-vacuity control tests in
+# crates/famp/tests/quarantine_gate.rs each write a fabricated probe source
+# file into `crates/famp/src/` and then run the repo-wide
+# `scripts/quarantine-surfaces.sh --check` over the whole tree. That makes the
+# source tree shared mutable state ACROSS PROCESSES. The test file's
+# `QUARANTINE_GATE_LOCK` mutex serializes them under `cargo test` (one process,
+# many threads) but is inert under nextest, which runs every test in its own
+# process -- so test B's "gate is green again after cleanup" assertion could
+# observe test A's probe file still on disk and fail. That is exactly what went
+# red on 21475be: the failing test was `gate_goes_red_on_a_reply_debug_leak`
+# while the unregistered surface it tripped on was
+# `quarantine_gate_test_temp_probe.rs`, the OTHER test's file.
+# Bounding the group to one thread is the cross-process half of the fix.
+[[profile.default.overrides]]
+filter = "package(famp) and binary(quarantine_gate)"
+test-group = "quarantine-gate-source-tree"
+
+[[profile.ci.overrides]]
+filter = "package(famp) and binary(quarantine_gate)"
+test-group = "quarantine-gate-source-tree"
+
 [test-groups]
 listen-subprocess = { max-threads = 4 }
 inspect-subprocess = { max-threads = 1 }
 gateway-subprocess = { max-threads = 2 }
+quarantine-gate-source-tree = { max-threads = 1 }

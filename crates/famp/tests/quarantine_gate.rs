@@ -16,10 +16,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::Mutex;
 
-/// Serializes this test against any future sibling test that might also
-/// write into `crates/famp/src/` — writing into the source tree is
-/// process-tree-global state, unlike most of this crate's tests which
-/// isolate themselves via `tempfile`/per-test sockets.
+/// Serializes the tests in this file against each other **within a single
+/// process** — writing into the source tree is global state, unlike most of
+/// this crate's tests which isolate themselves via `tempfile`/per-test
+/// sockets.
+///
+/// This mutex is only half the fix, and only the half that covers
+/// `cargo test`. `cargo nextest` — what CI runs — executes every test in its
+/// OWN process, where a process-local mutex provides no mutual exclusion at
+/// all. The cross-process half is the `quarantine-gate-source-tree`
+/// single-threaded test-group in `.config/nextest.toml`; the two must stay
+/// in place together. Removing either one re-opens the race that turned main
+/// red at 21475be.
 static QUARANTINE_GATE_LOCK: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
