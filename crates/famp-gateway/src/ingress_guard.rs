@@ -108,6 +108,46 @@ pub enum GuardReject {
     /// material.
     #[error("sender '{principal}' submitted an envelope with an absent or empty nonce")]
     MissingNonce { principal: String },
+
+    /// INGR-04/D-08/D-22: this gateway's configured `own_domain` does not
+    /// match the peeked `to` authority. Does NOT imply anything about the
+    /// envelope's signature — a correctly-signed envelope addressed to a
+    /// domain this gateway does not own maps here too, by design (this
+    /// runs BEFORE `verify_inbound_any`, per INGR-05/D-09). Only produced
+    /// when `own_domain` is configured; an unset `own_domain` skips the
+    /// domain half of [`audience_check`] entirely (D-22: audience binding
+    /// here is DOMAIN-granularity only, never per-recipient — see this
+    /// module's `audience_check` doc). Carries both the expected and the
+    /// got authority — neither is secret, both are already public in the
+    /// envelope's own `to` field.
+    #[error("this gateway is not authoritative for domain '{got}' (configured own-domain: '{expected}')")]
+    ForeignDomain { expected: String, got: String },
+
+    /// INGR-04/D-08/D-22: the peeked `from` name is not in this gateway's
+    /// `--backs` set (`GatewayRegistry`). Does NOT imply the envelope is
+    /// unsigned or forged — a correctly-signed envelope from a principal
+    /// this gateway simply does not proxy maps here too, by design (runs
+    /// BEFORE `verify_inbound_any`, per INGR-05/D-09). Carries only the
+    /// peeked sender name — never key bytes or signature material.
+    #[error("sender principal '{principal}' is not backed by this gateway")]
+    SenderNotBacked { principal: String },
+
+    /// INGR-06/D-10: `sender` has exceeded `limit` admitted requests
+    /// within the current `window_secs`-second fixed window. Does NOT
+    /// imply anything about the envelope's signature, freshness, or
+    /// replay status — a perfectly valid, first-ever-seen envelope from a
+    /// sender who has simply exhausted their budget maps here too, by
+    /// design (runs BEFORE `verify_inbound_any`, per INGR-05/D-09, and
+    /// LAST among the cheap gates — see [`run_cheap_gates`]'s ordering
+    /// comment for why). Carries the principal, the limit, and the window
+    /// length so an operator can read the applied policy directly off the
+    /// reject — never key bytes or signature material.
+    #[error("sender '{principal}' exceeded {limit} requests per {window_secs}s")]
+    RateLimited {
+        principal: String,
+        limit: u32,
+        window_secs: i64,
+    },
 }
 
 /// Fields peeked from unverified inbound bytes, cheaply, before any
@@ -403,6 +443,127 @@ impl Default for ReplayCache {
     }
 }
 
+/// INGR-06's fixed-window rate-limit cap: the maximum number of requests
+/// one sender may have admitted within any single `RATE_LIMIT_WINDOW_SECS`
+/// window.
+///
+/// These two constants are the `rate_max`/`rate_window_secs` arguments
+/// [`replay_bounds_ok`] takes — see [`SHIPPED_BOUNDS_OK`] below, which
+/// binds this constant, [`RATE_LIMIT_WINDOW_SECS`], [`CLOCK_SKEW_WINDOW_SECS`],
+/// [`REPLAY_CACHE_TTL_SECS`], and [`REPLAY_CACHE_MAX_PER_SENDER`] together
+/// at COMPILE time, so retuning this value alone is checked against the
+/// replay cache's size bound rather than drifting silently.
+pub const RATE_LIMIT_MAX_PER_WINDOW: u32 = 120;
+
+/// INGR-06's fixed-window length, in seconds. See
+/// [`RATE_LIMIT_MAX_PER_WINDOW`]'s doc comment for the compile-time
+/// binding this participates in.
+pub const RATE_LIMIT_WINDOW_SECS: i64 = 60;
+
+/// The D-06 TTL/skew/size/rate relationship, evaluated once against the
+/// five constants this crate actually ships, and asserted below at COMPILE
+/// time — not merely by a runtime test. Binding all five constants
+/// together in one place means editing any single knob without checking
+/// the others fails the BUILD, not just `cargo test`.
+const SHIPPED_BOUNDS_OK: bool = replay_bounds_ok(
+    CLOCK_SKEW_WINDOW_SECS,
+    REPLAY_CACHE_TTL_SECS,
+    REPLAY_CACHE_MAX_PER_SENDER,
+    RATE_LIMIT_MAX_PER_WINDOW,
+    RATE_LIMIT_WINDOW_SECS,
+);
+// `clippy::assertions_on_constants` fires here because the condition is a
+// `const`, known at compile time — that is the ENTIRE POINT of this
+// assertion (the standard Rust const-assertion idiom: a violating retune
+// of any of the five bound constants makes `SHIPPED_BOUNDS_OK` resolve to
+// `false`, which makes THIS line fail to compile). Suppressed narrowly,
+// on this one line, not the module.
+#[allow(clippy::assertions_on_constants)]
+const _: () = assert!(SHIPPED_BOUNDS_OK);
+
+/// INGR-06/INGR-08: fixed-window rate limiter, keyed on the
+/// backing-confirmed peeked sender principal name.
+///
+/// **Why a fixed window, not a sliding one:** O(1) memory per sender over
+/// a bounded key space (the operator-configured `--backs` set), at the
+/// cost of admitting up to double the nominal rate across a window
+/// boundary in the worst case (a burst just before a window closes plus a
+/// burst just after it opens). That imprecision is at most one extra
+/// window's budget, which is proportionate for a relay serving a small,
+/// fixed, operator-configured peer set — not the general internet.
+///
+/// **Why the key is what it is (INGR-06/D-10) — three things:**
+///
+/// 1. The key is the peeked sender principal name AFTER
+///    [`audience_check`] has confirmed it is in this gateway's `--backs`
+///    set (`run_cheap_gates` runs audience binding before this gate — see
+///    its ordering comment). The key space is therefore fixed at process
+///    startup and enumerable, never attacker-mintable: an attacker cannot
+///    manufacture a new bucket merely by claiming a new name.
+/// 2. Source IP is deliberately rejected as a key: it is attacker-
+///    rotatable and NAT-shared, and this gateway's TLS is channel
+///    encryption only (D-08), giving no authenticated per-connection
+///    identity to key on besides the envelope's claimed `from`.
+/// 3. Residual risk (17-RESEARCH.md Pitfall 3, T-17-15), stated honestly
+///    rather than hidden: an attacker holding no valid key can still burn
+///    a real backed peer's rate-limit budget by CLAIMING their name in
+///    the peeked `from` field, because INGR-05's ordering requires this
+///    gate to run before signature verification ever proves the claim
+///    false. This risk is bounded — by the small, fixed, operator-
+///    configured backed set — and ACCEPTED, not closed. If spurious
+///    rate-limit rejects are observed during REACH-04 acceptance, that
+///    should be investigated as this exact risk materializing BEFORE the
+///    threshold is loosened, not treated as a simple false-positive bug.
+pub struct RateLimiter {
+    buckets: std::collections::HashMap<String, (OffsetDateTime, u32)>,
+}
+
+impl RateLimiter {
+    /// An empty limiter, as constructed on gateway startup.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            buckets: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Admit (or reject) one request from `sender` at `now`.
+    ///
+    /// A sender with no existing bucket, or whose bucket's window start is
+    /// at least `RATE_LIMIT_WINDOW_SECS` behind `now`, gets a fresh window
+    /// (count reset to 1) and `Ok`. Otherwise the count is compared
+    /// against [`RATE_LIMIT_MAX_PER_WINDOW`]: at or below the limit,
+    /// incremented and `Ok`; above it, [`GuardReject::RateLimited`].
+    pub fn admit(&mut self, sender: &str, now: OffsetDateTime) -> Result<(), GuardReject> {
+        let bucket = self
+            .buckets
+            .entry(sender.to_string())
+            .or_insert((now, 0_u32));
+
+        if (now - bucket.0).whole_seconds() >= RATE_LIMIT_WINDOW_SECS {
+            *bucket = (now, 1);
+            return Ok(());
+        }
+
+        if bucket.1 < RATE_LIMIT_MAX_PER_WINDOW {
+            bucket.1 += 1;
+            Ok(())
+        } else {
+            Err(GuardReject::RateLimited {
+                principal: sender.to_string(),
+                limit: RATE_LIMIT_MAX_PER_WINDOW,
+                window_secs: RATE_LIMIT_WINDOW_SECS,
+            })
+        }
+    }
+}
+
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Process-lifetime pre-verify guard state.
 ///
 /// `started_at` is the anchor for INGR-03's restart-reopened replay-window
@@ -413,16 +574,18 @@ impl Default for ReplayCache {
 pub struct IngressGuard {
     started_at: OffsetDateTime,
     replay: ReplayCache,
+    rate: RateLimiter,
 }
 
 impl IngressGuard {
     /// Capture the current instant as this guard's `started_at`, with a
-    /// fresh, empty [`ReplayCache`].
+    /// fresh, empty [`ReplayCache`] and [`RateLimiter`].
     #[must_use]
     pub fn new() -> Self {
         Self {
             started_at: OffsetDateTime::now_utc(),
             replay: ReplayCache::new(),
+            rate: RateLimiter::new(),
         }
     }
 
@@ -443,13 +606,10 @@ impl Default for IngressGuard {
 /// Input to [`run_cheap_gates`]: the peeked (unverified) fields plus the
 /// process-level context every cheap gate needs.
 ///
-/// `own_domain` and `sender_is_backed` are populated by this plan's
-/// caller but not yet read by [`run_cheap_gates`] itself — plan 03's
-/// audience gate is the first consumer. This is an intentional forward
-/// shape (the whole-request context a gate chain needs is assembled
-/// once, at the call site, rather than re-derived per gate); do not
-/// delete these fields merely because this plan's `run_cheap_gates` body
-/// does not yet read them.
+/// `own_domain` and `sender_is_backed` are read by [`audience_check`],
+/// the first gate [`run_cheap_gates`] runs (INGR-04). The whole-request
+/// context a gate chain needs is assembled once, at the call site, rather
+/// than re-derived per gate.
 pub struct GuardInput<'a> {
     pub peeked: &'a PeekedFields,
     pub now: &'a str,
@@ -457,24 +617,74 @@ pub struct GuardInput<'a> {
     pub sender_is_backed: bool,
 }
 
+/// INGR-04/D-08 audience binding: checked in order, `own_domain` first
+/// (when configured) then `sender_is_backed`.
+///
+/// **D-22 limitation, stated here explicitly because this is the one
+/// function that enforces it:** this checks the recipient DOMAIN
+/// (`peeked.to.authority()` against `own_domain`) and the SENDER's
+/// backing (`sender_is_backed`) — it does NOT check whether `to` is
+/// actually a principal this gateway serves. `GatewayRegistry` (see
+/// `registry.rs`) has exactly one meaning of "backs": the fixed,
+/// pre-configured set of REMOTE principal names a `famp-gateway` process
+/// was launched to proxy via `--backs`. It has never tracked local
+/// recipients, so a per-recipient check is not available to add here
+/// without a different, larger change (tracked as INGR-09, out of this
+/// plan's scope). Audience binding delivered by this function is
+/// DOMAIN-granularity only.
+///
+/// When `input.own_domain` is `None`, the domain half is skipped
+/// entirely — the backing half still runs unconditionally.
+pub fn audience_check(input: &GuardInput<'_>) -> Result<(), GuardReject> {
+    if let Some(expected) = input.own_domain {
+        let got = input.peeked.to.authority();
+        if got != expected {
+            return Err(GuardReject::ForeignDomain {
+                expected: expected.to_string(),
+                got: got.to_string(),
+            });
+        }
+    }
+    if !input.sender_is_backed {
+        return Err(GuardReject::SenderNotBacked {
+            principal: input.peeked.from.name().to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// The single ordered call site every cheap gate is added to.
 ///
-/// This plan runs two gates in order: [`freshness_check`], then the
-/// replay check ([`ReplayCache::record`] on `guard.replay`). The required
-/// order later plans MUST preserve when adding their own gate: audience
-/// binding, then freshness, then replay (this plan), then rate limit —
-/// matching the order 17-CONTEXT.md's D-08/D-05/D-06/D-10 discuss them.
-/// Returns on the FIRST reject; later gates never run once an earlier
-/// one has failed (INGR-05: cheap-before-expensive applies within this
-/// chain too, not just relative to signature verification).
+/// Final order (this plan completes it): [`audience_check`], then
+/// [`freshness_check`], then the replay check ([`ReplayCache::record`] on
+/// `guard.replay`), then the rate limit ([`RateLimiter::admit`] on
+/// `guard.rate`) — matching the order 17-CONTEXT.md's D-08/D-05/D-06/D-10
+/// discuss them. Returns on the FIRST reject; later gates never run once
+/// an earlier one has failed (INGR-05: cheap-before-expensive applies
+/// within this chain too, not just relative to signature verification).
 ///
-/// Replay keys on the PEEKED sender name (`input.peeked.from`), not a
-/// verified identity — consistent with every other gate in this chain
-/// running before `verify_inbound_any` ever confirms a signature.
+/// **Rate limiting runs LAST among the cheap gates on purpose.** An
+/// envelope that is foreign-domain, from an unbacked sender, stale, or a
+/// replay should be rejected for THAT reason rather than consuming a
+/// rate-limit slot — only traffic that is otherwise admissible should
+/// count against a peer's budget. Placing the rate check first would let
+/// a flood of malformed/foreign/stale junk exhaust a legitimate peer's
+/// budget before any of those cheaper, more specific rejects even had a
+/// chance to fire.
+///
+/// Replay and rate-limit both key on the PEEKED sender name
+/// (`input.peeked.from`), not a verified identity — consistent with every
+/// other gate in this chain running before `verify_inbound_any` ever
+/// confirms a signature. By the time either gate runs, [`audience_check`]
+/// has already confirmed the peeked sender is backed (see
+/// [`RateLimiter`]'s doc comment for why that ordering is exactly what
+/// makes the rate-limit key non-attacker-mintable).
 pub fn run_cheap_gates(
     input: &GuardInput<'_>,
     guard: &mut IngressGuard,
 ) -> Result<(), GuardReject> {
+    audience_check(input)?;
+
     freshness_check(input.peeked.ts.as_str(), input.now, CLOCK_SKEW_WINDOW_SECS)?;
 
     let nonce = input
@@ -490,7 +700,9 @@ pub fn run_cheap_gates(
 
     guard
         .replay
-        .record(input.peeked.from.name(), nonce, parsed_now)
+        .record(input.peeked.from.name(), nonce, parsed_now)?;
+
+    guard.rate.admit(input.peeked.from.name(), parsed_now)
 }
 
 #[cfg(test)]
@@ -859,5 +1071,158 @@ mod tests {
             freshness_check(&too_old, &now, CLOCK_SKEW_WINDOW_SECS),
             Err(GuardReject::StaleTimestamp { .. })
         ));
+    }
+
+    // --- Task 1 (17-03, INGR-04): audience_check ---
+
+    fn peeked_fields(from: &str, to: &str) -> PeekedFields {
+        PeekedFields {
+            from: from.parse().unwrap(),
+            to: to.parse().unwrap(),
+            ts: to_canonical_rfc3339(OffsetDateTime::now_utc()),
+            nonce: Some("nonce-1".to_string()),
+            expiry: None,
+        }
+    }
+
+    #[test]
+    fn audience_check_passes_when_domain_matches_and_sender_is_backed() {
+        let peeked = peeked_fields("agent:hosta.test/oscar", "agent:hostb.test/peggy");
+        let now = to_canonical_rfc3339(OffsetDateTime::now_utc());
+        let input = GuardInput {
+            peeked: &peeked,
+            now: &now,
+            own_domain: Some("hostb.test"),
+            sender_is_backed: true,
+        };
+        assert!(audience_check(&input).is_ok());
+    }
+
+    #[test]
+    fn audience_check_rejects_foreign_domain_naming_both_values() {
+        let peeked = peeked_fields("agent:hosta.test/oscar", "agent:otherdomain.test/peggy");
+        let now = to_canonical_rfc3339(OffsetDateTime::now_utc());
+        let input = GuardInput {
+            peeked: &peeked,
+            now: &now,
+            own_domain: Some("hostb.test"),
+            sender_is_backed: true,
+        };
+        match audience_check(&input) {
+            Err(GuardReject::ForeignDomain { expected, got }) => {
+                assert_eq!(expected, "hostb.test");
+                assert_eq!(got, "otherdomain.test");
+            }
+            other => panic!("expected ForeignDomain naming both values, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn audience_check_rejects_sender_not_backed_when_domain_matches() {
+        let peeked = peeked_fields("agent:hosta.test/oscar", "agent:hostb.test/peggy");
+        let now = to_canonical_rfc3339(OffsetDateTime::now_utc());
+        let input = GuardInput {
+            peeked: &peeked,
+            now: &now,
+            own_domain: Some("hostb.test"),
+            sender_is_backed: false,
+        };
+        assert!(matches!(
+            audience_check(&input),
+            Err(GuardReject::SenderNotBacked { .. })
+        ));
+    }
+
+    /// D-22: `own_domain: None` skips ONLY the domain half — the backing
+    /// half is still enforced unconditionally.
+    #[test]
+    fn audience_check_with_own_domain_none_skips_domain_half_but_still_enforces_backing() {
+        let peeked = peeked_fields("agent:hosta.test/oscar", "agent:otherdomain.test/peggy");
+        let now = to_canonical_rfc3339(OffsetDateTime::now_utc());
+
+        let input_backed = GuardInput {
+            peeked: &peeked,
+            now: &now,
+            own_domain: None,
+            sender_is_backed: true,
+        };
+        assert!(
+            audience_check(&input_backed).is_ok(),
+            "own_domain unset must skip the domain half regardless of `to`'s authority"
+        );
+
+        let input_unbacked = GuardInput {
+            peeked: &peeked,
+            now: &now,
+            own_domain: None,
+            sender_is_backed: false,
+        };
+        assert!(
+            matches!(
+                audience_check(&input_unbacked),
+                Err(GuardReject::SenderNotBacked { .. })
+            ),
+            "own_domain unset must NOT skip the backing half"
+        );
+    }
+
+    // --- Task 1 (17-03, INGR-06): RateLimiter ---
+
+    #[test]
+    fn rate_limiter_first_request_is_never_limited_and_window_resets() {
+        let mut limiter = RateLimiter::new();
+        let sender = "agent:hosta.test/alice";
+        let now = OffsetDateTime::now_utc();
+        assert!(
+            limiter.admit(sender, now).is_ok(),
+            "first request must always be admitted"
+        );
+
+        let after_window = now + time::Duration::seconds(RATE_LIMIT_WINDOW_SECS + 1);
+        assert!(
+            limiter.admit(sender, after_window).is_ok(),
+            "a sender whose window has fully elapsed must restart from a clean count"
+        );
+    }
+
+    #[test]
+    fn rate_limiter_admits_exactly_the_limit_then_rejects() {
+        let mut limiter = RateLimiter::new();
+        let sender = "agent:hosta.test/alice";
+        let now = OffsetDateTime::now_utc();
+        for i in 0..RATE_LIMIT_MAX_PER_WINDOW {
+            assert!(
+                limiter.admit(sender, now).is_ok(),
+                "request {i} (within RATE_LIMIT_MAX_PER_WINDOW) must be admitted"
+            );
+        }
+        assert!(
+            matches!(
+                limiter.admit(sender, now),
+                Err(GuardReject::RateLimited { .. })
+            ),
+            "the request one past RATE_LIMIT_MAX_PER_WINDOW must be rejected"
+        );
+    }
+
+    #[test]
+    fn rate_limiter_counts_are_per_sender() {
+        let mut limiter = RateLimiter::new();
+        let now = OffsetDateTime::now_utc();
+        let alice = "agent:hosta.test/alice";
+        let bob = "agent:hosta.test/bob";
+
+        for _ in 0..RATE_LIMIT_MAX_PER_WINDOW {
+            assert!(limiter.admit(alice, now).is_ok());
+        }
+        assert!(matches!(
+            limiter.admit(alice, now),
+            Err(GuardReject::RateLimited { .. })
+        ));
+
+        assert!(
+            limiter.admit(bob, now).is_ok(),
+            "exhausting sender A's budget must not limit sender B (INGR-08 cross-tenant isolation)"
+        );
     }
 }

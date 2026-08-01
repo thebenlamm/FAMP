@@ -267,6 +267,19 @@ pub(crate) enum IngressError {
     /// sender name.
     #[error("sender '{principal}' submitted an envelope with an absent or empty nonce")]
     MissingNonce { principal: String },
+    /// Task 1 (17-03, INGR-06/D-10): `principal` has exceeded `limit`
+    /// admitted requests within the current `window_secs`-second fixed
+    /// window. Produced BEFORE `verify_inbound_any` runs (INGR-05), and
+    /// last among the cheap gates — see
+    /// `ingress_guard::run_cheap_gates`'s ordering comment. Carries the
+    /// principal, limit, and window length so an operator can read the
+    /// applied policy directly off the reject.
+    #[error("sender '{principal}' exceeded {limit} requests per {window_secs}s")]
+    RateLimited {
+        principal: String,
+        limit: u32,
+        window_secs: i64,
+    },
     #[error("internal error")]
     Internal,
 }
@@ -291,6 +304,7 @@ impl IntoResponse for IngressError {
             Self::StaleTimestamp { .. } => (StatusCode::BAD_REQUEST, "stale_timestamp"),
             Self::ReplayedNonce { .. } => (StatusCode::BAD_REQUEST, "replayed_nonce"),
             Self::MissingNonce { .. } => (StatusCode::BAD_REQUEST, "missing_nonce"),
+            Self::RateLimited { .. } => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         let body = serde_json::json!({ "error": slug, "detail": self.to_string() });
@@ -336,6 +350,32 @@ fn ingress_error_for_guard(reject: GuardReject) -> IngressError {
             IngressError::ReplayedNonce { principal, nonce }
         }
         GuardReject::MissingNonce { principal } => IngressError::MissingNonce { principal },
+        // Task 1 (17-03, INGR-04/D-22): reuses the EXISTING
+        // `IngressError::ForeignDomain` variant (Phase 11) rather than
+        // adding a duplicate — this is now produced pre-verify by
+        // `audience_check` instead of post-verify by
+        // `check_audience_and_format`, but an operator grepping the slug
+        // sees the same `foreign_domain` either way.
+        GuardReject::ForeignDomain { expected, got } => {
+            IngressError::ForeignDomain { expected, got }
+        }
+        // Task 1 (17-03, INGR-04/D-22): reuses the EXISTING
+        // `IngressError::SenderNotBacked` variant (Phase 9) rather than
+        // adding a duplicate. That variant carries no fields (the
+        // pre-existing post-verify reject in `deliver()` never needed
+        // one); `GuardReject::SenderNotBacked`'s `principal` field is
+        // still logged at the `ingest_inbound` call site before this
+        // translation drops it.
+        GuardReject::SenderNotBacked { .. } => IngressError::SenderNotBacked,
+        GuardReject::RateLimited {
+            principal,
+            limit,
+            window_secs,
+        } => IngressError::RateLimited {
+            principal,
+            limit,
+            window_secs,
+        },
     }
 }
 
@@ -427,6 +467,28 @@ pub(crate) async fn ingest_inbound(
                         "famp-gateway: ingress: rejected — sender '{principal}' submitted an envelope with no nonce"
                     );
                 }
+                GuardReject::ForeignDomain { expected, got } => {
+                    eprintln!(
+                        "famp-gateway: ingress: rejected — envelope 'to' domain '{got}' != this \
+                         gateway's own-domain '{expected}' (pre-verify audience check)"
+                    );
+                }
+                GuardReject::SenderNotBacked { principal } => {
+                    eprintln!(
+                        "famp-gateway: ingress: rejected — sender '{principal}' is not backed by \
+                         this gateway (pre-verify audience check)"
+                    );
+                }
+                GuardReject::RateLimited {
+                    principal,
+                    limit,
+                    window_secs,
+                } => {
+                    eprintln!(
+                        "famp-gateway: ingress: rejected — sender '{principal}' exceeded \
+                         {limit} requests per {window_secs}s"
+                    );
+                }
                 GuardReject::BadEnvelopeShape => {}
             }
             ingress_error_for_guard(reject)
@@ -438,7 +500,7 @@ pub(crate) async fn ingest_inbound(
     let envelope =
         verify_inbound_any(body, &state.keyring, &now).map_err(ingress_error_for_reject)?;
 
-    check_audience_and_format(&envelope, recipient, state.own_domain.as_ref())?;
+    check_audience_and_format(&envelope, recipient)?;
 
     let sender = envelope_sender(&envelope).clone();
     deliver(&sender, recipient, body, &state.registry).await
@@ -455,10 +517,20 @@ pub(crate) async fn ingest_inbound(
 /// checks ahead of the *expensive* verify; these three checks are
 /// themselves cheap but need the verified envelope's own `to`, so they
 /// stay here, after verify, exactly as before).
+///
+/// Task 1 (17-03, INGR-04/D-22): the own-domain-authority check that used
+/// to live here (post-verify) is REMOVED — [`crate::ingress_guard::audience_check`]
+/// now enforces the domain half pre-verify, ahead of `verify_inbound_any`
+/// (INGR-05), so re-checking it here on the same verified `to` would be
+/// pure duplication. `MisaddressedRecipient` and `federation_format_ok`
+/// stay here unchanged: both need the VERIFIED envelope's own fields
+/// (`to` and the federation `nonce`/`expiry` shape respectively), which
+/// only exist after `verify_inbound_any` returns — moving either onto
+/// unverified data would be a different and worse change, not a
+/// reordering.
 fn check_audience_and_format(
     envelope: &AnySignedEnvelope,
     recipient: &Principal,
-    own_domain: Option<&Arc<str>>,
 ) -> Result<(), IngressError> {
     let envelope_to = envelope_recipient(envelope).clone();
     if envelope_to != *recipient {
@@ -470,24 +542,6 @@ fn check_audience_and_format(
             to: envelope_to,
             recipient: recipient.clone(),
         });
-    }
-    if let Some(own_domain) = own_domain {
-        let got = envelope_to.authority();
-        if got != own_domain.as_ref() {
-            eprintln!(
-                "famp-gateway: ingress: rejected — envelope 'to' domain '{got}' != this \
-                 gateway's own-domain '{own_domain}'"
-            );
-            return Err(IngressError::ForeignDomain {
-                expected: own_domain.to_string(),
-                got: got.to_string(),
-            });
-        }
-    } else {
-        eprintln!(
-            "famp-gateway: ingress: own-domain unset; skipping to-authority check for '{envelope_to}' \
-             (T-11-29 residual — accepted posture until own-domain is configured)"
-        );
     }
     if !envelope_federation_format_ok(envelope) {
         let sender = envelope_sender(envelope);
@@ -542,6 +596,13 @@ async fn deliver(
     // principal's connection.
     let reply = {
         let mut guard = registry.lock().await;
+        // Task 1 (17-03, INGR-04/D-22): `audience_check` already proved
+        // this sender is backed, pre-verify (`GuardReject::SenderNotBacked`)
+        // — a hostile "sender not backed" request never reaches this far
+        // anymore. This `else` branch is kept purely as defense-in-depth:
+        // reaching it now would mean the sender was backed when the guard
+        // chain ran but was concurrently de-registered before this lock
+        // was acquired, a benign race, not an attack surface.
         let Some(principal) = guard.get_mut(sender.name()) else {
             drop(guard);
             return Err(IngressError::SenderNotBacked);
@@ -709,6 +770,86 @@ mod tests {
         )
     }
 
+    /// Task 1 (17-03, INGR-04) deviation: `audience_check` now requires
+    /// `sender_is_backed` to be TRUE before ANY later cheap gate
+    /// (freshness/replay/rate-limit) or signature verification ever runs.
+    /// Every pre-17-03 test in this module that wanted to reach one of
+    /// those later checks relied on an UNBACKED sender reaching as far as
+    /// `sender_not_backed` (BAD_GATEWAY) — that terminal state is now
+    /// reached FIRST, before freshness/replay/nonce/signature ever run,
+    /// which would silently stop testing the exact property most of
+    /// those tests exist to prove. `LiveBroker` stands up a real,
+    /// in-process broker (`famp::cli::broker::run_on_listener` — a
+    /// test-facing entry point taking a pre-bound `UnixListener`; no
+    /// subprocess, no binary build, unlike
+    /// `inbound_destination_validation.rs`'s heavier subprocess pattern)
+    /// so `GatewayRegistry::back` can register a REAL backed sender,
+    /// letting these tests reach the gate they actually test.
+    struct LiveBroker {
+        _tmp: tempfile::TempDir,
+        _shutdown: tokio::sync::oneshot::Sender<()>,
+        _broker: tokio::task::JoinHandle<()>,
+        sock: std::path::PathBuf,
+    }
+
+    impl LiveBroker {
+        async fn spawn() -> Self {
+            let tmp = tempfile::TempDir::new().expect("tempdir");
+            let sock = tmp.path().join("bus.sock");
+            let listener =
+                tokio::net::UnixListener::bind(&sock).expect("bind in-process broker socket");
+            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+            let shutdown_fut = async move {
+                let _ = shutdown_rx.await;
+            };
+            let sock_for_broker = sock.clone();
+            let bus_dir = tmp.path().to_path_buf();
+            let broker = tokio::spawn(async move {
+                let _ = famp::cli::broker::run_on_listener(
+                    &sock_for_broker,
+                    &bus_dir,
+                    listener,
+                    shutdown_fut,
+                )
+                .await;
+            });
+            // Give the broker a tick to enter its select loop (matches
+            // famp/tests/broker_lifecycle.rs's own convention for this
+            // same in-process entry point).
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            Self {
+                _tmp: tmp,
+                _shutdown: shutdown_tx,
+                _broker: broker,
+                sock,
+            }
+        }
+    }
+
+    /// Build a router with `from_name` REALLY backed (see [`LiveBroker`]'s
+    /// doc comment) via a fresh, isolated in-process broker — mirroring
+    /// `router_with_keyring`'s existing fresh-empty-registry-per-call
+    /// convention, just with one real connection instead of zero.
+    async fn router_with_backed_sender(
+        keyring: Keyring,
+        own_domain: Option<&str>,
+        from_name: &str,
+    ) -> (Router, Arc<Mutex<GatewayRegistry>>, LiveBroker) {
+        let broker = LiveBroker::spawn().await;
+        let mut registry = GatewayRegistry::default();
+        registry
+            .back(&broker.sock, from_name.to_owned())
+            .await
+            .expect("back sender on in-process broker");
+        let registry = Arc::new(Mutex::new(registry));
+        let router = build_gateway_router(
+            registry.clone(),
+            Arc::new(keyring),
+            own_domain.map(Arc::from),
+        );
+        (router, registry, broker)
+    }
+
     /// Percent-encode a `Principal`'s `to_string()` into a single URL path
     /// segment — mirrors exactly what `HttpTransport::send` does
     /// (`crates/famp-transport-http/src/transport.rs`'s
@@ -753,7 +894,8 @@ mod tests {
         keyring_wrong
             .pin_tofu(from.clone(), wrong_sk.verifying_key())
             .unwrap();
-        let (router, registry) = router_with_keyring(keyring_wrong);
+        let (router, registry, _broker) =
+            router_with_backed_sender(keyring_wrong, None, "oscar").await;
         let resp = post_inbox(router, &to, bytes.clone()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -761,12 +903,14 @@ mod tests {
         assert_eq!(v["error"], "invalid_signature");
         assert_eq!(
             registry.lock().await.names().count(),
-            0,
-            "reject path must perform zero registry mutation"
+            1,
+            "reject path must perform zero registry mutation BEYOND the \
+             harness's own backed sender (see LiveBroker's doc comment)"
         );
 
         // --- unpinned key: sender absent from an empty keyring ---
-        let (router2, registry2) = router_with_keyring(Keyring::new());
+        let (router2, registry2, _broker2) =
+            router_with_backed_sender(Keyring::new(), None, "oscar").await;
         let resp2 = post_inbox(router2, &to, bytes).await;
         assert_eq!(resp2.status(), StatusCode::FORBIDDEN);
         let body2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
@@ -774,8 +918,9 @@ mod tests {
         assert_eq!(v2["error"], "unpinned_key");
         assert_eq!(
             registry2.lock().await.names().count(),
-            0,
-            "reject path must perform zero registry mutation"
+            1,
+            "reject path must perform zero registry mutation BEYOND the \
+             harness's own backed sender"
         );
 
         // Two distinct status codes, per D-08.
@@ -786,8 +931,9 @@ mod tests {
     /// correctly-signed envelope (the sender's key is pinned to the SAME
     /// key that signed — verification WOULD succeed if it were ever
     /// reached) with a one-hour-old `ts` is rejected `stale_timestamp`
-    /// with zero registry mutation. Proves the freshness gate is real,
-    /// not a side effect of signature failure.
+    /// with zero registry mutation beyond the harness's own backed
+    /// sender. Proves the freshness gate is real, not a side effect of
+    /// signature failure.
     #[tokio::test]
     async fn stale_timestamp_rejected_before_verify_with_no_registry_mutation() {
         let sk = FampSigningKey::from_bytes([40u8; 32]);
@@ -804,7 +950,7 @@ mod tests {
 
         let mut keyring = Keyring::new();
         keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-        let (router, registry) = router_with_keyring(keyring);
+        let (router, registry, _broker) = router_with_backed_sender(keyring, None, "oscar").await;
 
         let resp = post_inbox(router, &to, bytes).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -813,22 +959,24 @@ mod tests {
         assert_eq!(v["error"], "stale_timestamp");
         assert_eq!(
             registry.lock().await.names().count(),
-            0,
-            "reject path must perform zero registry mutation"
+            1,
+            "reject path must perform zero registry mutation BEYOND the \
+             harness's own backed sender (see LiveBroker's doc comment)"
         );
     }
 
     /// Task 1 (INGR-01/INGR-02 boundary probe): exactly
     /// `CLOCK_SKEW_WINDOW_SECS` from `now`, in either direction, must NOT
     /// be classified `stale_timestamp` (inclusive bound); one second
-    /// beyond, in either direction, MUST be. The in-window cases assert
-    /// the response is anything OTHER than `stale_timestamp` rather than
-    /// asserting full delivery success, because full delivery requires a
-    /// live broker connection this unit test does not spin up — the
-    /// sender is deliberately left unbacked, so an in-window envelope
-    /// still gets rejected downstream (`sender_not_backed`), just not by
-    /// the freshness gate. That is sufficient to prove the freshness gate
-    /// itself passed the boundary case.
+    /// beyond, in either direction, MUST be.
+    ///
+    /// 17-03 deviation: the in-window cases used to assert only "not
+    /// stale_timestamp" because full delivery needed a live broker this
+    /// test didn't spin up. `audience_check` now REQUIRES a backed
+    /// sender before any other cheap gate runs (see `LiveBroker`'s doc
+    /// comment), so this test now stands one up regardless — which means
+    /// the in-window cases can assert the STRONGER, more meaningful
+    /// property: full delivery success (202 ACCEPTED, no JSON body).
     #[tokio::test]
     async fn freshness_boundary_is_inclusive_in_both_directions() {
         let sk = FampSigningKey::from_bytes([41u8; 32]);
@@ -849,18 +997,19 @@ mod tests {
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-            let (router, registry) = router_with_keyring(keyring);
+            let (router, registry, _broker) =
+                router_with_backed_sender(keyring, None, "oscar").await;
             let resp = post_inbox(router, &to, bytes).await;
-            let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-            let v: Value = serde_json::from_slice(&body).unwrap();
-            assert_ne!(
-                v["error"], "stale_timestamp",
-                "delta {delta}s is within the inclusive skew window and must pass the freshness gate"
+            assert_eq!(
+                resp.status(),
+                StatusCode::ACCEPTED,
+                "delta {delta}s is within the inclusive skew window and, with a real backed \
+                 sender and a correctly-pinned key, must fully deliver"
             );
             assert_eq!(
                 registry.lock().await.names().count(),
-                0,
-                "no registry mutation expected (sender deliberately left unbacked)"
+                1,
+                "no registry mutation expected BEYOND the harness's own backed sender"
             );
         }
 
@@ -868,7 +1017,8 @@ mod tests {
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-            let (router, registry) = router_with_keyring(keyring);
+            let (router, registry, _broker) =
+                router_with_backed_sender(keyring, None, "oscar").await;
             let resp = post_inbox(router, &to, bytes).await;
             assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
             let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -877,7 +1027,7 @@ mod tests {
                 v["error"], "stale_timestamp",
                 "delta {delta}s is one second beyond the inclusive skew window"
             );
-            assert_eq!(registry.lock().await.names().count(), 0);
+            assert_eq!(registry.lock().await.names().count(), 1);
         }
     }
 
@@ -896,10 +1046,12 @@ mod tests {
     /// that forces expensive verification on every hit is itself the
     /// amplifier INGR-05's ordering exists to remove.
     ///
-    /// MAINTENANCE: plans 02 and 03 MUST append one case per new cheap
-    /// gate (replay, audience, rate limit) to this same table, so the
-    /// chain stays fully pinned rather than pinned only at its head.
-    /// Case 4 (17-02) is the replay gate's entry.
+    /// MAINTENANCE: every plan adding a new cheap gate MUST append one
+    /// case per gate to this same table, so the chain stays fully pinned
+    /// rather than pinned only at its head. Case 4 (17-02) is the replay
+    /// gate's entry; cases 5-6 (17-03) are the audience and rate-limit
+    /// gates' entries — the chain is now fully pinned across all four
+    /// cheap gates (audience, freshness, replay, rate limit).
     #[tokio::test]
     async fn cheap_checks_reject_before_signature_verify_ever_runs() {
         let sk = FampSigningKey::from_bytes([50u8; 32]);
@@ -915,12 +1067,15 @@ mod tests {
         let stale_bytes = ack_bytes_with_ts(&sk, &from, &to, stale_ts);
 
         // --- case 1: stale ts AND pinned to the WRONG key -> stale_timestamp, never invalid_signature ---
+        // (17-03: `from` must be REALLY backed now, since `audience_check`
+        // runs before `freshness_check` — see `LiveBroker`'s doc comment.)
         let wrong_sk = FampSigningKey::from_bytes([51u8; 32]);
         let mut keyring_wrong = Keyring::new();
         keyring_wrong
             .pin_tofu(from.clone(), wrong_sk.verifying_key())
             .unwrap();
-        let (router, registry) = router_with_keyring(keyring_wrong);
+        let (router, registry, _broker) =
+            router_with_backed_sender(keyring_wrong, None, "oscar").await;
         let resp = post_inbox(router, &to, stale_bytes.clone()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -929,10 +1084,14 @@ mod tests {
             v["error"], "stale_timestamp",
             "wrong-pinned-key case must reject on the CHEAP gate, never invalid_signature"
         );
-        assert_eq!(registry.lock().await.names().count(), 0);
+        assert_eq!(registry.lock().await.names().count(), 1);
 
         // --- case 2: stale ts AND sender absent from the keyring entirely -> stale_timestamp, never unpinned_key ---
-        let (router2, registry2) = router_with_keyring(Keyring::new());
+        // (backing != keyring pinning: `from` is backed in the registry but
+        // has no pinned key at all -- proves audience_check's backing half
+        // is independent of the keyring.)
+        let (router2, registry2, _broker2) =
+            router_with_backed_sender(Keyring::new(), None, "oscar").await;
         let resp2 = post_inbox(router2, &to, stale_bytes).await;
         assert_eq!(resp2.status(), StatusCode::BAD_REQUEST);
         let body2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
@@ -941,9 +1100,11 @@ mod tests {
             v2["error"], "stale_timestamp",
             "absent-from-keyring case must reject on the CHEAP gate, never unpinned_key"
         );
-        assert_eq!(registry2.lock().await.names().count(), 0);
+        assert_eq!(registry2.lock().await.names().count(), 1);
 
         // --- case 3: malformed JSON -> bad_envelope_shape, never invalid_signature ---
+        // (no backing needed: `peek_guard_fields` fails before the
+        // registry is even consulted.)
         let (router3, registry3) = router_with_keyring(Keyring::new());
         let resp3 = post_inbox(router3, &to, b"not json".to_vec()).await;
         assert_eq!(resp3.status(), StatusCode::BAD_REQUEST);
@@ -967,7 +1128,8 @@ mod tests {
         keyring_wrong2
             .pin_tofu(from.clone(), wrong_sk2.verifying_key())
             .unwrap();
-        let (router4, registry4) = router_with_keyring(keyring_wrong2);
+        let (router4, registry4, _broker4) =
+            router_with_backed_sender(keyring_wrong2, None, "oscar").await;
         let fresh_bytes = ack_bytes(&sk, &from, &to);
 
         let first = post_inbox(router4.clone(), &to, fresh_bytes.clone()).await;
@@ -986,20 +1148,95 @@ mod tests {
             second_v["error"], "replayed_nonce",
             "replayed AND wrong-key case must surface replayed_nonce, never invalid_signature"
         );
-        assert_eq!(registry4.lock().await.names().count(), 0);
+        assert_eq!(registry4.lock().await.names().count(), 1);
+
+        assert_foreign_domain_case_rejects_before_signature_verify(&sk, &from).await;
+        assert_rate_limit_case_rejects_before_signature_verify(&sk, &from, &to).await;
+    }
+
+    /// Case 5 (17-03, INGR-04) of
+    /// `cheap_checks_reject_before_signature_verify_ever_runs`: a
+    /// foreign-domain envelope, ALSO pinned to the WRONG key ->
+    /// `foreign_domain`, never `invalid_signature`. Domain check runs
+    /// before backing (and thus before freshness/replay/rate-limit/verify)
+    /// so no live broker is needed here — `router_with_keyring_and_domain`
+    /// (unbacked) is sufficient. Extracted to a standalone fn to keep the
+    /// caller under the workspace `too_many_lines` budget.
+    async fn assert_foreign_domain_case_rejects_before_signature_verify(
+        sk: &FampSigningKey,
+        from: &Principal,
+    ) {
+        let wrong_sk = FampSigningKey::from_bytes([53u8; 32]);
+        let mut keyring_wrong = Keyring::new();
+        keyring_wrong
+            .pin_tofu(from.clone(), wrong_sk.verifying_key())
+            .unwrap();
+        let foreign_to: Principal = "agent:otherdomain.test/peggy".parse().unwrap();
+        let (router, registry) = router_with_keyring_and_domain(keyring_wrong, Some("hostb.test"));
+        let bytes = ack_bytes(sk, from, &foreign_to);
+        let resp = post_inbox(router, &foreign_to, bytes).await;
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            v["error"], "foreign_domain",
+            "foreign-domain-AND-wrong-key case must reject on the CHEAP gate, never invalid_signature"
+        );
+        assert_eq!(registry.lock().await.names().count(), 0);
+    }
+
+    /// Case 6 (17-03, INGR-06) of
+    /// `cheap_checks_reject_before_signature_verify_ever_runs`: a request
+    /// past the rate limit, ALSO signed with the wrong key -> `rate_limited`,
+    /// never `invalid_signature`. Exhausts the backed sender's budget with
+    /// valid-shaped (but wrong-key-signed) requests first, then proves the
+    /// very next one is rejected on the rate-limit gate before signature
+    /// verification ever runs again. Extracted to a standalone fn for the
+    /// same `too_many_lines` reason as the foreign-domain case above.
+    async fn assert_rate_limit_case_rejects_before_signature_verify(
+        sk: &FampSigningKey,
+        from: &Principal,
+        to: &Principal,
+    ) {
+        let wrong_sk = FampSigningKey::from_bytes([54u8; 32]);
+        let mut keyring_wrong = Keyring::new();
+        keyring_wrong
+            .pin_tofu(from.clone(), wrong_sk.verifying_key())
+            .unwrap();
+        let (router, registry, _broker) =
+            router_with_backed_sender(keyring_wrong, None, "oscar").await;
+        for i in 0..crate::ingress_guard::RATE_LIMIT_MAX_PER_WINDOW {
+            let bytes = ack_bytes(sk, from, to);
+            let resp = post_inbox(router.clone(), to, bytes).await;
+            let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+            let v: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                v["error"], "invalid_signature",
+                "request {i} within the rate limit must reach signature verification"
+            );
+        }
+        let over_limit_bytes = ack_bytes(sk, from, to);
+        let resp = post_inbox(router, to, over_limit_bytes).await;
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            v["error"], "rate_limited",
+            "over-the-limit-AND-wrong-key case must reject on the CHEAP gate, never invalid_signature"
+        );
+        assert_eq!(registry.lock().await.names().count(), 1);
     }
 
     /// Task 2 (17-02, INGR-02): the same signed envelope POSTed twice is
     /// accepted past the replay gate the first time and rejected
-    /// `replayed_nonce` the second time. Full end-to-end 202 success
-    /// needs a live backed principal (a real broker connection) this
-    /// unit test does not spin up -- the sender is deliberately left
-    /// unbacked, matching `freshness_boundary_is_inclusive_in_both_directions`'s
-    /// convention, so the first POST reaches as far as
-    /// `sender_not_backed` (BAD_GATEWAY) rather than 202. That is still
-    /// sufficient to prove the nonce was recorded before delivery
-    /// failed: the second, IDENTICAL POST is rejected on the CHEAP
-    /// replay gate, never reaching `sender_not_backed` again.
+    /// `replayed_nonce` the second time.
+    ///
+    /// 17-03 deviation: `audience_check` now requires a real backed
+    /// sender before any other cheap gate runs (see `LiveBroker`'s doc
+    /// comment). With a real backed sender and a correctly-pinned key,
+    /// the first POST now fully DELIVERS (202 ACCEPTED, no JSON body)
+    /// instead of stopping at `sender_not_backed` — asserted directly on
+    /// the status code rather than parsed as JSON.
     #[tokio::test]
     async fn replayed_envelope_is_rejected_on_second_delivery_with_no_extra_registry_mutation() {
         let sk = FampSigningKey::from_bytes([60u8; 32]);
@@ -1009,14 +1246,14 @@ mod tests {
 
         let mut keyring = Keyring::new();
         keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-        let (router, registry) = router_with_keyring(keyring);
+        let (router, registry, _broker) = router_with_backed_sender(keyring, None, "oscar").await;
 
         let resp1 = post_inbox(router.clone(), &to, bytes.clone()).await;
-        let body1 = to_bytes(resp1.into_body(), usize::MAX).await.unwrap();
-        let v1: Value = serde_json::from_slice(&body1).unwrap();
-        assert_ne!(
-            v1["error"], "replayed_nonce",
-            "first sighting of a nonce must pass the replay gate"
+        assert_eq!(
+            resp1.status(),
+            StatusCode::ACCEPTED,
+            "first sighting of a nonce, with a real backed sender and a correctly-pinned key, \
+             must pass the replay gate and fully deliver"
         );
 
         let resp2 = post_inbox(router, &to, bytes).await;
@@ -1027,8 +1264,9 @@ mod tests {
 
         assert_eq!(
             registry.lock().await.names().count(),
-            0,
-            "reject path must perform zero registry mutation (sender deliberately left unbacked)"
+            1,
+            "reject path must perform zero registry mutation BEYOND the \
+             harness's own backed sender"
         );
     }
 
@@ -1058,7 +1296,7 @@ mod tests {
 
         let mut keyring = Keyring::new();
         keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-        let (router, registry) = router_with_keyring(keyring);
+        let (router, registry, _broker) = router_with_backed_sender(keyring, None, "oscar").await;
 
         let resp = post_inbox(router, &to, bytes).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -1067,8 +1305,9 @@ mod tests {
         assert_eq!(v["error"], "missing_nonce");
         assert_eq!(
             registry.lock().await.names().count(),
-            0,
-            "reject path must perform zero registry mutation"
+            1,
+            "reject path must perform zero registry mutation BEYOND the \
+             harness's own backed sender"
         );
     }
 
