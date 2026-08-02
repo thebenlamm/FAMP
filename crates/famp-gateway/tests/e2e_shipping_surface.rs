@@ -29,23 +29,29 @@
 //!    UAT-01's terminal-FSM-reachable-via-shipping-surface claim.
 //! 3. **Negative (observable)** — a `famp send --domain local.bus` remote
 //!    send stamps `from = agent:local.bus/<identity>` (mismatched
-//!    authority vs. the pinned `agent:<domain>/alice` label) while still
-//!    targeting a real remote principal, so it takes the federated path.
-//!    Gateway A's own-domain is UNSET in this harness by default (mirrors
-//!    `e2e_cross_host_delivery.rs`'s `spawn_gateway`, which passes no
-//!    gateway-side `--domain`), so plan 07's egress `FromDomainMismatch`
-//!    check is skipped and the envelope reaches gateway B's ingress,
-//!    which rejects it typed (`unpinned_key`, HTTP 403). Asserted by
-//!    capturing gateway A's stderr (the drain-loop's `{e:?}` relay-failure
-//!    line) for the `unpinned_key`/`403` substrings AND confirming
-//!    non-delivery on B — never a cross-process Rust-type match.
+//!    authority vs. gateway A's own-domain, `ALICE_DOMAIN`/"hosta.test")
+//!    while still targeting a real remote principal, so it takes the
+//!    federated path. 17-03/D-30: own-domain is now REQUIRED on every
+//!    gateway (own-domain-unset is UNCONDITIONALLY startup-fatal), so
+//!    gateway A's own `FromDomainMismatch` egress check FIRES on this
+//!    send — before it is ever signed or POSTed to gateway B — rather
+//!    than the pre-17-03 fallback where an own-domain-UNSET gateway A
+//!    skipped that check and let the mismatched envelope reach gateway
+//!    B's ingress for rejection there instead (`unpinned_key`, HTTP 403).
+//!    This is a coverage IMPROVEMENT: the `FromDomainMismatch` check's
+//!    FIRING path had no test coverage before now, only its skip-fallback
+//!    path did. Asserted by capturing gateway A's stderr (the drain
+//!    loop's `{e:?}` relay-failure line) for the `FromDomainMismatch`/
+//!    `local.bus` substrings AND confirming non-delivery on B — never a
+//!    cross-process Rust-type match.
 
 #![allow(unused_crate_dependencies)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::too_many_lines,
-    clippy::similar_names
+    clippy::similar_names,
+    clippy::too_many_arguments
 )]
 
 use std::io::Read as _;
@@ -78,6 +84,10 @@ const NON_DELIVERY_WINDOW: Duration = Duration::from_secs(8);
 /// draining it into a shared buffer so the D-09 negative test can observe
 /// the drain-loop's relay-failure log line without risking a filled pipe
 /// buffer stalling the child.
+///
+/// 17-03/D-30/D-31: `own_domain` is a REQUIRED parameter (own-domain-unset
+/// is now UNCONDITIONALLY startup-fatal) — see
+/// `gateway_harness::spawn_gateway`'s doc comment for the full rationale.
 fn spawn_gateway_capturing_stderr(
     side: &Side,
     backed_name: &str,
@@ -86,6 +96,7 @@ fn spawn_gateway_capturing_stderr(
     peer_domain: &str,
     peer_port: u16,
     trust_cert_stub: &str,
+    own_domain: &str,
 ) -> (ChildGuard, Arc<Mutex<String>>) {
     let fixtures = cross_machine_fixture_dir();
     let mut child = Command::cargo_bin("famp-gateway")
@@ -103,6 +114,7 @@ fn spawn_gateway_capturing_stderr(
         .arg("--trust-cert")
         .arg(fixtures.join(format!("{trust_cert_stub}.crt")))
         .env("FAMP_HOME", side.home())
+        .env("FAMP_OWN_DOMAIN", own_domain)
         .arg(backed_name)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -298,13 +310,26 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
     let port_a = pick_free_port();
     let port_b = pick_free_port();
 
-    // Gateway A: stderr captured (D-09 negative test observable). Gateway
-    // A's own-domain is left UNSET (no --domain flag here, matching
-    // e2e_cross_host_delivery.rs's spawn_gateway) so plan 07's egress
-    // FromDomainMismatch check is skipped and the negative send reaches
-    // gateway B's ingress deterministically.
-    let (_gateway_a, gateway_a_stderr) =
-        spawn_gateway_capturing_stderr(&side_a, "bob", port_a, "alice", BOB_DOMAIN, port_b, "bob");
+    // Gateway A: stderr captured (D-09 negative test observable).
+    //
+    // 17-03/D-30/D-31 deviation: gateway A's own-domain is now REQUIRED
+    // (own-domain-unset is UNCONDITIONALLY startup-fatal — no more
+    // "leave it unset so the check is skipped" option, even here). This
+    // changes what the negative test below can assert: with own-domain
+    // now present, plan 07's egress `FromDomainMismatch` check no longer
+    // SKIPS — it FIRES, on gateway A itself, before the mismatched-domain
+    // send ever reaches gateway B. See section 3's comment below for the
+    // rewritten assertion.
+    let (_gateway_a, gateway_a_stderr) = spawn_gateway_capturing_stderr(
+        &side_a,
+        "bob",
+        port_a,
+        "alice",
+        BOB_DOMAIN,
+        port_b,
+        "bob",
+        ALICE_DOMAIN,
+    );
     let _gateway_b = gateway_harness::spawn_gateway(
         &side_b,
         "alice",
@@ -313,6 +338,7 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
         ALICE_DOMAIN,
         port_a,
         "alice",
+        BOB_DOMAIN,
     );
 
     wait_until_live(&side_a.sock(), side_a.home(), "bob", STARTUP_DEADLINE);
@@ -421,9 +447,26 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
 
     // ===================================================================
     // 3. NEGATIVE (OBSERVABLE) — a remote send with `--domain local.bus`
-    //    stamps `from = agent:local.bus/alice`, mismatched against the
-    //    pinned `agent:hosta.test/alice` label B trusts. Assert a TYPED,
-    //    OBSERVABLE rejection (gateway A's stderr) AND non-delivery on B.
+    //    stamps `from = agent:local.bus/alice`, mismatched against
+    //    gateway A's own-domain (ALICE_DOMAIN, "hosta.test").
+    //
+    //    17-03/D-30/D-31 REWRITE: prior to this phase, gateway A's
+    //    own-domain was left UNSET specifically so plan 07's egress
+    //    `FromDomainMismatch` check would SKIP, letting the mismatched
+    //    send reach gateway B's ingress and get rejected there
+    //    (`unpinned_key`, 403) instead. Own-domain is now REQUIRED on
+    //    every gateway, so that skip path no longer exists: gateway A's
+    //    OWN `FromDomainMismatch` check fires FIRST, at egress, before
+    //    the envelope is ever signed or POSTed to B. This is a coverage
+    //    IMPROVEMENT, not a loss — per this file's own prior comment,
+    //    the `FromDomainMismatch` check's FIRING path had no test
+    //    coverage before now (only the skip-fallback path did).
+    //    Asserted the same "capture stderr + confirm non-delivery"
+    //    discipline as before, just pointed at the check that now
+    //    actually fires: gateway A's drain-loop `eprintln!` prints the
+    //    `RelayError` via `{e:?}` (Debug), so the substrings asserted
+    //    below are `FromDomainMismatch` (the variant name) and
+    //    `local.bus` (the mismatched `from` authority it carries).
     // ===================================================================
     let negative_task_id = famp_send_ok(
         &side_a.sock(),
@@ -436,11 +479,16 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
             "--domain",
             "local.bus",
             "--new-task",
-            "should be rejected at gateway B ingress",
+            "should be rejected at gateway A's own egress",
         ],
     );
 
-    wait_for_stderr_contains(&gateway_a_stderr, "unpinned_key", "403", POLL_DEADLINE);
+    wait_for_stderr_contains(
+        &gateway_a_stderr,
+        "FromDomainMismatch",
+        "local.bus",
+        POLL_DEADLINE,
+    );
     assert_never_delivered(
         &side_b.sock(),
         side_b.home(),

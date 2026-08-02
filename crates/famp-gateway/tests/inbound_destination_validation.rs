@@ -2,8 +2,9 @@
 //! adversarial coverage for the ingress destination-authority gates added
 //! to `crates/famp-gateway/src/ingress.rs::inbox_handler`.
 //!
-//! Three cases, each asserting the mailbox state directly (not merely the
-//! HTTP status), per this plan's explicit acceptance criterion:
+//! Six cases (1-3 from Phase 11; 4-6 added 17-03 Task 2, INGR-04/INGR-01),
+//! each asserting the mailbox state directly (not merely the HTTP status),
+//! per this plan's explicit acceptance criterion:
 //!
 //! 1. An envelope whose `to` authority does not match this gateway's
 //!    configured own-domain is rejected (403 `foreign_domain`) and no
@@ -13,6 +14,19 @@
 //!    stays empty.
 //! 3. A well-formed same-domain, correctly-addressed envelope still
 //!    delivers end-to-end onto the local bus.
+//! 4. (17-03, INGR-04/INGR-05) A foreign-domain envelope ALSO signed with
+//!    the WRONG key is rejected `foreign_domain`, never `invalid_signature`
+//!    — proves at the INTEGRATION level (real broker, real router) that
+//!    `audience_check`'s domain half runs pre-verify, not merely at the
+//!    `ingress_guard.rs` unit level.
+//! 5. (17-03, INGR-04/INGR-05) An envelope from a sender this gateway does
+//!    NOT back is rejected `sender_not_backed` pre-verify, before
+//!    signature verification runs, with the target mailbox untouched.
+//! 6. (17-03, INGR-01/INGR-05) A stale-timestamp envelope from a REAL
+//!    backed, correctly-pinned sender is rejected `stale_timestamp`
+//!    pre-verify, with the target mailbox untouched — the same freshness
+//!    property `ingress.rs`'s own unit tests pin, reconfirmed here against
+//!    a live broker.
 //!
 //! Uses a real broker subprocess (ChildGuard convention) + a real
 //! `GatewayRegistry` backing the SENDER's bare name (mirroring
@@ -320,4 +334,111 @@ async fn well_formed_same_domain_envelope_still_delivers() {
         }
         other => panic!("expected AwaitOk, got {other:?}"),
     }
+}
+
+/// Case 4 (17-03, INGR-04/INGR-05): a foreign-domain envelope ALSO signed
+/// with the WRONG key is rejected `foreign_domain`, never
+/// `invalid_signature` — proves at the INTEGRATION level (real broker,
+/// real router) that `audience_check`'s domain half runs pre-verify.
+#[tokio::test]
+async fn foreign_domain_envelope_signed_with_wrong_key_is_rejected_foreign_domain_not_invalid_signature(
+) {
+    let sk = FampSigningKey::from_bytes([63u8; 32]);
+    let wrong_sk = FampSigningKey::from_bytes([64u8; 32]);
+    let harness = build_harness(Some("hostb.test"), &wrong_sk).await;
+
+    let mut bob = register_real(&harness.sock, "bob").await;
+
+    let from: Principal = "agent:hosta.test/alice".parse().unwrap();
+    // Same shape as the existing foreign-domain case: `to` targets a
+    // DIFFERENT domain than own-domain ("hostb.test"), leaf still matches
+    // the URL-path recipient. Signed with `sk`, but the harness's keyring
+    // pins `wrong_sk` -- verification WOULD fail if it were ever reached.
+    let to: Principal = "agent:otherdomain.test/bob".parse().unwrap();
+    let bytes = ack_bytes(&sk, &from, &to, MessageId::new_v7());
+
+    let resp = post_inbox(harness.router, &to.to_string(), bytes).await;
+    assert_eq!(resp.status(), axum::http::StatusCode::FORBIDDEN);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        v["error"], "foreign_domain",
+        "foreign-domain-AND-wrong-key case must reject on the CHEAP gate, never invalid_signature"
+    );
+
+    assert_mailbox_empty(&mut bob).await;
+}
+
+/// Case 5 (17-03, INGR-04/INGR-05): an envelope from a sender this
+/// gateway does NOT back is rejected `sender_not_backed` pre-verify,
+/// before signature verification runs, with the target mailbox untouched.
+#[tokio::test]
+async fn envelope_from_unbacked_sender_is_rejected_sender_not_backed_pre_verify() {
+    let sk = FampSigningKey::from_bytes([65u8; 32]);
+    // `build_harness` only ever backs "alice" in its `GatewayRegistry` --
+    // this envelope claims a DIFFERENT sender ("eve") that the registry
+    // has never heard of.
+    let harness = build_harness(Some("hostb.test"), &sk).await;
+
+    let mut bob = register_real(&harness.sock, "bob").await;
+
+    let from: Principal = "agent:hosta.test/eve".parse().unwrap();
+    let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+    let bytes = ack_bytes(&sk, &from, &to, MessageId::new_v7());
+
+    let resp = post_inbox(harness.router, &to.to_string(), bytes).await;
+    assert_eq!(resp.status(), axum::http::StatusCode::BAD_GATEWAY);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["error"], "sender_not_backed");
+
+    assert_mailbox_empty(&mut bob).await;
+}
+
+/// Case 6 (17-03, INGR-01/INGR-05): a stale-timestamp envelope from a
+/// REAL backed, correctly-pinned sender is rejected `stale_timestamp`
+/// pre-verify, with the target mailbox untouched -- reconfirms
+/// `ingress.rs`'s own freshness-gate unit tests against a live broker.
+#[tokio::test]
+async fn stale_timestamp_envelope_is_rejected_pre_verify_with_mailbox_untouched() {
+    let sk = FampSigningKey::from_bytes([66u8; 32]);
+    let harness = build_harness(Some("hostb.test"), &sk).await;
+
+    let mut bob = register_real(&harness.sock, "bob").await;
+
+    let from: Principal = "agent:hosta.test/alice".parse().unwrap();
+    let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+
+    let one_hour_ago = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+    // `strip_subseconds` is `pub(crate)` inside `famp-gateway` and not
+    // reachable from this external integration-test crate; `freshness_check`
+    // parses full RFC 3339 (fractional seconds are legal) and rejects on
+    // the whole-second delta regardless, so the un-stripped form is fine
+    // here.
+    let stale_ts = one_hour_ago
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let id: MessageId = "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a73".parse().unwrap();
+    let body = AckBody {
+        disposition: AckDisposition::Accepted,
+        reason: None,
+    };
+    let unsigned = UnsignedEnvelope::<AckBody>::new(
+        id,
+        from.clone(),
+        to.clone(),
+        AuthorityScope::Advisory,
+        Timestamp(stale_ts),
+        body,
+    )
+    .with_nonce(uuid::Uuid::now_v7().to_string());
+    let bytes = unsigned.sign(&sk).unwrap().encode().unwrap();
+
+    let resp = post_inbox(harness.router, &to.to_string(), bytes).await;
+    assert_eq!(resp.status(), axum::http::StatusCode::BAD_REQUEST);
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["error"], "stale_timestamp");
+
+    assert_mailbox_empty(&mut bob).await;
 }

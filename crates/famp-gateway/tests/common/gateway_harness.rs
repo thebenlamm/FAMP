@@ -287,6 +287,16 @@ pub fn peer_import(home: &Path, blob: &str) {
 /// `{own_cert_stub}.{crt,key}` fixture pair, relaying to
 /// `{peer_domain}=https://127.0.0.1:<peer_port>`, and trusting the
 /// `{trust_cert_stub}.crt` fixture cert for its outbound TLS client.
+///
+/// 17-03/D-30 deviation: `own_domain` is a REQUIRED parameter, set via
+/// the `FAMP_OWN_DOMAIN` env var on the spawned process. `famp-gateway`
+/// has no `--domain` CLI flag of its own — `resolve_own_domain_or_exit`
+/// always resolves against `(None, home)`, so `FAMP_OWN_DOMAIN` (or a
+/// `$FAMP_HOME/own-domain` file) is the only viable mechanism from a test
+/// harness. Own-domain-unset is now UNCONDITIONALLY startup-fatal for
+/// every gateway (not merely relay-reachable ones), so every caller of
+/// this fn must supply a real value — there is no more "leave it unset"
+/// option, even for the loopback/test topology.
 pub fn spawn_gateway(
     side: &Side,
     backed_name: &str,
@@ -295,6 +305,7 @@ pub fn spawn_gateway(
     peer_domain: &str,
     peer_port: u16,
     trust_cert_stub: &str,
+    own_domain: &str,
 ) -> ChildGuard {
     let fixtures = cross_machine_fixture_dir();
     ChildGuard::new(
@@ -313,6 +324,7 @@ pub fn spawn_gateway(
             .arg("--trust-cert")
             .arg(fixtures.join(format!("{trust_cert_stub}.crt")))
             .env("FAMP_HOME", side.home())
+            .env("FAMP_OWN_DOMAIN", own_domain)
             .arg(backed_name)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

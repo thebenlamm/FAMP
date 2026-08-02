@@ -123,6 +123,10 @@ fn spawn_gateway_subprocess(sock: &Path, home: &Path, names: &[&str]) -> ChildGu
             .arg("--tls-key")
             .arg(fixtures.join("alice.key"))
             .env("FAMP_HOME", home)
+            // 17-03/D-30: own-domain is now REQUIRED (own-domain-unset is
+            // UNCONDITIONALLY startup-fatal) -- this test needs the
+            // gateway to reach "ready", not merely start.
+            .env("FAMP_OWN_DOMAIN", "hosta.test")
             .args(names)
             .stdin(Stdio::null())
             .stdout(Stdio::null())

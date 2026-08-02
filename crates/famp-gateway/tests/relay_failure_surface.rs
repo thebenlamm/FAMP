@@ -273,6 +273,9 @@ fn reach05_failure_notification_surfaces_at_sender_when_peer_never_started() {
     // `e2e_cross_host_delivery.rs`'s topology.
     let listen_port = pick_free_port();
     let dead_peer_port = pick_free_port();
+    // 17-03/D-30: own_domain is now REQUIRED — this gateway fronts REAL
+    // alice's side (own_cert_stub "alice"), so its own-domain is
+    // ALICE_DOMAIN, mirroring e2e_cross_host_delivery.rs's gateway A.
     let _gateway: ChildGuard = spawn_gateway(
         &side,
         "bob",
@@ -281,6 +284,7 @@ fn reach05_failure_notification_surfaces_at_sender_when_peer_never_started() {
         BOB_DOMAIN,
         dead_peer_port,
         "bob",
+        ALICE_DOMAIN,
     );
     wait_until_live(&side.sock(), side.home(), "bob", STARTUP_DEADLINE);
     wait_for_tcp(
@@ -290,7 +294,6 @@ fn reach05_failure_notification_surfaces_at_sender_when_peer_never_started() {
 
     let alice: Principal = ALICE.parse().unwrap();
     let bob: Principal = BOB.parse().unwrap();
-    let _ = ALICE_DOMAIN; // referenced only via ALICE's own authority below
 
     // alice -> bob: a REQUEST that will drain into the gateway's `bob`
     // stand-in mailbox, be picked up by `run_egress`, and fail to relay

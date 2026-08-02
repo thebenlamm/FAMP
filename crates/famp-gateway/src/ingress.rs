@@ -994,11 +994,20 @@ mod tests {
         };
 
         for delta in [-skew, skew] {
-            let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
+            // Build the harness (spawns a real in-process broker + backs
+            // the sender) BEFORE stamping `ts` -- broker startup latency
+            // sits OUTSIDE the timestamp window this way, not inside it.
+            // Stamping `ts` first (the original ordering) left an
+            // unbounded gap between "timestamp computed" and "freshness
+            // checked against the live wall clock" that widens under
+            // system load, intermittently pushing an exactly-at-the-
+            // boundary case past the window before the request is even
+            // sent -- an observed flake, not merely a theoretical one.
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
             let (router, registry, _broker) =
                 router_with_backed_sender(keyring, None, "oscar").await;
+            let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
             let resp = post_inbox(router, &to, bytes).await;
             assert_eq!(
                 resp.status(),
@@ -1014,11 +1023,11 @@ mod tests {
         }
 
         for delta in [-(skew + 1), skew + 1] {
-            let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
             let (router, registry, _broker) =
                 router_with_backed_sender(keyring, None, "oscar").await;
+            let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
             let resp = post_inbox(router, &to, bytes).await;
             assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
             let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -1317,6 +1326,81 @@ mod tests {
         let resp =
             post_inbox_raw(router, "/famp/v0.5.1/inbox/not-a-principal", b"x".to_vec()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    /// Task 2 (17-03, INGR-07) finding: the `ONE_MIB` cap already existed,
+    /// applied via `tower_http::limit::RequestBodyLimitLayer` in
+    /// [`build_gateway_router`] — INGR-07 needed a TEST, not a new
+    /// implementation. Confirmed by reading
+    /// `tower_http::limit::service::RequestBodyLimit::call` (crate source,
+    /// version pinned in `Cargo.lock`, cited in 17-RESEARCH.md's Code
+    /// Examples): when a request declares a `Content-Length` above the
+    /// configured limit, the layer returns `413` IMMEDIATELY — before the
+    /// inner service (this router, and therefore [`inbox_handler`]) is
+    /// EVER called — the strongest available proof that no full buffer
+    /// occurs. When no `Content-Length` is declared, the layer instead
+    /// wraps the body in `http_body_util::Limited`, which rejects once
+    /// actual bytes read exceed the limit WHILE STREAMING, not after full
+    /// collection. Do not add a manual length check or a hand-rolled byte
+    /// counter anywhere in this crate — a second cap would drift from the
+    /// first.
+    #[tokio::test]
+    async fn oversized_declared_content_length_is_rejected_413_without_entering_the_handler() {
+        let (router, registry) = router_with_keyring(Keyring::new());
+        let declared_len = ONE_MIB + 1;
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(inbox_uri(&"agent:hostb.test/peggy".parse().unwrap()))
+            .header("content-type", "application/famp+json")
+            .header(axum::http::header::CONTENT_LENGTH, declared_len.to_string())
+            // The ACTUAL body is tiny -- proves the layer rejects on the
+            // DECLARED length alone, never by reading this far.
+            .body(axum::body::Body::from(b"tiny".to_vec()))
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            registry.lock().await.names().count(),
+            0,
+            "the handler (and therefore any registry lookup) must never be entered"
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_streamed_body_is_rejected_413() {
+        let (router, _registry) = router_with_keyring(Keyring::new());
+        // No declared Content-Length: `Router::oneshot` never auto-populates
+        // one from the body's own size hint (there is no wire-serialization
+        // step), so this exercises the STREAMING limiter path.
+        let oversized_body = vec![0u8; ONE_MIB + 1024];
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(inbox_uri(&"agent:hostb.test/peggy".parse().unwrap()))
+            .header("content-type", "application/famp+json")
+            .body(axum::body::Body::from(oversized_body))
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn exactly_one_mib_body_is_not_size_rejected() {
+        let (router, _registry) = router_with_keyring(Keyring::new());
+        let exact_body = vec![0u8; ONE_MIB];
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(inbox_uri(&"agent:hostb.test/peggy".parse().unwrap()))
+            .header("content-type", "application/famp+json")
+            .body(axum::body::Body::from(exact_body))
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+        assert_ne!(
+            resp.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "a body of EXACTLY ONE_MIB must not be rejected for size (it fails later, for \
+             shape/signature reasons -- an all-zero body is not a valid envelope -- which is \
+             the correct outcome for this test)"
+        );
     }
 
     /// BUS-11 regression lock: `strip_relay_fields` removes every field

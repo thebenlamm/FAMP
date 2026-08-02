@@ -109,6 +109,11 @@ fn ready_line_is_never_printed_when_peers_keyring_load_fails() {
         .arg("--tls-key")
         .arg(fixtures.join("alice.key"))
         .env("FAMP_HOME", home_tmp.path())
+        // 17-03/D-30: own-domain is now REQUIRED (own-domain-unset is
+        // UNCONDITIONALLY startup-fatal) -- must resolve BEFORE this
+        // test's own target failure (the missing peers.keyring) or the
+        // process would exit for the wrong reason.
+        .env("FAMP_OWN_DOMAIN", "hosta.test")
         .arg("alice")
         .stdin(Stdio::null())
         .output()

@@ -104,6 +104,11 @@ fn run_gateway(sock: &Path, home: &Path, extra_args: &[&str]) -> std::process::O
         .arg("--tls-key")
         .arg(fixtures.join("alice.key"))
         .env("FAMP_HOME", home)
+        // 17-03/D-30: own-domain is now REQUIRED (own-domain-unset is
+        // UNCONDITIONALLY startup-fatal) -- must resolve BEFORE the
+        // route-config-time failures this file actually tests, or the
+        // process would exit for the wrong reason.
+        .env("FAMP_OWN_DOMAIN", "hosta.test")
         .args(extra_args)
         .stdin(Stdio::null())
         .output()
@@ -241,6 +246,9 @@ fn bare_names_with_exactly_one_peer_still_starts_and_prints_ready() {
         .arg("--peer")
         .arg("hostb.test=https://127.0.0.1:9443")
         .env("FAMP_HOME", home.path())
+        // 17-03/D-30: own-domain is now REQUIRED -- this test asserts
+        // the process reaches "ready".
+        .env("FAMP_OWN_DOMAIN", "hosta.test")
         .arg("bob")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

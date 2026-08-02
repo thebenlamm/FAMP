@@ -12,7 +12,7 @@
 //! famp-gateway [--socket <path>] --listen <addr> --tls-cert <path>
 //!              --tls-key <path> [--peer <domain>=<url>]...
 //!              [--backs agent:<domain>/<name>]... [--trust-cert <path>]
-//!              <principal-name>...
+//!              [--relay-fetch <url>] <principal-name>...
 //! ```
 //! `--socket` defaults to `$FAMP_BUS_SOCKET` or `~/.famp/bus.sock`
 //! (`famp::bus_client::resolve_sock_path`). `--listen`/`--tls-cert`/
@@ -25,10 +25,21 @@
 //! still be used instead (the unambiguous single-peer topology this
 //! milestone's two-machine UAT depends on) — with two or more `--peer`
 //! entries, bare names are a startup-fatal ambiguity and `--backs` is
-//! required. The gateway's own signing identity and pinned peers keyring
-//! are loaded from `$FAMP_HOME` (or `$HOME/.famp` —
+//! required. `--relay-fetch <url>` (17-03/D-26) is plan 05's
+//! signed-fetch relay-polling URL — parsed here, unwired until plan 05.
+//! There is no `--relay-token` flag; signed-fetch needs no shared-secret
+//! credential. The gateway's own signing identity and pinned peers
+//! keyring are loaded from `$FAMP_HOME` (or `$HOME/.famp` —
 //! `famp::cli::home::resolve_famp_home`), isolated per process from
 //! `--socket`'s bus/mailbox isolation (09-RESEARCH.md §7).
+//!
+//! **`own_domain` is UNCONDITIONALLY startup-fatal (17-03/D-30).** Every
+//! gateway process — not merely a relay-reachable one — refuses to start
+//! without a resolvable own-domain (`--domain` is not itself a gateway
+//! flag; resolution is `FAMP_OWN_DOMAIN` env > `$FAMP_HOME/own-domain`
+//! file, per `famp::cli::own_domain::resolve_own_domain`'s documented
+//! precedence). See [`resolve_own_domain_or_exit`]'s doc comment for the
+//! full rationale and 17-RESEARCH.md Pitfall 4.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -106,6 +117,15 @@ struct GatewayArgs {
     /// fallback instead.
     backs: Vec<Principal>,
     trust_cert: Option<PathBuf>,
+    /// D-26/17-CONTEXT.md: plan 05's signed-fetch relay-polling URL.
+    /// Parsed here (a related CLI surface addition, unrelated to the
+    /// own-domain fatality change below) because it's a natural sibling
+    /// of `--peer`/`--trust-cert` and plan 05 builds on top of an already
+    /// -wired flag rather than adding its own parser. NO `--relay-token`
+    /// flag exists or will be added here — signed-fetch needs no
+    /// shared-secret credential (D-26); plan 05 owns whatever
+    /// signed-fetch-specific flags it needs beyond this URL.
+    relay_fetch: Option<Url>,
 }
 
 /// Parse `--socket <path>`, `--listen <addr>`, `--tls-cert <path>`,
@@ -120,6 +140,49 @@ struct GatewayArgs {
 /// than silently parking. A malformed `--peer` value (missing `=`, an
 /// empty domain, or a DUPLICATE domain — T-11-28) is a parse error. A
 /// malformed or duplicate `--backs` value is likewise a parse error.
+/// Parse one `--peer <domain>=<url>` value into `peers`, mirroring
+/// `KeyringError::KeyConflict`'s fail-closed shape (T-11-28): a repeated
+/// domain is a startup error naming both URLs, never last-write-wins.
+/// Extracted from `parse_args` solely to satisfy `clippy::too_many_lines`,
+/// mirroring `main()`'s own `resolve_own_domain_or_exit`/`build_route_map`
+/// extraction precedent.
+fn parse_peer_flag(raw: &str, peers: &mut Vec<(String, Url)>) -> Result<(), String> {
+    let (domain, url_str) = raw
+        .split_once('=')
+        .ok_or_else(|| format!("--peer: malformed value '{raw}', expected <domain>=<url>"))?;
+    if domain.is_empty() {
+        return Err(format!(
+            "--peer: empty domain in '{raw}', expected <domain>=<url>"
+        ));
+    }
+    let url = Url::parse(url_str).map_err(|e| format!("--peer: invalid url in '{raw}': {e}"))?;
+    if let Some((_, existing_url)) = peers.iter().find(|(d, _)| d == domain) {
+        return Err(format!(
+            "--peer: duplicate domain '{domain}': already mapped to '{existing_url}', now \
+             given '{url}' — remove one (ambiguous route configuration must fail closed, \
+             never last-write-wins)"
+        ));
+    }
+    peers.push((domain.to_owned(), url));
+    Ok(())
+}
+
+/// Parse one `--backs agent:<domain>/<name>` value into `backs`. Extracted
+/// from `parse_args` for the same `too_many_lines` reason as
+/// [`parse_peer_flag`].
+fn parse_backs_flag(raw: &str, backs: &mut Vec<Principal>) -> Result<(), String> {
+    let principal: Principal = raw
+        .parse()
+        .map_err(|e| format!("--backs: invalid principal '{raw}': {e}"))?;
+    if backs.contains(&principal) {
+        return Err(format!(
+            "--backs: duplicate principal '{principal}' — each --backs binding must be unique"
+        ));
+    }
+    backs.push(principal);
+    Ok(())
+}
+
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, String> {
     let _bin = args.next();
     let mut sock: Option<PathBuf> = None;
@@ -130,6 +193,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     let mut peers: Vec<(String, Url)> = Vec::new();
     let mut backs: Vec<Principal> = Vec::new();
     let mut trust_cert: Option<PathBuf> = None;
+    let mut relay_fetch: Option<Url> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -158,46 +222,23 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
                 let raw = args
                     .next()
                     .ok_or("--peer requires a <domain>=<url> argument")?;
-                let (domain, url_str) = raw.split_once('=').ok_or_else(|| {
-                    format!("--peer: malformed value '{raw}', expected <domain>=<url>")
-                })?;
-                if domain.is_empty() {
-                    return Err(format!(
-                        "--peer: empty domain in '{raw}', expected <domain>=<url>"
-                    ));
-                }
-                let url = Url::parse(url_str)
-                    .map_err(|e| format!("--peer: invalid url in '{raw}': {e}"))?;
-                // T-11-28: mirror `KeyringError::KeyConflict`'s
-                // fail-closed shape — a repeated domain is a startup
-                // error naming both URLs, never last-write-wins.
-                if let Some((_, existing_url)) = peers.iter().find(|(d, _)| d == domain) {
-                    return Err(format!(
-                        "--peer: duplicate domain '{domain}': already mapped to \
-                         '{existing_url}', now given '{url}' — remove one (ambiguous route \
-                         configuration must fail closed, never last-write-wins)"
-                    ));
-                }
-                peers.push((domain.to_owned(), url));
+                parse_peer_flag(&raw, &mut peers)?;
             }
             "--backs" => {
                 let raw = args
                     .next()
                     .ok_or("--backs requires a <principal> argument, e.g. agent:hostb.test/bob")?;
-                let principal: Principal = raw
-                    .parse()
-                    .map_err(|e| format!("--backs: invalid principal '{raw}': {e}"))?;
-                if backs.contains(&principal) {
-                    return Err(format!(
-                        "--backs: duplicate principal '{principal}' — each --backs binding \
-                         must be unique"
-                    ));
-                }
-                backs.push(principal);
+                parse_backs_flag(&raw, &mut backs)?;
             }
             "--trust-cert" => {
                 let path = args.next().ok_or("--trust-cert requires a path argument")?;
                 trust_cert = Some(PathBuf::from(path));
+            }
+            "--relay-fetch" => {
+                let raw = args.next().ok_or("--relay-fetch requires a url argument")?;
+                let url = Url::parse(&raw)
+                    .map_err(|e| format!("--relay-fetch: invalid url '{raw}': {e}"))?;
+                relay_fetch = Some(url);
             }
             _ => names.push(arg),
         }
@@ -206,8 +247,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     if names.is_empty() {
         return Err(
             "usage: famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
-             --tls-key <path> [--peer <domain>=<url>]... [--trust-cert <path>] \
-             <principal-name>..."
+             --tls-key <path> [--peer <domain>=<url>]... [--backs agent:<domain>/<name>]... \
+             [--trust-cert <path>] [--relay-fetch <url>] <principal-name>..."
                 .to_owned(),
         );
     }
@@ -225,24 +266,56 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
         peers,
         backs,
         trust_cert,
+        relay_fetch,
     })
 }
 
 /// Resolve this host's own-domain federation authority (plan 02's single
-/// source) at startup. `Ok(None)`-equivalent (returned as plain `None`)
-/// means unset — egress signs the drained `from` authority verbatim
-/// (current/legacy behavior, kept so the e2e's own-domain-unset spawn
-/// stays green as the regression control). `Some(d)` means egress
-/// rejects any `from` whose authority != `d` before signing (T-11-19). A
-/// present-but-invalid domain (fails the probe `Principal` parse) is a
-/// startup-fatal misconfiguration — exits the process rather than
-/// silently falling back to unset (T-11-20).
+/// source) at startup.
+///
+/// **17-03/D-30/INGR-04: UNCONDITIONALLY startup-fatal.** Prior to this
+/// phase, an unresolved own-domain fell back to a "sign/relay verbatim,
+/// skip the domain check" posture (T-11-19/T-11-29) — reasonable before
+/// REACH-04 shipped a real open-internet ingress path. own-domain being
+/// optional was a vacuous security check that reports success, which is
+/// worse than an absent one: [`crate::ingress_guard::audience_check`]'s
+/// domain half is this gateway's ONLY defense against accepting envelopes
+/// addressed to a domain it does not own, and egress's `FromDomainMismatch`
+/// check (`egress.rs::relay_one`) is the ONLY defense against SIGNING as a
+/// domain it does not own. Neither defense can be silently disabled
+/// anymore — not even for the loopback/test topology (17-RESEARCH.md
+/// Pitfall 4; famp-lead-730, 2026-07-31 19:32, task 019fb955: "make
+/// own_domain MANDATORY at gateway startup in this phase... If that
+/// breaks an existing test fixture or the e2e harness, tell me rather
+/// than weakening the check").
+///
+/// Every resolution failure — unset (`CliError::OwnDomainNotSet`) OR
+/// present-but-invalid (fails the probe `Principal` parse,
+/// `CliError::OwnDomainInvalid`) — now exits the process with a message
+/// naming the fix (`FAMP_OWN_DOMAIN` env var, or a single-line
+/// `$FAMP_HOME/own-domain` file — this gateway has no `--domain` CLI
+/// flag of its own; see `famp::cli::own_domain::resolve_own_domain`'s
+/// documented precedence). There is no more warn-and-continue path, full
+/// stop. Return type stays `Option<String>` for source-compat with every
+/// downstream `own_domain: Option<&str>`/`Option<Arc<str>>` consumer
+/// (`egress.rs::relay_one`, `ingress.rs::GatewayIngressState`) — but by
+/// the time this function returns, the value is always `Some`; `None` is
+/// no longer a value this function can actually produce.
+// `clippy::unnecessary_wraps`: correct as flagged (the function no longer
+// has a non-fatal `None` path), but the `Option<String>` return type is
+// kept deliberately for source-compat with every downstream consumer —
+// see the doc comment above.
+#[allow(clippy::unnecessary_wraps)]
 fn resolve_own_domain_or_exit(home: &std::path::Path) -> Option<String> {
     match famp::cli::own_domain::resolve_own_domain(None, home) {
         Ok(domain) => Some(domain),
         Err(famp::cli::error::CliError::OwnDomainNotSet) => {
-            eprintln!("famp-gateway: own-domain unset; egress will sign `from` verbatim");
-            None
+            eprintln!(
+                "famp-gateway: own-domain not set — this is now REQUIRED for every gateway \
+                 (17-03/INGR-04). Set it via the FAMP_OWN_DOMAIN env var, or a single-line \
+                 $FAMP_HOME/own-domain file."
+            );
+            std::process::exit(1);
         }
         Err(e) => {
             eprintln!("famp-gateway: invalid own-domain configuration: {e}");
@@ -783,5 +856,68 @@ mod tests {
         ]))
         .expect("must parse without --socket");
         assert_eq!(parsed.sock, famp::bus_client::resolve_sock_path());
+    }
+
+    #[test]
+    fn relay_fetch_flag_parses() {
+        let parsed = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "--relay-fetch",
+            "https://relay.example/fetch",
+            "alice",
+        ]))
+        .expect("--relay-fetch must parse");
+        assert_eq!(
+            parsed.relay_fetch,
+            Some(Url::parse("https://relay.example/fetch").unwrap())
+        );
+    }
+
+    #[test]
+    fn relay_fetch_defaults_to_none() {
+        let parsed = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "alice",
+        ]))
+        .expect("must parse without --relay-fetch");
+        assert_eq!(parsed.relay_fetch, None);
+    }
+
+    #[test]
+    fn malformed_relay_fetch_url_is_a_distinct_usage_error() {
+        let err = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "--relay-fetch",
+            "not a url",
+            "alice",
+        ]))
+        .unwrap_err();
+        assert!(err.contains("--relay-fetch"), "got: {err}");
+        assert!(err.contains("invalid url"), "got: {err}");
+    }
+
+    /// D-26: signed-fetch needs no shared-secret credential — there is no
+    /// `--relay-token` flag. Asserted at the source (not just plan 05's
+    /// later grep) so a regression is caught here first.
+    #[test]
+    fn usage_error_names_relay_fetch_and_never_relay_token() {
+        let err = parse_args(args(&[])).unwrap_err();
+        assert!(err.contains("--relay-fetch"), "got: {err}");
+        assert!(!err.contains("--relay-token"), "got: {err}");
     }
 }

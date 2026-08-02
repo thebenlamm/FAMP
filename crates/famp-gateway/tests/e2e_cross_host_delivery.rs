@@ -305,7 +305,19 @@ fn gw01_gw02_gw03_two_process_cross_host_delivery() {
     let port_a = pick_free_port();
     let port_b = pick_free_port();
 
-    let _gateway_a = spawn_gateway(&side_a, "bob", port_a, "alice", BOB_DOMAIN, port_b, "bob");
+    // 17-03/D-30: own_domain is now REQUIRED on every gateway spawn —
+    // gateway A (fronting REAL alice's side) gets ALICE_DOMAIN, gateway B
+    // (fronting REAL bob's side) gets BOB_DOMAIN.
+    let _gateway_a = spawn_gateway(
+        &side_a,
+        "bob",
+        port_a,
+        "alice",
+        BOB_DOMAIN,
+        port_b,
+        "bob",
+        ALICE_DOMAIN,
+    );
     let _gateway_b = spawn_gateway(
         &side_b,
         "alice",
@@ -314,6 +326,7 @@ fn gw01_gw02_gw03_two_process_cross_host_delivery() {
         ALICE_DOMAIN,
         port_a,
         "alice",
+        BOB_DOMAIN,
     );
 
     wait_until_live(&side_a.sock(), side_a.home(), "bob", STARTUP_DEADLINE);
