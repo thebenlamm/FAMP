@@ -23,6 +23,10 @@
 > **What this is NOT:** not a requirement for a replacement mechanism. A tools-restricted listener profile is under independent adversarial review separately; nothing is committed to it here, and its absence from this document should not be read as a decision either way — promising a replacement before it survives review would repeat exactly the mistake being corrected here.
 >
 > **QUAR-01..11 are unaffected and stand as shipped**: provenance is real, it works, and it is the prerequisite for any future enforcement. Only the claim about what it alone buys was wrong — not the work itself.
+>
+> **Update, same day: the auto-wake gate ships (QUAR-12..15).** Both dead designs above attacked the TOOLS leg and the TRANSMIT leg of the lethal trifecta. Neither attacked **automatic ingestion** — the one leg FAMP owns end to end via the broker, not the harness. Enforcing there, not in a harness FAMP does not control, is why this one survives adversarial review where the other two didn't. See the QUAR section below for the actual requirements.
+>
+> **The road not taken, recorded so it isn't silently re-lost:** the strictly stronger design is **held-by-default-at-ingress** — a remote envelope is held at the broker's ingress append site and never enters the recipient's mailbox at all until a human releases it, or the peer has a standing per-peer auto-deliver grant. It answers all four defeats above by construction, and it is the natural upgrade path if the threat model ever demands more than "doesn't auto-wake." **Deliberately not v1.1** — the auto-wake gate delivers most of the value at a fraction of the build. Deferred, not rejected — do not re-derive this from scratch later.
 
 ---
 
@@ -64,12 +68,6 @@ A texted word-code beat the 128-bit capability link on every axis that matters h
 - [ ] **PAIR-06**: The code is entered via **stdin prompt, never as a command-line argument**. `famp pair <code>` would place the secret in `argv` (visible to `ps`) and in shell history in plaintext, durably — a leak path the design otherwise has no reason to create.
 - [ ] **PAIR-07**: The **inviter** sees who redeemed the invite (peer principal + key_id) before the pin becomes durable, and both sides reach a plain-language done-signal — one sentence, not FSM JSON. Pairing completes asymmetrically (the redeemer sees success immediately; the inviter pins on its next poll), so without this the redeemer gets a success signal for a half-finished state, and a forwarded invite pairs silently.
 - [ ] **PAIR-08**: Install instructions and the pairing code ship as **one artifact**, code at the bottom — so the invite outlives the follower's slowest step. The invite must be generated *after* the follower confirms their install works, not before; otherwise the validity window runs during the install.
-
-### Signed Peer Directory (DIR)
-
-- [ ] **DIR-01**: A `famp-directory` crate publishes a signed, TTL-bounded peer key list, canonicalized with the existing RFC 8785 JCS path and signed with the existing Ed25519 substrate.
-- [ ] **DIR-02**: A consumer verifies the directory signature and rejects stale, expired, or unsigned entries **fail-closed**.
-- [ ] **DIR-03**: The directory never becomes an implicit trust anchor — an entry present in a signed directory is **not** sufficient to pin a peer; explicit pinning is still required. Proven by a test that a directory-only peer is rejected.
 
 ### Protocol-Grade Ingress (INGR)
 
@@ -113,6 +111,13 @@ Settled before any outside person connects. Delivers machine-checkable provenanc
 
 - [x] **QUAR-11**: A **laundering test** exists and PASSES, documenting a real limitation rather than hiding it: a remote-tagged message read by local agent A, whose body A then quotes into a message to local agent B, arrives at B **untagged**. The tag is one-hop. This must be stated in QUAR-08's documentation.
 
+**The auto-wake gate (QUAR-12..15, added 2026-08-02, resolving the tool-gating scope decision above).** Two dead designs (a `PreToolUse` hook, a tools-restricted listener profile) both tried to enforce in the harness, which FAMP does not control. Neither attacked the one leg of the lethal trifecta FAMP owns end to end: **automatic ingestion** — whether a parked `famp await` wakes at all. Enforcing that in the broker, which FAMP does control, is a real boundary rather than a claim about one. `AwaitFilter` already exists at `crates/famp-bus/src/proto.rs:54` and `BUS_PROTO_VERSION` is already 2 — the likely integration point, named here as context, not a design decision; the implementation is plan-phase work.
+
+- [ ] **QUAR-12**: A remote-origin (non-`Local`) envelope does **not** satisfy a parked `famp await` — it never auto-wakes an idle agent. Local-origin traffic is unaffected; the same-host mesh's auto-wake behavior is unchanged.
+- [ ] **QUAR-13**: The filter is enforced **broker-side**, never in the CLI drain. A client-side filter would advance the read cursor past envelopes it declined to deliver — the 999.1 failure class.
+- [ ] **QUAR-14**: Proven by tests, not by inspection: (a) a gateway-origin envelope delivered to a parked awaiter does **not** wake it; (b) that same envelope **is** visible on the next human-initiated inbox read — held back from auto-wake, never dropped; (c) a local-origin envelope **does** still wake a parked awaiter. All three, or the gate is either vacuous or a data-loss bug.
+- [ ] **QUAR-15**: The consent warning lives in the **pairing artifact** (DOC-06), at the moment of consent — not only in `docs/QUARANTINE.md`, which the person who most needs the warning will never open. Wording to adapt: *pairing with a peer means their agent's messages will be read by your agent, which can run commands on your machine — pair only with someone you'd let type into your terminal.*
+
 ### Push Notification Adapter (WATCH) — SEED-002
 
 Promoted from dormant. A stranger's agent waking reliably on inbound messages is part of the unassisted-follower experience; the blocking Stop-hook + `.famp-listen` sentinel convention is the brittlest part of onboarding someone new.
@@ -155,7 +160,11 @@ Deferred to a future release. Tracked, not in this roadmap.
 
 ### Deferred from v1.1 scope
 
-- **DIR-04**: Directory-based automatic peer discovery (as opposed to the signed key list of DIR-01). Discovery without explicit pinning re-opens exactly the trust question DIR-03 closes.
+- **Signed Peer Directory (DIR-01..04), cut from v1.1 scope (2026-08-02, Ben approved).** DIR-01..03 (the signed key list itself) were a v1.1 requirement until this date; cut because the cost/benefit only turns positive at a peer count this milestone will not reach — it publishes a signed key list that is explicitly never a trust anchor (DIR-03) for a peer set of two, over a ceremony that happens once per peer, and it adds a **second write path** into the keyring integration point Phase 15 just spent four plans hardening. **Trigger: revisit when the peer set exceeds ~5** — the point manual pairing actually becomes the bottleneck it exists to relieve — same event-driven pattern as Gate B below.
+  - **DIR-01**: A `famp-directory` crate publishes a signed, TTL-bounded peer key list, canonicalized with the existing RFC 8785 JCS path and signed with the existing Ed25519 substrate.
+  - **DIR-02**: A consumer verifies the directory signature and rejects stale, expired, or unsigned entries **fail-closed**.
+  - **DIR-03**: The directory never becomes an implicit trust anchor — an entry present in a signed directory is **not** sufficient to pin a peer; explicit pinning is still required.
+  - **DIR-04**: Directory-based automatic peer discovery (as opposed to the signed key list of DIR-01..03). Discovery without explicit pinning re-opens exactly the trust question DIR-03 closes. Deferred independently of the DIR-01..03 cut above — this one was never in v1.1 scope.
 - **REACH-06**: NAT hole-punching as an optimization over relay fallback. Build the fallback first; 15–30% of hosts sit behind symmetric NAT that hole-punching cannot solve at all.
 - **INGR-09**: Broker-side recipient-existence check before mailbox auto-vivification. `famp-bus`'s `send_agent`/`AppendMailbox` creates a mailbox for any `to` name with no existence check — found during Phase 17 planning, code-grounded, correctly scoped out of that phase because the fix lands in `famp-bus`, not `famp-gateway`. Severity is bounded, not open: reaching `AppendMailbox` requires passing `verify_inbound_any`, so the sender is an already-pinned peer — this is trust-abuse by a peer deliberately trusted, not anonymous-attacker DoS. Worth closing before the peer set is ever wider than people Ben has personally paired with.
 
@@ -195,17 +204,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 | KEYR-01 | Phase 15 | Complete |
 | KEYR-02 | Phase 15 | Complete |
 | KEYR-03 | Phase 15 | Complete |
-| PAIR-01 | Phase 16 | Pending |
-| PAIR-02 | Phase 16 | Pending |
-| PAIR-03 | Phase 16 | Pending |
-| PAIR-04 | Phase 16 | Pending |
-| PAIR-05 | Phase 16 | Pending |
-| PAIR-06 | Phase 16 | Pending |
-| PAIR-07 | Phase 16 | Pending |
-| PAIR-08 | Phase 16 | Pending |
-| DIR-01 | Phase 20 | Pending |
-| DIR-02 | Phase 20 | Pending |
-| DIR-03 | Phase 20 | Pending |
+| PAIR-01 | Phase 18 | Pending |
+| PAIR-02 | Phase 18 | Pending |
+| PAIR-03 | Phase 18 | Pending |
+| PAIR-04 | Phase 18 | Pending |
+| PAIR-05 | Phase 18 | Pending |
+| PAIR-06 | Phase 18 | Pending |
+| PAIR-07 | Phase 18 | Pending |
+| PAIR-08 | Phase 18 | Pending |
 | INGR-01 | Phase 17 | Complete |
 | INGR-02 | Phase 17 | Complete |
 | INGR-03 | Phase 17 | Complete |
@@ -228,24 +234,28 @@ Which phases cover which requirements. Populated during roadmap creation.
 | QUAR-09 | Phase 14 | Complete |
 | QUAR-10 | Phase 14 | Complete |
 | QUAR-11 | Phase 14 | Complete |
+| QUAR-12 | Phase 19 | Pending |
+| QUAR-13 | Phase 19 | Pending |
+| QUAR-14 | Phase 19 | Pending |
+| QUAR-15 | Phase 19 | Pending |
 | WATCH-01 | Phase 21 | Pending |
 | WATCH-02 | Phase 21 | Pending |
 | WATCH-03 | Phase 21 | Pending |
 | WATCH-04 | Phase 21 | Pending |
 | WATCH-05 | Phase 21 | Pending |
-| DIST-01 | Phase 18 | Pending |
-| DIST-02 | Phase 18 | Pending |
-| DIST-03 | Phase 18 | Pending |
-| DIST-04 | Phase 18 | Pending |
-| DIST-05 | Phase 18 | Pending |
-| DOC-06 | Phase 19 | Pending |
-| DOC-07 | Phase 19 | Pending |
-| UAT-02 | Phase 19 | Pending |
+| DIST-01 | Phase 16 | Pending |
+| DIST-02 | Phase 16 | Pending |
+| DIST-03 | Phase 16 | Pending |
+| DIST-04 | Phase 16 | Pending |
+| DIST-05 | Phase 16 | Pending |
+| DOC-06 | Phase 20 | Pending |
+| DOC-07 | Phase 20 | Pending |
+| UAT-02 | Phase 20 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 54 total. *(Count history: 41 was recorded at definition time and was simply wrong — exhaustive ID extraction during roadmap creation found 43. It became 46 when the independent design review added QUAR-09, QUAR-10, and QUAR-11 — but PAIR-06/07/08 were added to this doc's body in that same period without ever being added to this table, so the true count was already 49, not 46; that gap sat undetected until this update. It became 54 on 2026-08-02: +5 for DIST-01..05 (Ben-approved distribution phase, inserted before the Human Acceptance Gate) and the PAIR-06/07/08 traceability gap closed in the same pass. ROADMAP.md's summary line previously carried a stale 43/43 — corrected to 54/54 in both places.)*
-- Mapped to phases: 54/54 ✓
+- v1 requirements: 55 total. *(Count history: 41 → 43 (tally correction) → 46 (QUAR-09/10/11 added) → 49 (PAIR-06/07/08 traceability gap found and closed) → 54 on 2026-08-02, first pass (+5 DIST-01..05) → 55 on 2026-08-02, second pass this same day: -3 for DIR-01/02/03 cut from v1 scope and moved to the deferred/backlog section (event-driven, peer count > ~5), +4 for QUAR-12..15 (the broker-side auto-wake gate, resolving the tool-gating scope decision). Net this pass: -3+4 = +1, 54→55.)*
+- Mapped to phases: 55/55 ✓ — re-verified mechanically (every **XXX-NN** ID in the v1 body diffed against every traceability row, zero gaps either direction)
 - Unmapped: 0 ✓
 
 ---
@@ -262,4 +272,4 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 ---
 *Requirements defined: 2026-07-30*
-*Last updated: 2026-08-02 (second pass) — the OPEN SCOPE DECISION is now RESOLVED: Ben approved Option B. v1.1 delivers machine-checkable provenance plus honest documentation and does NOT ship harness-level tool-gating — an independent adversarial review found the proposed `PreToolUse` design has structural bypasses (non-MCP render paths, mesh-wide provenance laundering behind one unhooked peer). The QUAR section's gate sentence and PROJECT.md/ROADMAP.md's matching claims were rewritten to state only what ships; UAT-02 was checked and already did not overclaim. QUAR-01..11 are unaffected — provenance shipped and stands. No requirement ID was added, removed, or renamed by this pass; count stays 54/54, re-verified mechanically. (First pass, same day: added DIST-01..05 as Phase 18 before the Human Acceptance Gate — now Phase 19 — shifting Signed Peer Directory to 20 and Push Notification Adapter to 21; reworded DOC-07 for the binary install path; closed a pre-existing PAIR-06/07/08 traceability gap.) See ROADMAP.md.*
+*Last updated: 2026-08-02 (third pass) — two independent reviews (adversarial security + right-sizing) landed and Ben approved the outcome. Added QUAR-12..15: a broker-side auto-wake gate — a remote-origin envelope never satisfies a parked `famp await` — enforcing the one trifecta leg (automatic ingestion) FAMP owns end to end, unlike the two dead harness-side designs. Recorded held-by-default-at-ingress as the known-stronger road not taken, deferred not rejected. Cut DIR-01/02/03 (Signed Peer Directory) from v1.1 scope entirely, merged into the deferred/backlog section with DIR-04 under an event-driven trigger (peer count > ~5), same pattern as Gate B — the phase is removed from ROADMAP.md, not just its requirements. Net count this pass: -3 (DIR) +4 (QUAR) = +1, 54→55. Phase renumbering (ROADMAP.md): Distribution 18→16, Pairing 16→18, new Auto-Wake Gate phase created at 19, Human Acceptance Gate 19→20, Push Notification Adapter stays 21 — reflecting Ben's approved critical-path order (13 → Distribution → Pairing → auto-wake gate → REACH-02/04 validation → Human Acceptance Gate); Phases 14/15/17 (already executed) keep their numbers unchanged. All 55 v1 requirements mapped, re-verified mechanically (every ID in the body diffed against every traceability row, zero gaps). (Second pass, same day: OPEN SCOPE DECISION resolved to Option B, tool-gating claims corrected across REQUIREMENTS/PROJECT/ROADMAP.md and docs/QUARANTINE.md. First pass, same day: added DIST-01..05 as Phase 18, closed a PAIR-06/07/08 traceability gap.) See ROADMAP.md.*

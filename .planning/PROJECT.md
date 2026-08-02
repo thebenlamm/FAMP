@@ -23,7 +23,7 @@ The signing substrate is the same in both profiles. Canonicalization, signing, a
 **Target features:**
 - **Public reachability** — relay and/or NAT traversal. The model is decided **first**, in a zero-code Phase-1 spike, because it carries real infra cost and ownership: self-hosted relay VM vs. hosted tunnel service vs. avoiding a relay entirely (direct-dial + port forward / an existing tunnel). Deliverable is a recorded decision with cost/month and named operator, not code.
 - **Cross-person trust bootstrap.** The v1.0 mechanism (`famp peer export` → paste over Signal → `famp peer import`) is the thing that will actually fail with a real human. **This is the hard problem, not the transport.**
-- **Signed peer directory.**
+- **Prebuilt-binary distribution** (added 2026-08-02, Ben approved). Today's only install path is `cargo install famp` — a full Rust toolchain and 15 compiled crates. A fresh machine has neither, which makes the Human Acceptance Gate's fresh-machine validation unreachable as things stood. DIST-01..05: a tag-triggered release workflow, checksummed prebuilt binaries (macOS arm64/x86_64, Linux x86_64), one documented install command, docs leading with that path over `cargo install`.
 - **Protocol-grade ingress at the boundary** — freshness / bounded replay cache, audience binding, DoS ordering, key revocation. All four were explicitly deferred out of v1.0 as open-internet concerns; this is where they come due. The v1.0 envelope already reserves the `nonce` and `expiry` fields these need.
 - **Inbound message content is DATA, not instructions — BLOCKING SECURITY GATE**, settled before any outside person connects. Delivers machine-checkable, fail-closed provenance at every rendering surface (structural quarantine with untrusted-origin marking at the MCP + CLI output layer, adversarial corpus in CI), **FAMP-side and harness-agnostic**, not as a prompt convention and not in `~/.claude` wiring — a harness-layer boundary is untestable in FAMP's CI and silently fails to protect Codex/Grok/other clients. **This is the prerequisite for enforcement, not enforcement itself.** An independent adversarial review found the proposed harness-level tool-gating mechanism has structural bypasses (non-MCP render paths, provenance laundering across one unhooked peer); Ben resolved this 2026-08-02 to Option B — provenance + honest docs now, no tool-gating in v1.1. See REQUIREMENTS.md's resolved scope decision and `docs/QUARANTINE.md`.
 - **SEED-002 — harness-adapter push notification** (`famp watch --notify`, replacing the `famp await` long-poll + `.famp-listen` sentinel + global Stop-hook trick). Promoted into v1.1 scope: a stranger's agent waking reliably on inbound messages is part of the unassisted-follower experience, and the blocking Stop-hook convention is the brittlest part of onboarding someone new.
@@ -91,12 +91,13 @@ back-dated, because Phase 11 is what closed it.
 
 ### Active — v1.1 Open-Internet Federation — IN PROGRESS ◆
 
-Detailed requirements: see `.planning/REQUIREMENTS.md`. Six requirement areas:
+Detailed requirements: see `.planning/REQUIREMENTS.md`. Eight requirement areas:
 
 - [ ] **Public reachability model** — decided in a zero-code Phase-13 spike (cost/month + named operator recorded as a decision), then implemented.
 - [ ] **Cross-person trust bootstrap** — replaces hand-copied `peer export`/`import`; must survive a real human who is not Ben.
-- [ ] **Signed peer directory.**
+- [ ] **Prebuilt-binary distribution** — tag-triggered release workflow, checksummed binaries, no-Rust-toolchain install (DIST-01..05).
 - [ ] **Protocol-grade ingress** — freshness / bounded replay cache, audience binding, DoS ordering, key revocation.
+- [ ] **Auto-wake gate** — a remote-origin envelope never auto-wakes a parked `famp await`, enforced broker-side (QUAR-12..15).
 - [ ] **Inbound-content-is-DATA provenance** — FAMP-side structural quarantine, harness-agnostic, adversarial corpus in CI. Prerequisite for enforcement, not a steering boundary itself (Ben resolved to Option B, 2026-08-02 — see REQUIREMENTS.md). **Blocking before any outside person connects.**
 - [ ] **SEED-002 push-notification harness adapter** — `famp watch --notify`, retiring the `famp await` poll + Stop-hook convention as the primary wake path.
 - [ ] **Human acceptance gate (early)** — second person, own machine, own network, no shared VPN, no hand-copied keys, doc-only, bidirectional, both FSMs terminal.
