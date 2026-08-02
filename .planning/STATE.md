@@ -5,16 +5,16 @@ milestone_name: Open-Internet Federation
 current_phase: 17
 current_phase_name: protocol-grade-ingress-reachability-implementation
 status: executing
-stopped_at: Completed 17-03-PLAN.md
-last_updated: "2026-08-02T00:39:11.983Z"
-last_activity: 2026-07-31
+stopped_at: Completed 17-05-PLAN.md
+last_updated: "2026-08-02T05:09:07.863Z"
+last_activity: 2026-08-02
 last_activity_desc: Phase 17 execution started
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
-  completed_plans: 14
-  percent: 67
+  completed_plans: 15
+  percent: 100
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -32,9 +32,9 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 17 (protocol-grade-ingress-reachability-implementation) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-07-31 — Phase 17 execution started
+Plan: 6 of 6 (17-01..17-06 all complete; 17-05 was the last remaining plan)
+Status: All Phase 17 plans executed. REACH-04 loopback proof done (e2e_relay_bidirectional.rs); genuinely-different-networks leg + REACH-02 remain explicitly OPEN, blocked on Ben. REQUIREMENTS.md's REACH-04 checkbox left unchecked pending orchestrator review.
+Last activity: 2026-08-02 — 17-05-PLAN.md executed (relay-fetch loop + three-process REACH-04 loopback e2e)
 
 ## v1.1 Phase Map
 
@@ -211,6 +211,9 @@ Last activity: 2026-07-31 — Phase 17 execution started
 - [Phase ?]: [17-03]: Final cheap-gate order pinned: audience_check (domain then backing) -> freshness_check -> replay -> rate limit, rate limit last so foreign/unbacked/stale/replayed traffic never consumes a rate-limit slot.
 - [Phase ?]: [17-03]: own-domain-unset is now UNCONDITIONALLY startup-fatal for every famp-gateway process (escalated from D-23's conditional-on-relay-reachability design per famp-lead-730's 2026-07-31 19:32 reply) -- resolve_own_domain_or_exit's Option<String> return type kept for source-compat, both failure branches now exit(1).
 - [Phase ?]: [17-03]: e2e_shipping_surface.rs Test 3 rewritten per D-31 -- gateway A's own FromDomainMismatch egress check now fires on the mismatched-domain send (coverage improvement) instead of relying on B's unpinned_key ingress fallback.
+- [Phase ?]: [17-05]: GatewayIngressState widened pub(crate)->pub with a pub const fn new(), so main.rs (separate bin crate) can share exactly ONE IngressGuard between run_ingress's router and run_relay_fetch's loop; ingest_inbound itself stays pub(crate), unchanged.
+- [Phase ?]: [17-05]: run_relay_fetch takes trust_cert: Option<PathBuf>, reusing the existing --trust-cert flag (no new CLI surface) since HttpTransport exposes no raw-GET client the fetch loop could reuse.
+- [Phase ?]: [17-05]: REACH-04 loopback three-process proof (e2e_relay_bidirectional.rs) is PROVEN; the genuinely-different-networks leg and REACH-02 stay explicitly OPEN, blocked on Ben. REQUIREMENTS.md's REACH-04 checkbox left UNCHECKED by the executor per explicit orchestrator direction -- final tick decision deferred to the orchestrator/human.
 
 ## Issues / Blockers
 
@@ -367,11 +370,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 17 P06 | 45min | 2 tasks | 4 files |
 | Phase 17 P02 | 75min | 2 tasks | 3 files |
 | Phase 17 P03 | ~100min | 2 tasks | 12 files |
+| Phase 17 P05 | ~5h | 2 tasks | 7 files |
 
 ## Session
 
-**Last session:** 2026-08-02T00:39:11.962Z
-**Stopped At:** Completed 17-03-PLAN.md
+**Last session:** 2026-08-02T05:09:07.852Z
+**Stopped At:** Completed 17-05-PLAN.md
 **Resume File:** None
 
 **HANDOFF STATE — read before doing anything:**

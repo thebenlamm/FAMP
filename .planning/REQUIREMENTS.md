@@ -182,7 +182,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | REACH-01 | Phase 13 | Pending |
 | REACH-02 | Phase 13 | Pending |
 | REACH-03 | Phase 13 | Pending |
-| REACH-04 | Phase 17 | In progress — relay (17-04) built; 17-05 (relay-fetch loop + 3-process bidirectional e2e proof) not yet run |
+| REACH-04 | Phase 17 | Loopback proven — 17-05's relay-fetch loop + three-process bidirectional e2e (`e2e_relay_bidirectional.rs`) passes with no direct peer address in either gateway's config. Genuinely-different-networks leg still PENDING (blocked on Ben, a second physical network); checkbox left unticked above pending that leg, per the Phase 10 DOC-04 precedent — do not read this row as closing the requirement. |
 | REACH-05 | Phase 17 | Complete |
 | KEYR-01 | Phase 15 | Complete |
 | KEYR-02 | Phase 15 | Complete |
