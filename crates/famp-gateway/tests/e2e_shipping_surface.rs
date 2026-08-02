@@ -44,6 +44,25 @@
 //!    loop's `{e:?}` relay-failure line) for the `FromDomainMismatch`/
 //!    `local.bus` substrings AND confirming non-delivery on B — never a
 //!    cross-process Rust-type match.
+//! 4. **Negative (receiver-side, D-09/D-31 restore)** — the RECEIVER-side
+//!    half of the same threat model: a hand-built envelope claiming
+//!    `from = agent:otherdomain.test/alice`, signed with an attacker key
+//!    (never alice's real one), POSTed DIRECTLY to gateway B's HTTPS
+//!    ingress — bypassing gateway A's egress entirely, since a real
+//!    attacker does not run our own egress check. B's peers keyring only
+//!    pins a key for `agent:hosta.test/alice` (the real one, TOFU-imported
+//!    above), so B's own signature-pinning check rejects it
+//!    (`unpinned_key`, HTTP 403) even though the cheap pre-verify
+//!    `audience_check` gate (recipient domain + backed sender NAME) lets
+//!    it through first (D-22: that gate is domain-granularity +
+//!    backed-NAME only, never per-key). Prior to 17-03, this property was
+//!    proven by leaving gateway A's own-domain unset so its egress check
+//!    skipped and the mismatched envelope reached B's ingress via
+//!    `famp send`; own-domain is now mandatory, so that construction is
+//!    gone — the envelope is built directly with
+//!    `famp_gateway::egress::sign_federation_fields` and posted via a raw
+//!    `famp_transport_http::HttpTransport` client, the same helper
+//!    gateway A's own egress uses internally.
 
 #![allow(unused_crate_dependencies)]
 #![allow(
@@ -62,6 +81,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use assert_cmd::cargo::CommandCargoExt;
+use famp::{AuthorityScope, FampSigningKey, MessageId, Principal, Timestamp, UnsignedEnvelope};
+use famp_envelope::body::{Bounds, Budget, RequestBody};
+use famp_transport::{Transport, TransportMessage};
+use famp_transport_http::{HttpTransport, HttpTransportError};
+use url::Url;
 
 #[path = "common/gateway_harness.rs"]
 mod gateway_harness;
@@ -282,6 +306,47 @@ fn assert_never_delivered(
     }
 }
 
+/// A plain, unsigned, non-federation local-bus `request`-class `Value`
+/// (matches the drained shape `famp_gateway::egress::sign_federation_fields`
+/// expects as input — mirrors that crate's own private `plain_request_value`
+/// test helper, duplicated here since it's `#[cfg(test)]`-private to the
+/// lib). Signs with a throwaway key purely to get the canonical wire shape,
+/// then strips the signature — the resulting content fields don't depend on
+/// which key produced them.
+fn plain_request_value(id: MessageId, from: &Principal, to: &Principal) -> serde_json::Value {
+    let ts = Timestamp(famp_gateway::now_canonical_utc());
+    let body = RequestBody {
+        scope: serde_json::json!({"task": "translate"}),
+        bounds: Bounds {
+            deadline: Some("2026-07-27T00:00:00Z".to_string()),
+            budget: Some(Budget {
+                amount: "100".to_string(),
+                unit: "usd".to_string(),
+            }),
+            hop_limit: None,
+            policy_domain: None,
+            authority_scope: None,
+            max_artifact_size: None,
+            confidence_floor: None,
+            recursion_depth: None,
+        },
+        natural_language_summary: None,
+    };
+    let unsigned = UnsignedEnvelope::<RequestBody>::new(
+        id,
+        from.clone(),
+        to.clone(),
+        AuthorityScope::Advisory,
+        ts,
+        body,
+    );
+    let dummy_sk = FampSigningKey::from_bytes([9u8; 32]);
+    let bytes = unsigned.sign(&dummy_sk).unwrap().encode().unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    value.as_object_mut().unwrap().remove("signature");
+    value
+}
+
 #[test]
 fn shipping_send_happy_path_full_cycle_and_observable_negative() {
     ensure_famp_bin_built();
@@ -494,6 +559,82 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
         side_b.home(),
         "bob",
         &negative_task_id,
+        "request",
+        NON_DELIVERY_WINDOW,
+    );
+
+    // ===================================================================
+    // 4. NEGATIVE (RECEIVER-SIDE, D-09/D-31 RESTORE) — a hand-built
+    //    envelope claiming `from = agent:otherdomain.test/alice`, signed
+    //    with an ATTACKER key (never alice's real one), POSTed DIRECTLY to
+    //    gateway B's HTTPS ingress — bypassing gateway A's egress
+    //    entirely. See this file's module doc, case 4, for the full
+    //    rationale.
+    // ===================================================================
+    let attacker_sk = FampSigningKey::from_bytes([77u8; 32]);
+    let attacker_vk = attacker_sk.verifying_key();
+    let forged_from: Principal = "agent:otherdomain.test/alice".parse().unwrap();
+    let forged_to: Principal = format!("agent:{BOB_DOMAIN}/bob").parse().unwrap();
+    let forged_id = MessageId::new_v7();
+
+    let mut forged_value = plain_request_value(forged_id, &forged_from, &forged_to);
+    famp_gateway::egress::sign_federation_fields(
+        &mut forged_value,
+        &forged_from,
+        &forged_to,
+        &attacker_sk,
+        &attacker_vk,
+    )
+    .expect("signing the hand-built forged envelope must succeed");
+    let forged_bytes = serde_json::to_vec(&forged_value).unwrap();
+
+    let fixtures = cross_machine_fixture_dir();
+    let direct_client = HttpTransport::new_client_only(Some(&fixtures.join("bob.crt")))
+        .expect("build a direct-ingress HTTPS client trusting gateway B's own cert");
+    let base_url: Url = format!("https://127.0.0.1:{port_b}").parse().unwrap();
+
+    // This test file is otherwise entirely synchronous (subprocess spawn +
+    // blocking `Command::output()`/poll loops, mirroring every other e2e
+    // test here) — `HttpTransport` is the one async API this section needs
+    // (it implements `famp_transport::Transport`, the same trait gateway
+    // A's own egress drives), so a small single-purpose current-thread
+    // runtime is built just for this section rather than converting the
+    // whole test to `#[tokio::test]` and its blocking subprocess calls to
+    // spawn_blocking.
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build a current-thread tokio runtime for the direct-ingress HTTPS client");
+    let send_result = rt.block_on(async {
+        direct_client.add_peer(forged_to.clone(), base_url).await;
+        direct_client
+            .send(TransportMessage {
+                sender: forged_from,
+                recipient: forged_to,
+                bytes: forged_bytes,
+            })
+            .await
+    });
+
+    match send_result {
+        Err(HttpTransportError::ServerStatus { code, body }) => {
+            assert_eq!(code, 403, "expected 403 FORBIDDEN, got {code}; body={body}");
+            assert!(
+                body.contains("unpinned_key"),
+                "expected the rejection body to name 'unpinned_key', got: {body}"
+            );
+        }
+        other => panic!(
+            "expected gateway B's ingress to reject the forged envelope with a 403 \
+             ServerStatus, got {other:?}"
+        ),
+    }
+
+    assert_never_delivered(
+        &side_b.sock(),
+        side_b.home(),
+        "bob",
+        &forged_id.to_string(),
         "request",
         NON_DELIVERY_WINDOW,
     );
