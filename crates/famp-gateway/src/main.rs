@@ -78,6 +78,15 @@ use tower as _;
 use tower_http as _;
 use uuid as _;
 
+// Silencer (17-05): `famp-relay`/`reqwest`/`base64`/`serde` back
+// `relay_fetch.rs`'s signed-fetch client inside the lib target — this bin
+// consumes `famp_gateway::relay_fetch::run_relay_fetch`'s public function,
+// not these crates, directly.
+use base64 as _;
+use famp_relay as _;
+use reqwest as _;
+use serde as _;
+
 // Silencer for dev-only dependencies: these are used exclusively by the
 // `tests/liveness.rs` / `tests/no_cross_talk.rs` integration test
 // binaries (07-03), separate compilation units from this bin's own
@@ -183,6 +192,16 @@ fn parse_backs_flag(raw: &str, backs: &mut Vec<Principal>) -> Result<(), String>
     Ok(())
 }
 
+/// Usage summary, shared between the "no positional names" error and an
+/// unrecognized `--`-prefixed argument error (17-05). `--relay-token`
+/// (the superseded D-26 bearer-credential flag plan 03's ORIGINAL design
+/// would have added, but never actually did — see [`GatewayArgs::relay_fetch`]'s
+/// doc comment) is the concrete regression this constant's absence-of-mention
+/// guards: this string names every real flag and none that don't exist.
+const USAGE: &str = "usage: famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
+     --tls-key <path> [--peer <domain>=<url>]... [--backs agent:<domain>/<name>]... \
+     [--trust-cert <path>] [--relay-fetch <url>] <principal-name>...";
+
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, String> {
     let _bin = args.next();
     let mut sock: Option<PathBuf> = None;
@@ -240,17 +259,25 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
                     .map_err(|e| format!("--relay-fetch: invalid url '{raw}': {e}"))?;
                 relay_fetch = Some(url);
             }
+            // 17-05: any other `--`-prefixed token is an UNRECOGNIZED
+            // flag, never silently absorbed as a positional principal
+            // name. `--relay-token` is the concrete regression this
+            // guards against: a dead credential-shaped flag on an
+            // open-internet-facing gateway would tell an operator to go
+            // find a secret that does not exist (D-26) — an unknown-flag
+            // usage error is the honest failure mode instead. `USAGE`
+            // itself names every real flag and never this one.
+            other if other.starts_with("--") => {
+                return Err(format!(
+                    "famp-gateway: unrecognized argument '{other}' — no such flag\n{USAGE}"
+                ));
+            }
             _ => names.push(arg),
         }
     }
 
     if names.is_empty() {
-        return Err(
-            "usage: famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
-             --tls-key <path> [--peer <domain>=<url>]... [--backs agent:<domain>/<name>]... \
-             [--trust-cert <path>] [--relay-fetch <url>] <principal-name>..."
-                .to_owned(),
-        );
+        return Err(USAGE.to_owned());
     }
     let listen = listen.ok_or("--listen <addr> is required, e.g. --listen 127.0.0.1:8443")?;
     let tls_cert = tls_cert.ok_or("--tls-cert <path> is required")?;
@@ -395,6 +422,57 @@ async fn build_route_map(args: &GatewayArgs, backed_names: &[String], transport:
     }
 }
 
+/// The relay-fetch `tokio::select!` branch (17-05), extracted from
+/// `main()` solely to satisfy `clippy::too_many_lines`, mirroring
+/// `build_route_map`/`resolve_own_domain_or_exit`'s own extraction
+/// precedent.
+///
+/// When `--relay-fetch` is configured, drives the signed relay-fetch
+/// drain loop for the lifetime of the process, alongside ingress and
+/// egress. When it is absent, this future is permanently pending — never
+/// resolving, never spawning anything — so `tokio::select!` behaves
+/// exactly as it did before this plan for a gateway that doesn't use the
+/// relay path.
+async fn run_relay_fetch_branch(
+    args: &GatewayArgs,
+    identity_path: &std::path::Path,
+    registry: &Arc<Mutex<GatewayRegistry>>,
+    keyring: &Arc<Keyring>,
+    own_domain: &str,
+    ingress_own_domain: &Arc<str>,
+    ingress_guard: &Arc<Mutex<famp_gateway::ingress_guard::IngressGuard>>,
+) {
+    let Some(relay_url) = args.relay_fetch.clone() else {
+        std::future::pending::<()>().await;
+        unreachable!("std::future::pending never resolves");
+    };
+    // Fresh, idempotent key load (T-08-12) — mirrors every egress task
+    // above: `FampSigningKey` deliberately does not implement `Clone`
+    // (secret-key hygiene), so this loop gets its own load of the SAME
+    // identity file rather than a shared handle.
+    let sk: FampSigningKey = match famp::cli::peer::identity::load_or_generate(identity_path) {
+        Ok(k) => k,
+        Err(e) => {
+            eprintln!("famp-gateway: failed to load signing key for relay-fetch: {e}");
+            std::process::exit(1);
+        }
+    };
+    let state = famp_gateway::ingress::GatewayIngressState::new(
+        Arc::clone(registry),
+        Arc::clone(keyring),
+        Arc::clone(ingress_own_domain),
+        Arc::clone(ingress_guard),
+    );
+    famp_gateway::relay_fetch::run_relay_fetch(
+        relay_url,
+        own_domain.to_owned(),
+        sk,
+        args.trust_cert.clone(),
+        state,
+    )
+    .await;
+}
+
 #[tokio::main]
 async fn main() {
     let args = match parse_args(std::env::args()) {
@@ -513,8 +591,17 @@ async fn main() {
     // forward-compat note.
     let ingress_own_domain: Arc<str> = Arc::from(own_domain.clone());
 
+    // 17-05/INGR-02/INGR-06/INGR-08: exactly ONE `IngressGuard` per
+    // process, built HERE and shared between `run_ingress`'s HTTP router
+    // and plan 05's relay-fetch loop below — never two independently
+    // constructed guards. A second guard would double every replay-cache
+    // and rate-limit budget an attacker could burn by alternating between
+    // the direct-POST path and the relay-fetch path.
+    let ingress_guard: Arc<Mutex<famp_gateway::ingress_guard::IngressGuard>> =
+        Arc::new(Mutex::new(famp_gateway::ingress_guard::IngressGuard::new()));
+
     tokio::select! {
-        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), ingress_own_domain) => {
+        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), Arc::clone(&ingress_own_domain), Arc::clone(&ingress_guard)) => {
             if let Err(e) = result {
                 eprintln!("famp-gateway: ingress server exited: {e}");
             }
@@ -523,6 +610,9 @@ async fn main() {
             while egress_tasks.join_next().await.is_some() {}
         } => {
             eprintln!("famp-gateway: all egress drain tasks exited");
+        }
+        () = run_relay_fetch_branch(&args, &identity_path, &registry, &keyring, &own_domain, &ingress_own_domain, &ingress_guard) => {
+            eprintln!("famp-gateway: relay-fetch task exited");
         }
         _ = tokio::signal::ctrl_c() => {
             println!("famp-gateway: shutting down (ctrl_c)");
@@ -915,5 +1005,35 @@ mod tests {
         let err = parse_args(args(&[])).unwrap_err();
         assert!(err.contains("--relay-fetch"), "got: {err}");
         assert!(!err.contains("--relay-token"), "got: {err}");
+    }
+
+    /// 17-05 Task 2: `--relay-token` is not merely absent from
+    /// `GatewayArgs` — supplying it is a distinct, non-zero-exit usage
+    /// error naming the unrecognized flag, never silently swallowed as a
+    /// positional principal name. The printed `USAGE` string itself never
+    /// mentions `--relay-token` as a recognized flag.
+    #[test]
+    fn relay_token_flag_is_rejected_as_unrecognized_never_swallowed_as_a_name() {
+        let err = parse_args(args(&[
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "--relay-token",
+            "supersecret",
+            "alice",
+        ]))
+        .unwrap_err();
+        assert!(
+            err.contains("--relay-token"),
+            "the reject must name the offending flag, got: {err}"
+        );
+        assert!(err.contains("unrecognized argument"), "got: {err}");
+        assert!(
+            !USAGE.contains("--relay-token"),
+            "the usage string must never mention the superseded flag"
+        );
     }
 }
