@@ -19,6 +19,9 @@
 //! { "listen_mode": <bool> }
 //! ```
 //!
+//! Enabling also returns `wake_readiness: "unknown"` and a host Stop-hook
+//! prerequisite warning. Disabling keeps the compact one-field response.
+//!
 //! Echoes the post-mutation flag so the caller can confirm without
 //! issuing a separate `famp_inspect` round-trip.
 
@@ -67,9 +70,16 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
                 let mut guard = session::state().lock().await;
                 guard.listen_mode = Some(listen_mode);
             }
-            Ok(serde_json::json!({
+            let mut body = serde_json::json!({
                 "listen_mode": listen_mode,
-            }))
+            });
+            if listen_mode {
+                body["wake_readiness"] = serde_json::json!("unknown");
+                body["warning"] = serde_json::json!(
+                    "listen mode requires an installed and loaded host Stop hook; for Codex run `famp inspect wake --identity <name>` to verify end-to-end readiness"
+                );
+            }
+            Ok(body)
         }
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         other => Err(ToolError::new(

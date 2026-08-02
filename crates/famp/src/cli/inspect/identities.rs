@@ -61,10 +61,11 @@ pub async fn run(args: InspectIdentitiesArgs) -> Result<(), CliError> {
 }
 
 fn print_table(rows: &[IdentityRow]) {
-    // Header order: NAME LISTEN CWD REGISTERED UNREAD TOTAL LAST_SENDER LAST_RECEIVED.
+    // `listen_mode` is broker intent, not proof that a host wake adapter is
+    // installed or loaded. Keep that distinction visible in the table.
     const HEADERS: [&str; 8] = [
         "NAME",
-        "LISTEN",
+        "BROKER_LISTEN",
         "CWD",
         "REGISTERED",
         "UNREAD",
