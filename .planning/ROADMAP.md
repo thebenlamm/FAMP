@@ -12,7 +12,7 @@
 - ✅ **v0.10 Inspector & Observability** — Phases 1–3 (shipped 2026-05-11). Read-only inspector RPC on the v0.9 broker UDS + `famp inspect` CLI subcommand. Closes the conversation-state opacity gap that produced three recurring v0.9 incidents (orphan socket-holder vs stale PID file, task FSM invisibility, stale-mailbox relays). 26/26 requirements, audit `passed`. See [milestones/v0.10-ROADMAP.md](milestones/v0.10-ROADMAP.md) · [milestones/v0.10-REQUIREMENTS.md](milestones/v0.10-REQUIREMENTS.md) · [milestones/v0.10-MILESTONE-AUDIT.md](milestones/v0.10-MILESTONE-AUDIT.md).
 - ✅ **v0.11 Broker Daemon & Cross-Tool Bootstrap** — Phases 4–6 (shipped 2026-06-06). Service-managed daemon (`famp daemon install`) restores the broker-presence guarantee that `56b2293` (correctly) removed; EPERM sandbox diagnostics + daemon install/status/uninstall/restart lifecycle + version-skew detection + daemon-first cross-platform README. 15/15 requirements, audit waived (Phase 6 human-verify E2E). See [milestones/v0.11-ROADMAP.md](milestones/v0.11-ROADMAP.md) · [milestones/v0.11-REQUIREMENTS.md](milestones/v0.11-REQUIREMENTS.md).
 - ✅ **v1.0 Federation Profile — Gateway Core** — Phases 7–12 (shipped 2026-07-29, tagged `v1.0.0` at `5edff41`). Gate A fired (Ben's sustained cross-machine use); this milestone closes it: an agent on one of Ben's machines exchanges a signed FAMP envelope with an agent on a second machine he controls, bidirectionally and reliably, over a network he fully controls (direct or a VPN he already runs — no public relay, no cross-person trust). Resolves the broker-liveness fork (same-host `kill(pid,0)` reaping a naively-proxied remote principal), ships `famp-gateway` (Layer 2) wrapping the preserved `famp-transport-http` + `famp-keyring`, signed cross-host envelopes (INV-10 + forward-compat fields), two-machine TOFU key bootstrap, and retires the ~27 parked federation tests (triaged 27/27 RETIRE, with the real Phase 9 E2E pinned into CI in their place). Gate B (conformance vector pack, 2nd implementer) stays event-driven and out of this milestone's scope. **Delivered:** 6 phases (7–12), 29 plans, 29/29 requirements, 106 commits over 7 days; scope grew past the planned Phases 7–10 by two phases — Phase 11 (the Gate A dogfood found no shipping client could address a remote principal, plus 8 setup-guide defects and a `from`-forgery hole) and Phase 12 (design review C's §16 nine-item release checklist). UAT-01 proven live macOS ↔ Linux, terminal COMPLETED on both hosts. See [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) · [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md).
-- 🚧 **v1.1 Open-Internet Federation** — Phases 13–20 (opened 2026-07-30, in progress). Two **different people** exchange signed FAMP envelopes over the open internet, in different networks with no shared VPN and no hand-copied keys, both task FSMs reaching a terminal state, the second person following a doc unassisted. Replaces v1.0's three crutches (Ben-controlled machines, Ben-controlled network, hand-copied keys). 43/43 requirements mapped, 0 plans executed yet. See `## Phase Details` below.
+- 🚧 **v1.1 Open-Internet Federation** — Phases 13–21 (opened 2026-07-30, in progress). Two **different people** exchange signed FAMP envelopes over the open internet, in different networks with no shared VPN and no hand-copied keys, both task FSMs reaching a terminal state, the second person following a doc unassisted. Replaces v1.0's three crutches (Ben-controlled machines, Ben-controlled network, hand-copied keys). 54/54 requirements mapped, Phases 14/15/17 executed, 13/16 not yet started. See `## Phase Details` below.
 
 ## Phases
 
@@ -21,16 +21,17 @@ per-milestone archives under [`milestones/`](milestones/) — one `v<X.Y>-ROADMA
 shipped milestone. This file stays constant-size: collapsed history here, active work
 expanded, backlog at the bottom.
 
-### 🚧 v1.1 Open-Internet Federation (Phases 13–20) — IN PROGRESS
+### 🚧 v1.1 Open-Internet Federation (Phases 13–21) — IN PROGRESS
 
 - [ ] **Phase 13: Public Reachability Decision (Spike)** - Zero-code decision record naming the reachability model, live-verified cost/month, named operator, and what the relay/tunnel can and cannot observe.
-- [ ] **Phase 14: Inbound-Content-Is-DATA Quarantine** - Structural, harness-agnostic, fail-closed provenance tagging at all seven rendering surfaces, proven by a FAMP-native adversarial corpus with a falsification control and closed out by an independent diff-only review. BLOCKING GATE — must be verified complete before Phase 18.
-- [ ] **Phase 15: Keyring Multi-Key Extension + Revocation** - Multi-key-per-principal keyring with rotation and expiry/revocation, backward-compatible with existing single-key files. Must land before Phases 16 and 19.
+- [ ] **Phase 14: Inbound-Content-Is-DATA Quarantine** - Structural, harness-agnostic, fail-closed provenance tagging at all seven rendering surfaces, proven by a FAMP-native adversarial corpus with a falsification control and closed out by an independent diff-only review. BLOCKING GATE — must be verified complete before Phase 19.
+- [ ] **Phase 15: Keyring Multi-Key Extension + Revocation** - Multi-key-per-principal keyring with rotation and expiry/revocation, backward-compatible with existing single-key files. Must land before Phases 16 and 20.
 - [ ] **Phase 16: Cross-Person Trust Bootstrap (Pairing)** - Fail-loud, PAKE-backed short-code pairing between two people with no prior shared secret, replacing v1.0's paste-a-blob TOFU.
 - [ ] **Phase 17: Protocol-Grade Ingress + Reachability Implementation** - Replay cache, freshness enforcement, audience binding, DoS-safe ordering, and the live reachability path from Phase 13 — shipped together, never one without the other.
-- [ ] **Phase 18: Human Acceptance Gate** - A second person, unassisted, exchanges signed envelopes bidirectionally with Ben's agent over the open internet; both task FSMs reach a terminal state.
-- [ ] **Phase 19: Signed Peer Directory** - `famp-directory` publishes a signed, TTL-bounded peer key list that is never an implicit trust anchor.
-- [ ] **Phase 20: Push Notification Adapter** - `famp watch --notify` replaces the await-poll + Stop-hook + sentinel convention with zero `famp-bus` change.
+- [ ] **Phase 18: Distribution** - Prebuilt `famp` binaries for macOS arm64/x86_64 and Linux x86_64, published by a tag-triggered release workflow and installed by a single checksum-verified command on a machine with no Rust toolchain.
+- [ ] **Phase 19: Human Acceptance Gate** - A second person, unassisted, exchanges signed envelopes bidirectionally with Ben's agent over the open internet; both task FSMs reach a terminal state.
+- [ ] **Phase 20: Signed Peer Directory** - `famp-directory` publishes a signed, TTL-bounded peer key list that is never an implicit trust anchor.
+- [ ] **Phase 21: Push Notification Adapter** - `famp watch --notify` replaces the await-poll + Stop-hook + sentinel convention with zero `famp-bus` change.
 
 Full phase details (goals, dependencies, success criteria): see `## Phase Details` below.
 
@@ -92,7 +93,7 @@ SEED-001 is its RFC 8785 gate (already green in CI). Not scheduled by this roadm
 
 The former "v1.1 sketch" entry that lived here (public reachability, cross-person trust
 bootstrap, signed peer directory, protocol-grade ingress) is now the real, roadmapped
-v1.1 milestone above (Phases 13–20) — see `## Phase Details`.
+v1.1 milestone above (Phases 13–21) — see `## Phase Details`.
 
 The 2026-06-08 mesh-VPN "Future Milestone Sketch" that used to live in this file is
 superseded and preserved in [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md): the
@@ -118,7 +119,7 @@ Ed25519/INV-10 at the boundary itself.
 
 ### Phase 14: Inbound-Content-Is-DATA Quarantine
 
-**Goal:** A remote agent cannot steer a local agent's behavior by sending it message text — remote-origin content is structurally, unforgeably tagged at every surface that renders it, proven non-vacuous by a FAMP-native adversarial corpus and closed out by an independent diff-only review. This is the milestone's blocking security gate: it must be verified complete before Phase 18 lets a second person's traffic reach this host.
+**Goal:** A remote agent cannot steer a local agent's behavior by sending it message text — remote-origin content is structurally, unforgeably tagged at every surface that renders it, proven non-vacuous by a FAMP-native adversarial corpus and closed out by an independent diff-only review. This is the milestone's blocking security gate: it must be verified complete before Phase 19 lets a second person's traffic reach this host.
 **Depends on:** Nothing — technically independent of reachability, keyring, and pairing (it touches `famp-bus`'s `Register` frame and reply shapes, Layer 1, plus seven CLI/MCP read sites), so it is deliberately sequenced early rather than left until the gate that needs it.
 **Requirements:** QUAR-01, QUAR-02, QUAR-03, QUAR-04, QUAR-05, QUAR-06, QUAR-07, QUAR-08, QUAR-09, QUAR-10, QUAR-11
 **Success Criteria** (what must be TRUE):
@@ -146,7 +147,7 @@ Plans:
 ### Phase 15: Keyring Multi-Key Extension + Revocation
 
 **Goal:** The keyring supports more than one key per principal with an explicit active/retired/revoked lifecycle, so rotation and revocation exist as a real remediation path before any new bootstrap or directory mechanism writes through the same integration point.
-**Depends on:** Nothing structurally required to start, but must complete before Phase 16 (Pairing) and Phase 19 (Directory) — both write through `pin_tofu`/`rotate_to`, and a second on-disk format migration later is the risk of building either of them first.
+**Depends on:** Nothing structurally required to start, but must complete before Phase 16 (Pairing) and Phase 20 (Directory) — both write through `pin_tofu`/`rotate_to`, and a second on-disk format migration later is the risk of building either of them first.
 **Requirements:** KEYR-01, KEYR-02, KEYR-03, REVK-01, REVK-02, REVK-03
 **Success Criteria** (what must be TRUE):
 
@@ -209,21 +210,36 @@ Plans:
 **Constraint:** All new enforcement lands in `famp-gateway` (`verify.rs` or a new `ingress_guard.rs`) — never in the frozen `famp-envelope`, whose `federation_format_ok` stays format-only.
 **Open on completion:** REACH-02 (real symmetric-NAT validation) stays OPEN regardless of this phase's outcome — blocked on Ben's carrier hotspot. REACH-04's genuinely-different-networks leg is proven on loopback only; the cross-network leg is a clearly-marked pending item (Phase 10 DOC-04 precedent). No Lightsail provisioning happens in this phase (D-04).
 
-### Phase 18: Human Acceptance Gate
+### Phase 18: Distribution
 
-**Goal:** A second person — on their own machine, their own network, no shared VPN, no hand-copied keys — follows a setup guide unassisted and exchanges signed envelopes bidirectionally with an agent on Ben's machine, both task FSMs reaching a terminal state. **Minimum capability set for this to be meaningful:** the quarantine gate already verified complete (Phase 14), a working pairing bootstrap (Phase 16), and a live, ingress-hardened reachability path (Phase 17) — this phase does not re-open any of that work, it only exercises it. The signed directory (Phase 19) and push-notify adapter (Phase 20) are not required for this event and are deliberately sequenced after it, not before — delaying the human gate for either would violate the instruction to schedule it as early as the dependency chain honestly allows.
-**Depends on:** Phase 14 (quarantine verified complete — blocking prerequisite), Phase 16 (pairing bootstrap), Phase 17 (reachability implementation + ingress hardening)
+**Goal:** A second person with no Rust toolchain installs a working `famp` from a published release artifact on a clean machine — closing the gap where today's only install path (`cargo install famp`) requires a full Rust toolchain and compiling 15 crates, which makes Phase 19's fresh-machine validation unreachable as things stand.
+**Depends on:** Nothing structurally required to start; independent of Phases 13–17. Must complete before Phase 19 (Human Acceptance Gate) — its DOC-07 fresh-machine validation needs a binary install path to exercise.
+**Requirements:** DIST-01, DIST-02, DIST-03, DIST-04, DIST-05
+**Success Criteria** (what must be TRUE):
+
+  1. A tagged release publishes prebuilt `famp` binaries for macOS arm64, macOS x86_64, and Linux x86_64 as downloadable release artifacts, produced only by the tag-triggered workflow — no hand-built or manually uploaded binaries.
+  2. A single documented command installs a working `famp` on a machine with no Rust toolchain, proven on a clean environment with no prior FAMP state.
+  3. Published artifacts carry checksums, verified by the installer before installing — a corrupted or substituted artifact fails closed.
+  4. Onboarding docs lead with the binary install path; `cargo install famp` remains documented only as the from-source fallback.
+
+**Plans:** TBD
+**Constraint:** Docs must lead with a `curl`-based installer rather than "download from the releases page." Browsers set `com.apple.quarantine` on downloads and `curl` does not, so the browser path forces macOS Gatekeeper/notarization work the curl path avoids entirely — a real cost avoided by a doc-ordering decision, not one worth rediscovering later.
+
+### Phase 19: Human Acceptance Gate
+
+**Goal:** A second person — on their own machine, their own network, no shared VPN, no hand-copied keys — follows a setup guide unassisted and exchanges signed envelopes bidirectionally with an agent on Ben's machine, both task FSMs reaching a terminal state. **Minimum capability set for this to be meaningful:** the quarantine gate already verified complete (Phase 14), a working pairing bootstrap (Phase 16), a live, ingress-hardened reachability path (Phase 17), and a no-Rust-toolchain install path (Phase 18) — this phase does not re-open any of that work, it only exercises it. The signed directory (Phase 20) and push-notify adapter (Phase 21) are not required for this event and are deliberately sequenced after it, not before — delaying the human gate for either would violate the instruction to schedule it as early as the dependency chain honestly allows.
+**Depends on:** Phase 14 (quarantine verified complete — blocking prerequisite), Phase 16 (pairing bootstrap), Phase 17 (reachability implementation + ingress hardening), Phase 18 (binary distribution — the fresh-machine validation has no Rust toolchain to build from)
 **Requirements:** DOC-06, DOC-07, UAT-02
 **Success Criteria** (what must be TRUE):
 
   1. A follower-facing setup guide takes a second person from zero to a working paired gateway, gated by semantic assertions rather than flag-greps (v1.0 shipped a guide with inverted wiring instructions that a flag-grep gate passed).
-  2. The guide is validated end-to-end on a fresh machine with no prior FAMP state, before the one real-person attempt.
+  2. The guide is validated end-to-end on a fresh machine with no prior FAMP state and no Rust toolchain, exercising the prebuilt-binary install path (Phase 18), before the one real-person attempt.
   3. An agent on Ben's machine and an agent on a second person's machine — different networks, no shared VPN, no hand-copied keys — exchange signed envelopes in both directions, and both task FSMs reach a terminal state.
   4. The pass criterion is the receiving person's own `famp inspect tasks` output — never a sender-side exit 0, and never a Ben-relayed report.
 
 **Plans:** TBD
 
-### Phase 19: Signed Peer Directory
+### Phase 20: Signed Peer Directory
 
 **Goal:** A signed, TTL-bounded peer directory exists as a convenience layer over manual pairing, publishable and independently fixture-verifiable, without ever becoming an implicit trust anchor that would re-open the trust question pairing exists to close.
 **Depends on:** Phase 15 (the extended keyring — directory entries feed the same `pin_tofu` integration point as any other bootstrap mechanism)
@@ -237,7 +253,7 @@ Plans:
 **Plans:** TBD
 **Constraint:** `famp-directory` depends on `famp-keyring`, never the reverse; it does not depend on `famp-gateway` or `famp-bus`.
 
-### Phase 20: Push Notification Adapter
+### Phase 21: Push Notification Adapter
 
 **Goal:** A stranger's agent wakes reliably on inbound messages via a first-class `famp watch --notify` command, replacing the `famp await` long-poll + `.famp-listen` sentinel + global Stop-hook convention as the primary wake path — with zero risk to the tokio-free `famp-bus` core. Genuinely orthogonal to every other phase in this milestone; scheduled last only because nothing blocks it and it blocks nothing, not because it is an afterthought.
 **Depends on:** Nothing
@@ -289,9 +305,10 @@ Plans:
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 4/4 | In Progress|  |
 | 16. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 0/0 | Not started | - |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 6/6 | In Progress|  |
-| 18. Human Acceptance Gate | v1.1 | 0/0 | Not started | - |
-| 19. Signed Peer Directory | v1.1 | 0/0 | Not started | - |
-| 20. Push Notification Adapter | v1.1 | 0/0 | Not started | - |
+| 18. Distribution | v1.1 | 0/0 | Not started | - |
+| 19. Human Acceptance Gate | v1.1 | 0/0 | Not started | - |
+| 20. Signed Peer Directory | v1.1 | 0/0 | Not started | - |
+| 21. Push Notification Adapter | v1.1 | 0/0 | Not started | - |
 
 ## Backlog
 
@@ -390,3 +407,5 @@ Plans:
 *Roadmap updated: 2026-07-29 — **v1.0 Federation Profile — Gateway Core CLOSED and archived**; `v1.0.0` tagged and pushed at `5edff41`. Shipped 6 phases (7–12), 29 plans, 29/29 requirements — two more phases than the four planned at roadmap creation, both discovery-driven: Phase 11 (the Gate A dogfood found no shipping client could address a remote principal, plus 8 setup-guide defects and a sender-`from` forgery hole) and Phase 12 (design review C's §16 nine-item release checklist). Phase details and the superseded 2026-06-08 mesh-VPN Gate A sketch moved to `milestones/v1.0-ROADMAP.md`; this file collapsed to milestone groupings per the constant-size convention. Backlog (999.x) preserved verbatim below — its phase dirs were restored to `.planning/phases/` after the archiver swept them in with v1.0's. Closeout was `override_closeout`: 42 pre-existing open artifacts acknowledged and deferred, none a v1.0 requirement gap (see STATE.md § Deferred Items). Next milestone not yet defined; Gate B (conformance vector pack) and the v1.1 open-internet sketch both remain event-driven.*
 
 *Roadmap updated: 2026-07-30 — **v1.1 Open-Internet Federation roadmap created.** Eight phases (13–20), continuing sequential numbering from v1.0's Phase 12 (not reset), covering 43/43 v1 requirements from the 2026-07-30 REQUIREMENTS.md (the requirements doc's own header undercounted this at 41; corrected during roadmap creation, see REQUIREMENTS.md § Traceability). Phase order honors five hard constraints from the milestone brief rather than natural-category grouping alone: (1) Phase 13 is a zero-code reachability spike (REACH-01..03) that gates only REACH-04/05, not KEYR/PAIR/QUAR/DIR/WATCH; (2) Phase 14 (QUAR, the inbound-content-is-DATA blocking gate) is sequenced immediately after the spike — architecturally independent of everything else, so built early rather than left to shadow the human gate; (3) Phase 15 (KEYR + REVK) lands before Phase 16 (PAIR) and Phase 19 (DIR), both of which write through the same `pin_tofu` integration point, and pairs the keyring extension with the revocation data model per the "must-land-together" guidance (avoids a second on-disk format migration); (4) Phase 17 pairs protocol-grade ingress with the reachability implementation per the second "must-land-together" pair — never ship one live without the other; (5) Phase 18 (the human acceptance gate, UAT-02 + DOC-06/07) sits as early as the real dependency chain allows — after Phase 14 (quarantine verified), Phase 16 (pairing works), and Phase 17 (reachability + ingress live) — not parked in the final phase; Phase 19 (directory) and Phase 20 (push-notify) are deliberately sequenced *after* it since neither gates it and delaying the human gate for either would have been exactly the mistake the brief warned against. Layer 0 (`famp-canonical`, `famp-crypto`, `famp-core`, `famp-envelope`, `famp-fsm`) stays frozen across all eight phases — every phase's constraint notes name the Layer 1/2 files it actually touches. Phase dirs: `.planning/phases/13-*` through `20-*` (to be created at plan-phase time).*
+
+*Roadmap updated: 2026-08-02 — **Phase 18: Distribution inserted**, Ben-approved, before the Human Acceptance Gate. Today's only install path (`cargo install famp`) needs a full Rust toolchain, which makes Phase 19's (formerly Phase 18's) fresh-machine, no-prior-FAMP-state validation unreachable as written — DIST-01..05 (a tag-triggered release workflow publishing checksummed prebuilt binaries for macOS arm64/x86_64 and Linux x86_64, installed by one documented command, docs leading with that path over `cargo install`) close that gap. Phase 19 (Human Acceptance Gate, was 18), Phase 20 (Signed Peer Directory, was 19), and Phase 21 (Push Notification Adapter, was 20) shift accordingly; Phases 13–17 keep their numbers and none of their content changed. Phase 19's Depends-on gained Phase 18; its DOC-07 success criterion now names the binary install path explicitly rather than leaving "fresh machine" ambiguous about which install path is under test. Milestone requirement count corrected from a stale 43/43 to the accurate 54/54 (49 pre-existing + 5 new DIST). Neither file previously had this right: REQUIREMENTS.md's own coverage note claimed 46/46, but its traceability table was already missing PAIR-06/07/08 (present in the requirements body, never added to the table) — true pre-DIST total was 49, not 46. Both gaps — this file's stale phase count and REQUIREMENTS.md's missing PAIR rows — are closed in this same pass; see REQUIREMENTS.md's own coverage note for detail. **Separately, NOT part of this update:** a proposed PreToolUse tool-gating phase did not survive independent adversarial review (the MCP-server-only gate has at least four bypasses, including `famp inbox list` via Bash rendering remote content with the gate never arming) and is on hold pending Ben's ruling — no tool-gating phase or requirement exists in this roadmap, and none should be inferred. Phase dirs: `.planning/phases/18-*` through `21-*` (to be created at plan-phase time; existing `19-*`/`20-*` dirs, if any exist on disk from before this renumbering, need review before reuse).*

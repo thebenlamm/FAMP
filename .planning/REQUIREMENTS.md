@@ -125,10 +125,20 @@ Promoted from dormant. A stranger's agent waking reliably on inbound messages is
 - [ ] **WATCH-04**: Ships with **zero** `famp-bus` change, preserving the permanent `just check-no-tokio-in-bus` gate.
 - [ ] **WATCH-05**: Behavior on restart is defined and tested — either missed notifications are replayed from the mailbox cursor, or the loss window is explicitly bounded and documented.
 
+### Distribution (DIST)
+
+Today's only install path is `cargo install famp` — install rustup, then compile 15 crates. Phase 19 (Human Acceptance Gate)'s DOC-07 requires validating the setup guide on a fresh machine with no prior FAMP state; a fresh machine has no Rust toolchain either, so distribution must ship before that gate is reachable.
+
+- [ ] **DIST-01**: A tagged release publishes prebuilt `famp` binaries for macOS arm64, macOS x86_64, and Linux x86_64 as downloadable release artifacts.
+- [ ] **DIST-02**: A single documented command installs a working `famp` on a machine with **no Rust toolchain**, proven on a clean environment with no prior FAMP state.
+- [ ] **DIST-03**: Published artifacts carry checksums, and the installer **verifies** them before installing — a corrupted or substituted artifact fails closed.
+- [ ] **DIST-04**: The onboarding docs **lead with** the binary install path; `cargo install famp` remains documented only as the from-source fallback.
+- [ ] **DIST-05**: Release artifacts are produced **only** by the tag-triggered workflow — no hand-built or manually uploaded binaries.
+
 ### Documentation & Acceptance (DOC / UAT)
 
 - [ ] **DOC-06**: A follower-facing setup guide takes a second person from zero to a working paired gateway. Gated by **semantic** assertions, not flag-greps — v1.0 shipped `GATEWAY-SETUP.md` with its wiring instructions inverted and a flag-grep gate passed it.
-- [ ] **DOC-07**: The guide is validated end-to-end on a **fresh machine with no prior FAMP state** before the real human gate, so the one attempt with a real person is not spent discovering a missing prerequisite. **[ORCH]** — added as cheap insurance for the acceptance event; it is doc validation on a clean box, not a second human gate.
+- [ ] **DOC-07**: The guide is validated end-to-end on a **fresh machine with no prior FAMP state and no Rust toolchain** before the real human gate, exercising the **prebuilt-binary install path** (DIST-02) rather than `cargo install` — a fresh machine has no Rust, which is the entire point. **[ORCH]** — added as cheap insurance for the acceptance event; it is doc validation on a clean box, not a second human gate.
 - [ ] **UAT-02**: **The acceptance event.** An agent on Ben's machine and an agent on a second person's machine, in different networks with no shared VPN and no hand-copied keys, exchange signed envelopes in **both** directions and both task FSMs reach a terminal state, with that person following DOC-06 unassisted. **Pass criterion is the receiving person's own `famp inspect tasks` output** — never a sender-side exit 0, and never a Ben-relayed report.
 
 ---
@@ -192,9 +202,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PAIR-03 | Phase 16 | Pending |
 | PAIR-04 | Phase 16 | Pending |
 | PAIR-05 | Phase 16 | Pending |
-| DIR-01 | Phase 19 | Pending |
-| DIR-02 | Phase 19 | Pending |
-| DIR-03 | Phase 19 | Pending |
+| PAIR-06 | Phase 16 | Pending |
+| PAIR-07 | Phase 16 | Pending |
+| PAIR-08 | Phase 16 | Pending |
+| DIR-01 | Phase 20 | Pending |
+| DIR-02 | Phase 20 | Pending |
+| DIR-03 | Phase 20 | Pending |
 | INGR-01 | Phase 17 | Complete |
 | INGR-02 | Phase 17 | Complete |
 | INGR-03 | Phase 17 | Complete |
@@ -217,19 +230,24 @@ Which phases cover which requirements. Populated during roadmap creation.
 | QUAR-09 | Phase 14 | Complete |
 | QUAR-10 | Phase 14 | Complete |
 | QUAR-11 | Phase 14 | Complete |
-| WATCH-01 | Phase 20 | Pending |
-| WATCH-02 | Phase 20 | Pending |
-| WATCH-03 | Phase 20 | Pending |
-| WATCH-04 | Phase 20 | Pending |
-| WATCH-05 | Phase 20 | Pending |
-| DOC-06 | Phase 18 | Pending |
-| DOC-07 | Phase 18 | Pending |
-| UAT-02 | Phase 18 | Pending |
+| WATCH-01 | Phase 21 | Pending |
+| WATCH-02 | Phase 21 | Pending |
+| WATCH-03 | Phase 21 | Pending |
+| WATCH-04 | Phase 21 | Pending |
+| WATCH-05 | Phase 21 | Pending |
+| DIST-01 | Phase 18 | Pending |
+| DIST-02 | Phase 18 | Pending |
+| DIST-03 | Phase 18 | Pending |
+| DIST-04 | Phase 18 | Pending |
+| DIST-05 | Phase 18 | Pending |
+| DOC-06 | Phase 19 | Pending |
+| DOC-07 | Phase 19 | Pending |
+| UAT-02 | Phase 19 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 46 total. *(Count history, since it moved twice: 41 was recorded at definition time and was simply wrong — exhaustive ID extraction during roadmap creation found 43. It then became 46 when the independent design review added QUAR-09 (fail-closed provenance), QUAR-10 (wire compat with old clients and foreign implementations), and QUAR-11 (one-hop laundering limitation). Only the QUAR additions changed requirement text; the 41→43 move was a tally correction alone.)*
-- Mapped to phases: 46/46 ✓
+- v1 requirements: 54 total. *(Count history: 41 was recorded at definition time and was simply wrong — exhaustive ID extraction during roadmap creation found 43. It became 46 when the independent design review added QUAR-09, QUAR-10, and QUAR-11 — but PAIR-06/07/08 were added to this doc's body in that same period without ever being added to this table, so the true count was already 49, not 46; that gap sat undetected until this update. It became 54 on 2026-08-02: +5 for DIST-01..05 (Ben-approved distribution phase, inserted before the Human Acceptance Gate) and the PAIR-06/07/08 traceability gap closed in the same pass. ROADMAP.md's summary line previously carried a stale 43/43 — corrected to 54/54 in both places.)*
+- Mapped to phases: 54/54 ✓
 - Unmapped: 0 ✓
 
 ---
@@ -246,4 +264,4 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 ---
 *Requirements defined: 2026-07-30*
-*Last updated: 2026-07-30 after v1.1 roadmap creation — all 43 v1 requirements mapped to Phases 13-20, 100% coverage, no orphans. See ROADMAP.md.*
+*Last updated: 2026-08-02 — added DIST-01..05 (Distribution) as Phase 18, inserted before the Human Acceptance Gate (now Phase 19, was 18); Signed Peer Directory and Push Notification Adapter shifted to Phases 20 and 21 respectively. DOC-07 reworded to require the fresh-machine validation exercise the prebuilt-binary install path, not `cargo install`. Also closed a pre-existing traceability gap found while verifying this update's own arithmetic: PAIR-06/07/08 existed in this doc's body but were never added to the table below — added, mapped to Phase 16 alongside PAIR-01..05. All 54 v1 requirements mapped to Phases 13-21, 100% coverage, no orphans. Tool-gating (the OPEN SCOPE DECISION above) is NOT resolved by this update — it failed independent adversarial review and is on hold pending Ben's ruling; do not treat its absence here as a decision. See ROADMAP.md.*
