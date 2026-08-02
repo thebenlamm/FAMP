@@ -1,5 +1,10 @@
 # REACH-02: The Carrier-Hotspot Test — Walkthrough
 
+> **EXECUTED 2026-08-02.** Ben ran this twice on a real Verizon cellular hotspot. Results filed at
+> [`.planning/phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md`](phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md).
+> **REACH-02 is closed** — do not re-run this expecting it to still be outstanding. The two methodological
+> fixes below (real ownership lookup, positive control) were applied and are reflected in that results file.
+
 **For:** Ben. **Time:** ~15 minutes. **Needs:** your phone (cellular hotspot) + one laptop. No FAMP code required — this runs entirely on tools already installed.
 
 ---
@@ -36,14 +41,17 @@ Three questions, in order of importance:
 ## Setup
 
 1. Turn on your iPhone's **Personal Hotspot**.
-2. Join your laptop to it — **Wi-Fi off from your home network first**, so you're genuinely on cellular and not silently still on home Wi-Fi. Verify:
+2. Join your laptop to it — **Wi-Fi off from your home network first**, so you're genuinely on cellular and not silently still on home Wi-Fi. Then do a real ownership lookup, not an eyeball check:
 
 ```bash
-# Should show a carrier IP, NOT a 192.168.x.x home-router address
 curl -s https://api.ipify.org; echo
+# then, with that IP:
+curl -s https://ipinfo.io/PUBLIC_IP/json
 ```
 
-Write that public IP down — call it `PUBLIC_IP`. If it looks like your usual home IP, you're not actually on cellular; turn Wi-Fi fully off and rejoin.
+Confirm the `org`/`hostname` field names your carrier (e.g. "Verizon", "AT&T", "T-Mobile"), and that it's **different from your known home IP's org**. **Do not just eyeball whether the address looks like a `192.168.x.x` home-router address** — that check is nearly useless, because every public IP passes it, including your actual home IP if your router double-NATs you onto one. An ownership lookup is the only thing that actually proves you're on the carrier's network rather than still exiting via home broadband.
+
+Write the public IP down — call it `PUBLIC_IP`. If the `org`/`hostname` doesn't say your carrier, you're not actually on cellular; turn Wi-Fi fully off and rejoin.
 
 ---
 
@@ -69,14 +77,23 @@ Start a listener on the laptop:
 nc -l 9999
 ```
 
-Then from **any machine not on the hotspot** — your other machine on home Wi-Fi is fine:
+**Positive control first — do not skip this.** From the *same* prober machine you'll use to probe the hotspot, first confirm it can reach a known-reachable host:
+
+```bash
+# replace with the PUBLIC_IP you wrote down
+curl -s -o /dev/null -w "control: %{http_code}\n" --max-time 5 https://1.1.1.1:443 -k
+```
+
+If this fails, **the inbound test below is meaningless** — a timeout against the hotspot would be indistinguishable between "inbound is blocked" (the actual finding) and "the prober itself has no outbound networking" (an artifact). Only proceed once the control succeeds.
+
+Then, from **any machine not on the hotspot** — your other machine on home Wi-Fi is fine:
 
 ```bash
 # replace with the PUBLIC_IP you wrote down
 nc -vz -w 5 PUBLIC_IP 9999
 ```
 
-**Expected:** it fails — timeout or refused. That failure is a **success for our purposes**: it confirms nothing can reach you unsolicited, so pulling from a relay is the only workable shape.
+**Expected:** it fails — timeout or refused. That failure is a **success for our purposes**: it confirms nothing can reach you unsolicited, so pulling from a relay is the only workable shape. It only counts as evidence if the positive control above passed on the same prober.
 
 **If it connects**, that's genuinely surprising and worth a conversation: your carrier is handing out a routable address, and direct-dial becomes possible for *some* users — though still not something we could rely on generally.
 
@@ -121,6 +138,8 @@ Paste these back:
 | **Outbound blocked** | Design-breaking. Stop; we rethink the transport before Phase 17 goes further. |
 | 8443 blocked | The relay must listen on 443. Small but load-bearing — cheaper to know now than after provisioning. |
 
+**Actual outcome (2026-08-02):** row 2 — outbound OK, inbound blocked, **cone NAT**. Port 8443 was *not* blocked either. See the results file linked at the top for the full readout.
+
 ---
 
 ## One caveat about what this proves
@@ -130,4 +149,4 @@ This measures **your** carrier, on **one** day. It does not establish a general 
 What it *does* give us is a real, dated, reproducible observation of the network conditions the design has to survive, which is strictly better than a stale citation. If a second person later runs the same three commands on their network, that's a second data point, and the doc for that is this file.
 
 ---
-*Written 2026-07-31 for REACH-02. Closes the last open item in Phase 13.*
+*Written 2026-07-31 for REACH-02. Executed 2026-08-02 (two runs, Verizon cellular hotspot) — results at `.planning/phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md`. REACH-02 closed in `.planning/REQUIREMENTS.md`; this walkthrough stays in the tree as the reproducible procedure, not as an open task.*
