@@ -36,9 +36,9 @@
 
 Public reachability over the open internet. The model is decided **first**, in a zero-code spike, because it carries recurring cost and operator burden.
 
-- [ ] **REACH-01**: A decision record names the chosen reachability model, its **re-verified live** cost/month (vendor pricing pages, not aggregators), the named operator, and explicitly what the relay/tunnel **can and cannot observe** about FAMP traffic.
+- [x] **REACH-01**: A decision record names the chosen reachability model, its **re-verified live** cost/month (vendor pricing pages, not aggregators), the named operator, and explicitly what the relay/tunnel **can and cannot observe** about FAMP traffic.
 - [ ] **REACH-02**: The spike's viability finding is validated against a **real symmetric-NAT network** (e.g. a carrier hotspot), not only networks Ben controls.
-- [ ] **REACH-03**: `iroh` is explicitly weighed as the single-crate alternative and its rejection rationale (transport-migration cost against a shipped, Gate-A-proven axum/rustls transport) is recorded in the decision record rather than silently dropped.
+- [x] **REACH-03**: `iroh` is explicitly weighed as the single-crate alternative and its rejection rationale (transport-migration cost against a shipped, Gate-A-proven axum/rustls transport) is recorded in the decision record rather than silently dropped.
 - [ ] **REACH-04**: Two gateways on different networks, with no shared VPN, establish a working bidirectional path under the chosen model.
 - [x] **REACH-05**: A reachability failure (relay down, hole-punch failed, peer offline) surfaces at the sender as a distinct, actionable error — never as a silent fire-and-forget success.
 
@@ -196,9 +196,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REACH-01 | Phase 13 | Pending |
-| REACH-02 | Phase 13 | Pending |
-| REACH-03 | Phase 13 | Pending |
+| REACH-01 | Phase 13 | Complete — see `.planning/phases/13-public-reachability-decision-spike/13-DECISIONS.md`; verified against Phase 17's shipped implementation 2026-08-02, no divergence |
+| REACH-02 | Phase 13 | Blocked — needs Ben's carrier hotspot; see `.planning/REACH-02-HOTSPOT-WALKTHROUGH.md`. Phase 13 stays open until this closes |
+| REACH-03 | Phase 13 | Complete — see `.planning/phases/13-public-reachability-decision-spike/13-DECISIONS.md` |
 | REACH-04 | Phase 17 | Loopback proven — 17-05's relay-fetch loop + three-process bidirectional e2e (`e2e_relay_bidirectional.rs`) passes with no direct peer address in either gateway's config. Genuinely-different-networks leg still PENDING (blocked on Ben, a second physical network); checkbox left unticked above pending that leg, per the Phase 10 DOC-04 precedent — do not read this row as closing the requirement. |
 | REACH-05 | Phase 17 | Complete |
 | KEYR-01 | Phase 15 | Complete |
@@ -273,3 +273,5 @@ Which phases cover which requirements. Populated during roadmap creation.
 ---
 *Requirements defined: 2026-07-30*
 *Last updated: 2026-08-02 (third pass) — two independent reviews (adversarial security + right-sizing) landed and Ben approved the outcome. Added QUAR-12..15: a broker-side auto-wake gate — a remote-origin envelope never satisfies a parked `famp await` — enforcing the one trifecta leg (automatic ingestion) FAMP owns end to end, unlike the two dead harness-side designs. Recorded held-by-default-at-ingress as the known-stronger road not taken, deferred not rejected. Cut DIR-01/02/03 (Signed Peer Directory) from v1.1 scope entirely, merged into the deferred/backlog section with DIR-04 under an event-driven trigger (peer count > ~5), same pattern as Gate B — the phase is removed from ROADMAP.md, not just its requirements. Net count this pass: -3 (DIR) +4 (QUAR) = +1, 54→55. Phase renumbering (ROADMAP.md): Distribution 18→16, Pairing 16→18, new Auto-Wake Gate phase created at 19, Human Acceptance Gate 19→20, Push Notification Adapter stays 21 — reflecting Ben's approved critical-path order (13 → Distribution → Pairing → auto-wake gate → REACH-02/04 validation → Human Acceptance Gate); Phases 14/15/17 (already executed) keep their numbers unchanged. All 55 v1 requirements mapped, re-verified mechanically (every ID in the body diffed against every traceability row, zero gaps). (Second pass, same day: OPEN SCOPE DECISION resolved to Option B, tool-gating claims corrected across REQUIREMENTS/PROJECT/ROADMAP.md and docs/QUARANTINE.md. First pass, same day: added DIST-01..05 as Phase 18, closed a PAIR-06/07/08 traceability gap.) See ROADMAP.md.*
+
+*Last updated: 2026-08-02 (fourth pass) — checked REACH-01 and REACH-03. The Phase 13 decision record existed as an unfiled DRAFT (`.planning/research/REACH-DECISION-DRAFT.md`, committed 26c95d7, amended 61909cb) satisfying both requirements' literal text but never promoted or checked off — bookkeeping gap, not missing analysis. Verified against Phase 17's shipped code before promoting (store-and-forward shape, the signed-fetch authorization mechanism, the plaintext-not-opaque confidentiality claim) — no divergence between decided and shipped, so no reconciliation was needed. Promoted and filed as `.planning/phases/13-public-reachability-decision-spike/13-DECISIONS.md` + `13-PRICING-VERIFIED.md`; the loose `research/` copies were removed now that the phase directory is the canonical location. REACH-01 and REACH-03 now checked; REACH-02 and REACH-04 stay UNCHECKED — both need Ben on a second real network, and a good decision record is not evidence of that. Also fixed a stale "opaque bytes" claim in ROADMAP.md's Phase 13 success criteria (the same error the decision record itself corrected on 2026-07-31 but which had survived in the roadmap's own text). No requirement ID added, removed, or renamed; count stays 55/55.*

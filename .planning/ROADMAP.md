@@ -12,7 +12,7 @@
 - ✅ **v0.10 Inspector & Observability** — Phases 1–3 (shipped 2026-05-11). Read-only inspector RPC on the v0.9 broker UDS + `famp inspect` CLI subcommand. Closes the conversation-state opacity gap that produced three recurring v0.9 incidents (orphan socket-holder vs stale PID file, task FSM invisibility, stale-mailbox relays). 26/26 requirements, audit `passed`. See [milestones/v0.10-ROADMAP.md](milestones/v0.10-ROADMAP.md) · [milestones/v0.10-REQUIREMENTS.md](milestones/v0.10-REQUIREMENTS.md) · [milestones/v0.10-MILESTONE-AUDIT.md](milestones/v0.10-MILESTONE-AUDIT.md).
 - ✅ **v0.11 Broker Daemon & Cross-Tool Bootstrap** — Phases 4–6 (shipped 2026-06-06). Service-managed daemon (`famp daemon install`) restores the broker-presence guarantee that `56b2293` (correctly) removed; EPERM sandbox diagnostics + daemon install/status/uninstall/restart lifecycle + version-skew detection + daemon-first cross-platform README. 15/15 requirements, audit waived (Phase 6 human-verify E2E). See [milestones/v0.11-ROADMAP.md](milestones/v0.11-ROADMAP.md) · [milestones/v0.11-REQUIREMENTS.md](milestones/v0.11-REQUIREMENTS.md).
 - ✅ **v1.0 Federation Profile — Gateway Core** — Phases 7–12 (shipped 2026-07-29, tagged `v1.0.0` at `5edff41`). Gate A fired (Ben's sustained cross-machine use); this milestone closes it: an agent on one of Ben's machines exchanges a signed FAMP envelope with an agent on a second machine he controls, bidirectionally and reliably, over a network he fully controls (direct or a VPN he already runs — no public relay, no cross-person trust). Resolves the broker-liveness fork (same-host `kill(pid,0)` reaping a naively-proxied remote principal), ships `famp-gateway` (Layer 2) wrapping the preserved `famp-transport-http` + `famp-keyring`, signed cross-host envelopes (INV-10 + forward-compat fields), two-machine TOFU key bootstrap, and retires the ~27 parked federation tests (triaged 27/27 RETIRE, with the real Phase 9 E2E pinned into CI in their place). Gate B (conformance vector pack, 2nd implementer) stays event-driven and out of this milestone's scope. **Delivered:** 6 phases (7–12), 29 plans, 29/29 requirements, 106 commits over 7 days; scope grew past the planned Phases 7–10 by two phases — Phase 11 (the Gate A dogfood found no shipping client could address a remote principal, plus 8 setup-guide defects and a `from`-forgery hole) and Phase 12 (design review C's §16 nine-item release checklist). UAT-01 proven live macOS ↔ Linux, terminal COMPLETED on both hosts. See [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) · [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md).
-- 🚧 **v1.1 Open-Internet Federation** — Phases 13–21 (opened 2026-07-30, in progress). Two **different people** exchange signed FAMP envelopes over the open internet, in different networks with no shared VPN and no hand-copied keys, both task FSMs reaching a terminal state, the second person following a doc unassisted. Replaces v1.0's three crutches (Ben-controlled machines, Ben-controlled network, hand-copied keys). 55/55 requirements mapped, Phases 14/15/17 executed, 13/18 not yet started. See `## Phase Details` below.
+- 🚧 **v1.1 Open-Internet Federation** — Phases 13–21 (opened 2026-07-30, in progress). Two **different people** exchange signed FAMP envelopes over the open internet, in different networks with no shared VPN and no hand-copied keys, both task FSMs reaching a terminal state, the second person following a doc unassisted. Replaces v1.0's three crutches (Ben-controlled machines, Ben-controlled network, hand-copied keys). 55/55 requirements mapped, Phases 14/15/17 executed, Phase 13 partial (decision record filed, blocked on Ben for REACH-02), 16/18/19/20/21 not yet started. See `## Phase Details` below.
 
 ## Phases
 
@@ -109,13 +109,13 @@ Ed25519/INV-10 at the boundary itself.
 **Requirements:** REACH-01, REACH-02, REACH-03
 **Success Criteria** (what must be TRUE):
 
-  1. A decision record names the chosen reachability model (self-hosted relay vs. hosted tunnel vs. direct/no-relay) with cost/month re-verified live against vendor pricing pages (not aggregators) and a named operator.
-  2. The decision record states plainly what the relay/tunnel can and cannot observe about FAMP traffic (payload is signed and opaque to it; metadata/timing/who-talked-to-whom are not).
-  3. The spike's viability finding is validated against a real symmetric-NAT network (e.g. a carrier hotspot), not only networks Ben controls.
-  4. `iroh` is explicitly weighed as the single-crate pubkey-addressed alternative, with its rejection rationale (transport-migration cost against the shipped, Gate-A-proven axum/rustls transport) recorded in the decision doc rather than silently dropped.
-  5. Zero production code ships in this phase — the deliverable is the decision record that Phase 17 builds against.
+  1. A decision record names the chosen reachability model (self-hosted relay vs. hosted tunnel vs. direct/no-relay) with cost/month re-verified live against vendor pricing pages (not aggregators) and a named operator. ✓ satisfied — self-hosted relay, AWS Lightsail, $5.00/mo, Ben-operated.
+  2. The decision record states plainly what the relay/tunnel can and cannot observe about FAMP traffic. ✓ satisfied, and corrected: the relay sees **plaintext** envelope bodies, not opaque bytes — FAMP signs but does not encrypt (metadata/timing/who-talked-to-whom are also visible to it).
+  3. The spike's viability finding is validated against a real symmetric-NAT network (e.g. a carrier hotspot), not only networks Ben controls. **BLOCKED — needs Ben's carrier hotspot (REACH-02).**
+  4. `iroh` is explicitly weighed as the single-crate pubkey-addressed alternative, with its rejection rationale (transport-migration cost against the shipped, Gate-A-proven axum/rustls transport) recorded in the decision doc rather than silently dropped. ✓ satisfied.
+  5. Zero production code ships in this phase — the deliverable is the decision record that Phase 17 builds against. ✓ satisfied; Phase 17's shipped implementation was checked against this record 2026-08-02 and matches with no divergence.
 
-**Plans:** TBD
+**Plans:** 1 (decision record, no code) — `.planning/phases/13-public-reachability-decision-spike/13-DECISIONS.md`, promoted from draft and filed 2026-08-02. **Phase stays open**: REACH-01/REACH-03 satisfied, REACH-02 blocked on Ben.
 
 ### Phase 14: Inbound-Content-Is-DATA Quarantine
 
@@ -304,7 +304,7 @@ Plans:
 | 10. Test Reactivation + Setup Docs | v1.0 | 3/3 | Complete   | 2026-07-27 |
 | 11. Shipping-Client Remote Addressing + Setup Hardening | v1.0 | 8/8 | Complete | 2026-07-29 |
 | 12. v1.0.0 Release Gate | v1.0 | 5/5 | Complete | 2026-07-29 |
-| 13. Public Reachability Decision (Spike) | v1.1 | 0/0 | Not started | - |
+| 13. Public Reachability Decision (Spike) | v1.1 | 1/1 decision record | Blocked (REACH-02 needs Ben) | - |
 | 14. Inbound-Content-Is-DATA Quarantine | v1.1 | 5/5 | In Progress|  |
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 4/4 | In Progress|  |
 | 16. Distribution | v1.1 | 0/0 | Not started | - |
