@@ -1,6 +1,6 @@
 # Phase 13 Reachability Decision
 
-**Status:** REACH-01 and REACH-03 satisfied by this record — see the traceability entries in REQUIREMENTS.md. **REACH-02 remains OPEN** — validating against a real symmetric-NAT network needs a carrier hotspot, which requires Ben. Phase 13 as a whole is not closed until REACH-02 runs; this record is the phase's decision-record deliverable (success criterion 5), not a claim that the phase is complete.
+**Status:** REACH-01, REACH-02, and REACH-03 all satisfied — see the traceability entries in REQUIREMENTS.md. **REACH-02 closed 2026-08-02**, validated on a real Verizon cellular hotspot; results in [`13-REACH-02-RESULTS.md`](13-REACH-02-RESULTS.md). Phase 13 stays open only on REACH-04 (two gateways on genuinely different networks, bidirectional — not this phase's spike, and not satisfied by a provisioned relay box); this record is the phase's decision-record deliverable (success criterion 5), not a claim that the whole phase is complete.
 
 **Authority:** Ben pre-authorized reachability spend up to ~$15/mo before leaving on 2026-07-30, with the instruction to pick from the spike's evidence and build on it. This record exercises that authorization. All pricing inputs are vendor-verified in [`13-PRICING-VERIFIED.md`](13-PRICING-VERIFIED.md).
 
@@ -85,15 +85,17 @@ Recorded rather than silently dropped, per REACH-03. If hole-punching later beco
 
 ---
 
-## REACH-02: OPEN — and a correction to our own stated premise
+## REACH-02: CLOSED 2026-08-02 — and a correction to our own stated premise
 
-**Blocked on Ben.** Validating against a real symmetric-NAT network needs a carrier hotspot. See `.planning/REACH-02-HOTSPOT-WALKTHROUGH.md` for the procedure Ben needs to run.
+**Validated** on a real Verizon cellular hotspot, two independent runs. Full readout: [`13-REACH-02-RESULTS.md`](13-REACH-02-RESULTS.md). Procedure: `.planning/REACH-02-HOTSPOT-WALKTHROUGH.md` (now marked EXECUTED).
 
-**Correction worth carrying:** REQUIREMENTS.md's REACH-06 and earlier drafts cite "15–30% of hosts behind symmetric NAT." **That figure could not be re-verified against any current primary source.** The best citable measurement located is Richter et al., IMC 2016 (`arXiv:1605.05606`) — roughly a decade stale — reporting ~11% symmetric-dominant among non-cellular CGN ASes and a bimodal cellular split with **~40% symmetric-dominant**. A 2023 paper (arXiv:2311.04658) tests 5G cross-connectivity but did not yield an extractable percentage in this pass.
+**Headline result: cone NAT, not symmetric.** Outbound HTTPS worked (200/200, both 443 and 8443). Inbound dial-in from the relay into the hotspot timed out both runs, with a positive control (run 2) confirming the relay's own outbound networking was fine — ruling out "the relay is broken" as the alternative explanation. 4 STUN servers agreed on the same external mapping within each run, both runs — cone NAT.
 
-**Treat the prevalence as UNKNOWN at current recency.** Do not quote 15–30% as 2026 data in any shipped doc.
+**Correction worth carrying:** REQUIREMENTS.md's REACH-06 and earlier drafts cite "15–30% of hosts behind symmetric NAT." **That figure could not be re-verified against any current primary source.** The best citable measurement located is Richter et al., IMC 2016 (`arXiv:1605.05606`) — roughly a decade stale — reporting ~11% symmetric-dominant among non-cellular CGN ASes and a bimodal cellular split with **~40% symmetric-dominant**. A 2023 paper (arXiv:2311.04658) tests 5G cross-connectivity but did not yield an extractable percentage in this pass. This unverifiable figure is what led the original REACH-02 wording to specify "symmetric-NAT" — a **prediction about the test environment**, not a property the requirement actually needed. Testing falsified the prediction: this real carrier is cone NAT.
 
-This does not weaken the decision — it strengthens it. A decade-old measurement showing ~40% symmetric on cellular is a reason to make **relay fallback mandatory rather than optional**, which is exactly what a relay-first architecture delivers. Hole-punching stays a later optimization (REACH-06, deferred to v2).
+**Treat the prevalence as UNKNOWN at current recency.** Do not quote 15–30% as 2026 data in any shipped doc, and do not generalize this one carrier's cone-NAT result into a prevalence claim either — one data point on one day proves nothing about the population.
+
+**This does not weaken the relay-first decision — it was never contingent on the NAT being symmetric.** Relay-first is confirmed by the **inbound** result alone (nothing can dial in), which holds on every NAT flavor measured, cone included. Hole-punching is not adopted this milestone regardless of NAT type: on a cone NAT it *could* work given a coordination server (REACH-06, corrected in REQUIREMENTS.md to no longer claim categorical impossibility), but relay fallback remains mandatory either way, since REACH-02's inbound result is the load-bearing one, not the NAT type.
 
 ---
 
@@ -103,9 +105,9 @@ This does not weaken the decision — it strengthens it. A decade-old measuremen
 |---|---|
 | REACH-01 — model, live-verified cost, named operator, observability boundary | ✓ satisfied by this record — checked in REQUIREMENTS.md 2026-08-02 |
 | REACH-03 — iroh weighed, rejection rationale recorded | ✓ satisfied by this record — checked in REQUIREMENTS.md 2026-08-02 |
-| REACH-02 — validated against a real symmetric-NAT network | ✗ **BLOCKED — needs Ben's carrier hotspot** |
+| REACH-02 — validated against a real network Ben does not control | ✓ **validated 2026-08-02, Verizon cellular hotspot (cone NAT) — checked in REQUIREMENTS.md; see [`13-REACH-02-RESULTS.md`](13-REACH-02-RESULTS.md)** |
 
-Phase 13 stays open until REACH-02 closes. Phase 17 already built against this decision (confirmed above, 2026-08-02) — REACH-02 validates the fallback assumption rather than the choice of model, which is why Phase 17 was correctly allowed to proceed without waiting on it.
+Phase 13's spike deliverables (REACH-01/02/03) are now all satisfied. REACH-04 (two gateways on genuinely different networks, bidirectional) is separate — tracked under Phase 17, not this spike — and stays open.
 
 ---
-*Drafted 2026-07-30 under standing pre-authorization. Promoted from DRAFT and filed as Phase 13's output 2026-08-02, after confirming Phase 17's shipped implementation matches this record with no divergence. Every price traced to a vendor URL fetched 2026-07-30; see [`13-PRICING-VERIFIED.md`](13-PRICING-VERIFIED.md) for the 8-item COULD NOT VERIFY list.*
+*Drafted 2026-07-30 under standing pre-authorization. Promoted from DRAFT and filed as Phase 13's output 2026-08-02, after confirming Phase 17's shipped implementation matches this record with no divergence. Every price traced to a vendor URL fetched 2026-07-30; see [`13-PRICING-VERIFIED.md`](13-PRICING-VERIFIED.md) for the 8-item COULD NOT VERIFY list. REACH-02 validated 2026-08-02 against a real Verizon cellular hotspot — see [`13-REACH-02-RESULTS.md`](13-REACH-02-RESULTS.md).*
