@@ -455,7 +455,24 @@ pub(crate) async fn ingest_inbound(
     state: &GatewayIngressState,
 ) -> Result<(), IngressError> {
     let now = crate::clock::now_canonical_utc();
+    ingest_inbound_at(recipient, body, state, &now).await
+}
 
+/// `now`-injected core of [`ingest_inbound`] (T-15-10 convention: `now`
+/// arrives as an argument, never re-read internally from the wall
+/// clock). [`ingest_inbound`] is the sole production caller, passing the
+/// one real clock read for the request; tests call this directly with a
+/// pinned instant so an exact clock-skew-boundary assertion is
+/// deterministic instead of racing the live wall clock across an async
+/// round trip (see `freshness_boundary_is_inclusive_in_both_directions`
+/// below — this split exists because that race was an observed CI
+/// flake, not a theoretical one).
+async fn ingest_inbound_at(
+    recipient: &Principal,
+    body: &[u8],
+    state: &GatewayIngressState,
+    now: &str,
+) -> Result<(), IngressError> {
     let peeked = ingress_guard::peek_guard_fields(body).map_err(|reject| {
         eprintln!(
             "famp-gateway: ingress: rejected — pre-verify peek failed (malformed envelope shape)"
@@ -472,7 +489,7 @@ pub(crate) async fn ingest_inbound(
 
     let guard_input = GuardInput {
         peeked: &peeked,
-        now: now.as_str(),
+        now,
         own_domain: &state.own_domain,
         sender_is_backed,
     };
@@ -531,7 +548,7 @@ pub(crate) async fn ingest_inbound(
     // EXPENSIVE: only reached once every cheap gate above has passed
     // (D-09/INGR-05).
     let envelope =
-        verify_inbound_any(body, &state.keyring, &now).map_err(ingress_error_for_reject)?;
+        verify_inbound_any(body, &state.keyring, now).map_err(ingress_error_for_reject)?;
 
     check_audience_and_format(&envelope, recipient)?;
 
@@ -886,6 +903,31 @@ mod tests {
         (router, registry, broker)
     }
 
+    /// Same shape as [`router_with_backed_sender`] but hands back the raw
+    /// [`GatewayIngressState`] instead of a mounted `Router`, so a test can
+    /// call [`ingest_inbound_at`] directly with an injected `now` rather
+    /// than driving a real HTTP round trip through axum.
+    async fn state_with_backed_sender(
+        keyring: Keyring,
+        own_domain: &str,
+        from_name: &str,
+    ) -> (GatewayIngressState, LiveBroker) {
+        let broker = LiveBroker::spawn().await;
+        let mut registry = GatewayRegistry::default();
+        registry
+            .back(&broker.sock, from_name.to_owned())
+            .await
+            .expect("back sender on in-process broker");
+        let registry = Arc::new(Mutex::new(registry));
+        let state = GatewayIngressState::new(
+            registry,
+            Arc::new(keyring),
+            Arc::from(own_domain),
+            Arc::new(Mutex::new(IngressGuard::new())),
+        );
+        (state, broker)
+    }
+
     /// Percent-encode a `Principal`'s `to_string()` into a single URL path
     /// segment — mirrors exactly what `HttpTransport::send` does
     /// (`crates/famp-transport-http/src/transport.rs`'s
@@ -1007,13 +1049,20 @@ mod tests {
     /// be classified `stale_timestamp` (inclusive bound); one second
     /// beyond, in either direction, MUST be.
     ///
-    /// 17-03 deviation: the in-window cases used to assert only "not
-    /// stale_timestamp" because full delivery needed a live broker this
-    /// test didn't spin up. `audience_check` now REQUIRES a backed
-    /// sender before any other cheap gate runs (see `LiveBroker`'s doc
-    /// comment), so this test now stands one up regardless — which means
-    /// the in-window cases can assert the STRONGER, more meaningful
-    /// property: full delivery success (202 ACCEPTED, no JSON body).
+    /// Calls [`ingest_inbound_at`] directly with `now` INJECTED from the
+    /// same `base` instant the envelope's `ts` is derived from — both
+    /// sides of the comparison are pinned to one wall-clock read, so the
+    /// boundary is exact and deterministic on every platform. This
+    /// replaces a prior version of this test that drove a full HTTP
+    /// round trip and re-read the live wall clock independently inside
+    /// `ingest_inbound`: at the exact boundary, ANY elapsed time between
+    /// stamping `ts` and the guard's own clock read (network I/O,
+    /// broker-spawn latency, scheduler jitter) could cross a whole-second
+    /// tick and flip ACCEPTED to REJECTED — an observed CI flake
+    /// (macOS-only, never reproduced locally), not a production bug. The
+    /// prior HTTP-level test survives below as
+    /// `router_delivers_a_fresh_correctly_signed_backed_envelope`, minus
+    /// the boundary claim it could never test race-free.
     #[tokio::test]
     async fn freshness_boundary_is_inclusive_in_both_directions() {
         let sk = FampSigningKey::from_bytes([41u8; 32]);
@@ -1021,8 +1070,17 @@ mod tests {
         let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
         let skew = crate::ingress_guard::CLOCK_SKEW_WINDOW_SECS;
 
+        // ONE wall-clock read shared by both the envelope's `ts` and the
+        // injected `now` — the whole point of this test is that the two
+        // never drift apart, unlike the live-clock path.
+        let base = time::OffsetDateTime::now_utc();
+        let base_now = crate::clock::strip_subseconds(
+            &base
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap(),
+        );
         let mk_ts = |delta_secs: i64| -> Timestamp {
-            let instant = time::OffsetDateTime::now_utc() + time::Duration::seconds(delta_secs);
+            let instant = base + time::Duration::seconds(delta_secs);
             Timestamp(crate::clock::strip_subseconds(
                 &instant
                     .format(&time::format_description::well_known::Rfc3339)
@@ -1031,50 +1089,62 @@ mod tests {
         };
 
         for delta in [-skew, skew] {
-            // Build the harness (spawns a real in-process broker + backs
-            // the sender) BEFORE stamping `ts` -- broker startup latency
-            // sits OUTSIDE the timestamp window this way, not inside it.
-            // Stamping `ts` first (the original ordering) left an
-            // unbounded gap between "timestamp computed" and "freshness
-            // checked against the live wall clock" that widens under
-            // system load, intermittently pushing an exactly-at-the-
-            // boundary case past the window before the request is even
-            // sent -- an observed flake, not merely a theoretical one.
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-            let (router, registry, _broker) =
-                router_with_backed_sender(keyring, "hostb.test", "oscar").await;
+            let (state, _broker) = state_with_backed_sender(keyring, "hostb.test", "oscar").await;
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
-            let resp = post_inbox(router, &to, bytes).await;
-            assert_eq!(
-                resp.status(),
-                StatusCode::ACCEPTED,
+            let result = ingest_inbound_at(&to, &bytes, &state, &base_now).await;
+            assert!(
+                result.is_ok(),
                 "delta {delta}s is within the inclusive skew window and, with a real backed \
-                 sender and a correctly-pinned key, must fully deliver"
-            );
-            assert_eq!(
-                registry.lock().await.names().count(),
-                1,
-                "no registry mutation expected BEYOND the harness's own backed sender"
+                 sender, a correctly-pinned key, and now injected from the SAME base as ts, \
+                 must fully deliver; got {result:?}"
             );
         }
 
         for delta in [-(skew + 1), skew + 1] {
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-            let (router, registry, _broker) =
-                router_with_backed_sender(keyring, "hostb.test", "oscar").await;
+            let (state, _broker) = state_with_backed_sender(keyring, "hostb.test", "oscar").await;
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
-            let resp = post_inbox(router, &to, bytes).await;
-            assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-            let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-            let v: Value = serde_json::from_slice(&body).unwrap();
-            assert_eq!(
-                v["error"], "stale_timestamp",
-                "delta {delta}s is one second beyond the inclusive skew window"
+            let result = ingest_inbound_at(&to, &bytes, &state, &base_now).await;
+            assert!(
+                matches!(result, Err(IngressError::StaleTimestamp { .. })),
+                "delta {delta}s is one second beyond the inclusive skew window, got {result:?}"
             );
-            assert_eq!(registry.lock().await.names().count(), 1);
         }
+    }
+
+    /// Proves the real HTTP wiring: a fresh, correctly-signed, backed
+    /// envelope round-trips through the actual axum router to full
+    /// delivery (202 ACCEPTED). Deliberately NOT a boundary test — see
+    /// `freshness_boundary_is_inclusive_in_both_directions` above for the
+    /// deterministic inclusive-boundary proof. `delta = 0` is nowhere
+    /// near the skew edge, so ordinary request latency cannot affect the
+    /// outcome.
+    #[tokio::test]
+    async fn router_delivers_a_fresh_correctly_signed_backed_envelope() {
+        let sk = FampSigningKey::from_bytes([42u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let (router, registry, _broker) =
+            router_with_backed_sender(keyring, "hostb.test", "oscar").await;
+        let bytes = ack_bytes_with_ts(
+            &sk,
+            &from,
+            &to,
+            Timestamp(crate::clock::now_canonical_utc()),
+        );
+        let resp = post_inbox(router, &to, bytes).await;
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            registry.lock().await.names().count(),
+            1,
+            "no registry mutation expected BEYOND the harness's own backed sender"
+        );
     }
 
     /// Task 2 (INGR-05, D-09): pins the check order with a
