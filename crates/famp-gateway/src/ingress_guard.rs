@@ -113,13 +113,12 @@ pub enum GuardReject {
     /// match the peeked `to` authority. Does NOT imply anything about the
     /// envelope's signature — a correctly-signed envelope addressed to a
     /// domain this gateway does not own maps here too, by design (this
-    /// runs BEFORE `verify_inbound_any`, per INGR-05/D-09). Only produced
-    /// when `own_domain` is configured; an unset `own_domain` skips the
-    /// domain half of [`audience_check`] entirely (D-22: audience binding
-    /// here is DOMAIN-granularity only, never per-recipient — see this
-    /// module's `audience_check` doc). Carries both the expected and the
-    /// got authority — neither is secret, both are already public in the
-    /// envelope's own `to` field.
+    /// runs BEFORE `verify_inbound_any`, per INGR-05/D-09). `own_domain`
+    /// is mandatory (17-03/D-30), so this check always runs (D-22:
+    /// audience binding here is DOMAIN-granularity only, never
+    /// per-recipient — see this module's `audience_check` doc). Carries
+    /// both the expected and the got authority — neither is secret, both
+    /// are already public in the envelope's own `to` field.
     #[error("this gateway is not authoritative for domain '{got}' (configured own-domain: '{expected}')")]
     ForeignDomain { expected: String, got: String },
 
@@ -613,12 +612,12 @@ impl Default for IngressGuard {
 pub struct GuardInput<'a> {
     pub peeked: &'a PeekedFields,
     pub now: &'a str,
-    pub own_domain: Option<&'a str>,
+    pub own_domain: &'a str,
     pub sender_is_backed: bool,
 }
 
-/// INGR-04/D-08 audience binding: checked in order, `own_domain` first
-/// (when configured) then `sender_is_backed`.
+/// INGR-04/D-08 audience binding: checked in order, `own_domain` first,
+/// then `sender_is_backed`.
 ///
 /// **D-22 limitation, stated here explicitly because this is the one
 /// function that enforces it:** this checks the recipient DOMAIN
@@ -633,17 +632,16 @@ pub struct GuardInput<'a> {
 /// plan's scope). Audience binding delivered by this function is
 /// DOMAIN-granularity only.
 ///
-/// When `input.own_domain` is `None`, the domain half is skipped
-/// entirely — the backing half still runs unconditionally.
+/// `own_domain` is mandatory (17-03/D-30, startup-fatal in `main.rs`), so
+/// the domain half always runs — there is no unset-own-domain path that
+/// skips it anymore.
 pub fn audience_check(input: &GuardInput<'_>) -> Result<(), GuardReject> {
-    if let Some(expected) = input.own_domain {
-        let got = input.peeked.to.authority();
-        if got != expected {
-            return Err(GuardReject::ForeignDomain {
-                expected: expected.to_string(),
-                got: got.to_string(),
-            });
-        }
+    let got = input.peeked.to.authority();
+    if got != input.own_domain {
+        return Err(GuardReject::ForeignDomain {
+            expected: input.own_domain.to_string(),
+            got: got.to_string(),
+        });
     }
     if !input.sender_is_backed {
         return Err(GuardReject::SenderNotBacked {
@@ -1092,7 +1090,7 @@ mod tests {
         let input = GuardInput {
             peeked: &peeked,
             now: &now,
-            own_domain: Some("hostb.test"),
+            own_domain: "hostb.test",
             sender_is_backed: true,
         };
         assert!(audience_check(&input).is_ok());
@@ -1105,7 +1103,7 @@ mod tests {
         let input = GuardInput {
             peeked: &peeked,
             now: &now,
-            own_domain: Some("hostb.test"),
+            own_domain: "hostb.test",
             sender_is_backed: true,
         };
         match audience_check(&input) {
@@ -1124,46 +1122,13 @@ mod tests {
         let input = GuardInput {
             peeked: &peeked,
             now: &now,
-            own_domain: Some("hostb.test"),
+            own_domain: "hostb.test",
             sender_is_backed: false,
         };
         assert!(matches!(
             audience_check(&input),
             Err(GuardReject::SenderNotBacked { .. })
         ));
-    }
-
-    /// D-22: `own_domain: None` skips ONLY the domain half — the backing
-    /// half is still enforced unconditionally.
-    #[test]
-    fn audience_check_with_own_domain_none_skips_domain_half_but_still_enforces_backing() {
-        let peeked = peeked_fields("agent:hosta.test/oscar", "agent:otherdomain.test/peggy");
-        let now = to_canonical_rfc3339(OffsetDateTime::now_utc());
-
-        let input_backed = GuardInput {
-            peeked: &peeked,
-            now: &now,
-            own_domain: None,
-            sender_is_backed: true,
-        };
-        assert!(
-            audience_check(&input_backed).is_ok(),
-            "own_domain unset must skip the domain half regardless of `to`'s authority"
-        );
-
-        let input_unbacked = GuardInput {
-            peeked: &peeked,
-            now: &now,
-            own_domain: None,
-            sender_is_backed: false,
-        };
-        assert!(
-            matches!(
-                audience_check(&input_unbacked),
-                Err(GuardReject::SenderNotBacked { .. })
-            ),
-            "own_domain unset must NOT skip the backing half"
-        );
     }
 
     // --- Task 1 (17-03, INGR-06): RateLimiter ---

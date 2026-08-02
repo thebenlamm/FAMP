@@ -220,12 +220,12 @@ enum RelayError {
     Encode(#[from] serde_json::Error),
     #[error("transport send failed: {0}")]
     Transport(#[from] HttpTransportError),
-    /// T-11-19: the drained envelope's `from` authority does not match
-    /// this gateway's configured own-domain. Never signed — a locally-
-    /// registered agent must not make the gateway sign as a domain it
-    /// does not own. Only produced when own-domain IS configured
-    /// (`relay_one`'s `own_domain: Option<&str>` is `Some`); when unset,
-    /// this variant is never constructed and `from` is signed verbatim.
+    /// T-11-19/17-03: the drained envelope's `from` authority does not
+    /// match this gateway's configured own-domain. Never signed — a
+    /// locally-registered agent must not make the gateway sign as a
+    /// domain it does not own. own-domain is mandatory and startup-fatal
+    /// (`main.rs::resolve_own_domain_or_exit`), so this check runs
+    /// unconditionally on every relayed envelope.
     #[error("egress 'from' domain mismatch: expected own-domain '{expected}', got '{got}'")]
     FromDomainMismatch { expected: String, got: String },
     /// T-11-25: the drained envelope carried one or more federation-owned
@@ -248,15 +248,14 @@ fn parse_principal_field(envelope: &Value, field: &'static str) -> Result<Princi
 /// Sign one drained envelope and POST it to its recipient's peer gateway.
 ///
 /// `own_domain` is this gateway's resolved own-domain (plan 02's single
-/// source), `None` when unset. T-11-19: when `Some(d)`, a `from` whose
-/// authority != `d` is rejected here — BEFORE `sign_federation_fields` —
-/// so the gateway never signs an envelope claiming a domain it does not
-/// own. When `None`, `from` is signed verbatim (current/legacy behavior;
-/// keeps `e2e_cross_host_delivery.rs`'s own-domain-unset spawn green as
-/// the regression control).
+/// source, mandatory and startup-fatal as of 17-03/D-30 —
+/// `main.rs::resolve_own_domain_or_exit`). A `from` whose authority !=
+/// `own_domain` is rejected here — BEFORE `sign_federation_fields` — so
+/// the gateway never signs an envelope claiming a domain it does not own.
+/// This check always runs; there is no unset-own-domain path anymore.
 async fn relay_one(
     envelope: &mut Value,
-    own_domain: Option<&str>,
+    own_domain: &str,
     sk: &FampSigningKey,
     vk: &TrustedVerifyingKey,
     transport: &HttpTransport,
@@ -264,14 +263,12 @@ async fn relay_one(
     let from = parse_principal_field(envelope, "from")?;
     let to = parse_principal_field(envelope, "to")?;
 
-    if let Some(expected) = own_domain {
-        let got = from.authority();
-        if got != expected {
-            return Err(RelayError::FromDomainMismatch {
-                expected: expected.to_string(),
-                got: got.to_string(),
-            });
-        }
+    let got = from.authority();
+    if got != own_domain {
+        return Err(RelayError::FromDomainMismatch {
+            expected: own_domain.to_string(),
+            got: got.to_string(),
+        });
     }
 
     // T-11-25: reject — never sign — a drained envelope that already
@@ -315,18 +312,15 @@ async fn relay_one(
 /// becomes this notification's `to` (the notification lands directly in
 /// the original sender's own mailbox), and its `to` (the intended
 /// recipient that could not be reached) is named in the reason text.
-/// `own_domain`, when configured, names the gateway's own authority for
-/// the notification's `from` principal; when unset, the failed
-/// recipient's own authority is reused instead — there is no other
-/// authority to claim, mirroring [`relay_one`]'s own-domain-unset legacy
-/// posture.
+/// `own_domain` names the gateway's own authority (mandatory as of
+/// 17-03/D-30) for the notification's `from` principal.
 ///
 /// Returns `Err` only if `original` itself is malformed (missing/invalid
 /// `from`/`to`) — [`notify_relay_failure`] treats that as "cannot build a
 /// notification", logs, and skips, rather than propagating a panic.
 fn build_relay_failure_ack(
     original: &Value,
-    own_domain: Option<&str>,
+    own_domain: &str,
     detail: &str,
     now: &str,
 ) -> Result<Value, EgressError> {
@@ -343,10 +337,10 @@ fn build_relay_failure_ack(
         .parse::<Principal>()
         .map_err(|e| EgressError::BadPrincipal("to", e.to_string()))?;
 
-    // The notification's `from`: authority is `own_domain` when
-    // configured, otherwise the failed recipient's own authority; the
-    // NAME leaf is the failed recipient's own bare name
-    // (`original_to.name()`), NOT a synthetic "gateway" service name.
+    // The notification's `from`: authority is this gateway's own-domain
+    // (mandatory as of 17-03/D-30); the NAME leaf is the failed
+    // recipient's own bare name (`original_to.name()`), NOT a synthetic
+    // "gateway" service name.
     //
     // This is load-bearing, not cosmetic: `notify_relay_failure` issues
     // this `Send` on the SAME backed `ProxiedPrincipal` connection this
@@ -368,8 +362,7 @@ fn build_relay_failure_ack(
     // reusing that recipient's own backed connection to deliver it,
     // documented here rather than left for a future reader to
     // rediscover via a live-broker failure.
-    let authority = own_domain.unwrap_or_else(|| original_to.authority());
-    let from = format!("agent:{authority}/{}", original_to.name());
+    let from = format!("agent:{own_domain}/{}", original_to.name());
 
     let reason =
         format!("{RELAY_FAILURE_REASON_PREFIX} could not relay to {original_to}: {detail}");
@@ -432,7 +425,7 @@ async fn notify_relay_failure(
     name: &str,
     registry: &Arc<Mutex<GatewayRegistry>>,
     original: &Value,
-    own_domain: Option<&str>,
+    own_domain: &str,
     detail: &str,
 ) {
     // The local bus's `Target::Agent { name }` addresses a BARE
@@ -548,7 +541,7 @@ async fn notify_relay_failure(
 pub async fn run_egress(
     name: String,
     registry: Arc<Mutex<GatewayRegistry>>,
-    own_domain: Option<String>,
+    own_domain: String,
     transport: Arc<HttpTransport>,
     sk: FampSigningKey,
     vk: TrustedVerifyingKey,
@@ -602,9 +595,7 @@ pub async fn run_egress(
         // Unwrap to the INNER envelope before signing/relaying; the
         // stamp itself is discarded, on purpose, right here.
         for mut envelope in envelopes.into_iter().map(|stamped| stamped.envelope) {
-            if let Err(e) =
-                relay_one(&mut envelope, own_domain.as_deref(), &sk, &vk, &transport).await
-            {
+            if let Err(e) = relay_one(&mut envelope, &own_domain, &sk, &vk, &transport).await {
                 // {e:?} (Debug), not {e} (Display) -- the Debug chain walks
                 // every #[source] level, including the TLS/rustls leaf
                 // cause reqwest's own Display can omit (OBS-01).
@@ -620,14 +611,8 @@ pub async fn run_egress(
                 // reason to leave those invisible. `{e:?}` (Debug, not
                 // Display) so the log line and the mailbox entry say the
                 // same thing.
-                notify_relay_failure(
-                    &name,
-                    &registry,
-                    &envelope,
-                    own_domain.as_deref(),
-                    &format!("{e:?}"),
-                )
-                .await;
+                notify_relay_failure(&name, &registry, &envelope, &own_domain, &format!("{e:?}"))
+                    .await;
             }
         }
     }
@@ -854,7 +839,7 @@ mod tests {
 
         let transport = HttpTransport::new_client_only(None).unwrap();
 
-        let result = relay_one(&mut value, Some("hosta.test"), &sk, &vk, &transport).await;
+        let result = relay_one(&mut value, "hosta.test", &sk, &vk, &transport).await;
 
         match result {
             Err(RelayError::FromDomainMismatch { expected, got }) => {
@@ -877,17 +862,21 @@ mod tests {
     /// transport failure (no peer registered in this unit test) proves
     /// signing happened BEFORE the unrelated transport-stage error, not
     /// that signing was skipped.
+    /// own-domain is mandatory (17-03/D-30): when the drained envelope's
+    /// `from` authority matches it, `relay_one` signs the value and
+    /// proceeds to the transport stage (proving the domain check did NOT
+    /// reject it) rather than skipping signing.
     #[tokio::test]
-    async fn relay_one_signs_from_verbatim_when_own_domain_unset() {
+    async fn relay_one_signs_when_from_domain_matches_own_domain() {
         let sk = FampSigningKey::from_bytes([41u8; 32]);
         let vk = sk.verifying_key();
-        let from: Principal = "agent:anydomain.test/alice".parse().unwrap();
+        let from: Principal = "agent:hosta.test/alice".parse().unwrap();
         let to: Principal = "agent:hostb.test/bob".parse().unwrap();
         let mut value = plain_request_value(&from, &to);
 
         let transport = HttpTransport::new_client_only(None).unwrap();
 
-        let result = relay_one(&mut value, None, &sk, &vk, &transport).await;
+        let result = relay_one(&mut value, "hosta.test", &sk, &vk, &transport).await;
 
         assert!(
             matches!(result, Err(RelayError::Transport(_))),
@@ -896,12 +885,12 @@ mod tests {
         );
         assert!(
             value.get("signature").is_some(),
-            "own-domain unset must sign the drained value verbatim before the \
-             (unrelated) transport failure"
+            "a matching from-domain must be signed before the (unrelated) transport \
+             failure"
         );
         assert_eq!(
             value["from_domain"],
-            Value::String("anydomain.test".to_string())
+            Value::String("hosta.test".to_string())
         );
     }
 
@@ -928,7 +917,7 @@ mod tests {
             );
             let before = value.clone();
 
-            let result = relay_one(&mut value, None, &sk, &vk, &transport).await;
+            let result = relay_one(&mut value, "hosta.test", &sk, &vk, &transport).await;
 
             match &result {
                 Err(RelayError::ClientSuppliedFederationField { fields }) => {
@@ -973,7 +962,7 @@ mod tests {
             Value::String("attacker-capability".to_string()),
         );
 
-        let result = relay_one(&mut value, None, &sk, &vk, &transport).await;
+        let result = relay_one(&mut value, "hosta.test", &sk, &vk, &transport).await;
         match result {
             Err(RelayError::ClientSuppliedFederationField { fields }) => {
                 assert!(fields.contains("nonce"), "got: {fields}");
@@ -1001,7 +990,7 @@ mod tests {
 
         let ack = build_relay_failure_ack(
             &original,
-            None,
+            "hostb.test",
             "peer connection refused",
             "2026-07-31T00:00:00Z",
         )
@@ -1039,14 +1028,14 @@ mod tests {
 
         let ack1 = build_relay_failure_ack(
             &original,
-            None,
+            "hostb.test",
             "connection refused",
             "2026-07-31T00:00:00Z",
         )
         .unwrap();
         let ack2 = build_relay_failure_ack(
             &original,
-            None,
+            "hostb.test",
             "connection refused",
             "2026-07-31T00:00:00Z",
         )

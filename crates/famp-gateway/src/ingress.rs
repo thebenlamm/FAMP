@@ -68,13 +68,12 @@ const ONE_MIB: usize = 1_048_576;
 pub(crate) struct GatewayIngressState {
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
-    /// T-11-23/T-11-24: this host's own-domain federation authority
+    /// T-11-23/T-11-24/17-03: this host's own-domain federation authority
     /// (plan 02's single source, resolved ONCE in `main.rs` and reused —
-    /// see `main.rs::resolve_own_domain_or_exit`/`own_domain`). `Some(d)`
-    /// means ingress rejects any verified envelope whose `to.authority()`
-    /// != `d`; `None` means that check is skipped (T-11-29, mirroring
-    /// 11-07's enforced-when-configured egress posture).
-    own_domain: Option<Arc<str>>,
+    /// see `main.rs::resolve_own_domain_or_exit`/`own_domain`). Mandatory
+    /// and startup-fatal as of 17-03/D-30: ingress unconditionally rejects
+    /// any verified envelope whose `to.authority()` != `own_domain`.
+    own_domain: Arc<str>,
     /// Task 1 (INGR-01/INGR-05): process-lifetime pre-verify guard state,
     /// shared across every inbound request this router serves.
     /// `started_at` (see [`IngressGuard`]) anchors plan 02's
@@ -97,7 +96,7 @@ pub(crate) struct GatewayIngressState {
 pub fn build_gateway_router(
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
-    own_domain: Option<Arc<str>>,
+    own_domain: Arc<str>,
 ) -> Router {
     let state = GatewayIngressState {
         registry,
@@ -440,7 +439,7 @@ pub(crate) async fn ingest_inbound(
     let guard_input = GuardInput {
         peeked: &peeked,
         now: now.as_str(),
-        own_domain: state.own_domain.as_deref(),
+        own_domain: &state.own_domain,
         sender_is_backed,
     };
     {
@@ -658,7 +657,7 @@ pub async fn run_ingress(
     tls_key_path: &std::path::Path,
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
-    own_domain: Option<Arc<str>>,
+    own_domain: Arc<str>,
 ) -> std::io::Result<()> {
     let cert =
         famp_transport_http::tls::load_pem_cert(tls_cert_path).map_err(std::io::Error::other)?;
@@ -752,20 +751,16 @@ mod tests {
     }
 
     fn router_with_keyring(keyring: Keyring) -> (Router, Arc<Mutex<GatewayRegistry>>) {
-        router_with_keyring_and_domain(keyring, None)
+        router_with_keyring_and_domain(keyring, "hostb.test")
     }
 
     fn router_with_keyring_and_domain(
         keyring: Keyring,
-        own_domain: Option<&str>,
+        own_domain: &str,
     ) -> (Router, Arc<Mutex<GatewayRegistry>>) {
         let registry = Arc::new(Mutex::new(GatewayRegistry::default()));
         (
-            build_gateway_router(
-                registry.clone(),
-                Arc::new(keyring),
-                own_domain.map(Arc::from),
-            ),
+            build_gateway_router(registry.clone(), Arc::new(keyring), Arc::from(own_domain)),
             registry,
         )
     }
@@ -832,7 +827,7 @@ mod tests {
     /// convention, just with one real connection instead of zero.
     async fn router_with_backed_sender(
         keyring: Keyring,
-        own_domain: Option<&str>,
+        own_domain: &str,
         from_name: &str,
     ) -> (Router, Arc<Mutex<GatewayRegistry>>, LiveBroker) {
         let broker = LiveBroker::spawn().await;
@@ -842,11 +837,8 @@ mod tests {
             .await
             .expect("back sender on in-process broker");
         let registry = Arc::new(Mutex::new(registry));
-        let router = build_gateway_router(
-            registry.clone(),
-            Arc::new(keyring),
-            own_domain.map(Arc::from),
-        );
+        let router =
+            build_gateway_router(registry.clone(), Arc::new(keyring), Arc::from(own_domain));
         (router, registry, broker)
     }
 
@@ -895,7 +887,7 @@ mod tests {
             .pin_tofu(from.clone(), wrong_sk.verifying_key())
             .unwrap();
         let (router, registry, _broker) =
-            router_with_backed_sender(keyring_wrong, None, "oscar").await;
+            router_with_backed_sender(keyring_wrong, "hostb.test", "oscar").await;
         let resp = post_inbox(router, &to, bytes.clone()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -910,7 +902,7 @@ mod tests {
 
         // --- unpinned key: sender absent from an empty keyring ---
         let (router2, registry2, _broker2) =
-            router_with_backed_sender(Keyring::new(), None, "oscar").await;
+            router_with_backed_sender(Keyring::new(), "hostb.test", "oscar").await;
         let resp2 = post_inbox(router2, &to, bytes).await;
         assert_eq!(resp2.status(), StatusCode::FORBIDDEN);
         let body2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
@@ -950,7 +942,8 @@ mod tests {
 
         let mut keyring = Keyring::new();
         keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-        let (router, registry, _broker) = router_with_backed_sender(keyring, None, "oscar").await;
+        let (router, registry, _broker) =
+            router_with_backed_sender(keyring, "hostb.test", "oscar").await;
 
         let resp = post_inbox(router, &to, bytes).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -1006,7 +999,7 @@ mod tests {
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
             let (router, registry, _broker) =
-                router_with_backed_sender(keyring, None, "oscar").await;
+                router_with_backed_sender(keyring, "hostb.test", "oscar").await;
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
             let resp = post_inbox(router, &to, bytes).await;
             assert_eq!(
@@ -1026,7 +1019,7 @@ mod tests {
             let mut keyring = Keyring::new();
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
             let (router, registry, _broker) =
-                router_with_backed_sender(keyring, None, "oscar").await;
+                router_with_backed_sender(keyring, "hostb.test", "oscar").await;
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
             let resp = post_inbox(router, &to, bytes).await;
             assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -1084,7 +1077,7 @@ mod tests {
             .pin_tofu(from.clone(), wrong_sk.verifying_key())
             .unwrap();
         let (router, registry, _broker) =
-            router_with_backed_sender(keyring_wrong, None, "oscar").await;
+            router_with_backed_sender(keyring_wrong, "hostb.test", "oscar").await;
         let resp = post_inbox(router, &to, stale_bytes.clone()).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
@@ -1100,7 +1093,7 @@ mod tests {
         // has no pinned key at all -- proves audience_check's backing half
         // is independent of the keyring.)
         let (router2, registry2, _broker2) =
-            router_with_backed_sender(Keyring::new(), None, "oscar").await;
+            router_with_backed_sender(Keyring::new(), "hostb.test", "oscar").await;
         let resp2 = post_inbox(router2, &to, stale_bytes).await;
         assert_eq!(resp2.status(), StatusCode::BAD_REQUEST);
         let body2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
@@ -1138,7 +1131,7 @@ mod tests {
             .pin_tofu(from.clone(), wrong_sk2.verifying_key())
             .unwrap();
         let (router4, registry4, _broker4) =
-            router_with_backed_sender(keyring_wrong2, None, "oscar").await;
+            router_with_backed_sender(keyring_wrong2, "hostb.test", "oscar").await;
         let fresh_bytes = ack_bytes(&sk, &from, &to);
 
         let first = post_inbox(router4.clone(), &to, fresh_bytes.clone()).await;
@@ -1181,7 +1174,7 @@ mod tests {
             .pin_tofu(from.clone(), wrong_sk.verifying_key())
             .unwrap();
         let foreign_to: Principal = "agent:otherdomain.test/peggy".parse().unwrap();
-        let (router, registry) = router_with_keyring_and_domain(keyring_wrong, Some("hostb.test"));
+        let (router, registry) = router_with_keyring_and_domain(keyring_wrong, "hostb.test");
         let bytes = ack_bytes(sk, from, &foreign_to);
         let resp = post_inbox(router, &foreign_to, bytes).await;
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -1213,7 +1206,7 @@ mod tests {
             .pin_tofu(from.clone(), wrong_sk.verifying_key())
             .unwrap();
         let (router, registry, _broker) =
-            router_with_backed_sender(keyring_wrong, None, "oscar").await;
+            router_with_backed_sender(keyring_wrong, "hostb.test", "oscar").await;
         for i in 0..crate::ingress_guard::RATE_LIMIT_MAX_PER_WINDOW {
             let bytes = ack_bytes(sk, from, to);
             let resp = post_inbox(router.clone(), to, bytes).await;
@@ -1255,7 +1248,8 @@ mod tests {
 
         let mut keyring = Keyring::new();
         keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-        let (router, registry, _broker) = router_with_backed_sender(keyring, None, "oscar").await;
+        let (router, registry, _broker) =
+            router_with_backed_sender(keyring, "hostb.test", "oscar").await;
 
         let resp1 = post_inbox(router.clone(), &to, bytes.clone()).await;
         assert_eq!(
@@ -1305,7 +1299,8 @@ mod tests {
 
         let mut keyring = Keyring::new();
         keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
-        let (router, registry, _broker) = router_with_backed_sender(keyring, None, "oscar").await;
+        let (router, registry, _broker) =
+            router_with_backed_sender(keyring, "hostb.test", "oscar").await;
 
         let resp = post_inbox(router, &to, bytes).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);

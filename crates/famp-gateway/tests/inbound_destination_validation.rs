@@ -221,7 +221,7 @@ struct Harness {
 /// stand-in `inbox_handler` dispatches through, D-05) + a router
 /// configured with `own_domain`. `alice`'s pubkey is pinned in the
 /// keyring passed to the router.
-async fn build_harness(own_domain: Option<&str>, sk: &FampSigningKey) -> Harness {
+async fn build_harness(own_domain: &str, sk: &FampSigningKey) -> Harness {
     ensure_famp_bin_built();
     let tmp = tempfile::TempDir::new().unwrap();
     let sock = tmp.path().join("bus.sock");
@@ -241,7 +241,7 @@ async fn build_harness(own_domain: Option<&str>, sk: &FampSigningKey) -> Harness
     let router = build_gateway_router(
         Arc::new(Mutex::new(registry)),
         Arc::new(keyring),
-        own_domain.map(Arc::from),
+        Arc::from(own_domain),
     );
 
     Harness {
@@ -255,7 +255,7 @@ async fn build_harness(own_domain: Option<&str>, sk: &FampSigningKey) -> Harness
 #[tokio::test]
 async fn envelope_addressed_to_foreign_domain_is_rejected_and_mailbox_untouched() {
     let sk = FampSigningKey::from_bytes([60u8; 32]);
-    let harness = build_harness(Some("hostb.test"), &sk).await;
+    let harness = build_harness("hostb.test", &sk).await;
 
     // A REAL "bob" registration so we have a mailbox to assert stays
     // empty. Own-domain is "hostb.test"; the envelope's `to` targets a
@@ -279,7 +279,7 @@ async fn envelope_addressed_to_foreign_domain_is_rejected_and_mailbox_untouched(
 #[tokio::test]
 async fn envelope_to_differs_from_path_recipient_is_rejected_and_mailbox_untouched() {
     let sk = FampSigningKey::from_bytes([61u8; 32]);
-    let harness = build_harness(Some("hostb.test"), &sk).await;
+    let harness = build_harness("hostb.test", &sk).await;
 
     let mut carol = register_real(&harness.sock, "carol").await;
 
@@ -303,7 +303,7 @@ async fn envelope_to_differs_from_path_recipient_is_rejected_and_mailbox_untouch
 #[tokio::test]
 async fn well_formed_same_domain_envelope_still_delivers() {
     let sk = FampSigningKey::from_bytes([62u8; 32]);
-    let harness = build_harness(Some("hostb.test"), &sk).await;
+    let harness = build_harness("hostb.test", &sk).await;
 
     let mut bob = register_real(&harness.sock, "bob").await;
 
@@ -345,7 +345,7 @@ async fn foreign_domain_envelope_signed_with_wrong_key_is_rejected_foreign_domai
 ) {
     let sk = FampSigningKey::from_bytes([63u8; 32]);
     let wrong_sk = FampSigningKey::from_bytes([64u8; 32]);
-    let harness = build_harness(Some("hostb.test"), &wrong_sk).await;
+    let harness = build_harness("hostb.test", &wrong_sk).await;
 
     let mut bob = register_real(&harness.sock, "bob").await;
 
@@ -378,7 +378,7 @@ async fn envelope_from_unbacked_sender_is_rejected_sender_not_backed_pre_verify(
     // `build_harness` only ever backs "alice" in its `GatewayRegistry` --
     // this envelope claims a DIFFERENT sender ("eve") that the registry
     // has never heard of.
-    let harness = build_harness(Some("hostb.test"), &sk).await;
+    let harness = build_harness("hostb.test", &sk).await;
 
     let mut bob = register_real(&harness.sock, "bob").await;
 
@@ -402,7 +402,7 @@ async fn envelope_from_unbacked_sender_is_rejected_sender_not_backed_pre_verify(
 #[tokio::test]
 async fn stale_timestamp_envelope_is_rejected_pre_verify_with_mailbox_untouched() {
     let sk = FampSigningKey::from_bytes([66u8; 32]);
-    let harness = build_harness(Some("hostb.test"), &sk).await;
+    let harness = build_harness("hostb.test", &sk).await;
 
     let mut bob = register_real(&harness.sock, "bob").await;
 

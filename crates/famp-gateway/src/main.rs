@@ -296,19 +296,16 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
 /// `$FAMP_HOME/own-domain` file — this gateway has no `--domain` CLI
 /// flag of its own; see `famp::cli::own_domain::resolve_own_domain`'s
 /// documented precedence). There is no more warn-and-continue path, full
-/// stop. Return type stays `Option<String>` for source-compat with every
-/// downstream `own_domain: Option<&str>`/`Option<Arc<str>>` consumer
-/// (`egress.rs::relay_one`, `ingress.rs::GatewayIngressState`) — but by
-/// the time this function returns, the value is always `Some`; `None` is
-/// no longer a value this function can actually produce.
-// `clippy::unnecessary_wraps`: correct as flagged (the function no longer
-// has a non-fatal `None` path), but the `Option<String>` return type is
-// kept deliberately for source-compat with every downstream consumer —
-// see the doc comment above.
-#[allow(clippy::unnecessary_wraps)]
-fn resolve_own_domain_or_exit(home: &std::path::Path) -> Option<String> {
+/// stop. The return type is plain `String`, not `Option<String>`: every
+/// failure path above exits the process, so `None` is not a value this
+/// function can produce, and every downstream consumer
+/// (`egress.rs::relay_one`, `ingress.rs::GatewayIngressState`) now takes
+/// the resolved domain as a non-optional `&str`/`String` — the
+/// impossibility of an absent own-domain is enforced by the compiler, not
+/// by convention.
+fn resolve_own_domain_or_exit(home: &std::path::Path) -> String {
     match famp::cli::own_domain::resolve_own_domain(None, home) {
-        Ok(domain) => Some(domain),
+        Ok(domain) => domain,
         Err(famp::cli::error::CliError::OwnDomainNotSet) => {
             eprintln!(
                 "famp-gateway: own-domain not set — this is now REQUIRED for every gateway \
@@ -427,13 +424,12 @@ async fn main() {
     };
 
     // T-11-19/T-11-20: resolve this host's own-domain federation authority
-    // ONCE at startup. Kept as an owned `Option<String>` local (not
-    // folded into a one-shot closure) rather than moved-and-consumed
-    // immediately: the per-egress-task loop below only *clones* it, so
-    // the same value is still available afterward for a future
-    // ingress-side check (11-08) to consume without restructuring this
-    // resolution site.
-    let own_domain: Option<String> = resolve_own_domain_or_exit(&home);
+    // ONCE at startup. Kept as an owned `String` local (not folded into a
+    // one-shot closure) rather than moved-and-consumed immediately: the
+    // per-egress-task loop below only *clones* it, so the same value is
+    // still available afterward for a future ingress-side check (11-08)
+    // to consume without restructuring this resolution site.
+    let own_domain: String = resolve_own_domain_or_exit(&home);
 
     let identity_path = famp::cli::peer::identity::gateway_identity_path(&home);
     let peers_path = famp::cli::peer::identity::gateway_peers_keyring_path(&home);
@@ -513,9 +509,9 @@ async fn main() {
     // reused here for ingress's to-authority check — ONE resolution
     // site, two boundaries (11-08's prohibition on a second config
     // source). Converted to `Arc<str>` only at this call site so
-    // `own_domain` itself stays an owned `Option<String>` local, per
-    // 11-07's forward-compat note.
-    let ingress_own_domain: Option<Arc<str>> = own_domain.clone().map(Arc::from);
+    // `own_domain` itself stays an owned `String` local, per 11-07's
+    // forward-compat note.
+    let ingress_own_domain: Arc<str> = Arc::from(own_domain.clone());
 
     tokio::select! {
         result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), ingress_own_domain) => {
