@@ -24,8 +24,8 @@ use crate::cli::error::CliError;
 use crate::cli::executable::{posix_shell_literal, resolve_for_generated_config, FampExecutable};
 use crate::cli::install::{await_hook, json_merge, stop_entry, toml_merge};
 
-const CODEX_AWAIT_TIMEOUT_SEC: i64 = 86_400;
-const CODEX_STOP_EVENT_LABEL: &str = "stop";
+pub(crate) const CODEX_AWAIT_TIMEOUT_SEC: i64 = 86_400;
+pub(crate) const CODEX_STOP_EVENT_LABEL: &str = "stop";
 
 #[derive(Debug, Args)]
 pub struct InstallCodexArgs {
@@ -73,7 +73,7 @@ pub(crate) fn default_project_root() -> Result<PathBuf, CliError> {
     Ok(find_git_root(&cwd).unwrap_or(cwd))
 }
 
-fn find_git_root(start: &Path) -> Option<PathBuf> {
+pub(crate) fn find_git_root(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()
         .find(|candidate| candidate.join(".git").exists())
@@ -192,8 +192,8 @@ fn run_at_project_with_executable(
     writeln!(err).ok();
     writeln!(
         err,
-        "install-codex complete. Restart Codex sessions to pick up MCP changes; \
-         the project Stop hook is ready for new turns."
+        "install-codex complete. Restart Codex. Existing sessions must not be \
+         considered auto-wake-ready; a fresh session will load the project Stop hook."
     )
     .ok();
     Ok(())

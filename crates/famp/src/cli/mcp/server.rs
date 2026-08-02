@@ -97,23 +97,23 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_register",
-            "description": "Bind this MCP session to a FAMP identity. CALL THIS FIRST in every new window — without it, famp_send/famp_await/famp_inbox/famp_peers all return a typed 'not_registered' error. Listen mode is ON BY DEFAULT for MCP sessions: after each turn the Stop hook will block waiting for inbound messages and wake Claude automatically (sub-minute latency). Pass listen:false to opt out (general-purpose dev windows that check inbox on demand). Use famp_set_listen at any time to flip the mode without re-registering.",
+            "description": "Bind this MCP session to a FAMP identity. CALL THIS FIRST in every new window — without it, famp_send/famp_await/famp_inbox/famp_peers all return a typed 'not_registered' error. Listen intent is ON BY DEFAULT for MCP sessions. Automatic wake also requires the current host integration and Stop hook to have been installed before this host session started. For Codex, run `famp install-codex` in the project, restart Codex, and use `famp inspect wake --identity <name>` to verify end-to-end readiness. Pass listen:false to opt out. Use famp_set_listen to change broker intent without re-registering.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "identity": { "type": "string", "description": "Identity name (matches [A-Za-z0-9._-]+, max 64 chars)." },
-                    "listen": { "type": "boolean", "description": "Listen mode: when true the Stop hook blocks on famp_await after each turn and wakes Claude when a message arrives. DEFAULT true for MCP sessions (agent windows want auto-wake). Pass false explicitly for general-purpose dev windows that check inbox on demand." }
+                    "listen": { "type": "boolean", "description": "Broker listen intent. DEFAULT true for MCP sessions. Automatic host wake requires a separately installed and loaded host Stop hook; true alone is not a readiness guarantee. Pass false for windows that check inbox on demand." }
                 },
                 "required": ["identity"]
             }
         },
         {
             "name": "famp_set_listen",
-            "description": "Flip listen mode for the current session WITHOUT re-registering. Use this when a window registered with the wrong listen flag, or when an interactive window needs to toggle into auto-wake for a long-running peer conversation. Mutates the canonical holder's flag in place — no mailbox replay (re-registering would re-drain from offset 0). Returns { listen_mode: <bool> } echoing the post-mutation flag.",
+            "description": "Flip broker listen intent for the current session WITHOUT re-registering. This does not install or load a host wake adapter. Automatic wake works only when the current host integration and Stop hook were installed before this host session started. Mutates the canonical holder's flag in place with no mailbox replay. Returns the post-mutation flag plus an explicit wake-readiness warning when enabled.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "listen": { "type": "boolean", "description": "Target listen-mode value. true = Stop hook auto-wakes Claude on inbound messages; false = window stays idle between turns." }
+                    "listen": { "type": "boolean", "description": "Target broker listen intent. true requests host auto-wake but still requires a loaded Stop hook; false disables automatic wake." }
                 },
                 "required": ["listen"]
             }

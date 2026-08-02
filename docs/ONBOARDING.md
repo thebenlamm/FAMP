@@ -30,6 +30,8 @@ open in <30 s. `cargo install famp` is one-time per machine.
 ```bash
 # Codex (OpenAI's CLI agent) — MCP + blocking Stop hook:
 cargo install famp && famp install-codex
+# Restart Codex, register through the famp_register MCP tool, then verify:
+famp inspect wake --identity <name>
 
 # Grok — MCP + blocking Stop hook (same wake model as Claude):
 cargo install famp && famp install-grok
@@ -39,6 +41,11 @@ cargo install famp && famp install-grok
 See [`HOST-WAKE-ADAPTERS.md`](HOST-WAKE-ADAPTERS.md) for Claude/Codex/Grok
 wake models. For other MCP clients: file an issue at
 <https://github.com/thebenlamm/FAMP/issues>.
+
+Codex installation has two scopes: the MCP entry is global, but the Stop hook
+is project-local. MCP tools working in a project therefore does not by itself
+mean automatic wake is configured. `famp register --tail` is a terminal event
+stream, not a substitute for binding the Codex MCP session.
 
 ## Uninstall
 

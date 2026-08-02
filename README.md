@@ -238,6 +238,7 @@ Full CLI:
 | `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP plus project Stop-hook integration |
 | `famp install-grok` / `famp uninstall-grok` | Install or remove Grok MCP + Stop-hook listen (same model as Claude) |
 | `famp listen-wake --as <id> [--loop]` | Host-neutral wake line for monitors / future hosts; no peer body |
+| `famp inspect wake --identity <name>` | Diagnose Codex holder, hook/trust, MCP binding, waiter, and end-to-end wake readiness |
 
 The v0.8 `famp-local` wrapper has moved into history at
 [`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).
@@ -402,7 +403,8 @@ The MCP tools `famp_join` and `famp_leave` handle membership directly.
 primitive that listen mode is built on. Two ways to use it:
 
 - **Listen mode (recommended for dedicated agent windows):** pass `listen: true`
-  to `famp_register` and the Stop hook calls `famp_await` for you after every
+  to `famp_register` to request automatic wake. When the current host Stop hook
+  was installed before the session started, it calls `famp_await` after every
   turn — you never invoke it directly.
 - **Manual:** ask the agent to "wait for a famp message" and Claude calls
   `famp_await` once. Useful for a one-shot blocking handoff without committing
@@ -412,17 +414,18 @@ General-purpose dev windows should use neither — call `famp_inbox` on demand.
 
 ### Listen Mode (inbound wake-up)
 
-By default, a registered window checks its inbox on demand. Passing
-`listen: true` to `famp_register` turns the window into an always-on
-receiver: after every turn, the Stop hook blocks waiting for an inbound
-message and wakes Claude automatically when one arrives (sub-minute
-latency).
+Passing `listen: true` to `famp_register` sets broker listen intent (the MCP
+default). Automatic wake additionally requires the current host integration
+and Stop hook to be installed and loaded. With that adapter active, the Stop
+hook blocks after every turn and wakes the host agent when an inbound message
+arrives (sub-minute latency). For Codex, verify the full chain with
+`famp inspect wake --identity <name>`.
 
 ```text
 register as dk with listen mode on
 ```
 
-Claude calls `famp_register({identity: "dk", listen: true})`. When a
+The host agent calls `famp_register({identity: "dk", listen: true})`. When a
 peer sends `famp send --to dk --new-task "..."`, the window wakes with:
 
 ```
@@ -785,8 +788,11 @@ for milestone history.
   Re-register in that window.
 - **Listen-mode window doesn't wake on a message.** Verify the Stop hook is
   installed (`famp install-claude-code` for Claude Code,
-  `famp install-codex` for Codex). Check `~/.famp/broker.log` for `await`
-  activity around the send time.
+  `famp install-codex` for Codex). For Codex, restart after installation and
+  run `famp inspect wake --identity <name>`; the MCP entry is global but the
+  Stop hook is project-local. `BROKER_LISTEN=true` alone only reports broker
+  intent, and `famp register --tail` cannot wake a Codex window. Check
+  `~/.famp/broker.log` for `await` activity around the send time.
 - **Stuck after a binary upgrade.** Restart all Claude Code windows (they cache
   the binary path at launch) AND, if you run the broker as a service, run
   `famp daemon restart` so the daemon picks up the new binary — otherwise a

@@ -18,13 +18,22 @@
 //! ## Output shape
 //!
 //! ```json
-//! { "active": "<name>", "drained": <count>, "peers": ["..."] }
+//! {
+//!   "active": "<name>",
+//!   "drained": <count>,
+//!   "peers": ["..."],
+//!   "listen_mode": true,
+//!   "wake_readiness": "unknown",
+//!   "warning": "...host Stop hook..."
+//! }
 //! ```
 //!
 //! `drained` is the *count* of typed envelopes the broker drained on
 //! register (Phase-1 D-09 wire shape carries the full envelopes; the MCP
 //! tool surfaces only the count, matching `cli::join`'s ergonomics).
 //! `peers` is the broker's `connected_names` snapshot at register time.
+//! The final three fields are present when listen intent is enabled. They
+//! intentionally do not claim host readiness from broker state alone.
 //!
 //! ## Snapshot vs. live membership
 //!
@@ -135,9 +144,10 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // `set_active_identity`.
             guard.inbox_offset = None;
             guard.listen_mode = Some(listen);
-            // Base surface stays `{ active, drained, peers }`. Listen mode is
-            // driven entirely by the Stop hook (famp-await decision:block) for
-            // Claude/Codex/Grok. Do NOT advertise a `famp listen-wake --follow`
+            // Listen intent is broker state, not proof that a host Stop hook is
+            // installed and loaded. Keep registration successful, but make the
+            // cross-layer uncertainty explicit. Do NOT advertise a
+            // `famp listen-wake --follow`
             // monitor here: in the Stop-hook deployment nothing writes the
             // `.wake` file, so `--follow` blocks forever, and arming
             // `--daemon` opens a second bus waiter that steals messages from
@@ -151,6 +161,10 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             });
             if listen {
                 body["listen_mode"] = serde_json::json!(true);
+                body["wake_readiness"] = serde_json::json!("unknown");
+                body["warning"] = serde_json::json!(
+                    "listen mode requires an installed and loaded host Stop hook; for Codex run `famp inspect wake --identity <name>` to verify end-to-end readiness"
+                );
             }
             Ok(body)
         }
@@ -164,8 +178,9 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         )),
     };
     drop(guard);
-    // Stop hook is the foolproof wake path (Claude/Codex/Grok). Do not arm
-    // a listen-wake supervisor here — a second bus waiter races the Stop await.
+    // The host Stop hook is the intended wake mechanism, but registration
+    // cannot prove that it is installed or loaded. Do not arm a listen-wake
+    // supervisor here — a second bus waiter races the Stop await.
     result
 }
 
