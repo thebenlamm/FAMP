@@ -119,7 +119,7 @@ Ed25519/INV-10 at the boundary itself.
 
 ### Phase 14: Inbound-Content-Is-DATA Quarantine
 
-**Goal:** A remote agent cannot steer a local agent's behavior by sending it message text — remote-origin content is structurally, unforgeably tagged at every surface that renders it, proven non-vacuous by a FAMP-native adversarial corpus and closed out by an independent diff-only review. This is the milestone's blocking security gate: it must be verified complete before Phase 19 lets a second person's traffic reach this host.
+**Goal:** Remote-origin content is structurally, unforgeably tagged at every surface that renders it — machine-checkable provenance, proven non-vacuous by a FAMP-native adversarial corpus and closed out by an independent diff-only review. This is the prerequisite for enforcement, not enforcement itself: it does **not** prevent a remote agent from steering a local agent by sending it text (see the RESOLVED scope decision in REQUIREMENTS.md and `docs/QUARANTINE.md`). It is still the milestone's blocking security gate in the sequencing sense: it must be verified complete before Phase 19 lets a second person's traffic reach this host.
 **Depends on:** Nothing — technically independent of reachability, keyring, and pairing (it touches `famp-bus`'s `Register` frame and reply shapes, Layer 1, plus seven CLI/MCP read sites), so it is deliberately sequenced early rather than left until the gate that needs it.
 **Requirements:** QUAR-01, QUAR-02, QUAR-03, QUAR-04, QUAR-05, QUAR-06, QUAR-07, QUAR-08, QUAR-09, QUAR-10, QUAR-11
 **Success Criteria** (what must be TRUE):
