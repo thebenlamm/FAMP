@@ -5,15 +5,15 @@ milestone_name: Open-Internet Federation
 current_phase: 17
 current_phase_name: protocol-grade-ingress-reachability-implementation
 status: executing
-stopped_at: Completed 17-02-PLAN.md
-last_updated: "2026-07-31T18:52:30.560Z"
+stopped_at: Completed 17-03-PLAN.md
+last_updated: "2026-08-02T00:39:11.983Z"
 last_activity: 2026-07-31
 last_activity_desc: Phase 17 execution started
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 67
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 17 (protocol-grade-ingress-reachability-implementation) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-07-31 — Phase 17 execution started
 
@@ -208,6 +208,9 @@ Last activity: 2026-07-31 — Phase 17 execution started
 - [Phase ?]: 17-06: Fixed T-11-18 self-authorship conflict in relay-failure ack -- from-leaf must equal the backed connection's own bare name, not a synthetic gateway service principal
 - [Phase ?]: 17-02: replay cache eviction tie-break via min_by on (instant, nonce), not BTreeMap/priority queue -- proportionate for the bounded single-relay-scale cache (17-RESEARCH.md Alternatives Considered)
 - [Phase ?]: 17-02: test timestamps use nanosecond, not second, deltas when simulating many recorded instants for one sender -- record()'s now argument is both the entry instant AND the sweep's reference clock, so second-scale deltas across thousands of inserts would age earlier entries past the 600s TTL mid-fill
+- [Phase ?]: [17-03]: Final cheap-gate order pinned: audience_check (domain then backing) -> freshness_check -> replay -> rate limit, rate limit last so foreign/unbacked/stale/replayed traffic never consumes a rate-limit slot.
+- [Phase ?]: [17-03]: own-domain-unset is now UNCONDITIONALLY startup-fatal for every famp-gateway process (escalated from D-23's conditional-on-relay-reachability design per famp-lead-730's 2026-07-31 19:32 reply) -- resolve_own_domain_or_exit's Option<String> return type kept for source-compat, both failure branches now exit(1).
+- [Phase ?]: [17-03]: e2e_shipping_surface.rs Test 3 rewritten per D-31 -- gateway A's own FromDomainMismatch egress check now fires on the mismatched-domain send (coverage improvement) instead of relying on B's unpinned_key ingress fallback.
 
 ## Issues / Blockers
 
@@ -363,12 +366,31 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 17 P04 | ~3h | 3 tasks | 9 files |
 | Phase 17 P06 | 45min | 2 tasks | 4 files |
 | Phase 17 P02 | 75min | 2 tasks | 3 files |
+| Phase 17 P03 | ~100min | 2 tasks | 12 files |
 
 ## Session
 
-**Last session:** 2026-07-31T18:52:30.549Z
-**Stopped At:** Completed 17-02-PLAN.md
+**Last session:** 2026-08-02T00:39:11.962Z
+**Stopped At:** Completed 17-03-PLAN.md
 **Resume File:** None
+
+**HANDOFF STATE — read before doing anything:**
+
+- A `gsd-executor` background agent for 17-03 is LIVE and mid-Task-2 (main.rs, own-domain-mandatory + INGR-07 body-cap tests + e2e_shipping_surface.rs fix). It survived a prior ~28h gap once already — background agents in this harness persist independently of the conversation window. **Do NOT kill it, do NOT run `cargo fmt --all`, do NOT `git add -A`/`git commit -a`/`git stash`/`git checkout` in the main checkout while it's uncommitted.** Check `git status --short` and `git log -3` first; if `crates/famp-gateway/src/main.rs` still shows modified, it's still working — hold and wait for its own commit, exactly as this session did.
+- 17-03 Task 1 already committed as `c93bff9` — but it swept in two unrelated CI-fix files (`.config/nextest.toml`, `crates/famp/tests/quarantine_gate.rs`) via a broad `git add`. Content is a harmless duplicate of what's already on `origin/main` (pushed separately as `cbe629f` via an isolated worktree, SHA-verified green in CI) — flagged to famp-lead-730, not fixed, per their explicit "don't rewrite history under a live agent" instruction.
+- Priority-1 check already done and PASSED: `resolve_own_domain_or_exit` in main.rs is genuinely unconditionally startup-fatal (grepped directly, not inferred) — confirms the executor read the revised (unconditional, not conditional-on-`--relay-fetch`) plan.
+- Still needs checking once Task 2 lands: a test proving own-domain-unset fails to start, and the `e2e_shipping_surface.rs` Test 3 fix — must implement BOTH (a) gateway A's own `FromDomainMismatch` firing at egress [new] AND (b) a preserved case where B rejects a hand-built mismatched envelope delivered directly to its ingress, not depending on A being misconfigured [reconstructed] — NOT a swap of one for the other (that was my first, wrong proposal; famp-lead-730 corrected it in FAMP thread task `019fbf9c-2988-7672-8881-b2e227795400`).
+- famp-lead-730 is mid-conversation on that same FAMP task thread, actively coordinating this handoff-in-progress. A fresh window should `famp_register` as `famp-sonnet-731` (same identity — mailbox is durable per name, queued messages drain automatically) and check `famp_inbox` before doing anything else.
+- After 17-03 fully lands (Task 2 committed + reviewed clean): wave 4 is `17-05` (relay-fetch loop + the actual 3-process bidirectional REACH-04 e2e proof), the final plan in the phase. Then `/gsd-verify-work` / phase closeout.
+- REACH-04 must NOT be marked complete until 17-05's e2e proof actually runs (was prematurely checked once in REQUIREMENTS.md, already caught and reverted).
+- REACH-02 (Phase 13) stays open regardless — separate, blocked on Ben's carrier-hotspot walkthrough (`.planning/REACH-02-HOTSPOT-WALKTHROUGH.md`, written but not yet run as of this handoff).
+
+**TWO NEW TASKS from famp-lead-730, arrived after the handoff note above was written (FAMP thread `019fbf9c-2988-7672-8881-b2e227795400`, messages `019fbfb8`/`019fbfb9`) — do these BEFORE further 17-03 review, in this order:**
+
+1. **Sync PR #31**: local `main` has genuinely diverged from `origin/main` (local has `73623f8`, a docs-only REACH-04 un-check commit, not yet on origin — cbe629f's parent was `21475be`, not `73623f8`). Do NOT reconcile the shared checkout's local `main` yet (17-03 agent still live). Instead, from a **separate worktree** (same pattern as the quarantine-gate fix), merge `origin/main` into `agent/fix-codex-wake-readiness` (Ben's PR #31 branch) and push — **merge, not rebase** (PR #31 is Ben's, already pushed, don't rewrite his history). If it conflicts, STOP and tell famp-lead-730 rather than resolving it. Then verify PR #31's checks go green by SHA (`gh pr checks 31` against the new head). Do NOT merge PR #31 itself — that's Ben's call.
+2. **Type-safety follow-up on `resolve_own_domain_or_exit`**: famp-lead-730 independently verified the priority-1 check (unconditional fatal) is correct and needs no redo — but flagged that its signature is still `-> Option<String>` even though every failure path now exits (structurally incapable of returning `None`). Risk: if any downstream `own_domain` consumer branches on `Some`/`None` (`if let Some(od) = ...`, `unwrap_or`, etc.) around a security check, it reads as optional and could silently go vacuous again if a future non-exiting path is added, with no compile error. Action: grep every `own_domain` consumer in `famp-gateway`, report whether any branch on presence around a security check. If yes anywhere, change the return type to plain `String` (converts the invariant into a compiler-enforced one, matching this repo's no-wildcard-exhaustiveness house style). If large blast radius, don't do it inline — report the count and let famp-lead-730 decide scope (this phase vs. named follow-up). Queue behind Task 2 landing; do not interrupt the live executor.
+
+After those two: resume the original 17-03 review (own-domain-unset-fails-to-start test, e2e_shipping_surface (a)+(b) fix, then wave 4/17-05).
 
 ## Operator Next Steps
 

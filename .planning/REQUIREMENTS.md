@@ -80,10 +80,10 @@ All four concerns explicitly deferred out of v1.0 as open-internet problems. All
 - [x] **INGR-01**: An envelope whose timestamp falls outside the configured clock-skew window is rejected.
 - [x] **INGR-02**: A bounded, memory-capped replay/nonce cache rejects a replayed envelope. The relationship between cache TTL, the clock-skew window, and the cache size bound is stated as an inequality and **enforced by a test**, not left as a comment.
 - [x] **INGR-03**: Replay-cache behavior across a gateway restart is either durable, or the restart-reopens-the-window interval is explicitly bounded, documented, and tested.
-- [ ] **INGR-04**: An envelope not addressed to this gateway's own domain **and** a principal it actually backs is rejected (audience binding).
+- [x] **INGR-04**: An envelope not addressed to this gateway's own domain **and** a principal it actually backs is rejected (audience binding).
 - [x] **INGR-05**: Check ordering is cheap-before-expensive: size/format/rate checks precede signature verification, and signature verification precedes **any** state mutation. The order is pinned by a test that fails if a later refactor reorders it.
-- [ ] **INGR-06**: Rate limiting is keyed on something an attacker cannot trivially rotate, and the choice of key is justified in a comment tied to this requirement.
-- [ ] **INGR-07**: Request bodies are bounded — an oversized body is rejected without being fully buffered into memory.
+- [x] **INGR-06**: Rate limiting is keyed on something an attacker cannot trivially rotate, and the choice of key is justified in a comment tied to this requirement.
+- [x] **INGR-07**: Request bodies are bounded — an oversized body is rejected without being fully buffered into memory.
 - [x] **INGR-08**: Nonce scoping is **per-sender**, not global, so one peer cannot evict or collide with another peer's nonce entries.
 
 ### Key Revocation (REVK)
@@ -198,10 +198,10 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INGR-01 | Phase 17 | Complete |
 | INGR-02 | Phase 17 | Complete |
 | INGR-03 | Phase 17 | Complete |
-| INGR-04 | Phase 17 | Pending |
+| INGR-04 | Phase 17 | Complete |
 | INGR-05 | Phase 17 | Complete |
-| INGR-06 | Phase 17 | Pending |
-| INGR-07 | Phase 17 | Pending |
+| INGR-06 | Phase 17 | Complete |
+| INGR-07 | Phase 17 | Complete |
 | INGR-08 | Phase 17 | Complete |
 | REVK-01 | Phase 15 | Complete |
 | REVK-02 | Phase 15 | Complete |

@@ -194,13 +194,13 @@ Plans:
   4. An envelope not addressed to this gateway's own domain and a principal it actually backs is rejected (audience binding); check ordering runs cheap-before-expensive (size/format/rate before signature, signature before any state mutation), pinned by a test that fails if a later refactor reorders it.
   5. An oversized request body is rejected without being fully buffered into memory, and nonce scoping is per-sender so one peer cannot evict or collide with another peer's entries.
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 
 - [x] 17-01-PLAN.md — TRACER: ingress guard skeleton + pre-verify freshness gate + the check-order reorder pin (INGR-01, INGR-05)
 - [x] 17-02-PLAN.md — bounded per-sender replay cache, the TTL/skew/size inequality as executable code, restart-window decision (INGR-02, INGR-03, INGR-08)
-- [ ] 17-03-PLAN.md — audience binding pre-verify, non-rotatable rate-limit key, body-cap tests (INGR-04, INGR-06, INGR-07)
+- [x] 17-03-PLAN.md — audience binding pre-verify, non-rotatable rate-limit key, body-cap tests (INGR-04, INGR-06, INGR-07)
 - [x] 17-04-PLAN.md — new `famp-relay` crate: bounded opaque store-and-forward queue, signed-fetch drain authorization against operator-configured pubkeys (REACH-04)
 - [ ] 17-05-PLAN.md — gateway relay-fetch loop through the single ingest core + three-process bidirectional e2e (REACH-04)
 - [x] 17-06-PLAN.md — relay-failure surface: `AckDisposition::Failed` onto the original sender's mailbox (REACH-05)
@@ -288,7 +288,7 @@ Plans:
 | 14. Inbound-Content-Is-DATA Quarantine | v1.1 | 5/5 | In Progress|  |
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 4/4 | In Progress|  |
 | 16. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 0/0 | Not started | - |
-| 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 4/6 | In Progress|  |
+| 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 5/6 | In Progress|  |
 | 18. Human Acceptance Gate | v1.1 | 0/0 | Not started | - |
 | 19. Signed Peer Directory | v1.1 | 0/0 | Not started | - |
 | 20. Push Notification Adapter | v1.1 | 0/0 | Not started | - |
