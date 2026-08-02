@@ -58,14 +58,23 @@ const ONE_MIB: usize = 1_048_576;
 
 /// Shared state for the gateway-owned inbox router.
 ///
-/// `pub(crate)` (not private): Task 1 of Phase 17 plan 01 extracts
-/// [`ingest_inbound`] as `pub(crate)` so plan 05's relay-fetch loop can
-/// call it directly, and that function's signature names this type —
-/// callers in other modules of this crate must be able to name it too.
-/// Never widened to `pub`: this stays an internal wiring detail of
-/// `famp-gateway`, not part of any published API.
+/// `pub` (17-05, escalated from `pub(crate)`): Task 1 of Phase 17 plan 01
+/// extracted [`ingest_inbound`] as `pub(crate)` so a same-crate caller
+/// could reach the single ingest core directly — that stayed true and
+/// [`ingest_inbound`] itself is still never widened beyond `pub(crate)`.
+/// This TYPE, however, must be nameable and constructible from
+/// `main.rs` (the `[[bin]]` target, a separate crate from this lib):
+/// plan 05's `run_relay_fetch` needs a `GatewayIngressState` built from
+/// the EXACT SAME `registry`/`keyring`/`own_domain`/`guard` values
+/// [`run_ingress`]'s router uses — one guard per process (INGR-02/
+/// INGR-06/INGR-08), never a second one privately constructed inside
+/// this module, which would double every replay-cache and rate-limit
+/// budget an attacker could burn by alternating paths. [`new`](GatewayIngressState::new)
+/// is the sole public constructor; the four fields themselves stay
+/// private, so nothing outside this module can read or replace them
+/// individually — only assemble a whole state from already-shared Arcs.
 #[derive(Clone)]
-pub(crate) struct GatewayIngressState {
+pub struct GatewayIngressState {
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
     /// T-11-23/T-11-24/17-03: this host's own-domain federation authority
@@ -84,6 +93,28 @@ pub(crate) struct GatewayIngressState {
     guard: Arc<Mutex<IngressGuard>>,
 }
 
+impl GatewayIngressState {
+    /// Assemble a state from already-shared handles. `main.rs` (17-05)
+    /// calls this directly so its relay-fetch task and its HTTP ingress
+    /// router share the identical `registry`/`keyring`/`own_domain`/
+    /// `guard` Arcs — never two independently-constructed guards for one
+    /// process.
+    #[must_use]
+    pub const fn new(
+        registry: Arc<Mutex<GatewayRegistry>>,
+        keyring: Arc<Keyring>,
+        own_domain: Arc<str>,
+        guard: Arc<Mutex<IngressGuard>>,
+    ) -> Self {
+        Self {
+            registry,
+            keyring,
+            own_domain,
+            guard,
+        }
+    }
+}
+
 /// Build the gateway-owned inbound router.
 ///
 /// Reuses only [`famp_transport_http::INBOX_ROUTE`] (the route string)
@@ -93,17 +124,20 @@ pub(crate) struct GatewayIngressState {
 /// second, forbidden trust source per D-04). [`inbox_handler`] is the
 /// sole verification site, calling [`verify_inbound_any`] against the
 /// gateway's own pinned peers keyring.
+///
+/// Takes `guard` as a parameter (17-05) rather than constructing its own
+/// — [`run_ingress`]'s caller (`main.rs`) builds exactly ONE
+/// `Arc<Mutex<IngressGuard>>` per process and shares it with plan 05's
+/// relay-fetch loop too, so a request admitted/rejected on one ingest
+/// path counts against the SAME replay cache and rate-limit budget as
+/// one on the other (INGR-02/INGR-06/INGR-08).
 pub fn build_gateway_router(
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
     own_domain: Arc<str>,
+    guard: Arc<Mutex<IngressGuard>>,
 ) -> Router {
-    let state = GatewayIngressState {
-        registry,
-        keyring,
-        own_domain,
-        guard: Arc::new(Mutex::new(IngressGuard::new())),
-    };
+    let state = GatewayIngressState::new(registry, keyring, own_domain, guard);
     Router::new()
         .route(INBOX_ROUTE, post(inbox_handler))
         .with_state(state)
@@ -658,6 +692,7 @@ pub async fn run_ingress(
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
     own_domain: Arc<str>,
+    guard: Arc<Mutex<IngressGuard>>,
 ) -> std::io::Result<()> {
     let cert =
         famp_transport_http::tls::load_pem_cert(tls_cert_path).map_err(std::io::Error::other)?;
@@ -669,7 +704,7 @@ pub async fn run_ingress(
     let listener = std::net::TcpListener::bind(listen_addr)?;
     listener.set_nonblocking(true)?;
 
-    let router = build_gateway_router(registry, keyring, own_domain);
+    let router = build_gateway_router(registry, keyring, own_domain, guard);
     let handle = famp_transport_http::tls_server::serve_std_listener(
         listener,
         router,
@@ -760,7 +795,12 @@ mod tests {
     ) -> (Router, Arc<Mutex<GatewayRegistry>>) {
         let registry = Arc::new(Mutex::new(GatewayRegistry::default()));
         (
-            build_gateway_router(registry.clone(), Arc::new(keyring), Arc::from(own_domain)),
+            build_gateway_router(
+                registry.clone(),
+                Arc::new(keyring),
+                Arc::from(own_domain),
+                Arc::new(Mutex::new(IngressGuard::new())),
+            ),
             registry,
         )
     }
@@ -837,8 +877,12 @@ mod tests {
             .await
             .expect("back sender on in-process broker");
         let registry = Arc::new(Mutex::new(registry));
-        let router =
-            build_gateway_router(registry.clone(), Arc::new(keyring), Arc::from(own_domain));
+        let router = build_gateway_router(
+            registry.clone(),
+            Arc::new(keyring),
+            Arc::from(own_domain),
+            Arc::new(Mutex::new(IngressGuard::new())),
+        );
         (router, registry, broker)
     }
 

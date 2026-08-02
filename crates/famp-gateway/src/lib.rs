@@ -51,6 +51,7 @@ pub mod ingress;
 pub mod ingress_guard;
 pub mod principal;
 pub mod registry;
+pub mod relay_fetch;
 pub mod verify;
 
 pub use clock::now_canonical_utc;

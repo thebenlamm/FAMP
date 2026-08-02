@@ -55,6 +55,7 @@ use famp::{AuthorityScope, FampSigningKey, MessageId, Principal, Timestamp, Unsi
 use famp_bus::{BusMessage, BusReply};
 use famp_envelope::body::ack::{AckBody, AckDisposition};
 use famp_gateway::ingress::build_gateway_router;
+use famp_gateway::ingress_guard::IngressGuard;
 use famp_gateway::GatewayRegistry;
 use famp_keyring::Keyring;
 use tokio::sync::Mutex;
@@ -242,6 +243,7 @@ async fn build_harness(own_domain: &str, sk: &FampSigningKey) -> Harness {
         Arc::new(Mutex::new(registry)),
         Arc::new(keyring),
         Arc::from(own_domain),
+        Arc::new(Mutex::new(IngressGuard::new())),
     );
 
     Harness {

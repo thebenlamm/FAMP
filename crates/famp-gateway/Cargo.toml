@@ -19,15 +19,31 @@ famp-envelope       = { path = "../famp-envelope", version = "1.0.0" }
 famp-crypto         = { path = "../famp-crypto", version = "1.0.0" }
 famp-transport      = { path = "../famp-transport", version = "1.0.0" }
 famp-transport-http = { path = "../famp-transport-http", version = "1.0.0" }
+# 17-05/D-26: famp-relay is the SOLE source of truth for the relay-fetch
+# wire contract this crate's relay_fetch.rs client consumes (the fetch
+# route, the four x-famp-relay-* header names, the signed authorization
+# form, and normalize_audience) -- retyping any of them here instead of
+# importing them is exactly how the client and the relay would drift.
+famp-relay          = { path = "../famp-relay", version = "1.0.0" }
 tokio      = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
 thiserror  = { workspace = true }
+serde      = { workspace = true }
 serde_json = { workspace = true }
 uuid       = { workspace = true }
+base64     = { workspace = true }
 axum       = "0.8"
 tower      = "0.5"
 tower-http = { version = "0.6", features = ["limit"] }
 url        = "2"
 time       = { version = "0.3", features = ["formatting", "parsing"] }
+# 17-05: relay_fetch.rs's own HTTPS client -- famp_transport_http::HttpTransport
+# has no raw-GET-with-custom-headers surface (its Transport::send is a fixed
+# inbox POST), so this loop builds its own reqwest::Client via the SAME
+# famp_transport_http::tls::build_client_config construction HttpTransport
+# uses internally, rather than a second TLS stack. Feature set matches
+# famp-transport-http's own reqwest entry exactly (rustls-no-provider): the
+# preconfigured rustls ClientConfig supplies the crypto provider.
+reqwest    = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"
