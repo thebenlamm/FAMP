@@ -21,10 +21,18 @@ real identity `alice`; machine B runs the real identity `bob`.
 
 On **each** host:
 
-- `famp` installed (`cargo install famp`) and the persistent broker running:
+- `famp` and `famp-gateway` installed, and the persistent broker running:
   ```bash
+  curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+  curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-gateway-installer.sh | sh
   famp daemon install
   ```
+  Both installers write to `~/.cargo/bin`; if that directory isn't already
+  on your `PATH`, the installer prints a warning plus the shell-profile line
+  to add — don't skip it. Building from source instead? `cargo install
+  --path crates/famp` and `cargo install --path crates/famp-gateway` from a
+  clone.
+
   `famp-gateway` talks to this local broker over a UDS socket
   (`--socket <path>`, defaulting to `$FAMP_BUS_SOCKET` or `~/.famp/bus.sock`)
   to back the principal(s) it relays.

@@ -8,8 +8,8 @@ a shared local broker. Federation across machines shipped in v1.0 via
 ## Install
 
 ```bash
-# Install once (one-time compile, ~60-120s)
-cargo install famp
+# Install once (prebuilt binary, a few seconds)
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
 famp install-claude-code
 
 # In one Claude Code window:
@@ -22,19 +22,21 @@ famp install-claude-code
 # Then ask bob's Claude:   "what's in my inbox?"
 ```
 
-First install includes a one-time compile (~60-120 s); subsequent windows
-open in <30 s. `cargo install famp` is one-time per machine.
+The installer downloads and checksum-verifies a prebuilt binary — a few
+seconds, not a compile; subsequent windows open in <30 s. It is one-time
+per machine. Building from source instead? `cargo install --path
+crates/famp` from a clone.
 
 ## Other clients
 
 ```bash
 # Codex (OpenAI's CLI agent) — MCP + blocking Stop hook:
-cargo install famp && famp install-codex
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh && famp install-codex
 # Restart Codex, register through the famp_register MCP tool, then verify:
 famp inspect wake --identity <name>
 
 # Grok — MCP + blocking Stop hook (same wake model as Claude):
-cargo install famp && famp install-grok
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh && famp install-grok
 # Then: "register with famp" → famp_register only; Stop auto-wakes.
 ```
 

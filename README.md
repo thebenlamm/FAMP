@@ -105,9 +105,66 @@ the shipped `famp-gateway`.
   `rust-toolchain.toml`) — `just ci`, `just lint`, and the pre-push git hook
   all require them, so expect that extra download on a fresh/offline install.
 
-## Build from Source (contributors)
+## Install (prebuilt binary — recommended)
 
-If you are contributing to FAMP or want to build the binary from a local clone:
+Download and run the installer for the `famp` client:
+
+```bash
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+```
+
+If you also need the federation gateway binary (see
+[docs/GATEWAY-SETUP.md](docs/GATEWAY-SETUP.md)), install `famp-gateway` the
+same way:
+
+```bash
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-gateway-installer.sh | sh
+```
+
+Both installers write to `~/.cargo/bin` — the same directory `just install`
+uses, so which `famp`/`famp-gateway` binary ends up on your `PATH` stays
+unambiguous whether you installed from a release or from source.
+
+**Read the PATH warning.** If `~/.cargo/bin` isn't already on your `PATH`,
+the installer prints a warning plus the exact shell-profile line to add.
+Do not skip it — "installed successfully but command not found" is the
+single most common failure for this class of installer.
+
+**Pin a specific version** by substituting a release tag for `latest`:
+
+```bash
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/download/<tag>/famp-installer.sh | sh
+```
+
+**Review before running.** The installer is a plain shell script — fetch it
+to a file and read it before executing, if you'd rather not pipe straight
+into `sh`:
+
+```bash
+curl -fsSL -o famp-installer.sh https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh
+less famp-installer.sh   # read it
+sh famp-installer.sh
+```
+
+**What the checksum does and does not prove.** The installer downloads a
+`.sha256` checksum alongside the release archive and verifies the
+downloaded bytes match before installing anything. This verifies the
+download completed correctly and matches what the release workflow
+produced — it does not, by itself, prove the release workflow was not
+compromised. An attacker who could substitute the release archive could
+substitute the checksum file beside it. Artifact signing (minisign / cosign
+/ Sigstore) is a recorded follow-up that would close that gap; it has not
+shipped.
+
+**Supported platforms.** Prebuilt binaries ship for macOS (arm64 and
+x86_64) and Linux x86_64 (glibc 2.35 or newer — the floor set by the
+pinned `ubuntu-22.04` build image). Linux aarch64 is a named follow-up, not
+shipped today — there is no `aarch64-unknown-linux-*` archive on the
+release, so don't expect the installer to find one on that platform.
+
+## Build from Source (fallback — contributors, and platforms the prebuilt binaries don't cover)
+
+For contributors, or for a platform the prebuilt binaries above don't cover, build from a local clone:
 
 ```bash
 # 1. Install rustup (skip if already installed)
@@ -147,6 +204,12 @@ famp daemon restart
 
 famp --version
 ```
+
+**If you installed via the prebuilt binary installer instead of from
+source,** re-run the same curl command from
+[Install (prebuilt binary)](#install-prebuilt-binary--recommended) in place
+of `git pull` + `cargo install --path`, then run `famp daemon restart` the
+same way — the installer does not restart the daemon for you.
 
 Then restart any open Claude Code windows — they pick up the new binary on next launch. A client that hits a not-yet-restarted long-lived daemon gets a version-skew (ProtocolMismatch) error telling it to run `famp daemon restart` (VER-01).
 
@@ -188,8 +251,8 @@ removed v0.8 federation CLI, see
 # 1. Install Rust (skip if already installed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 source "$HOME/.cargo/env"
-# 2. Install famp (~60-120s first-run compile)
-cargo install famp
+# 2. Install famp (prebuilt binary, a few seconds)
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
 # 3. Install the persistent broker — run ONCE from a normal (unsandboxed) shell.
 famp daemon install
 # 4. Wire each tool's MCP integration:
@@ -199,7 +262,7 @@ famp install-codex
 # In another (Claude Code or Codex): register as bob — then ask alice to message bob.
 ```
 
-> First install includes a one-time compile (~60-120 s); subsequent windows: <30 s.
+> The installer downloads a prebuilt binary (a few seconds, not a compile); subsequent windows: <30 s.
 
 `famp daemon install` is the one command that ends broker-babysitting: it
 installs a persistent user-level broker (launchd on macOS, systemd `--user` on

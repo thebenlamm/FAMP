@@ -46,11 +46,16 @@ fn readme_quick_start_fence_is_at_most_12_lines() {
         "README Quick Start fence has {line_count} lines (CC-09 cap: 12)\n--- fence body ---\n{fence_body}\n--- end ---"
     );
 
-    // Sanity: the block must mention `cargo install famp` (D-11 amendment from
-    // `brew install famp`) and `famp install-claude-code`.
+    // Sanity: the block must mention the prebuilt-binary installer (D-01/16-04
+    // amendment from `cargo install famp`, which resolves against crates.io
+    // where this project's crate was never published — see D-11 below for
+    // the earlier `brew install famp` -> `cargo install famp` amendment this
+    // one supersedes) and `famp install-claude-code`.
     assert!(
-        fence_body.contains("cargo install famp"),
-        "Quick Start must include `cargo install famp` (D-11)\nactual:\n{fence_body}"
+        fence_body.contains("releases/latest/download/famp-installer.sh"),
+        "Quick Start must include the prebuilt-binary curl installer \
+         (D-01/16-04; `cargo install famp` is broken — famp is not on \
+         crates.io)\nactual:\n{fence_body}"
     );
     assert!(
         fence_body.contains("famp install-claude-code"),
