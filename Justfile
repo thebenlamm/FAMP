@@ -140,13 +140,13 @@ check-shellcheck:
         shellcheck "$s"
     done
 
-# T-16-06: regenerate every dist-derived file (release.yml + the three
-# installer fixtures) from dist-workspace.toml and assert no drift. Requires
-# `dist` on PATH — never no-ops silently if it's missing (T-16-07). NOT a
-# member of `just ci` (see the `ci:` recipe below): dist is a CI/release
-# tool, not a baseline local dependency, and this recipe mutates the working
-# tree (release.yml + installer fixtures) as part of its check. Wired into
-# CI instead via .github/workflows/release-gate.yml.
+# T-16-06: regenerate every dist-derived file (release.yml + the installer
+# fixtures) from dist-workspace.toml and assert no drift. Requires `dist` on
+# PATH — never no-ops silently if it's missing (T-16-07). NOT a member of
+# `just ci` (see the `ci:` recipe below): dist is a CI/release tool, not a
+# baseline local dependency, and this recipe mutates the working tree
+# (release.yml + installer fixtures) as part of its check. Wired into CI
+# instead via .github/workflows/release-gate.yml.
 check-installer-drift:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -170,14 +170,41 @@ check-installer-drift:
         echo "ERROR: could not parse [workspace.package].version from Cargo.toml -- refusing to run the drift check against an empty tag." >&2
         exit 1
     fi
+    # Assert dist-workspace.toml still declares checksum verification. Nothing
+    # else asserts this, so silently dropping checksum="sha256" would disable
+    # real checksums with zero signal. Fail closed if absent.
+    if ! grep -q 'checksum = "sha256"' dist-workspace.toml; then
+        echo "ERROR: dist-workspace.toml missing checksum = \"sha256\" -- refuse to generate fixtures without checksum verification" >&2
+        exit 1
+    fi
+    # Use mktemp instead of a fixed /tmp path to avoid collisions on shared
+    # hosts and symlink-based attacks in concurrent runs.
+    DIST_OUTPUT=$(mktemp)
+    trap "rm -f \"$DIST_OUTPUT\"" EXIT
     echo "-- dist build --artifacts=global --tag=v${WORKSPACE_VERSION} (regenerate installer fixtures) --"
-    dist build --artifacts=global --tag="v${WORKSPACE_VERSION}" --output-format=json > /tmp/famp-dist-build-drift.json
-    cp target/distrib/famp-installer.sh crates/famp/tests/fixtures/installers/famp-installer.sh
-    cp target/distrib/famp-gateway-installer.sh crates/famp/tests/fixtures/installers/famp-gateway-installer.sh
-    cp target/distrib/famp-relay-installer.sh crates/famp/tests/fixtures/installers/famp-relay-installer.sh
-    echo "-- asserting no drift against the committed tree --"
+    dist build --artifacts=global --tag="v${WORKSPACE_VERSION}" --output-format=json > "$DIST_OUTPUT"
+    # Copy every *-installer.sh that dist generates. An explicit three-file
+    # list silently stops covering anything added later, the same failure mode
+    # that check-shellcheck already fixed with a glob. Fail closed if the glob
+    # matches zero files — that would mean the generation step produced nothing.
+    shopt -s nullglob
+    installers=(target/distrib/*-installer.sh)
+    if [ ${#installers[@]} -eq 0 ]; then
+        echo "ERROR: no installers found in target/distrib/ -- dist build produced nothing" >&2
+        exit 1
+    fi
+    for installer in "${installers[@]}"; do
+        filename=$(basename "$installer")
+        echo "  copying $filename"
+        cp "$installer" "crates/famp/tests/fixtures/installers/$filename"
+    done
+    echo "-- asserting no drift against the committed tree (staged + unstaged) --"
+    # git diff --exit-code without --cached only sees unstaged changes; staged
+    # but uncommitted drift passes silently. Check both staged and unstaged to
+    # catch the full drift surface.
     git diff --exit-code -- dist-workspace.toml .github/workflows/release.yml crates/famp/tests/fixtures/installers
-    echo "✓ no drift: release.yml and installer fixtures match dist-workspace.toml"
+    git diff --cached --exit-code -- dist-workspace.toml .github/workflows/release.yml crates/famp/tests/fixtures/installers
+    echo "✓ no drift: release.yml and globally-generated installer fixtures match dist-workspace.toml"
 
 # Run the FAMP v0.5.1 spec anchor lint (ripgrep-based; see scripts/spec-lint.sh).
 spec-lint:
