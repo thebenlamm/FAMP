@@ -31,12 +31,16 @@ crates/famp` from a clone.
 
 ```bash
 # Codex (OpenAI's CLI agent) — MCP + blocking Stop hook:
-curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh && famp install-codex
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+# If ~/.cargo/bin is not yet on your PATH, update it now (the installer prints the exact line to add)
+famp install-codex
 # Restart Codex, register through the famp_register MCP tool, then verify:
 famp inspect wake --identity <name>
 
 # Grok — MCP + blocking Stop hook (same wake model as Claude):
-curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh && famp install-grok
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+# If ~/.cargo/bin is not yet on your PATH, update it now (the installer prints the exact line to add)
+famp install-grok
 # Then: "register with famp" → famp_register only; Stop auto-wakes.
 ```
 
