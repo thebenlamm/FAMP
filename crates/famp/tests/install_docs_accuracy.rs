@@ -29,8 +29,14 @@
 
 use std::path::PathBuf;
 
-/// The prebuilt-binary installer URL every onboarding doc must lead with.
-const INSTALLER_URL: &str = "releases/latest/download/famp-installer.sh";
+/// The prebuilt-binary installer URL patterns every onboarding doc must lead
+/// with. Accepts both the `/releases/latest/download/...` form (used when a
+/// stable non-prerelease exists) and the `/releases/download/<tag>/...` form
+/// (used when pointing at a specific release while only prerelease versions
+/// are published). The invariant is that docs lead with a prebuilt-binary
+/// installer URL, not which alias is used.
+const INSTALLER_URL_LATEST: &str = "releases/latest/download/famp-installer.sh";
+const INSTALLER_URL_PATTERN: &str = "releases/download/"; // also accepts tag-pinned URLs
 
 /// The exact D-06 locked sentence. `checksum_security_claim_matches_the_locked_wording`
 /// asserts every mention of the *outcome clause* below is exactly this
@@ -99,11 +105,27 @@ fn binary_install_path_leads_every_onboarding_doc() {
     for doc in ONBOARDING_DOCS {
         let text = read_doc(doc);
 
-        let installer_idx = text.find(INSTALLER_URL).unwrap_or_else(|| {
+        // Accept either /releases/latest/download/ form or /releases/download/<tag>/
+        // form (tag-pinned URL), as long as famp-installer.sh is referenced somewhere
+        // after the releases/download pattern. Both forms satisfy the invariant that
+        // docs lead with a prebuilt-binary installer URL.
+        let latest_idx = text.find(INSTALLER_URL_LATEST);
+        let pattern_idx = text
+            .find(INSTALLER_URL_PATTERN)
+            .filter(|&idx| text[idx..].contains("famp-installer.sh"));
+
+        let installer_idx = match (latest_idx, pattern_idx) {
+            (Some(l), Some(p)) => Some(std::cmp::min(l, p)),
+            (Some(l), None) => Some(l),
+            (None, Some(p)) => Some(p),
+            (None, None) => None,
+        }
+        .unwrap_or_else(|| {
             panic!(
-                "update the doc or the pipeline: {} is missing the prebuilt-binary \
-                 installer URL ({INSTALLER_URL}) -- DIST-04 requires it to lead every \
-                 onboarding doc",
+                "update the doc or the pipeline: {} is missing a prebuilt-binary \
+                 installer URL (either /releases/latest/download/famp-installer.sh or \
+                 /releases/download/<tag>/famp-installer.sh) -- DIST-04 requires it to \
+                 lead every onboarding doc",
                 doc.label
             )
         });
@@ -144,14 +166,31 @@ fn binary_install_path_leads_every_onboarding_doc() {
 fn from_source_fallback_command_is_a_working_form() {
     // Every from-source install of this project's own crate(s) must carry
     // --path or --git. Scan for "cargo install ... famp[-gateway]"
-    // mentions (lazily, so an earlier occurrence doesn't swallow a later
-    // one) and require --path/--git to appear within that same mention.
-    let re = regex::Regex::new(r"cargo install[^\n]*?\bfamp(?:-gateway)?\b")
+    // mentions and require --path/--git to appear within that same mention.
+    // Normalize whitespace (collapse runs of whitespace including newlines to
+    // single spaces) before matching, the way checksum_security_claim_matches_the_locked_wording
+    // already does. Use [^|\n]* to match any characters except pipes (table
+    // delimiters) and newlines, preventing cross-table-cell matches.
+    let re = regex::Regex::new(r"cargo install[^|\n]*?\bfamp(?:-gateway)?\b")
         .expect("from-source-command regex must compile");
 
-    for doc in ONBOARDING_DOCS {
+    // Expected match counts per doc, counting only "cargo install ... famp"
+    // commands (not stray "cargo install" for other tools). Used as a
+    // regression guard: if this doc gains or loses a from-source install
+    // command, the test fails and you must recount and update these values.
+    let expected_counts = [
+        ("README.md", 4),
+        ("docs/GETTING-STARTED.md", 1),
+        ("docs/GATEWAY-SETUP.md", 2),
+        ("docs/ONBOARDING.md", 1),
+    ];
+
+    for (i, doc) in ONBOARDING_DOCS.iter().enumerate() {
         let text = read_doc(doc);
-        for m in re.find_iter(&text) {
+        let normalized = normalize(&text);
+        let mut match_count = 0;
+        for m in re.find_iter(&normalized) {
+            match_count += 1;
             let cmd = m.as_str();
             assert!(
                 cmd.contains("--path") || cmd.contains("--git"),
@@ -161,6 +200,19 @@ fn from_source_fallback_command_is_a_working_form() {
                 doc.label
             );
         }
+
+        // Guard against future regressions: verify the regex still matches
+        // all intended "cargo install ... famp" commands after normalization
+        // fixes multi-line handling (D-1 deliverable: a gate that can detect
+        // its own blind spot).
+        let (_, expected_count) = expected_counts[i];
+        assert_eq!(
+            match_count, expected_count,
+            "update the doc or the test: {} regex matched {match_count} \
+             'cargo install ... famp' command(s), expected {expected_count} -- this \
+             likely indicates a regression in multi-line command handling (D-1)",
+            doc.label
+        );
     }
 
     // The point of this test: the exact fallback string documented in
