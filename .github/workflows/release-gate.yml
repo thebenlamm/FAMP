@@ -8,6 +8,11 @@
 # (repo convention, stated in asset-gate.yml's own header) — and covers
 # the exact commit shapes that could introduce that drift, or a second
 # producer of release assets (DIST-05).
+#
+# NOTE: The paths list is itself a decay vector. A new .github/workflows/**
+# file that produces release assets, a version bump without a Cargo.toml
+# change, or a new scripts/*.sh file could all proceed without this gate
+# firing. Each path entry is load-bearing — coverage gaps == failure modes.
 name: release-gate
 
 on:
@@ -15,20 +20,22 @@ on:
     branches: ["**"]
     paths:
       - "dist-workspace.toml"
-      - ".github/workflows/release.yml"
+      - ".github/workflows/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "crates/famp/tests/fixtures/installers/**"
-      - "scripts/release-artifact-source-gate.sh"
+      - "scripts/**"
       - "Justfile"
-      - ".github/workflows/release-gate.yml"
   pull_request:
     branches: ["**"]
     paths:
       - "dist-workspace.toml"
-      - ".github/workflows/release.yml"
+      - ".github/workflows/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "crates/famp/tests/fixtures/installers/**"
-      - "scripts/release-artifact-source-gate.sh"
+      - "scripts/**"
       - "Justfile"
-      - ".github/workflows/release-gate.yml"
 
 concurrency:
   group: release-gate-${{ github.ref }}
@@ -47,18 +54,12 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: just
+      - name: Install shellcheck 0.11.0 (pinned via taiki-e action)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: shellcheck@0.11.0
       - name: Install dist 0.32.0 (not in taiki-e/install-action's tool set)
         run: cargo install cargo-dist --version 0.32.0 --locked
-      # Pinned to 0.11.0: apt's distro-shipped shellcheck flags SC2015 on
-      # crates/famp/assets/hook-runner.sh where 0.11.0 does not — this pins
-      # CI to the version local contributors actually run, not whatever
-      # ubuntu-latest's apt repo happens to carry.
-      - name: Install shellcheck 0.11.0 (pinned)
-        run: |
-          curl -sSfL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz \
-            | tar -xJ
-          sudo mv shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
-          shellcheck --version
       - name: DIST-05 sole-producer gate
         run: just check-release-artifact-source
       - name: Shellcheck the hook assets + installer fixtures
