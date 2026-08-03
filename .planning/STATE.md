@@ -5,15 +5,15 @@ milestone_name: Open-Internet Federation
 current_phase: 16
 current_phase_name: distribution
 status: executing
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-08-03T04:16:02.557Z"
+stopped_at: Completed 16-04-PLAN.md
+last_updated: "2026-08-03T05:19:18.338Z"
 last_activity: 2026-08-02
 last_activity_desc: Phase 16 execution started
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 20
-  completed_plans: 17
+  completed_plans: 19
   percent: 60
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 16 (distribution) — EXECUTING
-Plan: 3 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-08-02 — Phase 16 execution started
 
@@ -227,6 +227,8 @@ Last activity: 2026-08-02 — Phase 16 execution started
 - [Phase ?]: 16-02: drift gate reads dist-workspace.toml (not Cargo.toml), per 16-01's real-tool-output finding
 - [Phase ?]: 16-02: check-installer-drift excluded from just ci (needs dist on PATH); wired into CI only via release-gate.yml
 - [Phase ?]: 16-02: release-gate.yml pins shellcheck to the official 0.11.0 binary (not apt) — apt's version flagged SC2015 on pre-existing hook-runner.sh, first time check-shellcheck ever ran in GitHub Actions
+- [Phase ?]: 16-04: replaced cargo install famp (never published to crates.io) with the dist curl installer across all four onboarding docs; from-source fallback is now cargo install --path, cross-checked against smoke-test.yml
+- [Phase ?]: 16-04: docs/DISTRIBUTION.md's checksum claim tightened to D-06's exact locked wording; install_docs_accuracy.rs mechanically forbids any paraphrase or overclaim (authenticity/provenance/publisher identity)
 
 ## Issues / Blockers
 
@@ -386,11 +388,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 17 P05 | ~5h | 2 tasks | 7 files |
 | Phase 16 P01 | 27min | 2 tasks | 8 files |
 | Phase 16 P02 | 30min | 3 tasks | 3 files |
+| Phase 16 P04 | 35min | 3 tasks | 8 files |
 
 ## Session
 
-**Last session:** 2026-08-03T04:16:02.540Z
-**Stopped At:** Completed 16-02-PLAN.md
+**Last session:** 2026-08-03T05:19:18.316Z
+**Stopped At:** Completed 16-04-PLAN.md
 **Resume File:** None
 
 **HANDOFF STATE — read before doing anything:**

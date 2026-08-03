@@ -180,14 +180,14 @@ Plans:
   3. Published artifacts carry checksums, verified by the installer before installing — a corrupted or substituted artifact fails closed. Docs state the honest boundary: checksums prove the download matches what the release workflow produced; they do not prove the workflow itself was uncompromised. Artifact signing is a named follow-up, not this phase.
   4. Onboarding docs lead with the binary install path; a **working** from-source command remains documented only as the fallback. (Corrected 2026-08-02: the original wording named `cargo install famp`, which has never worked — `famp` was never published to crates.io, and six doc sites tell users to run it. Publishing to crates.io was considered and explicitly rejected; the docs move to the `--path`/`--git` form.)
 
-**Plans:** 2/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 
 - [x] 16-01-PLAN.md — TRACER: settle D-08 from a real arm64-macOS build log, then adopt `dist` 0.32 and generate the tag-triggered pipeline for 3 binaries × 3 pinned targets (DIST-01, DIST-03, DIST-05)
 - [x] 16-02-PLAN.md — release-pipeline gates: `dist` drift check, the DIST-05 sole-producer structural gate, installer shellcheck, all wired into an additive `release-gate` workflow (DIST-01, DIST-05)
-- [ ] 16-03-PLAN.md — DIST-03 falsification pair: the installer fails closed on a corrupted artifact, proven discriminating by a checksum-stripped-installer inversion (DIST-03)
-- [ ] 16-04-PLAN.md — docs lead with the binary path, every from-source command actually works, D-06's claim boundary locked, all gated by a compiled doc-accuracy test on the `paths-ignore`d docs commit shape (DIST-02, DIST-04)
+- [x] 16-03-PLAN.md — DIST-03 falsification pair: the installer fails closed on a corrupted artifact, proven discriminating by a checksum-stripped-installer inversion (DIST-03)
+- [x] 16-04-PLAN.md — docs lead with the binary path, every from-source command actually works, D-06's claim boundary locked, all gated by a compiled doc-accuracy test on the `paths-ignore`d docs commit shape (DIST-02, DIST-04)
 - [ ] 16-05-PLAN.md — no-Rust container install gate, version bump, and the human-gated pre-release tag that proves DIST-01/02 by published artifacts rather than dry runs (DIST-01, DIST-02, DIST-05)
 
 **Waves:** W1 = 16-01 · W2 = 16-02, 16-03, 16-04 (no file overlap) · W3 = 16-05
@@ -319,7 +319,7 @@ Plans:
 | 13. Public Reachability Decision (Spike) | v1.1 | 1/1 decision record | Complete | 2026-08-02 |
 | 14. Inbound-Content-Is-DATA Quarantine | v1.1 | 5/5 | In Progress|  |
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 4/4 | In Progress|  |
-| 16. Distribution | v1.1 | 2/5 | In Progress|  |
+| 16. Distribution | v1.1 | 4/5 | In Progress|  |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 6/6 | In Progress|  |
 | 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 0/0 | Not started | - |
 | 19. Auto-Wake Gate | v1.1 | 0/0 | Not started | - |

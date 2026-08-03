@@ -138,9 +138,9 @@ Promoted from dormant. A stranger's agent waking reliably on inbound messages is
 Today's only install path is `cargo install famp` — install rustup, then compile 15 crates. Phase 19 (Human Acceptance Gate)'s DOC-07 requires validating the setup guide on a fresh machine with no prior FAMP state; a fresh machine has no Rust toolchain either, so distribution must ship before that gate is reachable.
 
 - [x] **DIST-01**: A tagged release publishes prebuilt binaries for macOS arm64, macOS x86_64, and Linux x86_64 as downloadable release artifacts. **Binary set: `famp`, `famp-gateway`, and `famp-relay`** — widened 2026-08-02 (Ben-approved) from the original "`famp` binaries" wording, which was a requirement-text gap: `famp-gateway` is a separate `[[bin]]` target that `docs/GATEWAY-SETUP.md` requires on `PATH`, so shipping only `famp` would leave Phase 20's second person unable to federate — the exact gap this phase exists to close. `famp-relay` is a third bin target and is near-free once the matrix exists. See `.planning/phases/16-distribution/16-CONTEXT.md` D-02.
-- [ ] **DIST-02**: A single documented command installs a working `famp` on a machine with **no Rust toolchain**, proven on a clean environment with no prior FAMP state.
+- [x] **DIST-02**: A single documented command installs a working `famp` on a machine with **no Rust toolchain**, proven on a clean environment with no prior FAMP state.
 - [x] **DIST-03**: Published artifacts carry checksums, and the installer **verifies** them before installing — a corrupted or substituted artifact fails closed.
-- [ ] **DIST-04**: The onboarding docs **lead with** the binary install path; a **working** from-source command remains documented only as the fallback. Corrected 2026-08-02 (Ben-approved): this requirement originally named `cargo install famp`, which presumed that command works. It does not — `famp` was never published to crates.io (VERIFIED twice against the crates.io API), yet six doc sites instruct users to run it (`README.md:192`, `docs/GETTING-STARTED.md:43`, `docs/GATEWAY-SETUP.md:24`, `docs/ONBOARDING.md:12,26,32,37`). The fallback becomes the `--path`/`--git` from-source form and crates.io publication is explicitly NOT undertaken. See `.planning/phases/16-distribution/16-CONTEXT.md` D-01.
+- [x] **DIST-04**: The onboarding docs **lead with** the binary install path; a **working** from-source command remains documented only as the fallback. Corrected 2026-08-02 (Ben-approved): this requirement originally named `cargo install famp`, which presumed that command works. It does not — `famp` was never published to crates.io (VERIFIED twice against the crates.io API), yet six doc sites instruct users to run it (`README.md:192`, `docs/GETTING-STARTED.md:43`, `docs/GATEWAY-SETUP.md:24`, `docs/ONBOARDING.md:12,26,32,37`). The fallback becomes the `--path`/`--git` from-source form and crates.io publication is explicitly NOT undertaken. See `.planning/phases/16-distribution/16-CONTEXT.md` D-01.
 - [x] **DIST-05**: Release artifacts are produced **only** by the tag-triggered workflow — no hand-built or manually uploaded binaries.
 
 ### Documentation & Acceptance (DOC / UAT)
@@ -249,9 +249,9 @@ Which phases cover which requirements. Populated during roadmap creation.
 | WATCH-04 | Phase 21 | Pending |
 | WATCH-05 | Phase 21 | Pending |
 | DIST-01 | Phase 16 | Complete |
-| DIST-02 | Phase 16 | Pending |
+| DIST-02 | Phase 16 | Complete |
 | DIST-03 | Phase 16 | Complete |
-| DIST-04 | Phase 16 | Pending |
+| DIST-04 | Phase 16 | Complete |
 | DIST-05 | Phase 16 | Complete |
 | DOC-06 | Phase 20 | Pending |
 | DOC-07 | Phase 20 | Pending |
