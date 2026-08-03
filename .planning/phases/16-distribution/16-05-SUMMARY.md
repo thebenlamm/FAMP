@@ -69,11 +69,17 @@ coverage:
         ref: ".github/workflows/install-gate.yml — debian:stable-slim container, no cargo/rustc (asserted), run 30823153868"
         status: pass
   - id: D3
-    description: "The same install path works on real macOS without triggering a Gatekeeper unidentified-developer prompt"
-    requirement: "DIST-02"
+    description: "The same install path works on real macOS without triggering a Gatekeeper unidentified-developer prompt; checksums verified, fail closed"
+    requirement: "DIST-02 + DIST-03"
     verification:
+      - kind: e2e
+        ref: "crates/famp/tests/installer_checksum_gate.rs — fixture tests prove the committed installer rejects a corrupted archive (checksum mismatch) and fails CLOSED (no installation), and that the same corrupted artifact IS accepted once the checksum verification call is removed, proving rejection is load-bearing on the verify_checksum code path"
+        status: pass
       - kind: manual_procedural
         ref: "Task 5 human-verify, 2026-08-03 — which famp -> ~/.cargo/bin/famp; famp --version -> 1.1.0-rc.1; no com.apple.quarantine attribute; installed SHA differs from the pre-install local build, confirming the released artifact actually replaced it"
+        status: pass
+      - kind: note
+        ref: "The checksum tests are run against the committed fixture (built with `dist build --artifacts=global`), which differs from the shipped installer: glibc floor 2.31 vs published 2.35, 1 embedded checksum vs published 4. The test proves the mechanism (fail-closed verification) works as coded, not that the exact shipped bytes match the committed fixtures."
         status: pass
   - id: D4
     description: "Only the tag-triggered workflow produces release artifacts — no hand-built or hand-uploaded asset"
@@ -122,6 +128,12 @@ Release: https://github.com/thebenlamm/FAMP/releases/tag/v1.1.0-rc.1
 Release", turning 16-02's release-gate red for a reason unrelated to drift. Now derives
 the tag from `[workspace.package].version` and fails closed if it cannot be parsed — an
 empty tag must never degrade into a silent pass.
+
+**Note:** `check-installer-drift` compares the committed fixture (from `dist build --artifacts=global`,
+which builds no real targets) against itself at the new version. It does NOT prove the shipped installer
+fixtures match the committed fixtures — that comparison is limited by the fixture's own constraints
+(glibc floor 2.31 vs the published 2.35, 1 embedded checksum vs the published 4). See DIST-03 coverage
+entry below.
 
 **`install-gate` asserted `famp-gateway --version`.** That flag does not exist;
 `famp-gateway` is a daemon requiring `--listen` and exits non-zero without args. This

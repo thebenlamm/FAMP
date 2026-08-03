@@ -163,7 +163,7 @@ separate decision to retag if the "Pre-release." label matters going forward.
 |---|---|---|---|
 | 1 | DIST-01/05 — tagged release publishes prebuilt binaries, sole tag-triggered producer | VERIFIED (unchanged, not re-verified this pass) | Carried forward from prior pass; nothing in this change touches it. |
 | 2 | DIST-02 — single documented command installs with no Rust toolchain | VERIFIED (unchanged, not re-verified this pass) | Carried forward from prior pass. |
-| 3 | DIST-03 — checksums verified, fail closed | VERIFIED (unchanged, not re-verified this pass) | Carried forward from prior pass. |
+| 3 | DIST-03 — checksums verified, fail closed | VERIFIED (unchanged, not re-verified this pass) | Carried forward from prior pass. Tests were run against the committed fixture (built with `dist build --artifacts=global`), which differs from the shipped installer in glibc floor and embedded checksum count. The test proves the fail-closed mechanism works, not that the exact shipped bytes match the committed fixtures. |
 | 4 | DIST-04 — onboarding docs lead with a *working* binary install path | **VERIFIED (gap closed)** | All 10 documented `/latest/download/` URLs return live HTTP 200 (curl re-run above); the one tag-pinned occurrence still 302→200; a new fail-closed, CI-wired gate (`check-doc-release-urls.sh`) proven discriminating via live injected-failure test, preventing regression. `install_docs_accuracy.rs` re-run: 3/3 pass, no regression. |
 
 **Score:** 4/4 roadmap truths verified.
@@ -181,6 +181,15 @@ miss).
 One informational, non-blocking finding is disclosed above (stale "Pre-release." text
 in the immutable git tag annotation, now inconsistent with the Release's `prerelease`
 flag) — a developer judgment call, not a re-opened gap.
+
+## Post-Verification Audit
+
+After phase completion, a two-reviewer independent audit identified 8 P0–P2 findings
+across security, false claims, gate coverage, and records accuracy — all cataloged
+without fixes applied at time of audit. See
+[`.planning/reviews/16-POST-SESSION-REVIEW.md`](../../reviews/16-POST-SESSION-REVIEW.md)
+for the full finding catalog. Phase requirements were met; findings address overstated
+evidence and design opportunities rather than requirement gaps.
 
 ---
 
