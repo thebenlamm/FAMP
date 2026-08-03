@@ -1,0 +1,21 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell"]
+# Target platforms to build apps for (Rust target-triple syntax)
+# Tracer (16-01 Task 1): x86_64-apple-darwin only, the riskiest triple per D-08.
+# Task 2 widens this to the full 3-target matrix once the tracer is proven end to end.
+targets = ["x86_64-apple-darwin"]
+# Path that installers should place binaries in (D-07: same target `just install` uses, ~/.cargo/bin)
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
+# Checksum algorithm for release artifacts (T-16-01 / DIST-03)
+checksum = "sha256"
