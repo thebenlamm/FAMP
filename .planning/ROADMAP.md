@@ -26,7 +26,7 @@ expanded, backlog at the bottom.
 - [ ] **Phase 13: Public Reachability Decision (Spike)** - Zero-code decision record naming the reachability model, live-verified cost/month, named operator, and what the relay/tunnel can and cannot observe.
 - [ ] **Phase 14: Inbound-Content-Is-DATA Quarantine** - Structural, harness-agnostic, fail-closed provenance tagging at all seven rendering surfaces, proven by a FAMP-native adversarial corpus with a falsification control and closed out by an independent diff-only review. BLOCKING GATE — must be verified complete before Phase 20.
 - [ ] **Phase 15: Keyring Multi-Key Extension + Revocation** - Multi-key-per-principal keyring with rotation and expiry/revocation, backward-compatible with existing single-key files. Must land before Phase 18 (Pairing).
-- [ ] **Phase 16: Distribution** - Prebuilt `famp` binaries for macOS arm64/x86_64 and Linux x86_64, published by a tag-triggered release workflow and installed by a single checksum-verified command on a machine with no Rust toolchain.
+- [ ] **Phase 16: Distribution** - Prebuilt `famp`, `famp-gateway`, and `famp-relay` binaries for macOS arm64/x86_64 and Linux x86_64, published by a tag-triggered release workflow and installed by a checksum-verified curl command on a machine with no Rust toolchain.
 - [ ] **Phase 17: Protocol-Grade Ingress + Reachability Implementation** - Replay cache, freshness enforcement, audience binding, DoS-safe ordering, and the live reachability path from Phase 13 — shipped together, never one without the other.
 - [ ] **Phase 18: Cross-Person Trust Bootstrap (Pairing)** - Fail-loud, PAKE-backed short-code pairing between two people with no prior shared secret, replacing v1.0's paste-a-blob TOFU.
 - [ ] **Phase 19: Auto-Wake Gate** - A remote-origin envelope never auto-wakes a parked `famp await`, enforced broker-side — the real enforcement mechanism the tool-gating scope decision resolved to, after two harness-side designs failed adversarial review.
@@ -319,7 +319,7 @@ Plans:
 | 13. Public Reachability Decision (Spike) | v1.1 | 1/1 decision record | Complete | 2026-08-02 |
 | 14. Inbound-Content-Is-DATA Quarantine | v1.1 | 5/5 | In Progress|  |
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 4/4 | In Progress|  |
-| 16. Distribution | v1.1 | 0/0 | Not started | - |
+| 16. Distribution | v1.1 | 0/5 | Planned | - |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 6/6 | In Progress|  |
 | 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 0/0 | Not started | - |
 | 19. Auto-Wake Gate | v1.1 | 0/0 | Not started | - |
