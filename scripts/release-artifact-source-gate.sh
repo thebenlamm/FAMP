@@ -82,34 +82,45 @@ else
     # DEBUG: uncomment to see indentation calculations
     # echo "DEBUG: PUSH_LINE=$PUSH_LINE, PUSH_FULL='$PUSH_FULL', PUSH_SPACES=$PUSH_SPACES, EXPECTED_CHILD_SPACES=$EXPECTED_CHILD_SPACES" >&2
 
-    # Look for tags: and branches: at the correct child indentation level
-    # Build awk script with the expected indentation value substituted
-    # (BSD awk -v flag has parsing bugs, so we construct the script dynamically)
+    # Look for tags: and branches: as direct children of push:.
+    #
+    # Two traps this deliberately avoids, both of which shipped once and were
+    # caught by constructing the inputs rather than by reading the code:
+    #
+    # 1. Do NOT anchor the key with /tags:$/. That only matches BLOCK form
+    #    ("tags:" then an indented list). YAML flow form -- "tags: ['v*']",
+    #    "branches: [main]" -- never matches an end-anchored pattern. The
+    #    end-anchored version simultaneously PASSED a release.yml carrying
+    #    `branches: [main]` next to `tags:` (publishing on every push to main,
+    #    the exact violation this assertion exists to catch) and FAILED a
+    #    legitimate `tags: ['v*']`. Match the KEY, and accept any value form.
+    #
+    # 2. Stop at the end of push:'s own mapping. Scanning to the end of the
+    #    whole on: block means a SIBLING trigger's branches: filter (e.g.
+    #    `pull_request:` with `branches:`) would be misattributed to push:.
+    #    Any line that dedents back to push:'s own level or further has left
+    #    the mapping.
+    #
+    # BSD awk's -v flag mis-parses some values, so the script is built by
+    # substitution rather than passed with -v.
     AWK_SCRIPT=$(cat <<AWK_EOF
       /^[[:space:]]*jobs:/ { exit }
+      /^[[:space:]]*\$/    { next }
       {
-        indent = match(\$0, /[^ \t]/)
-        if (indent > 0) indent = indent - 1
-        if (indent == ${EXPECTED_CHILD_SPACES} && match(\$0, /tags:\$/)) count++
+        if (match(\$0, /[^ \t]/)) { ind = RSTART - 1 } else { next }
+        if (ind <= ${PUSH_SPACES}) { exit }
+        if (ind == ${EXPECTED_CHILD_SPACES}) {
+          if (\$0 ~ /^[ \t]*tags:([ \t]|\$)/)     tags++
+          if (\$0 ~ /^[ \t]*branches:([ \t]|\$)/) branches++
+        }
       }
-      END { print count + 0 }
+      END { print (tags + 0) " " (branches + 0) }
 AWK_EOF
     )
 
-    HAS_TAGS=$(printf '%s\n' "${AFTER_PUSH}" | awk "${AWK_SCRIPT}")
-
-    AWK_SCRIPT_BRANCHES=$(cat <<AWK_EOF
-      /^[[:space:]]*jobs:/ { exit }
-      {
-        indent = match(\$0, /[^ \t]/)
-        if (indent > 0) indent = indent - 1
-        if (indent == ${EXPECTED_CHILD_SPACES} && match(\$0, /branches:\$/)) count++
-      }
-      END { print count + 0 }
-AWK_EOF
-    )
-
-    HAS_BRANCHES=$(printf '%s\n' "${AFTER_PUSH}" | awk "${AWK_SCRIPT_BRANCHES}")
+    CHILD_KEYS=$(printf '%s\n' "${AFTER_PUSH}" | awk "${AWK_SCRIPT}")
+    HAS_TAGS=${CHILD_KEYS%% *}
+    HAS_BRANCHES=${CHILD_KEYS##* }
 
     if [ "$HAS_TAGS" -eq 0 ]; then
       echo "::error::${RELEASE_YML} — push: trigger has no tags: as a direct child (DIST-05 violation)" >&2
