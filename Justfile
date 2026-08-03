@@ -112,12 +112,43 @@ publish-workspace-dry-run:
     cargo package -p famp-transport-http --allow-dirty --no-verify --list > /dev/null
     cargo package -p famp --allow-dirty --no-verify --list > /dev/null
 
-# Shellcheck the hook assets (D-08 invariant: shellcheck-clean).
+# Shellcheck the hook assets (D-08 invariant: shellcheck-clean) and the
+# dist-generated installers (DIST-03 invariant: shellcheck-clean).
 # `hook-runner.sh` ships in plan 03-02; `famp-await.sh` is the listen-mode
 # Stop hook source of truth (issue #21 cancellation seam lives here).
 check-shellcheck:
     shellcheck crates/famp/assets/hook-runner.sh
     shellcheck crates/famp/assets/famp-await.sh
+    shellcheck crates/famp/tests/fixtures/installers/famp-installer.sh
+    shellcheck crates/famp/tests/fixtures/installers/famp-gateway-installer.sh
+    shellcheck crates/famp/tests/fixtures/installers/famp-relay-installer.sh
+
+# T-16-06: regenerate every dist-derived file (release.yml + the three
+# installer fixtures) from dist-workspace.toml and assert no drift. Requires
+# `dist` on PATH — never no-ops silently if it's missing (T-16-07). NOT a
+# member of `just ci` (see the `ci:` recipe below): dist is a CI/release
+# tool, not a baseline local dependency, and this recipe mutates the working
+# tree (release.yml + installer fixtures) as part of its check. Wired into
+# CI instead via .github/workflows/release-gate.yml.
+check-installer-drift:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v dist >/dev/null 2>&1; then
+        echo "ERROR: dist not found on PATH. Install with: cargo install cargo-dist --version 0.32.0 --locked" >&2
+        exit 1
+    fi
+    echo "-- dist generate --check (native pre-check against dist-workspace.toml) --"
+    dist generate --check
+    echo "-- dist generate (regenerate .github/workflows/release.yml) --"
+    dist generate
+    echo "-- dist build --artifacts=global --tag=v1.0.0 (regenerate installer fixtures) --"
+    dist build --artifacts=global --tag=v1.0.0 --output-format=json > /tmp/famp-dist-build-drift.json
+    cp target/distrib/famp-installer.sh crates/famp/tests/fixtures/installers/famp-installer.sh
+    cp target/distrib/famp-gateway-installer.sh crates/famp/tests/fixtures/installers/famp-gateway-installer.sh
+    cp target/distrib/famp-relay-installer.sh crates/famp/tests/fixtures/installers/famp-relay-installer.sh
+    echo "-- asserting no drift against the committed tree --"
+    git diff --exit-code -- dist-workspace.toml .github/workflows/release.yml crates/famp/tests/fixtures/installers
+    echo "✓ no drift: release.yml and installer fixtures match dist-workspace.toml"
 
 # Run the FAMP v0.5.1 spec anchor lint (ripgrep-based; see scripts/spec-lint.sh).
 spec-lint:
