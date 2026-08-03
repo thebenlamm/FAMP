@@ -49,8 +49,16 @@ jobs:
           tool: just
       - name: Install dist 0.32.0 (not in taiki-e/install-action's tool set)
         run: cargo install cargo-dist --version 0.32.0 --locked
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      # Pinned to 0.11.0: apt's distro-shipped shellcheck flags SC2015 on
+      # crates/famp/assets/hook-runner.sh where 0.11.0 does not — this pins
+      # CI to the version local contributors actually run, not whatever
+      # ubuntu-latest's apt repo happens to carry.
+      - name: Install shellcheck 0.11.0 (pinned)
+        run: |
+          curl -sSfL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz \
+            | tar -xJ
+          sudo mv shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+          shellcheck --version
       - name: DIST-05 sole-producer gate
         run: just check-release-artifact-source
       - name: Shellcheck the hook assets + installer fixtures
