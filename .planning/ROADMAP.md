@@ -175,12 +175,13 @@ Plans:
 **Requirements:** DIST-01, DIST-02, DIST-03, DIST-04, DIST-05
 **Success Criteria** (what must be TRUE):
 
-  1. A tagged release publishes prebuilt `famp` binaries for macOS arm64, macOS x86_64, and Linux x86_64 as downloadable release artifacts, produced only by the tag-triggered workflow — no hand-built or manually uploaded binaries.
+  1. A tagged release publishes prebuilt binaries — **`famp`, `famp-gateway`, and `famp-relay`** — for macOS arm64, macOS x86_64, and Linux x86_64 as downloadable release artifacts, produced only by the tag-triggered workflow — no hand-built or manually uploaded binaries. (Binary set widened from `famp` alone 2026-08-02, Ben-approved: the gateway is a separate bin target that `docs/GATEWAY-SETUP.md` requires on `PATH`, so `famp` alone would not unblock Phase 20.)
   2. A single documented command installs a working `famp` on a machine with no Rust toolchain, proven on a clean environment with no prior FAMP state.
-  3. Published artifacts carry checksums, verified by the installer before installing — a corrupted or substituted artifact fails closed.
-  4. Onboarding docs lead with the binary install path; `cargo install famp` remains documented only as the from-source fallback.
+  3. Published artifacts carry checksums, verified by the installer before installing — a corrupted or substituted artifact fails closed. Docs state the honest boundary: checksums prove the download matches what the release workflow produced; they do not prove the workflow itself was uncompromised. Artifact signing is a named follow-up, not this phase.
+  4. Onboarding docs lead with the binary install path; a **working** from-source command remains documented only as the fallback. (Corrected 2026-08-02: the original wording named `cargo install famp`, which has never worked — `famp` was never published to crates.io, and six doc sites tell users to run it. Publishing to crates.io was considered and explicitly rejected; the docs move to the `--path`/`--git` form.)
 
 **Plans:** TBD
+**Decisions:** `.planning/phases/16-distribution/16-CONTEXT.md` (D-01..D-08, user-approved 2026-08-02) · research: `16-RESEARCH.md`
 **Constraint:** Docs must lead with a `curl`-based installer rather than "download from the releases page." Browsers set `com.apple.quarantine` on downloads and `curl` does not, so the browser path forces macOS Gatekeeper/notarization work the curl path avoids entirely — a real cost avoided by a doc-ordering decision, not one worth rediscovering later.
 
 ### Phase 17: Protocol-Grade Ingress + Reachability Implementation
