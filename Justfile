@@ -117,11 +117,28 @@ publish-workspace-dry-run:
 # `hook-runner.sh` ships in plan 03-02; `famp-await.sh` is the listen-mode
 # Stop hook source of truth (issue #21 cancellation seam lives here).
 check-shellcheck:
+    #!/usr/bin/env bash
+    set -euo pipefail
     shellcheck crates/famp/assets/hook-runner.sh
     shellcheck crates/famp/assets/famp-await.sh
     shellcheck crates/famp/tests/fixtures/installers/famp-installer.sh
     shellcheck crates/famp/tests/fixtures/installers/famp-gateway-installer.sh
     shellcheck crates/famp/tests/fixtures/installers/famp-relay-installer.sh
+    # Glob scripts/ rather than listing files: an explicit list silently stops
+    # covering anything added later, which is how both
+    # release-artifact-source-gate.sh (16-02) and check-doc-release-urls.sh
+    # (16-05 gap closure) shipped ungated. Fail closed if the dir is empty so
+    # a rename can't turn this into a silent no-op.
+    shopt -s nullglob
+    scripts_sh=(scripts/*.sh)
+    if [ ${#scripts_sh[@]} -eq 0 ]; then
+        echo "ERROR: no scripts/*.sh found -- this check has gone vacuous" >&2
+        exit 1
+    fi
+    for s in "${scripts_sh[@]}"; do
+        echo "shellcheck $s"
+        shellcheck "$s"
+    done
 
 # T-16-06: regenerate every dist-derived file (release.yml + the three
 # installer fixtures) from dist-workspace.toml and assert no drift. Requires
@@ -266,6 +283,13 @@ check-spec-version-coherence:
         fi; \
       done; \
     fi
+
+# DIST-04 gap closure: assert every release URL printed in the docs resolves.
+# NOT a member of `just ci` -- it makes live network calls, and `ci` must stay
+# runnable offline. Wired into CI via .github/workflows/install-docs-gate.yml,
+# which already triggers on README.md and docs/**.
+check-doc-release-urls:
+    bash scripts/check-doc-release-urls.sh
 
 # DIST-05: assert release.yml is the sole tag-triggered producer of release
 # assets (scripts/release-artifact-source-gate.sh). No tooling beyond bash
