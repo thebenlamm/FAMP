@@ -20,6 +20,7 @@ on:
       # half of the drift pair the gate watches.
       - ".github/workflows/smoke-test.yml"
       - ".github/workflows/install-docs-gate.yml"
+      - "scripts/check-doc-release-urls.sh"
   pull_request:
     branches: ["**"]
     paths:
@@ -31,6 +32,12 @@ on:
       # half of the drift pair the gate watches.
       - ".github/workflows/smoke-test.yml"
       - ".github/workflows/install-docs-gate.yml"
+      - "scripts/check-doc-release-urls.sh"
+  # Daily schedule to catch release-side 404s (e.g., prerelease flag changes,
+  # release deletion). 02:00 UTC chosen as a low-traffic time. The URL gate
+  # exists to surface 404s without waiting for a docs-path commit.
+  schedule:
+    - cron: "0 2 * * *"
 
 concurrency:
   group: install-docs-gate-${{ github.ref }}
