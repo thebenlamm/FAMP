@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase: 17
-current_phase_name: protocol-grade-ingress-reachability-implementation
+current_phase: 16
+current_phase_name: distribution
 status: executing
 stopped_at: Completed 17-05-PLAN.md
-last_updated: "2026-08-02T05:09:07.863Z"
+last_updated: "2026-08-03T03:35:44.415Z"
 last_activity: 2026-08-02
-last_activity_desc: Phase 17 execution started
+last_activity_desc: Phase 16 execution started
 progress:
-  total_phases: 3
+  total_phases: 5
   completed_phases: 3
-  total_plans: 15
+  total_plans: 20
   completed_plans: 15
-  percent: 100
+  percent: 60
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -27,16 +27,23 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 17 — protocol-grade-ingress-reachability-implementation
+**Current focus:** Phase 16 — distribution
 
 ## Current Position
 
-Phase: 17 (protocol-grade-ingress-reachability-implementation) — EXECUTING
-Plan: 6 of 6 (17-01..17-06 all complete; 17-05 was the last remaining plan)
-Status: All Phase 17 plans executed. REACH-04 loopback proof done (e2e_relay_bidirectional.rs); the genuinely-different-networks leg remains explicitly OPEN — needs two gateways on genuinely different networks, not just this record. REACH-02 closed 2026-08-02 (real Verizon cellular hotspot, cone NAT) — see `.planning/phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md`. REQUIREMENTS.md's REACH-04 checkbox left unchecked pending orchestrator review.
-Last activity: 2026-08-02 — 17-05-PLAN.md executed (relay-fetch loop + three-process REACH-04 loopback e2e)
+Phase: 16 (distribution) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 16
+Last activity: 2026-08-02 — Phase 16 execution started
 
 ## v1.1 Phase Map
+
+> ⚠ **STALE NUMBERING — `.planning/ROADMAP.md` is the authority.** The roadmap was renumbered after this
+> section was written. Live numbering: **16 = Distribution (DIST-01..05)**, 17 = Protocol-Grade Ingress +
+> Reachability, **18 = Cross-Person Trust Bootstrap (Pairing)**, **19 = Auto-Wake Gate**, **20 = Human
+> Acceptance Gate**. The descriptions below still read 16 = Pairing / 18 = Human Acceptance Gate /
+> 19 = Signed Peer Directory / 20 = Push Notification, and the Directory phase was CUT. Trust the
+> per-phase *content* below only after checking its number against ROADMAP.md.
 
 - **Phase 13: Public Reachability Decision (Spike)** (3 reqs: REACH-01, REACH-02, REACH-03). Zero-code decision record naming the reachability model (self-hosted relay vs. hosted tunnel vs. direct/no-relay), its live-verified cost/month from vendor pricing pages (not aggregators), a named operator, and what the relay/tunnel can and cannot observe about FAMP traffic. `iroh` explicitly weighed and its rejection rationale recorded. Validated 2026-08-02 against a real network Ben does not control (Verizon cellular hotspot, cone NAT) — REACH-01/02/03 all satisfied. Gates only REACH-04/05 (Phase 17) — does NOT gate KEYR, PAIR, QUAR, DIR, or WATCH.
 - **Phase 14: Inbound-Content-Is-DATA Quarantine** (8 reqs: QUAR-01..08). The milestone's blocking security gate — must be verified complete before Phase 18. Remote origin survives to the mailbox via a new additive field on `famp-bus`'s `Register` frame (Layer 1, not frozen); every one of the five known rendering surfaces (`famp_inbox`, `famp_await`, `famp_channel_log`, CLI `inbox list`, CLI `await`) structurally tags remote-origin content; a FAMP-native adversarial corpus runs in CI with a falsification control (a test that must FAIL when the quarantine is reverted, one that must still PASS); an independent diff-only review closes it out. Technically independent of REACH/KEYR/PAIR/DIR — sequenced right after the spike rather than left to shadow the human gate.
@@ -380,26 +387,20 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 **HANDOFF STATE — read before doing anything:**
 
-- A `gsd-executor` background agent for 17-03 is LIVE and mid-Task-2 (main.rs, own-domain-mandatory + INGR-07 body-cap tests + e2e_shipping_surface.rs fix). It survived a prior ~28h gap once already — background agents in this harness persist independently of the conversation window. **Do NOT kill it, do NOT run `cargo fmt --all`, do NOT `git add -A`/`git commit -a`/`git stash`/`git checkout` in the main checkout while it's uncommitted.** Check `git status --short` and `git log -3` first; if `crates/famp-gateway/src/main.rs` still shows modified, it's still working — hold and wait for its own commit, exactly as this session did.
-- 17-03 Task 1 already committed as `c93bff9` — but it swept in two unrelated CI-fix files (`.config/nextest.toml`, `crates/famp/tests/quarantine_gate.rs`) via a broad `git add`. Content is a harmless duplicate of what's already on `origin/main` (pushed separately as `cbe629f` via an isolated worktree, SHA-verified green in CI) — flagged to famp-lead-730, not fixed, per their explicit "don't rewrite history under a live agent" instruction.
-- Priority-1 check already done and PASSED: `resolve_own_domain_or_exit` in main.rs is genuinely unconditionally startup-fatal (grepped directly, not inferred) — confirms the executor read the revised (unconditional, not conditional-on-`--relay-fetch`) plan.
-- Still needs checking once Task 2 lands: a test proving own-domain-unset fails to start, and the `e2e_shipping_surface.rs` Test 3 fix — must implement BOTH (a) gateway A's own `FromDomainMismatch` firing at egress [new] AND (b) a preserved case where B rejects a hand-built mismatched envelope delivered directly to its ingress, not depending on A being misconfigured [reconstructed] — NOT a swap of one for the other (that was my first, wrong proposal; famp-lead-730 corrected it in FAMP thread task `019fbf9c-2988-7672-8881-b2e227795400`).
-- famp-lead-730 is mid-conversation on that same FAMP task thread, actively coordinating this handoff-in-progress. A fresh window should `famp_register` as `famp-sonnet-731` (same identity — mailbox is durable per name, queued messages drain automatically) and check `famp_inbox` before doing anything else.
-- After 17-03 fully lands (Task 2 committed + reviewed clean): wave 4 is `17-05` (relay-fetch loop + the actual 3-process bidirectional REACH-04 e2e proof), the final plan in the phase. Then `/gsd-verify-work` / phase closeout.
-- REACH-04 must NOT be marked complete until 17-05's e2e proof actually runs (was prematurely checked once in REQUIREMENTS.md, already caught and reverted).
-- REACH-02 (Phase 13) is CLOSED as of 2026-08-02 — Ben ran `.planning/REACH-02-HOTSPOT-WALKTHROUGH.md` twice on a real Verizon cellular hotspot (cone NAT); see `.planning/phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md`. REACH-04's genuinely-different-networks leg stays separately open — needs two gateways on genuinely different networks, not this record.
-
-**TWO NEW TASKS from famp-lead-730, arrived after the handoff note above was written (FAMP thread `019fbf9c-2988-7672-8881-b2e227795400`, messages `019fbfb8`/`019fbfb9`) — do these BEFORE further 17-03 review, in this order:**
-
-1. **Sync PR #31**: local `main` has genuinely diverged from `origin/main` (local has `73623f8`, a docs-only REACH-04 un-check commit, not yet on origin — cbe629f's parent was `21475be`, not `73623f8`). Do NOT reconcile the shared checkout's local `main` yet (17-03 agent still live). Instead, from a **separate worktree** (same pattern as the quarantine-gate fix), merge `origin/main` into `agent/fix-codex-wake-readiness` (Ben's PR #31 branch) and push — **merge, not rebase** (PR #31 is Ben's, already pushed, don't rewrite his history). If it conflicts, STOP and tell famp-lead-730 rather than resolving it. Then verify PR #31's checks go green by SHA (`gh pr checks 31` against the new head). Do NOT merge PR #31 itself — that's Ben's call.
-2. **Type-safety follow-up on `resolve_own_domain_or_exit`**: famp-lead-730 independently verified the priority-1 check (unconditional fatal) is correct and needs no redo — but flagged that its signature is still `-> Option<String>` even though every failure path now exits (structurally incapable of returning `None`). Risk: if any downstream `own_domain` consumer branches on `Some`/`None` (`if let Some(od) = ...`, `unwrap_or`, etc.) around a security check, it reads as optional and could silently go vacuous again if a future non-exiting path is added, with no compile error. Action: grep every `own_domain` consumer in `famp-gateway`, report whether any branch on presence around a security check. If yes anywhere, change the return type to plain `String` (converts the invariant into a compiler-enforced one, matching this repo's no-wildcard-exhaustiveness house style). If large blast radius, don't do it inline — report the count and let famp-lead-730 decide scope (this phase vs. named follow-up). Queue behind Task 2 landing; do not interrupt the live executor.
-
-After those two: resume the original 17-03 review (own-domain-unset-fails-to-start test, e2e_shipping_surface (a)+(b) fix, then wave 4/17-05).
+- **No executor is live.** Phase 17 is fully executed — all six plans (17-01..17-06) have SUMMARY.md files, the working tree is clean, and local `main` equals `origin/main` at `15b2ea2`. The previous handoff's "do NOT kill the live 17-03 agent / do NOT run git commands" warnings are **obsolete** — they described a session that ended on 2026-08-02 and no longer constrain anything.
+- **Active work is Phase 16 — Distribution** (DIST-01..05), 5 plans across 3 waves, 0 complete. Execution started 2026-08-03. Note the out-of-order sequence: Phase 17 was executed before Phase 16.
+- Both follow-up tasks the prior handoff queued are **DONE — verified, not assumed** (2026-08-03):
+  1. *Sync PR #31* — PR #31 (`agent/fix-codex-wake-readiness`) was **MERGED** 2026-08-02T02:19:50Z. The local/origin `main` divergence it described is gone.
+  2. *Type-safety on `resolve_own_domain_or_exit`* — already applied: `crates/famp-gateway/src/main.rs:333` reads `fn resolve_own_domain_or_exit(home: &std::path::Path) -> String`. The `Option<String>` return is gone, so the invariant is compiler-enforced. No remaining `own_domain` consumer branches on `Some`/`None` around a security check.
+- The 17-03 review items the prior handoff listed (own-domain-unset-fails-to-start test, `e2e_shipping_surface.rs` (a)+(b) fix) landed with 17-03; see `17-03-SUMMARY.md`. The (a)+(b) "both, not a swap" decision is recorded in the session decision log — do not re-litigate it.
+- **Still genuinely open:** REACH-04's genuinely-different-networks leg. 17-05 proved the loopback path only (`e2e_relay_bidirectional.rs`, three-process). Closing REACH-04 needs two gateways on genuinely different networks — a provisioned relay box is not sufficient, and REQUIREMENTS.md's REACH-04 checkbox stays unchecked until that runs. It was prematurely checked once already and reverted.
+- REACH-02 (Phase 13) is CLOSED as of 2026-08-02 — Ben ran `.planning/REACH-02-HOTSPOT-WALKTHROUGH.md` twice on a real Verizon cellular hotspot (cone NAT); see `.planning/phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md`. This record does **not** close REACH-04.
 
 ## Operator Next Steps
 
 - Phase 13 (reachability decision spike) is COMPLETE — the decision record was promoted and filed at `.planning/phases/13-public-reachability-decision-spike/`, and REACH-02 closed 2026-08-02 against a real Verizon cellular hotspot (cone NAT); see `13-REACH-02-RESULTS.md`. REACH-04 (genuinely-different-networks, bidirectional) remains open, tracked under Phase 17 — not this phase, and not satisfied by a provisioned relay box.
-- Phase 17 execution in progress — REACH-04's genuinely-different-networks proof and the actual Lightsail provisioning both need Ben; everything else is autonomous.
+- Phase 17 execution is COMPLETE (all six plans have SUMMARYs). REACH-04's genuinely-different-networks proof still needs Ben — two gateways on genuinely different networks; the provisioned Lightsail relay box does not satisfy it on its own.
+- Phase 16 (Distribution, DIST-01..05) is the active phase as of 2026-08-03. Its wave-3 plan (16-05) tags a release on a public repo — that is a human-gated, one-way act and will stop for explicit approval, never auto-approve.
 
 ## Accumulated Context
 
