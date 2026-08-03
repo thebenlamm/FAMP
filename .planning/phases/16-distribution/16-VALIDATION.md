@@ -107,7 +107,7 @@ states is zero information.
 - [x] Sampling continuity: no 3 consecutive tasks without automated verify
 - [x] Wave 0 covers all MISSING references — every ❌ W0 row above is created by the plan named in its Task ID column
 - [x] No watch-mode flags
-- [x] DIST-03's falsification pair has both a must-fail and a must-pass named — `installer_rejects_a_corrupted_artifact_without_installing` (MUST FAIL under removal) and `installer_accepts_a_matching_artifact` (MUST STILL PASS under removal), in 16-03 T2
+- [x] DIST-03's falsification pair names both halves — `installer_rejects_a_corrupted_artifact_without_installing` (the falsification) and `installer_accepts_a_matching_artifact` (the control), in 16-03 T2. **Corrected 2026-08-03 (post-session audit):** the "MUST STILL PASS under removal" framing recorded here was wrong — `strip_checksum_verification` panics if the call site is absent, so a template-level removal fails BOTH tests. The load-bearing evidence is the *runtime* inversion (a stripped copy accepts the artifact the working copy rejects), not a static pass/fail asymmetry. See the correction block in `16-03-SUMMARY.md`.
 - [ ] `nyquist_compliant: true` set in frontmatter — set by `/gsd-validate-phase` after execution
 
 **Approval:** plan-time rows filled 2026-08-02; status column tracked during execution.

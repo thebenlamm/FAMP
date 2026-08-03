@@ -81,10 +81,21 @@ The repo's standing rule is that *a falsification run needs a control* — green
 working and the broken state carries zero information. Both halves are named in the test's own
 module header:
 
-- **MUST STILL PASS under the broken state** — `installer_accepts_a_matching_artifact`.
-  This is the control. If checksum verification were removed from the installer entirely, this
-  test would still pass. That is the point: it proves the harness is not vacuously green. Without
-  it, an installer where *every* download 404'd would still look like a working checksum gate.
+- **THE CONTROL** — `installer_accepts_a_matching_artifact`. It proves the harness is not
+  vacuously green: without it, an installer where *every* download 404'd would still look like a
+  working checksum gate.
+
+  > **Correction (2026-08-03, post-session audit).** An earlier revision of this section claimed
+  > this test "MUST STILL PASS if checksum verification were removed from the installer." That
+  > overstates what holds. Both tests call `build_fixtures()`, and `strip_checksum_verification`
+  > **panics** if the fixture's `verify_checksum` call site is absent — so a template-level removal
+  > fails BOTH tests rather than exhibiting control/falsification asymmetry, and cannot distinguish
+  > "verification removed" from "harness broken."
+  >
+  > What actually holds: the pair is fail-closed and non-vacuous, and the *runtime* inversion (a
+  > surgically stripped COPY accepts the same corrupted artifact the working copy rejects) does
+  > prove the rejection is load-bearing on the `verify_checksum` path. That is the real evidence.
+  > The advertised static asymmetry is not.
 
 - **MUST FAIL under the broken state** — `installer_rejects_a_corrupted_artifact_without_installing`.
   This is the falsification. It asserts four things: a non-zero exit, an empty install root

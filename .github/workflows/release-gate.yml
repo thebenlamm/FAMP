@@ -25,6 +25,10 @@ on:
       - "Cargo.lock"
       - "crates/famp/tests/fixtures/installers/**"
       - "scripts/**"
+      # hook-runner.sh and famp-await.sh are shellchecked by
+      # `just check-shellcheck`, which this workflow runs. Without this path
+      # they were shellchecked nowhere in CI.
+      - "crates/famp/assets/**"
       - "Justfile"
   pull_request:
     branches: ["**"]
@@ -35,6 +39,10 @@ on:
       - "Cargo.lock"
       - "crates/famp/tests/fixtures/installers/**"
       - "scripts/**"
+      # hook-runner.sh and famp-await.sh are shellchecked by
+      # `just check-shellcheck`, which this workflow runs. Without this path
+      # they were shellchecked nowhere in CI.
+      - "crates/famp/assets/**"
       - "Justfile"
 
 concurrency:

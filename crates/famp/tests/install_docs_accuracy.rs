@@ -165,19 +165,37 @@ fn binary_install_path_leads_every_onboarding_doc() {
 #[test]
 fn from_source_fallback_command_is_a_working_form() {
     // Every from-source install of this project's own crate(s) must carry
-    // --path or --git. Scan for "cargo install ... famp[-gateway]"
-    // mentions and require --path/--git to appear within that same mention.
-    // Normalize whitespace (collapse runs of whitespace including newlines to
-    // single spaces) before matching, the way checksum_security_claim_matches_the_locked_wording
-    // already does. Use [^|\n]* to match any characters except pipes (table
-    // delimiters) and newlines, preventing cross-table-cell matches.
-    let re = regex::Regex::new(r"cargo install[^|\n]*?\bfamp(?:-gateway)?\b")
+    // --path or --git. Scan for "cargo install ... famp[-gateway]" mentions and
+    // require --path/--git within that same mention.
+    //
+    // Normalization collapses whitespace (including newlines) to single spaces,
+    // because markdown prose wraps: `cargo install --path\ncrates/famp` is one
+    // command to a reader and was previously invisible to this gate, leaving
+    // ONBOARDING.md entirely unchecked.
+    //
+    // The {0,50} bound is load-bearing, not decoration. Once newlines are
+    // normalized away, `[^|\n]` no longer bounds anything -- an unbounded lazy
+    // span will leap across whole sections to reach a distant `famp`. That
+    // produced a single 239-character "match" gluing
+    // `cargo install cargo-nextest --locked` ... `## Upgrading` ...
+    // `cargo install --path crates/famp` into one phantom, which both hid a
+    // real command inside its span and made an innocent edit to the unrelated
+    // cargo-nextest line able to turn this gate red. Real commands measure
+    // 32-40 characters; 50 admits every real one and excludes the glue.
+    //
+    // `[^|]` still blocks matches from crossing markdown table-cell delimiters.
+    let re = regex::Regex::new(r"cargo install[^|\n]{0,50}?\bfamp(?:-gateway)?\b")
         .expect("from-source-command regex must compile");
 
-    // Expected match counts per doc, counting only "cargo install ... famp"
-    // commands (not stray "cargo install" for other tools). Used as a
-    // regression guard: if this doc gains or loses a from-source install
-    // command, the test fails and you must recount and update these values.
+    // Expected match counts per doc. These count genuine `cargo install ... famp`
+    // mentions -- both real commands AND prose that names the command form
+    // (README's "of `git pull` + `cargo install --path`, then run `famp ...`").
+    // Prose is deliberately included: a doc telling a reader to run a bare
+    // `cargo install famp` in prose is exactly as broken as a code block doing
+    // it. Installs of OTHER tools (`cargo install cargo-nextest`,
+    // `cargo install just`) do not match, because no `famp` appears within the
+    // bound. Regression guard: if a doc gains or loses a mention, this fails and
+    // you must recount deliberately rather than let coverage drift silently.
     let expected_counts = [
         ("README.md", 4),
         ("docs/GETTING-STARTED.md", 1),
