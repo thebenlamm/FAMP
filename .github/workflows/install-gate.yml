@@ -57,15 +57,21 @@ jobs:
 
       - name: Resolve the release tag under test
         id: resolve-tag
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+          PLAN_INPUT: ${{ inputs.plan }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.tag }}" ]; then
-            TAG="${{ inputs.tag }}"
+          if [ -n "$TAG_INPUT" ]; then
+            TAG="$TAG_INPUT"
           else
             # No jq on this deliberately-minimal image; the plan JSON dist
             # passes is flat enough for a plain grep/sed extraction of the
             # one field this job needs.
-            PLAN='${{ inputs.plan }}'
+            # Values pass through env: to avoid GitHub Actions YAML→shell
+            # script injection (GitHub substitutes ${{ }} expressions textually
+            # before the shell parses the script).
+            PLAN="$PLAN_INPUT"
             TAG=$(printf '%s' "$PLAN" | grep -o '"announcement_tag":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')
           fi
           if [ -z "$TAG" ]; then
