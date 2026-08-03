@@ -335,21 +335,10 @@ check-actionlint:
         echo "ERROR: no workflow files found -- this check has gone vacuous" >&2
         exit 1
     fi
-    checked=0
-    for f in "${wf[@]}"; do
-        if [ "$(basename "$f")" = "release.yml" ]; then
-            echo "skip (dist-generated): $f"
-            continue
-        fi
-        echo "actionlint $f"
-        actionlint "$f"
-        checked=$((checked + 1))
-    done
-    if [ "$checked" -eq 0 ]; then
-        echo "ERROR: every workflow was skipped -- this check has gone vacuous" >&2
-        exit 1
-    fi
-    echo "OK - $checked workflow file(s) validated by actionlint."
+    # Which findings are suppressed is declared in .github/actionlint.yaml,
+    # scoped to the one dist-generated file. Not re-encoded here.
+    actionlint
+    echo "OK - ${#wf[@]} workflow file(s) validated by actionlint."
 
 # DIST-04 gap closure: assert every release URL printed in the docs resolves.
 # NOT a member of `just ci` -- it makes live network calls, and `ci` must stay

@@ -62,15 +62,6 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: just
-      # Validates workflow files themselves. Catches a class local YAML
-      # parsing cannot: Actions substitutes expression syntax into run:
-      # blocks textually, ignoring shell comment syntax, so an empty
-      # expression inside a comment invalidates the whole file -- surfacing
-      # only as a zero-job failed run with no logs.
-      - name: Install actionlint
-        uses: taiki-e/install-action@v2
-        with:
-          tool: actionlint
       - name: Install shellcheck 0.11.0 (pinned via taiki-e action)
         uses: taiki-e/install-action@v2
         with:
@@ -82,7 +73,19 @@ jobs:
       - name: Shellcheck the hook assets + installer fixtures
         run: just check-shellcheck
 
+      # Validates the workflow files themselves. Catches a class local YAML
+      # parsing cannot: Actions substitutes expression syntax into run: blocks
+      # textually, ignoring shell comment syntax, so an empty expression inside
+      # a comment invalidates the whole file -- surfacing only as a zero-job
+      # failed run with no logs.
+      #
+      # Uses actionlint's own pinned container. taiki-e/install-action does not
+      # carry actionlint, and its cargo-binstall fallback cannot install it
+      # either (actionlint is a Go tool, not a crate) -- that combination failed
+      # this job once. Suppressions live in .github/actionlint.yaml.
       - name: Workflow files are valid (actionlint)
-        run: just check-actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
       - name: dist-derived-file drift gate
         run: just check-installer-drift
