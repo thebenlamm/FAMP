@@ -23,7 +23,7 @@ prove less than advertised → gates that never fire → inaccurate records → 
 |---|---|---|---|
 | Shell injection in install-gate.yml | #1 HIGH | #1 HIGH | ✓ 18 quotes in live plan JSON |
 | README checksum mechanism is false | #8 | #2 HIGH | ✓ 0 `.sha256` in published installer |
-| Drift gate compares an unshipped artifact | #4 | — | ✓ byte-diff: glibc 2.31 vs 2.35, 1 vs 4 checksums |
+| Drift gate compares an unshipped artifact | #4 | — | ✓ byte-diff: glibc 2.31 vs 2.35, 0 vs 3 embedded checksums |
 | Trigger paths leave gates unfired | #2 #3 #5 | #3 #5 | ✓ release-gate paths, ci.yml runs neither |
 | DIST-05 gate is a denylist, overclaimed | #14 | #7 | not yet re-verified |
 | URL-gate remedy contradicts docs test | — | #6 | not yet re-verified |
@@ -86,7 +86,13 @@ targets. Byte-diff, committed fixture vs published installer:
 | | fixture | published |
 |---|---|---|
 | glibc floor | `2.31` | `2.35` |
-| embedded checksum values | 1 | 4 |
+| embedded per-target checksum constants | **0** | **3** |
+
+> Correction (2026-08-03): an earlier revision of this table said "1 vs 4". That was a
+> grep artifact — `grep -c '_checksum_value='` also counts `local _checksum_value="$3"`,
+> the function parameter inside `verify_checksum`. The real figures are 0 baked constants
+> in the fixture vs 3 in the published installer (lines 229/243/257), which makes the gap
+> *wider* than first reported, not narrower.
 
 The gate passes by comparing global-generation to global-generation. Its success message
 ("no drift: release.yml and installer fixtures match") is true only of an artifact that

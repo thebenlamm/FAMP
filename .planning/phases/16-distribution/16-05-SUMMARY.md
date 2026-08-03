@@ -79,7 +79,7 @@ coverage:
         ref: "Task 5 human-verify, 2026-08-03 — which famp -> ~/.cargo/bin/famp; famp --version -> 1.1.0-rc.1; no com.apple.quarantine attribute; installed SHA differs from the pre-install local build, confirming the released artifact actually replaced it"
         status: pass
       - kind: note
-        ref: "The checksum tests are run against the committed fixture (built with `dist build --artifacts=global`), which differs from the shipped installer: glibc floor 2.31 vs published 2.35, 1 embedded checksum vs published 4. The test proves the mechanism (fail-closed verification) works as coded, not that the exact shipped bytes match the committed fixtures."
+        ref: "The checksum tests are run against the committed fixture (built with `dist build --artifacts=global`), which differs from the shipped installer: glibc floor 2.31 vs published 2.35, and ZERO embedded per-target checksum constants vs the published installer's 3. The test proves the mechanism (fail-closed verification) works as coded, not that the exact shipped bytes match the committed fixtures."
         status: pass
   - id: D4
     description: "Only the tag-triggered workflow produces release artifacts — no hand-built or hand-uploaded asset"
@@ -132,7 +132,7 @@ empty tag must never degrade into a silent pass.
 **Note:** `check-installer-drift` compares the committed fixture (from `dist build --artifacts=global`,
 which builds no real targets) against itself at the new version. It does NOT prove the shipped installer
 fixtures match the committed fixtures — that comparison is limited by the fixture's own constraints
-(glibc floor 2.31 vs the published 2.35, 1 embedded checksum vs the published 4). See DIST-03 coverage
+(glibc floor 2.31 vs the published 2.35, zero embedded per-target checksum constants vs the published 3). See DIST-03 coverage
 entry below.
 
 **`install-gate` asserted `famp-gateway --version`.** That flag does not exist;
