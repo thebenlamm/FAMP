@@ -90,9 +90,9 @@ machine.
 
 ## Named follow-ups (deliberate non-goals, not oversights)
 
-- **Artifact signing** (minisign / cosign / Sigstore). Checksums verify a download completed
-  correctly and matches what the release workflow produced; they do not, by themselves, prove the
-  release workflow was not compromised — an attacker who could substitute the archive could
+- **Artifact signing** (minisign / cosign / Sigstore). A checksum verifies the download completed
+  correctly and matches what the release workflow produced — it does not, by itself, prove the
+  release workflow was not compromised. An attacker who could substitute the archive could
   substitute the checksum beside it. Signing is the real answer to that threat and is recorded as
   a follow-up, not shipped in this phase (D-06).
 - **Linux aarch64** (`aarch64-unknown-linux-gnu`). Plausible for an ARM VPS or a Pi-hosted relay,

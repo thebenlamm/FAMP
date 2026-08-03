@@ -1,0 +1,47 @@
+# ci.yml excludes docs/** and **/*.md from its push/pull_request triggers
+# (paths-ignore), so a docs-only commit produces ZERO check-runs under
+# ci.yml and the accuracy gate in
+# crates/famp/tests/install_docs_accuracy.rs would never fire on the exact
+# change it exists to catch. This workflow is purely additive: it does not
+# touch ci.yml, it only covers that dark commit-shape path.
+#
+# See 16-04-PLAN.md (DIST-04).
+name: install-docs-gate
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "crates/famp/tests/install_docs_accuracy.rs"
+      # The fallback-parity assertion cross-checks the README fallback
+      # command against this file's install step, so a change here is
+      # half of the drift pair the gate watches.
+      - ".github/workflows/smoke-test.yml"
+      - ".github/workflows/install-docs-gate.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "crates/famp/tests/install_docs_accuracy.rs"
+      # The fallback-parity assertion cross-checks the README fallback
+      # command against this file's install step, so a change here is
+      # half of the drift pair the gate watches.
+      - ".github/workflows/smoke-test.yml"
+      - ".github/workflows/install-docs-gate.yml"
+
+concurrency:
+  group: install-docs-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-docs-gate:
+    name: install-docs-gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p famp --test install_docs_accuracy
