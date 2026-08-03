@@ -141,8 +141,20 @@ check-installer-drift:
     dist generate --check
     echo "-- dist generate (regenerate .github/workflows/release.yml) --"
     dist generate
-    echo "-- dist build --artifacts=global --tag=v1.0.0 (regenerate installer fixtures) --"
-    dist build --artifacts=global --tag=v1.0.0 --output-format=json > /tmp/famp-dist-build-drift.json
+    # Derive the tag from [workspace.package].version rather than hardcoding it.
+    # A hardcoded tag silently stops matching the workspace the moment anyone
+    # bumps the version, and `dist build` then hard-errors with "this workspace
+    # doesn't have anything for dist to Release" -- turning the drift gate red
+    # for a reason that has nothing to do with actual drift. Found when 16-05
+    # bumped 1.0.0 -> 1.1.0-rc.1. Fail closed if the version cannot be parsed:
+    # an empty tag must never silently degrade into a passing check.
+    WORKSPACE_VERSION=$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version[[:space:]]*=/{match($0,/"[^"]+"/); print substr($0,RSTART+1,RLENGTH-2); exit}' Cargo.toml)
+    if [ -z "${WORKSPACE_VERSION}" ]; then
+        echo "ERROR: could not parse [workspace.package].version from Cargo.toml -- refusing to run the drift check against an empty tag." >&2
+        exit 1
+    fi
+    echo "-- dist build --artifacts=global --tag=v${WORKSPACE_VERSION} (regenerate installer fixtures) --"
+    dist build --artifacts=global --tag="v${WORKSPACE_VERSION}" --output-format=json > /tmp/famp-dist-build-drift.json
     cp target/distrib/famp-installer.sh crates/famp/tests/fixtures/installers/famp-installer.sh
     cp target/distrib/famp-gateway-installer.sh crates/famp/tests/fixtures/installers/famp-gateway-installer.sh
     cp target/distrib/famp-relay-installer.sh crates/famp/tests/fixtures/installers/famp-relay-installer.sh

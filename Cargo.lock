@@ -652,7 +652,7 @@ checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
 
 [[package]]
 name = "famp"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "assert_cmd",
  "axum",
@@ -700,7 +700,7 @@ dependencies = [
 
 [[package]]
 name = "famp-bus"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-canonical",
  "famp-core",
@@ -718,7 +718,7 @@ dependencies = [
 
 [[package]]
 name = "famp-canonical"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "serde",
  "serde_jcs",
@@ -729,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "famp-core"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "famp-crypto"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "famp-envelope"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-canonical",
  "famp-core",
@@ -773,7 +773,7 @@ dependencies = [
 
 [[package]]
 name = "famp-fsm"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-core",
  "proptest",
@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "famp-gateway"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "assert_cmd",
  "axum",
@@ -814,7 +814,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inbox"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "nix 0.29.0",
  "serde_json",
@@ -825,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inspect-client"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-bus",
  "famp-canonical",
@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inspect-proto"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-canonical",
  "serde",
@@ -850,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "famp-inspect-server"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-bus",
  "famp-canonical",
@@ -866,7 +866,7 @@ dependencies = [
 
 [[package]]
 name = "famp-keyring"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-core",
  "famp-crypto",
@@ -878,7 +878,7 @@ dependencies = [
 
 [[package]]
 name = "famp-relay"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "assert_cmd",
  "axum",
@@ -899,7 +899,7 @@ dependencies = [
 
 [[package]]
 name = "famp-taskdir"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "serde",
  "tempfile",
@@ -910,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "famp-transport"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "famp-core",
  "thiserror 2.0.18",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "famp-transport-http"
-version = "1.0.0"
+version = "1.1.0-rc.1"
 dependencies = [
  "axum",
  "axum-server",
