@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase: 18
+current_phase: 17
 current_phase_name: Cross-Person Trust Bootstrap (Pairing)
-status: ready-to-plan
+status: executing
 stopped_at: Phase 16 complete (5/5), v1.1.0-rc.1 released and verified
-last_updated: "2026-08-03T17:52:04.725Z"
+last_updated: "2026-08-03T20:24:19.379Z"
 last_activity: 2026-08-03
-last_activity_desc: Phase 16 complete; next real work is Phase 18 (17 was already done)
+last_activity_desc: Phase 16 complete, transitioned to Phase 17
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 4
-  total_plans: 20
+  total_plans: 23
   completed_plans: 20
   percent: 80
 ---
@@ -33,7 +33,7 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 Phase: 17 — Protocol-Grade Ingress + Reachability Implementation
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-03 — Phase 16 complete, transitioned to Phase 17
 
 ## v1.1 Phase Map

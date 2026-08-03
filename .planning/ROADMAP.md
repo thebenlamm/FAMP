@@ -28,7 +28,7 @@ expanded, backlog at the bottom.
 - [ ] **Phase 15: Keyring Multi-Key Extension + Revocation** - Multi-key-per-principal keyring with rotation and expiry/revocation, backward-compatible with existing single-key files. Must land before Phase 18 (Pairing).
 - [x] **Phase 16: Distribution** - Prebuilt `famp`, `famp-gateway`, and `famp-relay` binaries for macOS arm64/x86_64 and Linux x86_64, published by a tag-triggered release workflow and installed by a checksum-verified curl command on a machine with no Rust toolchain. (completed 2026-08-03)
 - [ ] **Phase 17: Protocol-Grade Ingress + Reachability Implementation** - Replay cache, freshness enforcement, audience binding, DoS-safe ordering, and the live reachability path from Phase 13 — shipped together, never one without the other.
-- [ ] **Phase 18: Cross-Person Trust Bootstrap (Pairing)** - Fail-loud, PAKE-backed short-code pairing between two people with no prior shared secret, replacing v1.0's paste-a-blob TOFU.
+- [ ] **Phase 18: Cross-Person Trust Bootstrap (Pairing)** - Fail-loud short-code pairing between two people with no prior shared secret, replacing v1.0's paste-a-blob TOFU. Mechanism: a five-word texted code (~55 bits, 2048-word list); security rests on entropy + single-use + server-side attempt limits. **No PAKE** (decided 2026-07-31, see REQUIREMENTS.md).
 - [ ] **Phase 19: Auto-Wake Gate** - A remote-origin envelope never auto-wakes a parked `famp await`, enforced broker-side — the real enforcement mechanism the tool-gating scope decision resolved to, after two harness-side designs failed adversarial review.
 - [ ] **Phase 20: Human Acceptance Gate** - A second person, unassisted, exchanges signed envelopes bidirectionally with Ben's agent over the open internet; both task FSMs reach a terminal state.
 - [ ] **Phase 21: Push Notification Adapter** - `famp watch --notify` replaces the await-poll + Stop-hook + sentinel convention with zero `famp-bus` change.
@@ -236,7 +236,26 @@ Plans:
   4. A pairing failure names which step failed and what to do next, in language that does not assume the human knows what a public key is.
   5. The pairing artifact carries the QUAR-15 consent warning at the moment of consent — pairing with a peer means their agent's messages will be read by your agent, which can run commands on your machine.
 
-**Plans:** TBD
+**Plans:** 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 18-01-PLAN.md — TRACER: one texted five-word code pins two machines end to end, gated by a blocking rendezvous-transport decision (PAIR-01, PAIR-06)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 18-02-PLAN.md — hard-abort, five-guess server-side budget, single-use + 24h window surviving restart, `famp pair revoke` (PAIR-02, PAIR-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 18-03-PLAN.md — one artifact with consent before code, plain-language failure taxonomy, observe-before-pin done-signals (PAIR-04, PAIR-05, PAIR-07, PAIR-08)
+
+**Waves:** W1 = 18-01 · W2 = 18-02 · W3 = 18-03 (strictly serial — all three plans write the same `famp::pairing` and `famp pair` files; no two can share a wave)
+**One-way door — RESOLVED 2026-08-03, Ben selected `option-a`:** the pairing rendezvous transport was a blocking `checkpoint:decision` at the head of 18-01; it is now closed and the executor must NOT re-ask it. Selected: a dedicated unauthenticated `POST /famp/v1/pair/redeem` on the inviter's own gateway, with its own `Router` and state type, merged before the shared 1 MiB body cap, 404ing whenever no `Pending` invite exists. Routing through `famp-relay` (option-b) was rejected as blocked today — enqueue 404s until a domain is manually pre-registered with a relay restart, and `verify_inbound_any` rejects the unpinned senders every pairing peer is by definition. Accepted limitation: option-a requires the INVITER to be publicly reachable (true for the Lightsail-fronted gateway, not true for a NATed inviter); the symmetric case is deliberately out of scope this milestone.
+**Still open for execution:** the BIP-39 wordlist **licensing determination** (18-01 Task 3) is a human call — the executor records the upstream LICENSE text verbatim and marks it UNRESOLVED rather than characterizing whether it permits vendoring.
+**Constraint:** `famp-envelope` and every Layer 0 crate stay frozen — pairing is a parallel, non-envelope wire. `cargo nextest` hangs on this repo, so every verify uses plain `cargo test`; every Rust-touching task also runs `just lint` (nursery lints beyond plain clippy).
+**Open on completion:** PAIR-05's comprehension half ("language that does not assume they know what a public key is") is not mechanically assertable and closes only at Phase 20's UAT-02. A new pin is durable but not active until `famp daemon restart` — the same gap `peer rotate`/`peer revoke` already ship under. REACH-04's cross-network leg stays open; the design deliberately avoids needing it by making the redeemer's call outbound-only.
 
 ### Phase 19: Auto-Wake Gate
 
