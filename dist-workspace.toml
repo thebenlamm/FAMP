@@ -9,13 +9,27 @@ cargo-dist-version = "0.32.0"
 ci = "github"
 # The installers to generate for each app
 installers = ["shell"]
-# Target platforms to build apps for (Rust target-triple syntax)
-# Tracer (16-01 Task 1): x86_64-apple-darwin only, the riskiest triple per D-08.
-# Task 2 widens this to the full 3-target matrix once the tracer is proven end to end.
-targets = ["x86_64-apple-darwin"]
+# Target platforms to build apps for (Rust target-triple syntax).
+# D-02/D-05: famp, famp-gateway, famp-relay across exactly these 3 triples --
+# no aarch64-unknown-linux-gnu, no windows.
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
 # Path that installers should place binaries in (D-07: same target `just install` uses, ~/.cargo/bin)
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
 # Checksum algorithm for release artifacts (T-16-01 / DIST-03)
 checksum = "sha256"
+
+[dist.github-custom-runners]
+# D-04: pin the Linux glibc floor deliberately (2.35) rather than letting it
+# drift with each ubuntu-latest LTS roll. Matches dist 0.32's own built-in
+# default runner for this target -- pinned explicitly here so the choice is
+# recorded, not implicit.
+x86_64-unknown-linux-gnu = "ubuntu-22.04"
+# D-08a (see 16-D08-EVIDENCE.md, run 30782329455): a real arm64 macos-latest
+# runner cross-builds x86_64-apple-darwin cleanly for all three binaries.
+# dist 0.32's own default would otherwise put this target on the separate
+# macos-15-intel runner class GitHub has published a sunset date for; pinning
+# it onto the same arm64 runner as aarch64-apple-darwin avoids that class
+# entirely, per the resolution D-08 recorded.
+x86_64-apple-darwin = "macos-14"
