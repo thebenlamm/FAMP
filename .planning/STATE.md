@@ -5,15 +5,15 @@ milestone_name: Open-Internet Federation
 current_phase: 16
 current_phase_name: distribution
 status: executing
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-08-03T03:55:45.050Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-08-03T04:16:02.557Z"
 last_activity: 2026-08-02
 last_activity_desc: Phase 16 execution started
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 20
-  completed_plans: 16
+  completed_plans: 17
   percent: 60
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 16 (distribution) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-08-02 — Phase 16 execution started
 
@@ -224,6 +224,9 @@ Last activity: 2026-08-02 — Phase 16 execution started
 - [Phase ?]: D-08 resolved D-08a from a real arm64 macos-latest runner build log (run 30782329455): x86_64-apple-darwin cross-builds cleanly for famp/famp-gateway/famp-relay, no aws-lc-sys/cmake failure
 - [Phase ?]: dist 0.32's config lives in dist-workspace.toml, not [workspace.metadata.dist] in Cargo.toml as originally planned -- confirmed against the pinned installed version's real behavior (Rule 3 fix)
 - [Phase ?]: Pinned x86_64-apple-darwin to the macos-14 runner (same as aarch64-apple-darwin) via github-custom-runners so D-08a's single-arm64-runner-class intent is realized in generated CI, not just true in principle -- dist's own default would otherwise use the sunsetting macos-15-intel class
+- [Phase ?]: 16-02: drift gate reads dist-workspace.toml (not Cargo.toml), per 16-01's real-tool-output finding
+- [Phase ?]: 16-02: check-installer-drift excluded from just ci (needs dist on PATH); wired into CI only via release-gate.yml
+- [Phase ?]: 16-02: release-gate.yml pins shellcheck to the official 0.11.0 binary (not apt) — apt's version flagged SC2015 on pre-existing hook-runner.sh, first time check-shellcheck ever ran in GitHub Actions
 
 ## Issues / Blockers
 
@@ -382,11 +385,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 17 P03 | ~100min | 2 tasks | 12 files |
 | Phase 17 P05 | ~5h | 2 tasks | 7 files |
 | Phase 16 P01 | 27min | 2 tasks | 8 files |
+| Phase 16 P02 | 30min | 3 tasks | 3 files |
 
 ## Session
 
-**Last session:** 2026-08-03T03:55:45.032Z
-**Stopped At:** Completed 16-01-PLAN.md
+**Last session:** 2026-08-03T04:16:02.540Z
+**Stopped At:** Completed 16-02-PLAN.md
 **Resume File:** None
 
 **HANDOFF STATE — read before doing anything:**
