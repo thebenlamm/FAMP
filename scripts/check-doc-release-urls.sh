@@ -39,9 +39,20 @@ for doc in "${DOCS[@]}"; do
         lineno="${line%%:*}"
         url="${line#*:}"
 
-        # Strip trailing run of punctuation a URL can pick up from prose
-        # (e.g., "URL." or "URL)," should become "URL").
-        url="${url%%[.,;)]*}"
+        # Strip a trailing RUN of punctuation a URL can pick up from prose
+        # (e.g. "URL." or "URL)," -> "URL").
+        #
+        # Do NOT use `${url%%[.,;)]*}` here. In shell pattern matching the `*`
+        # is a glob wildcard, not a regex quantifier on the bracket, so that
+        # pattern means "a punctuation char followed by anything" and `%%`
+        # takes the LONGEST such suffix -- which truncates every URL at its
+        # first dot. `https://github.com/o/r/releases/...` becomes
+        # `https://github`. That silently pointed this gate at a URL nobody
+        # documents, which is the exact failure class this gate exists to
+        # catch. Strip one char at a time instead.
+        while [ "$url" != "${url%[.,;)]}" ]; do
+            url="${url%[.,;)]}"
+        done
 
         if printf '%s' "$url" | grep -q '<[^>]*>'; then
             echo "  SKIP (template)  ${doc}:${lineno}  ${url}"
@@ -50,7 +61,11 @@ for doc in "${DOCS[@]}"; do
         fi
 
         # -L: release asset URLs redirect to a signed CDN host.
-        status=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 30 "$url" || echo "000")
+        # On a curl failure `-w '%{http_code}'` already emits "000"; a bare
+        # `|| echo 000` would append a SECOND one and print the confusing
+        # status "000000". Capture, then normalise an empty result instead.
+        status=$(curl -sIL -o /dev/null -w '%{http_code}' --max-time 30 "$url") || true
+        [ -n "$status" ] || status="000"
         checked=$((checked + 1))
 
         if [ "$status" = "200" ]; then
