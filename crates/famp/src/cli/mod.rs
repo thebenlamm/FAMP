@@ -257,9 +257,10 @@ mod tests {
         // versions (e.g. 1.1.0-rc.1) to exercise the real release pipeline
         // before a GA tag -- the blanket "banner must never contain -rc."
         // ban predates that decision and would fail on every intentional
-        // pre-release bump. The real invariant survives unweakened above:
-        // the banner's version literal must equal env!("CARGO_PKG_VERSION")
-        // exactly, so a stray or mismatched RC marker is still caught by
-        // the `contains(CARGO_PKG_VERSION)` assertion, not by a blanket ban.
+        // pre-release bump. The real invariant is enforced above via two
+        // hardcoded literals: line 241 checks env!("CARGO_PKG_VERSION") equals
+        // the hardcoded version string, and line 245 checks the banner contains
+        // that same hardcoded string. A mismatch fails the test, keeping the
+        // invariant tight without a blanket RC ban.
     }
 }
