@@ -398,8 +398,25 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 **HANDOFF STATE — read before doing anything:**
 
-- **No executor is live.** Phase 17 is fully executed — all six plans (17-01..17-06) have SUMMARY.md files, the working tree is clean, and local `main` equals `origin/main` at `15b2ea2`. The previous handoff's "do NOT kill the live 17-03 agent / do NOT run git commands" warnings are **obsolete** — they described a session that ended on 2026-08-02 and no longer constrain anything.
-- **Active work is Phase 16 — Distribution** (DIST-01..05), 5 plans across 3 waves, 0 complete. Execution started 2026-08-03. Note the out-of-order sequence: Phase 17 was executed before Phase 16.
+- **No executor is live.** Phase 17 is fully executed — all six plans (17-01..17-06) have SUMMARY.md files. The previous handoff's "do NOT kill the live 17-03 agent / do NOT run git commands" warnings are **obsolete** — they described a session that ended on 2026-08-02 and no longer constrain anything.
+- **Active work is Phase 16 — Distribution** (DIST-01..05). Note the out-of-order sequence: Phase 17 was executed before Phase 16.
+
+**PHASE 16 STATUS as of 2026-08-03 (session end) — 4.8 of 5 plans done:**
+
+- **16-01 ✓, 16-02 ✓, 16-03 ✓, 16-04 ✓** — all have SUMMARY.md, all ROADMAP-checked, CI green.
+- **16-05 is NOT complete and has deliberately NO SUMMARY.md** — writing one would mark the plan done and make a resume skip it. Tasks 1–4 are finished and verified; **only Task 5 remains.**
+  - Task 1 ✓ `install-gate.yml` (no-Rust container) wired as a `post-announce-jobs` entry — commit `7e0b84b`, later fixed by `1b52820`.
+  - Task 2 ✓ version bumped 1.0.0 → **1.1.0-rc.1** — commit `7f0af24`. Moved the workspace version, 13 intra-workspace path-dep pins, `BANNER_ABOUT`, the `version_strings_unified` literal, `Cargo.lock`, and the 3 regenerated installer fixtures.
+  - Task 3 ✓ human decision gate — Ben approved "push v1.1.0-rc.1 now" on 2026-08-03.
+  - Task 4 ✓ **tag `v1.1.0-rc.1` pushed on `7f0af24`; the Release is published and verified BY ASSET**: 9 binary archives (3 bins × 3 targets), 9 SHA-256 checksums with every archive paired, 3 shell installers, `dist-manifest.json`, marked pre-release. `install-gate` re-run green (run 30823153868). https://github.com/thebenlamm/FAMP/releases/tag/v1.1.0-rc.1
+  - **Task 5 ✗ OPEN — blocking human-verify gate, needs Ben on real macOS.** CI structurally cannot do this: a Linux container cannot exercise Gatekeeper, which is the whole reason the docs lead with `curl` over a browser download. Steps: `curl -fsSL https://github.com/thebenlamm/FAMP/releases/download/v1.1.0-rc.1/famp-installer.sh | sh`, then `which famp` must resolve inside `~/.cargo/bin` and `famp --version` must print `1.1.0-rc.1` with no "unidentified developer" prompt. **Warning to relay before running it:** this overwrites `~/.cargo/bin/famp` with the released build (same version/commit, normally a no-op) — but if Gatekeeper quarantines it, `famp` breaks for the live masorah agents.
+- **Do NOT re-run `/gsd-execute-phase 16` blind.** 16-01..16-04 will be skipped correctly (they have SUMMARYs), but 16-05 would be re-dispatched from Task 1 and could try to re-tag. Drive Task 5 manually, then write `16-05-SUMMARY.md` and run phase verification.
+- **Two real defects were found and fixed during execution — both were gates failing for the wrong reason, neither was weakened:**
+  1. `just check-installer-drift` hardcoded `--tag=v1.0.0`; the version bump made `dist build` hard-error. Now derives the tag from `[workspace.package].version` and fails closed if unparseable.
+  2. `install-gate.yml` asserted `famp-gateway --version`, a flag that binary does not have (it is a daemon requiring `--listen`, exits non-zero without args). This turned the real release red while every artifact was good. Replaced with two stronger assertions: `famp --version` must match the tag under test, and `famp-gateway` must execute and emit its usage banner (which also proves glibc linkage — the real risk the no-Rust container exists to catch).
+- **dist 0.32 config lives in `dist-workspace.toml` (`[dist]` table), NOT `Cargo.toml`'s `[workspace.metadata.dist]`.** Several 16-0x plan texts say otherwise; they are stale. `Cargo.toml` holds only `[workspace.package].version`.
+- **Local toolchain state changed this session:** `famp`, `famp-gateway`, and `famp-relay` are all now installed at **1.1.0-rc.1**, and the broker daemon was restarted to match (`build=1.1.0-rc.1`, `bus_proto=2`). Four masorah agents (`worker-a`, `worker-b`, `grok-worker-c`, `coordinator-0803`) lost their parked waiters in that restart and **need a nudge to re-register**; their mailboxes are intact on disk and drain automatically on re-register. `coordinator-0803` is NOT ours to message — Ben said so explicitly.
+- Two stale local branches could not be deleted (`git branch -D` is permission-blocked in this harness): `scratch-16-02-release-gate-falsification` and `scratch/install-docs-gate-regression-check`. Both unpushed and harmless.
 - Both follow-up tasks the prior handoff queued are **DONE — verified, not assumed** (2026-08-03):
   1. *Sync PR #31* — PR #31 (`agent/fix-codex-wake-readiness`) was **MERGED** 2026-08-02T02:19:50Z. The local/origin `main` divergence it described is gone.
   2. *Type-safety on `resolve_own_domain_or_exit`* — already applied: `crates/famp-gateway/src/main.rs:333` reads `fn resolve_own_domain_or_exit(home: &std::path::Path) -> String`. The `Option<String>` return is gone, so the invariant is compiler-enforced. No remaining `own_domain` consumer branches on `Some`/`None` around a security check.
@@ -411,7 +428,9 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 - Phase 13 (reachability decision spike) is COMPLETE — the decision record was promoted and filed at `.planning/phases/13-public-reachability-decision-spike/`, and REACH-02 closed 2026-08-02 against a real Verizon cellular hotspot (cone NAT); see `13-REACH-02-RESULTS.md`. REACH-04 (genuinely-different-networks, bidirectional) remains open, tracked under Phase 17 — not this phase, and not satisfied by a provisioned relay box.
 - Phase 17 execution is COMPLETE (all six plans have SUMMARYs). REACH-04's genuinely-different-networks proof still needs Ben — two gateways on genuinely different networks; the provisioned Lightsail relay box does not satisfy it on its own.
-- Phase 16 (Distribution, DIST-01..05) is the active phase as of 2026-08-03. Its wave-3 plan (16-05) tags a release on a public repo — that is a human-gated, one-way act and will stop for explicit approval, never auto-approve.
+- Phase 16 (Distribution, DIST-01..05) is the active phase as of 2026-08-03, at 4.8/5. The public tag was approved and cut: **`v1.1.0-rc.1` is live** with 9 archives, 9 checksums, 3 installers, and `dist-manifest.json`.
+- **The one action Ben owes Phase 16:** Task 5's macOS verify — curl-install from the published release, confirm `which famp` lands in `~/.cargo/bin`, `famp --version` prints `1.1.0-rc.1`, and no Gatekeeper "unidentified developer" prompt appears. Nothing else blocks phase completion.
+- Four masorah agents need re-registering after this session's broker restart (see HANDOFF above). Mailboxes are intact; no data was lost.
 
 ## Accumulated Context
 
