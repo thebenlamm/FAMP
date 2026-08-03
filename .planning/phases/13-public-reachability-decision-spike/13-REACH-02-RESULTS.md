@@ -49,7 +49,7 @@ Probed **from** the Lightsail relay (`54.158.102.139`) **into** the hotspot, bot
 
 Identical external mapping across all four servers within each run => **cone NAT**, both runs. (The external port differs *between* the two runs because the local source port differed between runs — that is expected, and is not a contradiction of the within-run consistency that defines cone NAT.)
 
-**Method note:** `stunclient` was not installed and nothing was installed on Ben's machine for this test; a throwaway Python STUN client was used instead.
+**Method note:** `stunclient` was not installed and nothing was installed on Ben's machine for this test. The measurements above were produced by the checked-in reference script, [`scripts/stun-nat-type.py`](../../../scripts/stun-nat-type.py) (`python3 scripts/stun-nat-type.py` from the repo root) — it binds one local UDP socket and probes all four servers from that same fixed local port before comparing the reported mappings, exactly as described in `.planning/REACH-02-HOTSPOT-WALKTHROUGH.md`'s Test 3.
 
 ---
 

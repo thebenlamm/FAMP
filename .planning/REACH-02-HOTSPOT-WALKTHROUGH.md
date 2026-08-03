@@ -101,20 +101,22 @@ nc -vz -w 5 PUBLIC_IP 9999
 
 ## Test 3 — NAT type (decides whether hole-punching is ever viable)
 
-This is what actually answers the symmetric-NAT question. Two STUN servers, two different public-facing ports:
+This is what actually answers the NAT-type question. Run the checked-in reference script — it needs nothing installed:
 
 ```bash
-# install once if needed: brew install stuntman
-stunclient stun.l.google.com 19302
-stunclient stun1.l.google.com 19302
+python3 scripts/stun-nat-type.py
 ```
 
-Read the **mapped address** line each prints.
+It binds **one** local UDP socket and sends a STUN Binding Request to four servers from that same fixed local port, then compares the mapped (public) address each one reports. Holding the local port fixed across all four probes is the whole point — symmetric NAT allocates a different external port per destination, so the comparison is only meaningful if the local port doesn't change between probes.
 
-- **Same public port from both servers** → cone NAT. Hole-punching *could* work.
+- **Same public port from every server** → cone NAT. Hole-punching *could* work.
 - **Different public port from each** → **symmetric NAT.** Hole-punching cannot work, ever, for this network. Relay fallback is mandatory, not merely prudent.
 
-If `stunclient` isn't available and you'd rather not install it, skip this test — Tests 1 and 2 carry the decision on their own. Test 3 only informs whether REACH-06 (hole-punching as a later optimization) is worth revisiting.
+The script prints its own RESULT line stating which. This is the tool that produced the recorded REACH-02 measurements — see `.planning/phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md`.
+
+*(If you already have `stunclient` installed, it's an equivalent alternative — two servers, two different public-facing ports, same comparison. But the checked-in script is the reference method for this test, precisely because it needs no install.)*
+
+If you'd rather not run either, skip this test — Tests 1 and 2 carry the decision on their own. Test 3 only informs whether REACH-06 (hole-punching as a later optimization) is worth revisiting.
 
 ---
 
@@ -124,7 +126,7 @@ Paste these back:
 
 1. `PUBLIC_IP` (or just "carrier IP, not home") — plus whether the 8443 check passed
 2. Test 2's result: **did the inbound connection fail?** (expected: yes, it failed)
-3. Test 3's two mapped addresses, if you ran it — **same port or different?**
+3. Test 3's RESULT line, if you ran it — cone or symmetric?
 
 ---
 
