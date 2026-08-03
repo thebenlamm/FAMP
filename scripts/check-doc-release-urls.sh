@@ -39,8 +39,9 @@ for doc in "${DOCS[@]}"; do
         lineno="${line%%:*}"
         url="${line#*:}"
 
-        # Strip trailing punctuation a URL can pick up from prose.
-        url="${url%%[.,;]}"
+        # Strip trailing run of punctuation a URL can pick up from prose
+        # (e.g., "URL." or "URL)," should become "URL").
+        url="${url%%[.,;)]*}"
 
         if printf '%s' "$url" | grep -q '<[^>]*>'; then
             echo "  SKIP (template)  ${doc}:${lineno}  ${url}"
@@ -74,7 +75,11 @@ resolve, not by deleting the assertion.
 Common cause: `/releases/latest/download/...` 404s whenever the newest
 published Release is marked "pre-release" -- GitHub's `/latest/` alias
 deliberately skips those. Either publish a non-prerelease Release, or point
-the docs at a tag-pinned URL until one exists.
+the docs at a tag-pinned `/releases/download/<tag>/...` URL until one exists.
+
+Note: both `/releases/latest/download/...` and `/releases/download/<tag>/...`
+forms are accepted by the docs accuracy gate -- the invariant is that docs
+lead with a prebuilt-binary installer URL, not which alias is used.
 EOF
     exit 1
 fi
