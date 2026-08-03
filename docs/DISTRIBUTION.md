@@ -28,17 +28,19 @@ just check-installer-drift
 ```
 
 This is the drift gate (16-02): it runs `dist generate --check`, then `dist generate` and
-`dist build --artifacts=global --tag=v1.0.0` to regenerate `release.yml` and the three installer
-fixtures, copies the regenerated fixtures over the committed ones, and asserts
-`git diff --exit-code` against all three — i.e. it fails if the committed files have drifted from
-what the pinned `dist` version would generate today. It requires `dist` on `PATH` and is not part
-of `just ci` (a release tool, not a baseline local dependency); it runs in CI via
-`.github/workflows/release-gate.yml`.
+`dist build --artifacts=global` with a tag derived from `[workspace.package].version` in
+`Cargo.toml` to regenerate `release.yml` and the three installer fixtures, copies the regenerated
+fixtures over the committed ones, and asserts `git diff --exit-code` against all three — i.e. it
+fails if the committed files have drifted from what the pinned `dist` version would generate
+today. It requires `dist` on `PATH` and is not part of `just ci` (a release tool, not a baseline
+local dependency); it runs in CI via `.github/workflows/release-gate.yml`.
 
 The companion structural gate, `just check-release-artifact-source`
-(`scripts/release-artifact-source-gate.sh`), asserts `release.yml` is the *sole* tag-triggered
-producer of release assets — DIST-05's "no separate manual-upload code path to police" guarantee
-made mechanical. This one *is* part of `just ci` (bash + grep only, no external tool dependency).
+(`scripts/release-artifact-source-gate.sh`), checks `.github/workflows/*.yml` for five known
+upload mechanisms to deter accidental manual uploads or separate upload scripts — catching common
+patterns but not a complete guarantee (alternative mechanisms like `gh api` commands or
+third-party upload actions are not caught). This one *is* part of `just ci` (bash + grep only, no
+external tool dependency).
 
 ## Release procedure
 
@@ -52,9 +54,8 @@ made mechanical. This one *is* part of `just ci` (bash + grep only, no external 
 4. Confirm the triggered run on GitHub Actions completes successfully and the GitHub Release it
    creates carries all expected archives, `.sha256` files, and the three installer scripts.
 
-No tag has been pushed and no GitHub Release has been published as part of Phase 16 — that is
-16-05's explicit, human-gated final step, not something this document or any prior 16-0x plan does
-automatically.
+A `v<version>` tag push and corresponding GitHub Release publication are the final steps of
+phase-level release work — they are explicit, human-gated decision points, never automatic.
 
 ## Shipped platform matrix
 
