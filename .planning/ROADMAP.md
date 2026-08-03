@@ -180,8 +180,19 @@ Plans:
   3. Published artifacts carry checksums, verified by the installer before installing — a corrupted or substituted artifact fails closed. Docs state the honest boundary: checksums prove the download matches what the release workflow produced; they do not prove the workflow itself was uncompromised. Artifact signing is a named follow-up, not this phase.
   4. Onboarding docs lead with the binary install path; a **working** from-source command remains documented only as the fallback. (Corrected 2026-08-02: the original wording named `cargo install famp`, which has never worked — `famp` was never published to crates.io, and six doc sites tell users to run it. Publishing to crates.io was considered and explicitly rejected; the docs move to the `--path`/`--git` form.)
 
-**Plans:** TBD
-**Decisions:** `.planning/phases/16-distribution/16-CONTEXT.md` (D-01..D-08, user-approved 2026-08-02) · research: `16-RESEARCH.md`
+**Plans:** 5 plans
+
+Plans:
+
+- [ ] 16-01-PLAN.md — TRACER: settle D-08 from a real arm64-macOS build log, then adopt `dist` 0.32 and generate the tag-triggered pipeline for 3 binaries × 3 pinned targets (DIST-01, DIST-03, DIST-05)
+- [ ] 16-02-PLAN.md — release-pipeline gates: `dist` drift check, the DIST-05 sole-producer structural gate, installer shellcheck, all wired into an additive `release-gate` workflow (DIST-01, DIST-05)
+- [ ] 16-03-PLAN.md — DIST-03 falsification pair: the installer fails closed on a corrupted artifact, proven discriminating by a checksum-stripped-installer inversion (DIST-03)
+- [ ] 16-04-PLAN.md — docs lead with the binary path, every from-source command actually works, D-06's claim boundary locked, all gated by a compiled doc-accuracy test on the `paths-ignore`d docs commit shape (DIST-02, DIST-04)
+- [ ] 16-05-PLAN.md — no-Rust container install gate, version bump, and the human-gated pre-release tag that proves DIST-01/02 by published artifacts rather than dry runs (DIST-01, DIST-02, DIST-05)
+
+**Waves:** W1 = 16-01 · W2 = 16-02, 16-03, 16-04 (no file overlap) · W3 = 16-05
+**Decisions:** `.planning/phases/16-distribution/16-CONTEXT.md` (D-01..D-08, user-approved 2026-08-02) · research: `16-RESEARCH.md` · patterns: `16-PATTERNS.md` · validation: `16-VALIDATION.md`
+**Plan-time finding:** `dist` derives the release tag from `[workspace.package] version` (`1.0.0`), and `v1.0.0` already exists — so a version bump is a hard prerequisite to any tagged release, and it trips `version_strings_unified` in `crates/famp/src/cli/mod.rs`, which pins the version literal. Handled in 16-05; the test is updated, never weakened.
 **Constraint:** Docs must lead with a `curl`-based installer rather than "download from the releases page." Browsers set `com.apple.quarantine` on downloads and `curl` does not, so the browser path forces macOS Gatekeeper/notarization work the curl path avoids entirely — a real cost avoided by a doc-ordering decision, not one worth rediscovering later.
 
 ### Phase 17: Protocol-Grade Ingress + Reachability Implementation
