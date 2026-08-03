@@ -1,0 +1,46 @@
+# D-08 evidence probe (16-01): does x86_64-apple-darwin cross-compile
+# cleanly on an arm64 macos-latest runner given the aws-lc-sys cmake
+# dependency? workflow_dispatch-only so it costs nothing on ordinary
+# commits -- this is a one-shot decision probe, not a release-path job.
+#
+# A red run here is the informative outcome, not a failure to suppress:
+# no continue-on-error anywhere in this file.
+name: darwin-cross-probe
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: darwin-cross-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  darwin-cross-probe:
+    name: darwin-cross-probe (x86_64-apple-darwin on arm64 macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Diagnostic — runner arch and cmake presence
+        run: |
+          uname -m
+          cmake --version || echo "cmake not found on PATH"
+
+      - name: Add x86_64-apple-darwin target
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Cross-build famp, famp-gateway, famp-relay for x86_64-apple-darwin
+        run: cargo build --release -p famp -p famp-gateway -p famp-relay --target x86_64-apple-darwin
+
+      - name: Assert all three binaries exist
+        run: |
+          for bin in famp famp-gateway famp-relay; do
+            test -x "target/x86_64-apple-darwin/release/$bin" || {
+              echo "::error::missing binary target/x86_64-apple-darwin/release/$bin"
+              exit 1
+            }
+          done
+          echo "all three binaries present"
