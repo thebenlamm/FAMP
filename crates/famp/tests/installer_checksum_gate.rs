@@ -501,7 +501,7 @@ fn installer_accepts_a_matching_artifact() {
         &fixtures.working_installer_src,
     );
 
-    let server = FixtureServer::start(fixtures.good_archives);
+    let server = FixtureServer::start(fixtures.good_archives.clone());
     let cargo_home = TempDir::new().expect("CARGO_HOME tempdir");
     let home = TempDir::new().expect("HOME tempdir");
 
@@ -524,6 +524,43 @@ fn installer_accepts_a_matching_artifact() {
         installed_bin.exists(),
         "matching artifact must be installed at $CARGO_HOME/bin/famp: {}",
         installed_bin.display()
+    );
+    drop(server);
+
+    // Empirical (not just logical) proof of the MUST-STILL-PASS half of the
+    // pair: run the SAME good artifact against the stripped installer copy
+    // (checksum-verification call removed) and confirm it also succeeds.
+    // verify_checksum()'s only rejection path is a digest inequality
+    // (famp-installer.sh line ~1506); a matching artifact can never trigger
+    // it whether or not the call happens, but this asserts that fact rather
+    // than merely arguing it — a control whose "must still pass" claim rests
+    // on inference alone is weaker evidence than one that was actually run.
+    let stripped_installer_path = write_installer(
+        install_scripts_dir.path(),
+        "famp-installer-stripped-control-check.sh",
+        &fixtures.stripped_installer_src,
+    );
+    let stripped_server = FixtureServer::start(fixtures.good_archives);
+    let stripped_cargo_home = TempDir::new().expect("CARGO_HOME tempdir (stripped control check)");
+    let stripped_home = TempDir::new().expect("HOME tempdir (stripped control check)");
+    let stripped_output = run_installer(
+        &stripped_installer_path,
+        stripped_cargo_home.path(),
+        stripped_home.path(),
+        &stripped_server.base_url(),
+    );
+    assert!(
+        stripped_output.status.success(),
+        "control must ALSO pass under the stripped (checksum-verification-removed) installer \
+         — a matching artifact never depends on verification running at all: status={:?} \
+         stdout={} stderr={}",
+        stripped_output.status.code(),
+        String::from_utf8_lossy(&stripped_output.stdout),
+        String::from_utf8_lossy(&stripped_output.stderr),
+    );
+    assert!(
+        stripped_cargo_home.path().join("bin").join("famp").exists(),
+        "control must ALSO install under the stripped installer"
     );
 }
 
