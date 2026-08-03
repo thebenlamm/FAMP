@@ -146,15 +146,17 @@ less famp-installer.sh   # read it
 sh famp-installer.sh
 ```
 
-**What the checksum does and does not prove.** The installer downloads a
-`.sha256` checksum alongside the release archive and verifies the
-downloaded bytes match before installing anything. This verifies the
-download completed correctly and matches what the release workflow
-produced — it does not, by itself, prove the release workflow was not
-compromised. An attacker who could substitute the release archive could
-substitute the checksum file beside it. Artifact signing (minisign / cosign
-/ Sigstore) is a recorded follow-up that would close that gap; it has not
-shipped.
+**What the checksum does and does not prove.** The installer contains an
+embedded checksum for each target (baked into the script at release time)
+and verifies the downloaded archive matches it before installing anything.
+This verifies the download completed correctly and matches what the release
+workflow produced. With embedded checksums, the installer script itself is
+the sole trust root — whoever controls the script controls both the expected
+digest and the download URL. An attacker who could substitute the release
+archive could substitute the installer script beside it. Regarding the
+checksum: it does not, by itself, prove the release workflow was not
+compromised. Artifact signing (minisign / cosign / Sigstore) is the recorded
+follow-up that would close that gap; it has not shipped.
 
 **Supported platforms.** Prebuilt binaries ship for macOS (arm64 and
 x86_64) and Linux x86_64 (glibc 2.35 or newer — the floor set by the

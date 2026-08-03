@@ -43,11 +43,11 @@ pick it up automatically from your profile.
 curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
 ```
 
-This downloads the prebuilt binary for your platform, verifies it against a
-checksum published alongside the release, and installs it to
-`~/.cargo/bin` — a few seconds, not a compile. If that directory isn't
-already on your `PATH`, the installer prints a warning plus the exact line
-to add to your shell profile — don't skip it.
+This downloads the prebuilt binary for your platform, verifies it against an
+embedded checksum, and installs it to `~/.cargo/bin` — a few seconds, not a
+compile. If that directory isn't already on your `PATH`, the installer
+prints a warning plus the exact line to add to your shell profile — don't
+skip it.
 
 Building from source instead (contributors, or a platform without a
 prebuilt binary)? `cargo install --path crates/famp` from a clone.
