@@ -42,6 +42,7 @@ Public reachability over the open internet. The model is decided **first**, in a
   **Validated 2026-08-02, Verizon cellular hotspot, two runs.** Public IP `174.228.224.145`, ownership verified via reverse DNS (`145.sub-174-228-224.myvzw.com`, AS6167 Verizon Business) — not inferred from address shape. Outbound HTTPS 443: 200/200. Port 8443: not blocked (301/301) — the relay is not forced onto port 443. Inbound (probed *from* the Lightsail relay `54.158.102.139` into the hotspot): TCP 9999 timed out both runs; run 2 added a positive control — the relay first proved it could reach `1.1.1.1:443` before failing to reach the hotspot, ruling out "the relay has no outbound networking" as an alternative explanation. NAT type: 4 STUN servers agreed on the same external mapping within each run => **cone NAT**, not symmetric. Full write-up: `.planning/phases/13-public-reachability-decision-spike/13-REACH-02-RESULTS.md`.
 
   **Why the wording changed from "symmetric-NAT" to "a network Ben does not control."** The original wording said "symmetric-NAT" because a single 2016 citation (~40% symmetric-dominant on cellular) predicted the test environment would be symmetric — a citation the research pass had *already* flagged as unverifiable and a decade stale (`13-PRICING-VERIFIED.md`). "Symmetric" was a **prediction about the test environment**, not a property the requirement's design actually needed; testing falsified the prediction (this carrier is cone NAT). The requirement's actual intent — validate against a network Ben doesn't control, not only ones he does — is fully satisfied regardless of NAT flavor. **Critically, relay-first does not depend on the NAT being symmetric**: it is confirmed by the inbound result alone (nothing can dial in), which holds on every NAT flavor, cone included. Stated explicitly so this conclusion is never read as resting on the falsified premise.
+
 - [x] **REACH-03**: `iroh` is explicitly weighed as the single-crate alternative and its rejection rationale (transport-migration cost against a shipped, Gate-A-proven axum/rustls transport) is recorded in the decision record rather than silently dropped.
 - [ ] **REACH-04**: Two gateways on different networks, with no shared VPN, establish a working bidirectional path under the chosen model.
 - [x] **REACH-05**: A reachability failure (relay down, hole-punch failed, peer offline) surfaces at the sender as a distinct, actionable error — never as a silent fire-and-forget success.
@@ -136,11 +137,11 @@ Promoted from dormant. A stranger's agent waking reliably on inbound messages is
 
 Today's only install path is `cargo install famp` — install rustup, then compile 15 crates. Phase 19 (Human Acceptance Gate)'s DOC-07 requires validating the setup guide on a fresh machine with no prior FAMP state; a fresh machine has no Rust toolchain either, so distribution must ship before that gate is reachable.
 
-- [ ] **DIST-01**: A tagged release publishes prebuilt binaries for macOS arm64, macOS x86_64, and Linux x86_64 as downloadable release artifacts. **Binary set: `famp`, `famp-gateway`, and `famp-relay`** — widened 2026-08-02 (Ben-approved) from the original "`famp` binaries" wording, which was a requirement-text gap: `famp-gateway` is a separate `[[bin]]` target that `docs/GATEWAY-SETUP.md` requires on `PATH`, so shipping only `famp` would leave Phase 20's second person unable to federate — the exact gap this phase exists to close. `famp-relay` is a third bin target and is near-free once the matrix exists. See `.planning/phases/16-distribution/16-CONTEXT.md` D-02.
+- [x] **DIST-01**: A tagged release publishes prebuilt binaries for macOS arm64, macOS x86_64, and Linux x86_64 as downloadable release artifacts. **Binary set: `famp`, `famp-gateway`, and `famp-relay`** — widened 2026-08-02 (Ben-approved) from the original "`famp` binaries" wording, which was a requirement-text gap: `famp-gateway` is a separate `[[bin]]` target that `docs/GATEWAY-SETUP.md` requires on `PATH`, so shipping only `famp` would leave Phase 20's second person unable to federate — the exact gap this phase exists to close. `famp-relay` is a third bin target and is near-free once the matrix exists. See `.planning/phases/16-distribution/16-CONTEXT.md` D-02.
 - [ ] **DIST-02**: A single documented command installs a working `famp` on a machine with **no Rust toolchain**, proven on a clean environment with no prior FAMP state.
-- [ ] **DIST-03**: Published artifacts carry checksums, and the installer **verifies** them before installing — a corrupted or substituted artifact fails closed.
+- [x] **DIST-03**: Published artifacts carry checksums, and the installer **verifies** them before installing — a corrupted or substituted artifact fails closed.
 - [ ] **DIST-04**: The onboarding docs **lead with** the binary install path; a **working** from-source command remains documented only as the fallback. Corrected 2026-08-02 (Ben-approved): this requirement originally named `cargo install famp`, which presumed that command works. It does not — `famp` was never published to crates.io (VERIFIED twice against the crates.io API), yet six doc sites instruct users to run it (`README.md:192`, `docs/GETTING-STARTED.md:43`, `docs/GATEWAY-SETUP.md:24`, `docs/ONBOARDING.md:12,26,32,37`). The fallback becomes the `--path`/`--git` from-source form and crates.io publication is explicitly NOT undertaken. See `.planning/phases/16-distribution/16-CONTEXT.md` D-01.
-- [ ] **DIST-05**: Release artifacts are produced **only** by the tag-triggered workflow — no hand-built or manually uploaded binaries.
+- [x] **DIST-05**: Release artifacts are produced **only** by the tag-triggered workflow — no hand-built or manually uploaded binaries.
 
 ### Documentation & Acceptance (DOC / UAT)
 
@@ -247,11 +248,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | WATCH-03 | Phase 21 | Pending |
 | WATCH-04 | Phase 21 | Pending |
 | WATCH-05 | Phase 21 | Pending |
-| DIST-01 | Phase 16 | Pending |
+| DIST-01 | Phase 16 | Complete |
 | DIST-02 | Phase 16 | Pending |
-| DIST-03 | Phase 16 | Pending |
+| DIST-03 | Phase 16 | Complete |
 | DIST-04 | Phase 16 | Pending |
-| DIST-05 | Phase 16 | Pending |
+| DIST-05 | Phase 16 | Complete |
 | DOC-06 | Phase 20 | Pending |
 | DOC-07 | Phase 20 | Pending |
 | UAT-02 | Phase 20 | Pending |
