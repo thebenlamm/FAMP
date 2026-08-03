@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase: 16
-current_phase_name: distribution
-status: executing
-stopped_at: Completed 16-04-PLAN.md
-last_updated: "2026-08-03T05:19:18.338Z"
-last_activity: 2026-08-02
-last_activity_desc: Phase 16 execution started
+current_phase: 18
+current_phase_name: Cross-Person Trust Bootstrap (Pairing)
+status: ready-to-plan
+stopped_at: Phase 16 complete (5/5), v1.1.0-rc.1 released and verified
+last_updated: "2026-08-03T17:52:04.725Z"
+last_activity: 2026-08-03
+last_activity_desc: Phase 16 complete; next real work is Phase 18 (17 was already done)
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 20
-  completed_plans: 19
-  percent: 60
+  completed_plans: 20
+  percent: 80
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 ## Current Position
 
-Phase: 16 (distribution) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-08-02 — Phase 16 execution started
+Phase: 17 — Protocol-Grade Ingress + Reachability Implementation
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-03 — Phase 16 complete, transitioned to Phase 17
 
 ## v1.1 Phase Map
 
