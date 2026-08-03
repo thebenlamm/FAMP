@@ -19,6 +19,12 @@ install-path = "CARGO_HOME"
 install-updater = false
 # Checksum algorithm for release artifacts (T-16-01 / DIST-03)
 checksum = "sha256"
+# DIST-02: a no-Rust-toolchain container job that curls the documented
+# installer against the real published release and asserts both binaries
+# work. Runs post-announce because it needs release assets that exist only
+# once a release is actually published. Does NOT satisfy DOC-07 -- see the
+# header comment in .github/workflows/install-gate.yml.
+post-announce-jobs = ["./install-gate"]
 
 [dist.github-custom-runners]
 # D-04: pin the Linux glibc floor deliberately (2.35) rather than letting it

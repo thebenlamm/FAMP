@@ -1,0 +1,117 @@
+# DIST-02 mechanical proxy, wired as a `dist` `post-announce-jobs` entry
+# (see `[dist] post-announce-jobs` in dist-workspace.toml).
+#
+# What this job proves: on a machine with NO Rust toolchain installed at
+# all, the documented curl installer command actually produces a working
+# `famp` and `famp-gateway` on PATH. It runs at post-announce time (after
+# `release.yml`'s `announce` job) because the real curl path needs release
+# assets that exist only once a release has actually been published — a
+# pre-publish hook would have nothing to fetch.
+#
+# What this job does NOT prove, and must never be described as proving:
+# it does NOT satisfy DOC-07 (Phase 20's fresh-machine human validation).
+# A Linux container is not a fresh shell profile, and it cannot exercise
+# macOS Gatekeeper at all — the one platform where a curl-installed binary
+# risks an "unidentified developer" prompt. DOC-07 stays open, owned by
+# Phase 20, until a human runs the installer on real, previously-untouched
+# macOS (see Task 5 of 16-05-PLAN.md).
+name: install-gate
+
+on:
+  # Invoked by dist's generated release.yml as a post-announce job. dist
+  # always passes the release plan as a JSON string in `inputs.plan`.
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+  # Manual re-run against any existing (already-published) release, without
+  # cutting a new tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to test (e.g. v1.1.0-rc.1)"
+        required: true
+        type: string
+
+concurrency:
+  group: install-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-gate:
+    name: install-gate (no-Rust container, DIST-02)
+    runs-on: ubuntu-latest
+    container:
+      image: debian:stable-slim
+    timeout-minutes: 15
+    steps:
+      # Deliberately nothing beyond curl/ca-certificates/xz-utils/tar --
+      # specifically no dtolnay/rust-toolchain, no cargo, no rustc. Installing
+      # a Rust toolchain here would destroy the only claim this job makes.
+      - name: Install curl, ca-certificates, xz-utils, tar (no Rust)
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends curl ca-certificates xz-utils tar
+
+      - name: Resolve the release tag under test
+        id: resolve-tag
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            # No jq on this deliberately-minimal image; the plan JSON dist
+            # passes is flat enough for a plain grep/sed extraction of the
+            # one field this job needs.
+            PLAN='${{ inputs.plan }}'
+            TAG=$(printf '%s' "$PLAN" | grep -o '"announcement_tag":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')
+          fi
+          if [ -z "$TAG" ]; then
+            echo "ERROR: could not resolve a release tag from workflow_call plan or workflow_dispatch input" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved release tag under test: $TAG"
+
+      # Check the premise rather than assume it: the job's entire claim
+      # depends on no Rust toolchain being present before the installer runs.
+      - name: Assert no Rust toolchain is present
+        run: |
+          set -euo pipefail
+          if command -v cargo >/dev/null 2>&1; then
+            echo "ERROR: cargo is present on this image -- DIST-02's no-Rust premise is violated" >&2
+            exit 1
+          fi
+          if command -v rustc >/dev/null 2>&1; then
+            echo "ERROR: rustc is present on this image -- DIST-02's no-Rust premise is violated" >&2
+            exit 1
+          fi
+          echo "confirmed: neither cargo nor rustc is present on this container"
+
+      # Same command README.md documents (the tag-pinned form), run against
+      # the real published release. The installer writes its install dir to
+      # $GITHUB_PATH itself when it detects it's running in GitHub Actions,
+      # so the next step already has famp/famp-gateway on PATH.
+      - name: Install famp via the documented curl installer
+        env:
+          TAG: ${{ steps.resolve-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${TAG}/famp-installer.sh" | sh
+
+      - name: Install famp-gateway via the documented curl installer
+        env:
+          TAG: ${{ steps.resolve-tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${TAG}/famp-gateway-installer.sh" | sh
+
+      - name: Verify both binaries resolve and report their version
+        run: |
+          set -euo pipefail
+          command -v famp
+          command -v famp-gateway
+          famp --version
+          famp-gateway --version
