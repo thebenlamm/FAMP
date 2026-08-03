@@ -45,3 +45,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p famp --test install_docs_accuracy
+
+      # DIST-04 gap closure. install_docs_accuracy.rs asserts ordering,
+      # wording, and fallback parity -- but nothing asserted a documented
+      # download URL actually returns anything. Phase 16 verification found
+      # all ten `/releases/latest/download/...` URLs returning 404 while this
+      # gate was green, because GitHub's `/latest/` alias skips pre-releases.
+      # Kept out of `cargo test` so unit tests stay hermetic and offline-safe.
+      - name: Documented release URLs resolve
+        run: bash scripts/check-doc-release-urls.sh

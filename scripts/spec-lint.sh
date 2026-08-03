@@ -39,6 +39,10 @@ check() {
 check SPEC-01 "v0.5.x Changelog heading"        rg -q 'v0\.5\.[12] Changelog'          "$SPEC"
 check SPEC-02 "RFC 8785 citation"                rg -q 'RFC 8785'                       "$SPEC"
 check SPEC-03 "FAMP-sig-v1 domain separator"     rg -q 'FAMP-sig-v1'                    "$SPEC"
+# SC2016 is expected: this is a ripgrep REGEX, not a shell string. The
+# backticks around `to` are literal pattern characters that must reach rg
+# unexpanded, so single quotes are required.
+# shellcheck disable=SC2016
 check SPEC-04 "recipient anti-replay binding"    rg -q 'recipient.{0,20}anti-replay|binds.{0,10}`to`' "$SPEC"
 check SPEC-05 "federation_credential field"      rg -q 'federation_credential'          "$SPEC"
 

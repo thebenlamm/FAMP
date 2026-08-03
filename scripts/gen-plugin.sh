@@ -151,6 +151,11 @@ for shim in hook-runner.sh famp-await.sh; do
   case "$HOST" in
     claude-code)
       # Expand CLAUDE_PLUGIN_ROOT at hook runtime (same token hooks.json uses).
+      # SC2016 is expected here: the single quotes are the point. This must
+      # emit a LITERAL ${CLAUDE_PLUGIN_ROOT} into the generated hook so it
+      # expands when the hook runs, not when this generator runs. Expanding it
+      # here would bake in the generating machine's path.
+      # shellcheck disable=SC2016
       sed 's|^FAMP_BIN=@FAMP_BIN@$|FAMP_BIN="${CLAUDE_PLUGIN_ROOT}/bin/famp"|' \
         "$src" > "$dest"
       ;;
