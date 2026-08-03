@@ -108,10 +108,44 @@ jobs:
           set -euo pipefail
           curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${TAG}/famp-gateway-installer.sh" | sh
 
-      - name: Verify both binaries resolve and report their version
+      - name: Verify both binaries resolve and actually execute
+        env:
+          TAG: ${{ steps.resolve-tag.outputs.tag }}
         run: |
           set -euo pipefail
           command -v famp
           command -v famp-gateway
+
+          # famp does expose --version and must exit 0. Assert the reported
+          # value matches the tag under test rather than merely that the flag
+          # works: a stale binary already on PATH would otherwise sail
+          # through this gate while proving nothing about THIS release.
           famp --version
-          famp-gateway --version
+          EXPECTED="${TAG#v}"
+          ACTUAL=$(famp --version | awk '{print $NF}')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "ERROR: famp --version reported '$ACTUAL' but the release under test is '$EXPECTED'" >&2
+            exit 1
+          fi
+
+          # famp-gateway is a daemon. It has no --version flag and exits
+          # non-zero when its required args are absent -- that is correct
+          # behavior, not a failure. Asserting `famp-gateway --version` here
+          # turned this gate red on the v1.1.0-rc.1 release even though every
+          # artifact was good; the gate was wrong, not the release.
+          #
+          # Assert instead that the binary EXECUTES and emits its own usage
+          # banner. For DIST-02 that is the stronger signal: it proves the
+          # artifact downloaded, landed on PATH, is executable, and links
+          # against this container's glibc -- which is the actual risk a
+          # no-Rust container job exists to catch (D-04 pins the glibc floor
+          # at 2.35 for exactly this reason). A missing symbol or a wrong-arch
+          # binary fails here; it does not print usage.
+          GW_OUT=$(famp-gateway 2>&1 || true)
+          printf '%s\n' "$GW_OUT"
+          if ! printf '%s' "$GW_OUT" | grep -q "usage: famp-gateway"; then
+            echo "ERROR: famp-gateway did not emit its usage banner -- the installed binary did not execute correctly" >&2
+            exit 1
+          fi
+
+          echo "OK: famp ${ACTUAL} and famp-gateway both installed from ${TAG} and execute"
