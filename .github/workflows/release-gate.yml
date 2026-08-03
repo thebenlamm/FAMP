@@ -1,0 +1,59 @@
+# release.yml and the three installer fixtures under
+# crates/famp/tests/fixtures/installers/ are generated from
+# dist-workspace.toml (dist 0.32's actual config file — not
+# [workspace.metadata.dist] in Cargo.toml, which holds no dist config).
+# Both only ever execute at tag time, so a hand edit or a stale
+# regeneration is invisible until a release is already wrong. This
+# workflow is purely additive — it does not touch ci.yml's triggers
+# (repo convention, stated in asset-gate.yml's own header) — and covers
+# the exact commit shapes that could introduce that drift, or a second
+# producer of release assets (DIST-05).
+name: release-gate
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "dist-workspace.toml"
+      - ".github/workflows/release.yml"
+      - "crates/famp/tests/fixtures/installers/**"
+      - "scripts/release-artifact-source-gate.sh"
+      - "Justfile"
+      - ".github/workflows/release-gate.yml"
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "dist-workspace.toml"
+      - ".github/workflows/release.yml"
+      - "crates/famp/tests/fixtures/installers/**"
+      - "scripts/release-artifact-source-gate.sh"
+      - "Justfile"
+      - ".github/workflows/release-gate.yml"
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-gate:
+    name: release-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Install dist 0.32.0 (not in taiki-e/install-action's tool set)
+        run: cargo install cargo-dist --version 0.32.0 --locked
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: DIST-05 sole-producer gate
+        run: just check-release-artifact-source
+      - name: Shellcheck the hook assets + installer fixtures
+        run: just check-shellcheck
+      - name: dist-derived-file drift gate
+        run: just check-installer-drift
