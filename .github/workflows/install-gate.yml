@@ -17,21 +17,6 @@
 # macOS (see Task 5 of 16-05-PLAN.md).
 name: install-gate
 
-# NOTE ON THE INPUT DECLARATIONS BELOW: both `plan` and `tag` are declared on
-# BOTH triggers, even though each trigger only ever supplies one of them.
-#
-# This is required, not redundant. The resolve-tag step reads both values via
-# `env:` (so they never pass through GitHub's YAML->shell textual substitution,
-# which was a script-injection vector). GitHub validates `inputs.*` references
-# in `env:` against the inputs declared by the trigger — far more strictly than
-# it validates the same reference inside a `run:` string. Declaring `tag` only
-# under workflow_dispatch made `inputs.tag` invalid in the workflow_call
-# context and rendered this entire file unparseable: GitHub reported it by path
-# rather than name, with no jobs and no logs.
-#
-# Each is `required: false` on the trigger that does not supply it, so the
-# unsupplied one resolves to empty and the step's existing if/else picks the
-# right branch.
 on:
   # Invoked by dist's generated release.yml as a post-announce job. dist
   # always passes the release plan as a JSON string in `inputs.plan`.
@@ -40,10 +25,6 @@ on:
       plan:
         required: true
         type: string
-      tag:
-        description: "Unused on this trigger; declared so `inputs.tag` is valid here."
-        required: false
-        type: string
   # Manual re-run against any existing (already-published) release, without
   # cutting a new tag.
   workflow_dispatch:
@@ -51,10 +32,6 @@ on:
       tag:
         description: "Release tag to test (e.g. v1.1.0-rc.1)"
         required: true
-        type: string
-      plan:
-        description: "Unused on this trigger; declared so `inputs.plan` is valid here."
-        required: false
         type: string
 
 concurrency:
@@ -91,9 +68,17 @@ jobs:
             # No jq on this deliberately-minimal image; the plan JSON dist
             # passes is flat enough for a plain grep/sed extraction of the
             # one field this job needs.
-            # Values pass through env: to avoid GitHub Actions YAML→shell
-            # script injection (GitHub substitutes ${{ }} expressions textually
-            # before the shell parses the script).
+            # Values arrive via env: rather than direct interpolation, to
+            # avoid GitHub Actions YAML-to-shell script injection: Actions
+            # substitutes expression syntax into this script textually,
+            # BEFORE the shell parses it.
+            #
+            # Do NOT write a literal empty expression in this file, not even
+            # inside a shell comment. Actions substitutes expressions in run:
+            # blocks without regard for shell comment syntax, and an empty one
+            # is a parse error that makes the whole workflow file invalid --
+            # it surfaces as a zero-job failed run with no logs. A comment
+            # describing this very mechanism is what broke it once.
             PLAN="$PLAN_INPUT"
             TAG=$(printf '%s' "$PLAN" | grep -o '"announcement_tag":"[^"]*"' | head -1 | sed -E 's/.*:"([^"]*)"/\1/')
           fi
