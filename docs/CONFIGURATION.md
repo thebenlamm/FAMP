@@ -227,6 +227,29 @@ All broker runtime data lives under the directory that contains the socket
 The `mailboxes/` subdirectory is created automatically by the broker on first
 start. Cursor files are managed client-side by `famp inbox ack --offset <N>`.
 
+**`broker.log` is not rotated.** Both service definitions append to it
+(`StandardOutput=append:` on systemd, `StandardOutPath` on launchd) and nothing
+truncates it. The broker is not chatty — a healthy one writes a few hundred
+bytes — so this is a slow fuse rather than a live problem, but a broker stuck in
+a restart loop writes a startup error per attempt and it is unbounded. On a
+long-lived machine, cap it:
+
+```
+# ~/.config/logrotate.d/famp-broker  (run via a user logrotate timer)
+/home/YOU/.famp/broker.log {
+    weekly
+    rotate 4
+    maxsize 10M
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+`copytruncate` matters: the broker holds the file open, so a plain rename would
+leave it writing to the rotated inode. Truncating it by hand
+(`: > ~/.famp/broker.log`) is safe at any time and does not require a restart.
+
 ### v0.8 identity-home layout (under `FAMP_HOME`, default `~/.famp`)
 
 ```
@@ -419,7 +442,7 @@ Run `just` with no arguments to list all available recipes.
 | `just fmt-check` | Check formatting without modifying (CI gate). |
 | `just install-hooks` | Install repo-local git hooks (`pre-commit`: fmt-check; `pre-push`: clippy). One-time per clone. |
 | `just audit` | Run `cargo audit` for RustSec advisories. |
-| `just install` | `cargo install --path crates/famp --locked --force` then `famp install-claude-code`. Run after any MCP tool surface change. |
+| `just install` | `cargo install --path crates/famp --locked --force`. Run after any MCP tool surface change. Does not touch host wiring — re-running `famp install-claude-code` on a plugin-wired machine would double-register the MCP server. Note that neither wiring path is guaranteed to read `~/.cargo/bin/famp`: the plugin shim prefers `$FAMP_BIN` and `~/.famp/bin/famp`, and the legacy installer pins whichever binary ran it. If you use either, re-run your wiring step after installing. |
 | `just clean` | Remove build artifacts (`cargo clean`). |
 | `just ci` | Full local CI-parity gate. Green here implies a green GitHub Actions run. |
 | `just smoke-test` | Verify the quick-start install path (`cargo install --path crates/famp`) in an isolated root. |

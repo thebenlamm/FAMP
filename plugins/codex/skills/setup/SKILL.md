@@ -19,15 +19,28 @@ famp --version
 ```
 
 Unlike the Claude Code packaging, this plugin does not ship a PATH shim, so
-`famp` must be on your `PATH` directly — `~/.cargo/bin` after a source build.
+`famp` must be on your `PATH` directly — `~/.cargo/bin` after either the
+installer or a source build.
 
 - **Prints a version** → go to Step 3.
 - **`command not found`** → Step 2.
 
 ## Step 2 — install the binary
 
-FAMP is not published to crates.io and ships no release binaries, so this builds
-from source. Requires Rust 1.89+.
+FAMP ships prebuilt binaries. Prefer the installer — no Rust toolchain, seconds
+rather than minutes:
+
+```bash
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+```
+
+It writes to `$CARGO_HOME/bin`, defaulting to `~/.cargo/bin`; make sure that
+directory is on your `PATH` and relay any `PATH` warning it prints verbatim.
+Re-run `famp --version`, then go to Step 3.
+
+Prebuilt binaries cover macOS (arm64, x86_64) and Linux x86_64 (glibc 2.35+).
+**Only if the installer reports no archive for this platform** — Linux aarch64
+is the known gap — fall back to a source build, which requires Rust 1.89+:
 
 ```bash
 cargo --version
@@ -51,8 +64,8 @@ cargo install --path "$SRC/crates/famp" --locked
 ```
 
 Roughly 90 seconds. Ensure `~/.cargo/bin` is on `PATH`, then re-run
-`famp --version`. Builds whatever the default branch is at clone time until
-release artifacts exist.
+`famp --version`. Note that this builds whatever the default branch is at clone
+time, which may be ahead of the latest release.
 
 ## Step 3 — install the broker service
 
@@ -77,9 +90,22 @@ should now run `/famp:register <name>` in each session they want to message
 from — `register` holds the identity for the lifetime of that session, so the
 session must stay open.
 
+Also tell them what to expect on that first registered turn: with listen mode on
+(the default for MCP `famp_register`), the plugin's `Stop` hook parks until an
+inbound message wakes the session. Codex asks for trust the first time it sees a
+hook, so the first turn after `/famp:register` may surface a hook-review prompt —
+approving it is what arms listen mode.
+
 ## Notes
 
 - Do not also run `famp install-codex`. It registers a second, unscoped MCP
-  server under the same name and duplicates the hooks.
+  server under the same name and installs a second `Stop` await hook (in the
+  project's `.codex/hooks.json`) on top of the plugin's.
+- **Unverified:** that Codex executes a *plugin-provided* Stop hook has not been
+  confirmed in a live session — only that `codex plugin add` accepts the
+  manifest's `hooks` field and copies `hooks/hooks.json` into the plugin cache.
+  To confirm, after one turn check that `~/.codex/config.toml` gained a
+  `[hooks.state]` key ending in `hooks/hooks.json:stop:0:0`. If it did not, fall
+  back to `famp install-codex` for the hook half and report it.
 - After upgrading the binary, run `famp daemon restart` so the running broker
   picks it up. A stale daemon surfaces as `ProtocolMismatch`.

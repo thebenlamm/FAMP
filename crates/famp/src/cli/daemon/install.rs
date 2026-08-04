@@ -441,6 +441,27 @@ fn install_linux(home: &Path, unit_content: &str, err: &mut dyn Write) -> Result
     Ok(())
 }
 
+/// Generate the systemd --user unit for the FAMP broker.
+///
+/// Supervision limits are deliberate, not decorative. `Restart=always` on its
+/// own is a footgun: systemd's stock start limit (5 starts / 10 s) can only
+/// catch a service that dies *instantly*. A broker that dies after ~60 s — the
+/// normal shape for a socket-holding daemon losing a bind race — restarts
+/// forever at ~1/`RestartSec` and no limit ever fires. So we emit:
+///   - `RestartSec=5` + `RestartSteps=5` + `RestartMaxDelaySec=5min`
+///     (exponential backoff 5 s -> 5 min, so a restart storm self-throttles)
+///   - `StartLimitIntervalSec=1h` + `StartLimitBurst=20` in `[Unit]`
+///     (a genuine crash loop trips in minutes and leaves the unit `failed`)
+///   - `MemoryMax=256M` — steady-state broker RSS is single-digit MiB, so this
+///     is ~35x headroom. It cannot bite legitimate operation; it bounds a leak.
+///
+/// Version floors: `StandardOutput=append:` needs systemd 240 or newer (see
+/// `install_linux`); `MemoryMax` needs 208; `StartLimitIntervalSec` in
+/// `[Unit]` needs 230; `RestartSteps` and `RestartMaxDelaySec` need 254.
+/// systemd *ignores* unknown unit-file keys with a warning rather than
+/// refusing the unit, so on systemd 240..254 the unit still loads and runs —
+/// it simply does not get the backoff. That degradation is intentional:
+/// correctness on old hosts is preserved, and only the extra safety is lost.
 #[cfg(any(target_os = "linux", test))]
 pub(crate) fn generate_systemd_unit(
     home: &Path,
@@ -459,8 +480,10 @@ pub(crate) fn generate_systemd_unit(
         }
     }
     Ok(format!(
-        "[Unit]\nDescription=FAMP Local Bus Broker\nAfter=default.target\n\n\
+        "[Unit]\nDescription=FAMP Local Bus Broker\nAfter=default.target\n\
+         StartLimitIntervalSec=1h\nStartLimitBurst=20\n\n\
          [Service]\nExecStart={famp_bin} broker --no-idle-exit\nRestart=always\n\
+         RestartSec=5\nRestartSteps=5\nRestartMaxDelaySec=5min\nMemoryMax=256M\n\
          StandardOutput=append:{log}\nStandardError=append:{log}\n\n\
          [Install]\nWantedBy=default.target\n"
     ))
@@ -649,6 +672,41 @@ mod tests {
             .path()
             .join(".config/systemd/user/famp-broker.service")
             .exists());
+    }
+
+    /// The generated unit must carry supervision limits. `Restart=always`
+    /// WITHOUT backoff and WITHOUT a usable start limit is the configuration
+    /// that lets a slow-dying daemon restart forever unnoticed — systemd's
+    /// stock 5-starts/10s limit cannot fire on a service that takes ~60s to
+    /// die. Asserted explicitly so the directives cannot be dropped silently.
+    #[test]
+    fn systemd_unit_carries_restart_backoff_and_a_memory_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let selected = executable_at(&dir.path().join("bin/famp"));
+        let unit = generate_systemd_unit(dir.path(), &selected).unwrap();
+
+        for directive in [
+            "Restart=always",
+            "RestartSec=5",
+            "RestartSteps=5",
+            "RestartMaxDelaySec=5min",
+            "MemoryMax=256M",
+            "StartLimitIntervalSec=1h",
+            "StartLimitBurst=20",
+        ] {
+            assert!(
+                unit.contains(directive),
+                "generated unit is missing {directive}; got:\n{unit}"
+            );
+        }
+
+        // The start-limit pair belongs to [Unit]; systemd ignores it in
+        // [Service]. Assert placement, not just presence.
+        let (unit_section, service_section) = unit.split_once("[Service]").unwrap();
+        assert!(unit_section.contains("StartLimitIntervalSec=1h"));
+        assert!(unit_section.contains("StartLimitBurst=20"));
+        assert!(service_section.contains("RestartSteps=5"));
+        assert!(service_section.contains("MemoryMax=256M"));
     }
 
     /// M2 (daemon half): `run_at` is the highest public orchestration entry

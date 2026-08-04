@@ -98,12 +98,18 @@ the shipped `famp-gateway`.
 ## Prerequisites
 
 - macOS or Linux
-- `git`
 - `curl`
-- Rust 1.89+ — the Quick Start installs `rustup` if you don't have it
+
+That is the whole list for the recommended path — the prebuilt binary needs no
+Rust toolchain. The items below apply only if you build from source:
+
+- `git`
+- Rust 1.89+ — install via `rustup` (see [Build from Source](#build-from-source-fallback--contributors-and-platforms-the-prebuilt-binaries-dont-cover))
 - The first build also installs `rustfmt` + `clippy` (pinned in
   `rust-toolchain.toml`) — `just ci`, `just lint`, and the pre-push git hook
   all require them, so expect that extra download on a fresh/offline install.
+  These are contributor tools; a user who only wants to *run* FAMP needs none
+  of them.
 
 ## Install (prebuilt binary — recommended)
 
@@ -194,24 +200,26 @@ just ci
 
 ## Upgrading
 
-If you installed FAMP previously and want the latest:
+If you installed FAMP previously and want the latest — re-install the binary,
+then restart the daemon. **Both halves are required**; neither implies the
+other, and the installer does not restart the daemon for you.
 
 ```bash
-# In your local FAMP clone
-git pull
-cargo install --path crates/famp
+# Prebuilt binary (most users) — re-run the installer:
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
 
-# If you installed the broker as a service, pick up the new binary:
+# ...or from a local clone:
+git pull && cargo install --path crates/famp
+
+# Then, in either case, pick up the new binary in the running broker:
 famp daemon restart
-
 famp --version
 ```
 
-**If you installed via the prebuilt binary installer instead of from
-source,** re-run the same curl command from
-[Install (prebuilt binary)](#install-prebuilt-binary--recommended) in place
-of `git pull` + `cargo install --path`, then run `famp daemon restart` the
-same way — the installer does not restart the daemon for you.
+Upgrading the `famp@famp` plugin (`/plugin update famp@famp`) refreshes the
+commands, hooks, and MCP wiring, but **not** the binary — the plugin ships a
+resolver shim, not a compiled binary. Re-run the installer above and
+`famp daemon restart` to move the binary itself.
 
 Then restart any open Claude Code windows — they pick up the new binary on next launch. A client that hits a not-yet-restarted long-lived daemon gets a version-skew (ProtocolMismatch) error telling it to run `famp daemon restart` (VER-01).
 
@@ -249,22 +257,55 @@ relay), see [docs/GATEWAY-SETUP.md](docs/GATEWAY-SETUP.md); for the
 removed v0.8 federation CLI, see
 [docs/MIGRATION-v0.8-to-v0.9.md](docs/MIGRATION-v0.8-to-v0.9.md).
 
-```bash
-# 1. Install Rust (skip if already installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
-source "$HOME/.cargo/env"
-# 2. Install famp (prebuilt binary, a few seconds)
-curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
-# 3. Install the persistent broker — run ONCE from a normal (unsandboxed) shell.
-famp daemon install
-# 4. Wire each tool's MCP integration:
-famp install-claude-code
-famp install-codex
-# 5. In one Claude Code window:   /famp-register alice
-# In another (Claude Code or Codex): register as bob — then ask alice to message bob.
+**Claude Code — the recommended path.** Run these inside a Claude Code window:
+
+```text
+1.  /plugin marketplace add thebenlamm/FAMP
+2.  /plugin install famp@famp
+3.  /famp:setup                ← once per machine: binary + broker service
+4.  restart Claude Code        ← the MCP server only loads at window start
+5.  /famp:register alice       ← once per window
 ```
 
-> The installer downloads a prebuilt binary (a few seconds, not a compile); subsequent windows: <30 s.
+Step 4 is not optional: `/famp:register` is an MCP tool call, and a window that
+was already open when you installed the plugin has not loaded the server yet.
+
+Then open a second window, `/famp:register bob`, and ask alice to message bob.
+
+> [!IMPORTANT]
+> **Do not also run `famp install-claude-code`.** The plugin and the legacy
+> installer register the same MCP server under the same name, so running both
+> gives you 24 tools instead of 12 and 4 `Stop` hooks instead of 2 — every FAMP
+> tool duplicated under two namespaces. If you previously ran the legacy
+> installer, run `famp uninstall-claude-code` once before or after installing
+> the plugin. See [plugins/README.md](plugins/README.md#do-not-run-both).
+
+**Not using Claude Code, or prefer the CLI?** Install the binary and broker
+directly — no Rust toolchain required:
+
+```bash
+# 1. Install famp (prebuilt binary, a few seconds — not a compile)
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+# 2. Install the persistent broker — run ONCE from a normal (unsandboxed) shell.
+famp daemon install
+# 3. Wire your host. Claude Code users should prefer the plugin above; this is
+#    the fallback for hosts without a working plugin packaging (see below).
+famp install-codex
+```
+
+> Subsequent windows: <30 s.
+
+**Which wiring should I use?** Only the Claude Code plugin has been verified end
+to end. Pick per host:
+
+| Host | Recommended | Status |
+|---|---|---|
+| Claude Code | `/plugin install famp@famp` | verified end to end |
+| Codex | `famp install-codex` | plugin packaging installs, but its tool naming is unverified — prefer the installer until it is |
+| Grok Build | `famp install-grok` | plugin packaging has never been run |
+
+Whichever you pick, pick **one per host** — never a plugin and its matching
+`famp install-<host>` together.
 
 `famp daemon install` is the one command that ends broker-babysitting: it
 installs a persistent user-level broker (launchd on macOS, systemd `--user` on
@@ -299,9 +340,9 @@ Full CLI:
 | `famp daemon restart` | Restart the daemon, picking up a new on-disk binary after `cargo install` |
 | `famp daemon uninstall` | Stop and remove the service; idempotent |
 | `famp broker --no-idle-exit` | Run the broker in the foreground with no 300s idle exit (no-install bridge) |
-| `famp install-claude-code` / `famp uninstall-claude-code` | Install or remove Claude Code MCP/slash-command integration |
-| `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP plus project Stop-hook integration |
-| `famp install-grok` / `famp uninstall-grok` | Install or remove Grok MCP + Stop-hook listen (same model as Claude) |
+| `famp install-claude-code` / `famp uninstall-claude-code` | Install or remove Claude Code MCP/slash-command integration. **Superseded by the `famp@famp` plugin** — use one, not both. `uninstall` is also how you clean up after a double install |
+| `famp install-codex` / `famp uninstall-codex` | Install or remove Codex MCP plus project Stop-hook integration (still the recommended Codex path) |
+| `famp install-grok` / `famp uninstall-grok` | Install or remove Grok MCP + Stop-hook listen (same model as Claude; still the recommended Grok path) |
 | `famp listen-wake --as <id> [--loop]` | Host-neutral wake line for monitors / future hosts; no peer body |
 | `famp inspect wake --identity <name>` | Diagnose Codex holder, hook/trust, MCP binding, waiter, and end-to-end wake readiness |
 
@@ -381,16 +422,39 @@ per client; the window picks an identity at runtime via `famp_register`.**
 
 ### Onboarding (recommended path)
 
-1. **Install the broker service once, then wire the MCP integration:**
+1. **Install the plugin, then bootstrap the binary and broker:**
+   ```text
+   /plugin marketplace add thebenlamm/FAMP
+   /plugin install famp@famp
+   /famp:setup
+   ```
+   The plugin supplies the MCP server, the slash commands (`/famp:register`,
+   `/famp:inbox`, …), the `Stop` hooks, and the listen-mode await shim — all
+   scoped to the plugin: no `mcpServers` entry in `~/.claude.json`, no files in
+   `~/.claude/commands/`, and no `Stop` hooks in your `settings.json`. (It does
+   record that the plugin is installed and enabled — `pluginUsage`,
+   `enabledPlugins`, `extraKnownMarketplaces` — but none of the FAMP wiring
+   itself lands in your own config.) `/famp:setup` covers
+   the two pieces a plugin cannot ship: the compiled binary and the persistent
+   broker service. It is idempotent.
+
+   <details>
+   <summary>Legacy alternative: <code>famp install-claude-code</code></summary>
+
+   The pre-plugin path still works and writes the same wiring into your home
+   directory instead (`mcpServers.famp` in `~/.claude.json`, seven files in
+   `~/.claude/commands/`, two `Stop` hooks, and `~/.famp/hook-runner.sh`):
+
    ```sh
-   famp daemon install      # persistent broker — see Quick Start (skip if already installed)
+   famp daemon install      # persistent broker — skip if already installed
    famp install-claude-code
    ```
-   This writes the user-scope Claude Code MCP config, slash commands
-   (`/famp-register`, `/famp-inbox`, etc.), the Stop hook, and the
-   listen-mode await shim. Project `.mcp.json` files are optional; if you
+
+   **Use one or the other, never both** — see the warning in
+   [Quick Start](#quick-start). Project `.mcp.json` files are optional; if you
    keep one, it should point at `famp mcp` without `FAMP_HOME` or
    `FAMP_LOCAL_ROOT`.
+   </details>
 
 2. **In every new Claude Code (or Codex) window opened in that repo:**
    ```text
@@ -858,9 +922,16 @@ for milestone history.
   mode on` for listen-mode windows).
 - **A peer doesn't appear in `famp_peers`.** Their session has exited.
   Re-register in that window.
+- **Every FAMP tool appears twice (24 tools, not 12).** You have both the
+  plugin and the legacy installer wired for the same host. Keep one: either
+  `famp uninstall-claude-code` (keeping the plugin) or `/plugin uninstall
+  famp@famp` (keeping the installer). Same cause if you see four `Stop` hooks
+  instead of two. See [plugins/README.md](plugins/README.md#do-not-run-both).
 - **Listen-mode window doesn't wake on a message.** Verify the Stop hook is
-  installed (`famp install-claude-code` for Claude Code,
-  `famp install-codex` for Codex). For Codex, restart after installation and
+  installed — the plugin supplies its own, so if you installed via
+  `/plugin install famp@famp` check that `/famp:setup` completed; on the legacy
+  path check `famp install-claude-code` for Claude Code and
+  `famp install-codex` for Codex. For Codex, restart after installation and
   run `famp inspect wake --identity <name>`; the MCP entry is global but the
   Stop hook is project-local. `BROKER_LISTEN=true` alone only reports broker
   intent, and `famp register --tail` cannot wake a Codex window. Check

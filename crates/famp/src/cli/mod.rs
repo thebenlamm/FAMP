@@ -72,14 +72,17 @@ pub enum Commands {
     /// await shim, and matching hook trust while preserving unrelated config.
     UninstallCodex(uninstall::codex::UninstallCodexArgs),
     /// Install Grok integration: writes `[mcp_servers.famp]` to
-    /// `~/.grok/config.toml`, installs Stop-hook await shim +
-    /// `famp-listen-stop.json` (timeout 86400), refreshes
-    /// `~/.claude/hooks/famp-await.sh`, and the `famp-listen` skill.
-    /// Auto-wake is Stop `decision:block` (same as Claude). Idempotent (D-02).
+    /// `~/.grok/config.toml`, installs the Stop-hook await shim at
+    /// `~/.grok/hooks/famp-await.sh` + `famp-listen-stop.json` (timeout 86400),
+    /// and the `famp-listen` skill. Writes only under `~/.grok/` — never
+    /// `~/.claude/` (B2), so every file it creates is one `uninstall-grok`
+    /// owns. Auto-wake is Stop `decision:block` (same as Claude).
+    /// Idempotent (D-02).
     InstallGrok(install::grok::InstallGrokArgs),
     /// Uninstall Grok integration: removes FAMP's MCP entry from
-    /// `~/.grok/config.toml`, Stop hook json, grok await shim, and the
-    /// FAMP-owned `famp-listen` skill file. Leaves `~/.claude/` alone.
+    /// `~/.grok/config.toml`, Stop hook json, the `~/.grok/` await shim, and
+    /// the FAMP-owned `famp-listen` skill file. Leaves `~/.claude/` alone
+    /// because `install-grok` never writes there.
     UninstallGrok(uninstall::grok::UninstallGrokArgs),
     /// Output this agent's peer card (for sharing with other agents).
     Info(info::InfoArgs),

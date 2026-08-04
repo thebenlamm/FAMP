@@ -11,6 +11,7 @@ use std::path::Path;
 
 use crate::cli::error::CliError;
 use crate::cli::executable::{posix_shell_literal, FampExecutable};
+use crate::cli::install::json_merge::MergeOutcome;
 
 /// The bash await-shim source, embedded at compile time.
 pub const FAMP_AWAIT_SH: &str = include_str!("../../../assets/famp-await.sh");
@@ -43,10 +44,15 @@ pub(crate) fn install_shim(path: &Path, executable: &FampExecutable) -> Result<(
 }
 
 /// Remove the await shim. Tolerates `NotFound`. Used by `uninstall-claude-code`.
-pub fn remove_shim(path: &Path) -> Result<(), CliError> {
+/// Remove the shim, reporting whether it was actually there.
+///
+/// See `hook_runner::remove_shim` for why the outcome is returned rather than
+/// swallowed: an uninstaller that claims removals it did not perform converts
+/// a diagnostic into a false all-clear.
+pub fn remove_shim(path: &Path) -> Result<MergeOutcome, CliError> {
     match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(()) => Ok(MergeOutcome::Removed),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(MergeOutcome::NotPresent),
         Err(source) => Err(CliError::Io {
             path: path.to_path_buf(),
             source,

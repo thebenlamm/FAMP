@@ -231,10 +231,21 @@ tools):
 just install
 ```
 
-This runs `cargo install --path crates/famp --locked --force` followed by
-`famp install-claude-code`, placing the updated binary at `~/.cargo/bin/famp`.
-Every agent session reads from that path. Failing to run `just install` after
-MCP surface changes means agent sessions continue using the old binary.
+This runs `cargo install --path crates/famp --locked --force`, placing the
+updated binary at `~/.cargo/bin/famp`. Failing to run `just install` after MCP
+surface changes means agent sessions continue using the old binary.
+
+It deliberately does **not** run `famp install-claude-code`: on a machine wired
+via the `famp@famp` plugin that would double-register the MCP server (24 tools
+instead of 12). Host wiring is a one-time choice, not a per-build step.
+
+Which binary your session actually reads depends on your wiring. The plugin's
+resolver shim takes the first of `$FAMP_BIN`, `~/.famp/bin/famp`,
+`~/.cargo/bin/famp`, `/usr/local/bin/famp`, `/opt/homebrew/bin/famp`; the
+legacy installer pins the absolute path of whichever binary ran it. If you
+export `$FAMP_BIN` or keep a binary in `~/.famp/bin`, `just install` updates a
+`~/.cargo/bin/famp` your session never loads — point those at the same file, or
+re-run your wiring step after installing.
 
 ---
 

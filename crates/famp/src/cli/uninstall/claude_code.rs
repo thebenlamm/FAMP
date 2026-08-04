@@ -68,27 +68,35 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     )
     .ok();
 
-    slash_commands::remove_all(&commands_dir)?;
+    let removed = slash_commands::remove_all(&commands_dir)?;
+    let total = slash_commands::TEMPLATES.len();
     writeln!(
         err,
-        "  [2/5] {} :: 7 slash-command markdown files removed",
-        commands_dir.display()
+        "  [2/5] {} :: {}",
+        commands_dir.display(),
+        if removed == 0 {
+            format!("0 of {total} slash-command files present, nothing to remove")
+        } else {
+            format!("{removed} of {total} slash-command files removed")
+        }
     )
     .ok();
 
-    hook_runner::remove_shim(&shim_path)?;
+    let shim_outcome = hook_runner::remove_shim(&shim_path)?;
     writeln!(
         err,
-        "  [3/5] {} :: hook-runner shim removed",
-        shim_path.display()
+        "  [3/5] {} :: hook-runner shim -> {:?}",
+        shim_path.display(),
+        shim_outcome
     )
     .ok();
 
-    await_hook::remove_shim(&await_shim_path)?;
+    let await_outcome = await_hook::remove_shim(&await_shim_path)?;
     writeln!(
         err,
-        "  [4/5] {} :: await shim removed",
-        await_shim_path.display()
+        "  [4/5] {} :: await shim -> {:?}",
+        await_shim_path.display(),
+        await_outcome
     )
     .ok();
 
@@ -330,6 +338,71 @@ mod tests {
         let mut err = Vec::<u8>::new();
 
         run_at(home, &mut out, &mut err).unwrap();
+    }
+
+    /// Idempotency of *effect* was always correct; idempotency of *reporting*
+    /// was not. Steps [2]-[4] printed a fixed count and a completed action
+    /// whether or not anything was there, so an operator running this to
+    /// resolve a suspected dual install read "7 files removed, shim removed,
+    /// shim removed" and concluded the duplication was fixed — when the
+    /// command may have done nothing and the duplication may live in a
+    /// project-scope `.mcp.json`, another `CLAUDE_CONFIG_DIR`, or another host
+    /// entirely. For an uninstaller the report IS the product, so assert the
+    /// report, not just the filesystem.
+    #[test]
+    fn uninstall_on_clean_state_reports_nothing_was_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        let mut out = Vec::<u8>::new();
+        let mut err = Vec::<u8>::new();
+
+        run_at(home, &mut out, &mut err).unwrap();
+        let report = String::from_utf8(err).unwrap();
+
+        assert!(
+            report.contains("0 of 7 slash-command files present, nothing to remove"),
+            "step [2] must report absence, not a fixed removal count; got:\n{report}"
+        );
+        assert!(
+            report.contains("hook-runner shim -> NotPresent"),
+            "step [3] must report absence; got:\n{report}"
+        );
+        assert!(
+            report.contains("await shim -> NotPresent"),
+            "step [4] must report absence; got:\n{report}"
+        );
+        assert!(
+            !report.contains("7 slash-command markdown files removed"),
+            "the unconditional success string must not return; got:\n{report}"
+        );
+    }
+
+    /// The other half of the same invariant: when artifacts ARE present, the
+    /// report must say they were removed. A reporter that always says
+    /// "NotPresent" would pass the test above and be just as useless.
+    #[test]
+    fn uninstall_after_install_reports_actual_removals() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        install_with_pinned_famp_bin(home);
+
+        let mut out = Vec::<u8>::new();
+        let mut err = Vec::<u8>::new();
+        run_at(home, &mut out, &mut err).unwrap();
+        let report = String::from_utf8(err).unwrap();
+
+        assert!(
+            report.contains("7 of 7 slash-command files removed"),
+            "step [2] must report the real count; got:\n{report}"
+        );
+        assert!(
+            report.contains("hook-runner shim -> Removed"),
+            "step [3] must report the removal; got:\n{report}"
+        );
+        assert!(
+            report.contains("await shim -> Removed"),
+            "step [4] must report the removal; got:\n{report}"
+        );
     }
 
     #[test]

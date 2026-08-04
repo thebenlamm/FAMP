@@ -88,11 +88,12 @@ pub fn run_at(home: &Path, _out: &mut dyn Write, err: &mut dyn Write) -> Result<
     )
     .ok();
 
-    await_hook::remove_shim(&grok_await)?;
+    let grok_await_outcome = await_hook::remove_shim(&grok_await)?;
     writeln!(
         err,
-        "  [4/4] {} :: grok await shim removed",
-        grok_await.display()
+        "  [4/4] {} :: grok await shim -> {:?}",
+        grok_await.display(),
+        grok_await_outcome
     )
     .ok();
 

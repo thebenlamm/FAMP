@@ -29,8 +29,24 @@ The plugin puts a resolver shim on PATH that finds a binary at `$FAMP_BIN`,
 
 ## Step 2 — install the binary
 
-FAMP is not published to crates.io and ships no release binaries, so this
-builds from source. Requires Rust 1.89+.
+FAMP ships prebuilt binaries. Prefer the installer — it needs no Rust
+toolchain and takes seconds rather than minutes:
+
+```bash
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+```
+
+It writes to `$CARGO_HOME/bin`, defaulting to `~/.cargo/bin` — which the
+resolver shim already searches. If `$CARGO_HOME` is set to something else, the
+shim will not find the binary: point `$FAMP_BIN` at it, or re-run with
+`CARGO_HOME=$HOME/.cargo`. If the installer prints a `PATH` warning, relay it
+verbatim — "installed but command not found" is the most common failure here.
+Re-run `famp --version` to confirm, then go to Step 3.
+
+Prebuilt binaries cover macOS (arm64, x86_64) and Linux x86_64 (glibc 2.35+).
+**Only if the installer reports no archive for this platform** — Linux aarch64
+is the known gap — fall back to building from source, which requires Rust
+1.89+.
 
 Check for a toolchain first:
 
@@ -61,8 +77,8 @@ cargo install --path "$SRC/crates/famp" --locked
 ```
 
 This takes roughly 90 seconds. Then re-run `famp --version` to confirm the
-shim now resolves it. Builds whatever the default branch is at clone time
-until release artifacts exist.
+shim now resolves it. Note that this builds whatever the default branch is at
+clone time, which may be ahead of the latest release.
 
 ## Step 3 — install the broker service
 

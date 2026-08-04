@@ -7,20 +7,31 @@ This directory holds one packaging per host.
 | :--- | :--- | :--- | :--- |
 | Claude Code | `/plugin marketplace add thebenlamm/FAMP` | [`claude-code/`](claude-code/) | **verified end to end** |
 | Codex | `codex plugin marketplace add thebenlamm/FAMP` | [`codex/`](codex/) | installs; tool naming unverified |
-| Grok Build | `grok plugin marketplace add thebenlamm/FAMP` | [`grok/`](grok/) | **unproven — never run** |
+| Grok Build | `grok plugin marketplace add thebenlamm/FAMP` | [`grok/`](grok/) | installs + validates; no live session |
 
 > **Only the Claude Code packaging has been exercised end to end** — installed
 > from a clean checkout, a real message sent through its MCP server, delivery
 > confirmed. The Codex packaging installs and loads (`installed, enabled
 > 1.0.0`), but no live session has confirmed its tool names. The Grok packaging
-> has never been run at all; its layout and namespace come from reading
-> `xai-org/grok-build`.
+> passes `grok plugin validate` and installs from a local path with `--trust`
+> (`components: 1 skill dir(s), 1 command dir(s), 0 agent dir(s), hooks, MCP
+> servers`), but no live session has run it either; its namespace comes from
+> reading `xai-org/grok-build`.
 >
 > This matters because of *how* it would fail. The commands hard-code tool names
 > in `allowed-tools`. If a host's real namespacing differs from the table below,
 > the commands load cleanly and then match no tool — nothing errors. Before
 > trusting the Codex or Grok packaging, run `<host> plugin validate` against it
 > and confirm one real tool call in a live session.
+>
+> **The same caveat applies to Codex hook execution.** The Codex manifest now
+> declares `"hooks": "./hooks/hooks.json"` — accepted by `codex plugin add`, and
+> the file is copied into the plugin cache alongside `hooks/famp-await.sh`. What
+> is *not* yet confirmed is that Codex runs a plugin-provided Stop hook in a live
+> session. The check takes one turn: start a Codex session with the plugin
+> installed and grep `~/.codex/config.toml` for a `[hooks.state]` key ending in
+> `hooks/hooks.json:stop:0:0`. Codex prompts to trust a newly seen hook before it
+> will run, so expect a trust prompt on that first turn.
 
 Then install and run the one-time setup:
 
@@ -139,11 +150,33 @@ Beyond namespacing:
   `bin/famp` resolver shim, so its `.mcp.json` can point at
   `${CLAUDE_PLUGIN_ROOT}/bin/famp`. The Codex and Grok packagings invoke a bare
   `famp` and therefore require it on `PATH`; their `/famp:setup` skills say so.
-- **Listen mode is Stop-hook only in v1.** All three packagings (where hooks are
-  wired) park via `famp-await.sh` on turn end. A Claude background monitor /
-  `/famp:listen` skill is not shipped — a second bus waiter would race the Stop
-  hook. Grok's host-native non-blocking wake adapter (`famp listen-wake`) remains
-  available as a CLI for non-plugin workflows.
+- **Listen mode is Stop-hook only in v1.** All three packagings park via
+  `famp-await.sh` on turn end. A Claude background monitor / `/famp:listen` skill
+  is not shipped — a second bus waiter would race the Stop hook. Grok's
+  host-native non-blocking wake adapter (`famp listen-wake`) remains available as
+  a CLI for non-plugin workflows.
+- **Each host declares hooks its own way.** Claude and Grok auto-discover
+  `hooks/hooks.json` inside the plugin; Codex needs the manifest to name it
+  (`"hooks": "./hooks/hooks.json"` in `.codex-plugin/plugin.json`). Note that
+  Codex's *bundled* `plugin-creator` skill contradicts itself here — its
+  `references/plugin-json-spec.md` sample lists `hooks` as a manifest field while
+  its "Required behavior" section says to omit `hooks` as unsupported. The sample
+  is the one that matches observed behavior: `codex plugin add` accepts the field
+  and copies the file. The root-token also differs: Grok injects
+  `GROK_PLUGIN_ROOT`, while **Codex has no `CODEX_PLUGIN_ROOT`** — its hook
+  command runner injects `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA`, so the Codex
+  `hooks.json` uses the Claude token deliberately.
+- **`hook-runner.sh` is Claude-Code-only** — and is no longer shipped to the
+  other two. HOOK-04b edit-glob dispatch parses Claude's `transcript_path` JSONL
+  looking for `Edit`/`Write`/`MultiEdit` `tool_use` blocks. Codex's Stop payload
+  carries no Claude-format transcript, and Grok's documented Stop input carries
+  no transcript field at all, so on either host the shim exits 0 at step 2 on
+  every turn. It shipped inert in both packagings until 2026-08-04. The legacy
+  `install-codex` / `install-grok` paths never installed it either, so dropping
+  it is parity, not a feature removal. `famp-await.sh`, by contrast, *is*
+  host-aware: it accepts snake_case (Claude/Codex) and camelCase (Grok) input
+  keys and resolves Codex's rollout file from its state DB when the Stop payload
+  omits a transcript path.
 - **Hook binary pin is rendered at gen time.** Canonical assets use
   `FAMP_BIN=@FAMP_BIN@` for `install-*`; `scripts/gen-plugin.sh` renders Claude
   hooks to `${CLAUDE_PLUGIN_ROOT}/bin/famp` and Codex/Grok hooks to bare `famp`.
@@ -158,3 +191,96 @@ same machine loads two MCP servers under the same name. On Claude Code that
 surfaces as 24 tools instead of 12 — every FAMP tool twice, under both
 namespaces — plus four `Stop` hooks instead of two. Run
 `famp uninstall-<host>` first.
+
+The duplicate-hook half of that applies to all three hosts now that each
+packaging wires its own `Stop` await: two awaiters would park on the same
+identity. `famp-await.sh` carries a per-identity mkdir-lock singleton, so the
+second one exits as a no-op rather than double-parking — but that is a backstop,
+not a reason to run both.
+
+## If you added this repo as a `directory` marketplace
+
+Adding a marketplace from a local path (rather than `thebenlamm/FAMP`) records a
+**`directory` source pointing at your working tree**. Two things then happen
+that appear to contradict each other, and the second one is what matters:
+
+1. **The plugin files are copied** into a versioned cache
+   (`~/.claude/plugins/cache/<mp>/<plugin>/<version>/`), stamped with a
+   `version` and a `gitCommitSha`. No symlinks; distinct inodes. It looks
+   pinned.
+2. **The copy is not what runs.** For a `directory` source,
+   `${CLAUDE_PLUGIN_ROOT}` resolves to the marketplace's `installLocation` —
+   your working tree — so `hooks.json` invokes the hook out of
+   `plugins/<host>/hooks/`, not out of the cache.
+
+So the version pin buys you nothing. Editing `plugins/<host>/hooks/*` changes
+what executes at the next session `Stop` with no install or update step, and a
+`git pull`, a branch switch, or an agent writing to the repo does the same.
+Meanwhile the cache keeps reporting the version and commit you installed at,
+which can be far behind — the pinned-looking metadata is the trap, because it
+invites you to conclude you are insulated.
+
+<details>
+<summary>How this was established (measured 2026-08-04, Claude Code)</summary>
+
+A probe line was added to the <em>cache</em> copy of <code>famp-await.sh</code>
+only. One turn later the hook had run and logged <code>hook invoked</code> —
+with no probe output, so the cache copy did not execute. Every other hook
+source was ruled out first: empty <code>hooks.Stop</code> in user and project
+<code>settings.json</code>, no legacy <code>~/.claude/hooks/famp-await.sh</code>,
+no <code>~/.famp/hook-runner.sh</code>, and <code>famp@famp</code> the only
+enabled plugin supplying famp hooks.
+
+The same probe added to the <em>repo</em> copy then fired:
+
+```text
+PROBE root=/home/ben/Workspace/FAMP/plugins/claude-code
+      self=/home/ben/Workspace/FAMP/plugins/claude-code/hooks/famp-await.sh
+```
+
+At that moment the cache read `version 1.0.0`, `gitCommitSha 69dd238` while the
+working tree was 26 commits further on.
+</details>
+
+**The exposure is per open session, not per machine.** Every window running at
+the moment the tree changes picks the change up independently at its own next
+turn end; nine concurrent hook processes across several sessions were observed
+resolving to the same working-tree path.
+
+That live-reload is convenient while you are developing the packaging and
+surprising otherwise. For an install you actually rely on, use the GitHub source
+(`/plugin marketplace add thebenlamm/FAMP`) — **but not because it runs from the
+cache.** By the rule above, a `github` source resolves its root the same way,
+into the marketplace clone:
+
+```json
+{"source": {"source": "github", "repo": "thebenlamm/FAMP"},
+ "installLocation": ".../plugins/marketplaces/famp"}
+```
+
+and that clone carries the full `plugins/<host>/` subtree, hooks included. The
+reason to prefer it is narrower and worth stating exactly: **the clone is not
+your working tree, and nothing local writes to it** — no editor, no `git pull`
+you ran, no agent. It still is not the pinned cache, and
+`claude plugin marketplace update` moves it under running sessions, so the same
+mechanism applies in a much quieter place.
+
+Check which you have with `extraKnownMarketplaces` in
+`~/.claude/settings.json`, or read `installLocation` in
+`~/.claude/plugins/known_marketplaces.json`.
+
+To identify the executing file on a host you would rather not perturb, read the
+hook process's argv instead of editing anything — non-mutating, and it names the
+path directly:
+
+```bash
+# while a turn is ending
+cat /proc/<pid>/cmdline | tr '\0' ' '
+```
+
+Correlate that pid against `await-hook.log` to be sure the argv belongs to the
+real invocation rather than a process that merely looks right.
+
+> Measured on Claude Code. The same `installLocation` indirection is expected to
+> apply to the Codex and Grok packagings, whose caches are likewise copies, but
+> neither was probed at runtime — treat those as unverified.
