@@ -13,7 +13,7 @@ use std::io::BufRead;
 use std::path::Path;
 
 use famp_core::Principal;
-use famp_crypto::{key_id, FampSigningKey, TrustedVerifyingKey};
+use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
 use famp_keyring::Keyring;
 
 use crate::cli::error::CliError;
@@ -24,7 +24,8 @@ use crate::cli::peer::identity::{
 };
 use crate::pairing::wordlist::parse_code;
 use crate::pairing::{
-    PairingError, RedemptionReject, RedemptionRequest, RedemptionResponse, Signed,
+    reject_reason_to_pairing_error, PairingError, RedemptionReject, RedemptionRequest,
+    RedemptionResponse, Signed,
 };
 
 /// CLI args for `famp pair redeem`. Deliberately carries NO field for the
@@ -83,8 +84,10 @@ pub async fn run_at(
         path: home.to_path_buf(),
         source: e,
     })?;
-    let code = parse_code(line.trim())
-        .map_err(|e| CliError::Generic(format!("pairing code rejected: {e}")))?;
+    // Client-side check BEFORE any network call (PAIR-05): a malformed
+    // code is rejected with the fixed, jargon-free message from Task 1,
+    // never touching the network.
+    let code = parse_code(line.trim()).map_err(pairing_err_to_cli)?;
 
     let identity_path = gateway_identity_path(home);
     let sk: FampSigningKey = load_or_generate(&identity_path)?;
@@ -113,22 +116,29 @@ pub async fn run_at(
     let signed_request = Signed::new(request, &sk).map_err(pairing_err_to_cli)?;
 
     let url = format!("{}/famp/v1/pair/redeem", args.from.trim_end_matches('/'));
+    // A transport-level failure (DNS, connection refused, TLS handshake,
+    // timeout) is not an HTTP rejection from the endpoint — map it to the
+    // unreachable message with the URL interpolated (PAIR-05), never the
+    // raw transport error text.
     let resp = client
         .post(&url)
         .json(&signed_request)
         .send()
         .await
-        .map_err(|e| {
-            CliError::Generic(format!("pairing redemption request to {url} failed: {e}"))
-        })?;
+        .map_err(|_e| pairing_err_to_cli(PairingError::GatewayUnreachable { url: url.clone() }))?;
 
     if !resp.status().is_success() {
         let reject: RedemptionReject = resp.json().await.unwrap_or_else(|_| RedemptionReject {
             reason: "unknown".to_string(),
         });
-        return Err(CliError::Generic(format!(
-            "pairing redemption rejected: {}",
-            reject.reason
+        // Five HTTP reject reasons map 1:1 onto five of the seven
+        // redeemer-facing messages via the shared `reject_reason_to_pairing_error`
+        // table (Task 1). The wire's `RedemptionReject` carries no
+        // remaining-tries field today, so the wrong-code message is used
+        // unchanged rather than interpolating a number this endpoint
+        // never reports (PAIR-05: never invent a number).
+        return Err(pairing_err_to_cli(reject_reason_to_pairing_error(
+            &reject.reason,
         )));
     }
 
@@ -168,7 +178,6 @@ pub async fn run_at(
     } else {
         Keyring::new()
     };
-    let inviter_key_id = key_id(&inviter_vk);
     keyring
         .rotate_to(inviter_principal.clone(), inviter_vk, now, None, true)
         .map_err(|e| CliError::Generic(e.to_string()))?;
@@ -185,14 +194,13 @@ pub async fn run_at(
         ))
     })?;
 
-    eprintln!(
-        "Pinned {inviter_principal} (key_id {inviter_key_id}) as Active. The inviter's own \
-         side pins YOU only after they run `famp pair status`."
-    );
+    // One-sentence done-signal (PAIR-07: "not FSM JSON", naming the peer
+    // in plain words, nothing else is needed on this side).
+    eprintln!("Paired with {inviter_principal}; nothing else is needed on this side.");
     eprintln!(
         "NOTE: famp-gateway loads its keyring once at startup and will keep honoring the \
-         previous trust set until it restarts. Run `famp daemon restart` (or manually \
-         restart the gateway if it is not daemon-managed) to pick up the newly pinned key."
+         previous key until it restarts. Run `famp daemon restart` (or manually restart \
+         the gateway if it is not daemon-managed) to pick up the newly pinned key."
     );
 
     Ok(())
