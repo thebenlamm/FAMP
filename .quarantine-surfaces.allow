@@ -71,14 +71,14 @@
 #   `#[cfg(test)]` line, or teach `strip_noise` to look at the includer,
 #   and remove this justification.
 #
-crates/famp-bus/src/broker/handle/tests.rs:1870:reply-debug
-crates/famp-bus/src/broker/handle/tests.rs:2139:reply-debug
-crates/famp-bus/src/broker/handle/tests.rs:221:reply-debug
-crates/famp-bus/src/broker/handle/tests.rs:2222:reply-debug
-crates/famp-bus/src/broker/handle/tests.rs:251:reply-debug
-crates/famp-bus/src/broker/handle/tests.rs:286:reply-debug
-crates/famp-bus/src/broker/handle/tests.rs:420:reply-debug
-crates/famp-bus/src/broker/handle/tests.rs:436:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:2178:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:238:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:2447:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:2530:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:268:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:303:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:437:reply-debug
+crates/famp-bus/src/broker/handle/tests.rs:453:reply-debug
 # justification: crates/famp-inspect-server/src/messages.rs:66
 #   (`message_row`) calls `EnvelopeView::body()` only to compute a
 #   SHA-256 digest of the raw body for `famp_verify` / `famp inspect
