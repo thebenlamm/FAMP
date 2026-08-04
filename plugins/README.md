@@ -242,12 +242,44 @@ At that moment the cache read `version 1.0.0`, `gitCommitSha 69dd238` while the
 working tree was 26 commits further on.
 </details>
 
+**The exposure is per open session, not per machine.** Every window running at
+the moment the tree changes picks the change up independently at its own next
+turn end; nine concurrent hook processes across several sessions were observed
+resolving to the same working-tree path.
+
 That live-reload is convenient while you are developing the packaging and
 surprising otherwise. For an install you actually rely on, use the GitHub source
-(`/plugin marketplace add thebenlamm/FAMP`) — with no working tree, there is
-nowhere for the root to point but the cache. Check which you have with
-`extraKnownMarketplaces` in `~/.claude/settings.json`, or read
-`installLocation` in `~/.claude/plugins/known_marketplaces.json`.
+(`/plugin marketplace add thebenlamm/FAMP`) — **but not because it runs from the
+cache.** By the rule above, a `github` source resolves its root the same way,
+into the marketplace clone:
+
+```json
+{"source": {"source": "github", "repo": "thebenlamm/FAMP"},
+ "installLocation": ".../plugins/marketplaces/famp"}
+```
+
+and that clone carries the full `plugins/<host>/` subtree, hooks included. The
+reason to prefer it is narrower and worth stating exactly: **the clone is not
+your working tree, and nothing local writes to it** — no editor, no `git pull`
+you ran, no agent. It still is not the pinned cache, and
+`claude plugin marketplace update` moves it under running sessions, so the same
+mechanism applies in a much quieter place.
+
+Check which you have with `extraKnownMarketplaces` in
+`~/.claude/settings.json`, or read `installLocation` in
+`~/.claude/plugins/known_marketplaces.json`.
+
+To identify the executing file on a host you would rather not perturb, read the
+hook process's argv instead of editing anything — non-mutating, and it names the
+path directly:
+
+```bash
+# while a turn is ending
+cat /proc/<pid>/cmdline | tr '\0' ' '
+```
+
+Correlate that pid against `await-hook.log` to be sure the argv belongs to the
+real invocation rather than a process that merely looks right.
 
 > Measured on Claude Code. The same `installLocation` indirection is expected to
 > apply to the Codex and Grok packagings, whose caches are likewise copies, but
