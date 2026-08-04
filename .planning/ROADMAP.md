@@ -236,7 +236,7 @@ Plans:
   4. A pairing failure names which step failed and what to do next, in language that does not assume the human knows what a public key is.
   5. The pairing artifact carries the QUAR-15 consent warning at the moment of consent — pairing with a peer means their agent's messages will be read by your agent, which can run commands on your machine.
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 **Wave 1**
@@ -245,7 +245,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 18-02-PLAN.md — hard-abort, five-guess server-side budget, single-use + 24h window surviving restart, `famp pair revoke` (PAIR-02, PAIR-03)
+- [x] 18-02-PLAN.md — hard-abort, five-guess server-side budget, single-use + 24h window surviving restart, `famp pair revoke` (PAIR-02, PAIR-03)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -340,7 +340,7 @@ Plans:
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 4/4 | In Progress|  |
 | 16. Distribution | v1.1 | 5/5 | In Progress|  |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 6/6 | In Progress|  |
-| 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 1/3 | In Progress|  |
+| 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 2/3 | In Progress|  |
 | 19. Auto-Wake Gate | v1.1 | 0/0 | Not started | - |
 | 20. Human Acceptance Gate | v1.1 | 0/0 | Not started | - |
 | 21. Push Notification Adapter | v1.1 | 0/0 | Not started | - |
