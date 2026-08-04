@@ -65,12 +65,12 @@ The deciding insight, from the `matt-essentialist` review: **a PAKE is only requ
 
 A texted word-code beat the 128-bit capability link on every axis that matters here: it survives phone→laptop transcription (five words vs. ~22 case-sensitive base64 chars — the link's advantage *inverts* exactly where it was supposed to help, since most non-technical people lack Signal Desktop); a sender-side link preview cannot burn it (messaging clients fetch URLs on the *sender's* device, consuming a GET-redeemed invite before the recipient ever sees it); it is not phishing-shaped ("click this link to connect your AI agent"); it needs no hosted web surface; and it keeps PAIR-01..05 honest **as written**, with no requirement redefinition. QR was dropped — it delivers to a device with a camera (the phone) while the software runs on the laptop, and `research/STACK.md:97` had already rejected it once on those grounds.
 
-- [ ] **PAIR-01**: Two people with no prior shared secret complete **mutual** key pinning by exchanging a short code over any human channel. *(Satisfied by a five-word code, texted. ~55 bits.)*
+- [x] **PAIR-01**: Two people with no prior shared secret complete **mutual** key pinning by exchanging a short code over any human channel. *(Satisfied by a five-word code, texted. ~55 bits.)* — proven by `pairing_e2e::happy_path_pins_both_sides_mutually` (endpoint level) and `pair_cli`'s two-home test (CLI level), both asserting each side's `peers.keyring` holds the other's key Active.
 - [x] **PAIR-02**: A wrong code **hard-aborts** the pairing. No partial pin, no degraded-but-continuing state, and a bounded number of guess attempts. *(Attempt limits are server-side; entropy — not a one-guess PAKE — is what makes guessing infeasible.)*
 - [x] **PAIR-03**: A pairing code is single-use and has a bounded validity window; an expired or reused code is rejected. **Window is 24 hours, not 15 minutes** — a short window is a *low-entropy* mechanism, and a 15-minute clock expires while the follower is still installing. Single-use consumption MUST be **endpoint-enforced and persisted before expensive processing**; a service restart must not restore a consumed invite. Relay-enforced single-use is void against the malicious-rendezvous threat this design claims to tolerate. A `famp pair revoke` path must exist.
 - [x] **PAIR-04**: Pairing completes without either party pasting a raw key blob or reading a fingerprint aloud for visual comparison.
-- [x] **PAIR-05**: A pairing failure tells the human **which** step failed and what to do next, in language that does not assume they know what a public key is.
-- [ ] **PAIR-06**: The code is entered via **stdin prompt, never as a command-line argument**. `famp pair <code>` would place the secret in `argv` (visible to `ps`) and in shell history in plaintext, durably — a leak path the design otherwise has no reason to create.
+- [~] **PAIR-05** (MECHANICAL HALF ONLY): A pairing failure tells the human **which** step failed and what to do next, in language that does not assume they know what a public key is. — **Mechanically closed:** seven pairwise-distinct failure messages, each naming the failed step and an imperative next action, none containing a term from the jargon list (`pair_cli::pair_errors_avoid_jargon`, whose matcher is itself sanity-checked against a known-positive fixture). **STILL OPEN:** whether a real non-expert can actually *act* on them is not mechanically assertable and closes only at **Phase 20's UAT-02**. Do not read the mechanical pass as the requirement being satisfied.
+- [x] **PAIR-06**: The code is entered via **stdin prompt, never as a command-line argument**. `famp pair <code>` would place the secret in `argv` (visible to `ps`) and in shell history in plaintext, durably — a leak path the design otherwise has no reason to create.
 - [x] **PAIR-07**: The **inviter** sees who redeemed the invite (peer principal + key_id) before the pin becomes durable, and both sides reach a plain-language done-signal — one sentence, not FSM JSON. Pairing completes asymmetrically (the redeemer sees success immediately; the inviter pins on its next poll), so without this the redeemer gets a success signal for a half-finished state, and a forwarded invite pairs silently.
 - [x] **PAIR-08**: Install instructions and the pairing code ship as **one artifact**, code at the bottom — so the invite outlives the follower's slowest step. The invite must be generated *after* the follower confirms their install works, not before; otherwise the validity window runs during the install.
 
@@ -209,12 +209,12 @@ Which phases cover which requirements. Populated during roadmap creation.
 | KEYR-01 | Phase 15 | Complete |
 | KEYR-02 | Phase 15 | Complete |
 | KEYR-03 | Phase 15 | Complete |
-| PAIR-01 | Phase 18 | Pending |
+| PAIR-01 | Phase 18 | Complete |
 | PAIR-02 | Phase 18 | Complete |
 | PAIR-03 | Phase 18 | Complete |
 | PAIR-04 | Phase 18 | Complete |
-| PAIR-05 | Phase 18 | Complete |
-| PAIR-06 | Phase 18 | Pending |
+| PAIR-05 | Phase 18 | Partial — mechanical half only; comprehension half open until Phase 20 UAT-02 |
+| PAIR-06 | Phase 18 | Complete |
 | PAIR-07 | Phase 18 | Complete |
 | PAIR-08 | Phase 18 | Complete |
 | INGR-01 | Phase 17 | Complete |
