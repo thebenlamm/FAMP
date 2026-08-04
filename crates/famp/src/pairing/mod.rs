@@ -20,6 +20,7 @@
 //!   CSPRNG draw/parse.
 //! - [`invite`] — the on-disk invite record and its atomic, locked store.
 
+pub mod consent;
 pub mod invite;
 pub mod wordlist;
 
@@ -33,13 +34,34 @@ use serde::{Deserialize, Serialize};
 /// CLI-layer and gateway-layer callers translate these into their own
 /// typed errors (`CliError`, `famp_gateway::pairing_ingress::RedemptionReject`)
 /// rather than propagating this enum across a crate boundary.
+/// Seven pairwise-distinct, plain-language, next-action-bearing failure
+/// messages (PAIR-05, mechanical half — see this module's
+/// `pair_errors_are_pairwise_distinct` test) plus [`Self::StoreBusy`] and
+/// [`Self::UnknownInvite`], which are operator/CLI-internal rather than
+/// part of the redeemer-facing seven. None of the seven names a term from
+/// the jargon list `crates/famp/tests/pair_cli.rs`'s
+/// `pair_errors_avoid_jargon` asserts against — no "public key", no
+/// "fingerprint", no signature-scheme name, no trust-store file name, no
+/// "base64". Whether a real non-expert can ACT on this wording is not
+/// mechanically assertable; that closes only at Phase 20's UAT-02 (see
+/// `18-03-SUMMARY.md`).
 #[derive(Debug, thiserror::Error)]
 pub enum PairingError {
-    #[error("pairing code is malformed: {reason}")]
+    /// The five-word code the human typed does not parse: wrong word
+    /// count, or a word not in the list. `reason` is retained on the
+    /// variant for `Debug`/log-line detail but the `Display` text below is
+    /// what a human sees, and is fixed regardless of `reason`'s content.
+    #[error(
+        "That does not look like a pairing code. A pairing code is exactly five lowercase \
+         words separated by spaces. Check the message you were sent and type it again."
+    )]
     CodeMalformed { reason: String },
     #[error("no pending invite")]
     NoPendingInvite,
-    #[error("pairing store is busy (locked by another process)")]
+    #[error(
+        "Another famp command is using the pairing files right now. Wait a few seconds and \
+         try again."
+    )]
     StoreBusy,
     #[error("io error at {}: {source}", path.display())]
     Io {
@@ -51,21 +73,41 @@ pub enum PairingError {
     Crypto(#[from] CryptoError),
     #[error("wire error: {reason}")]
     Wire { reason: String },
-    // TODO(18-03): give this a real operator-facing message; PAIR-03's
-    // expiry clause is what it exists to enforce.
-    #[error("invite expired")]
+    /// PAIR-03's expiry clause.
+    #[error("This code has expired. Codes last 24 hours. Ask the person who invited you to send a new one.")]
     Expired,
-    // TODO(18-03): give this a real operator-facing message.
-    #[error("invite already redeemed")]
+    #[error(
+        "This code has already been used. If that was not you, tell the person who invited \
+         you right away and ask them to run: famp pair revoke --all-pending"
+    )]
     AlreadyRedeemed,
-    // TODO(18-03): give this a real operator-facing message; PAIR-02's
-    // attempt-budget clause is what it exists to enforce.
-    #[error("attempt budget exhausted")]
+    /// PAIR-02's attempt-budget clause.
+    #[error(
+        "Too many wrong tries, so this code is now locked. Ask the person who invited you to \
+         send a new one."
+    )]
     AttemptsExhausted,
-    // TODO(18-03): give this a real operator-facing message.
-    #[error("wrong code")]
+    #[error(
+        "That code did not match. Check for a typo, then try again. If you run out of tries, \
+         ask the person who invited you to send a new code."
+    )]
     WrongCode,
-    // TODO(18-03): give this a real operator-facing message naming `id`.
+    /// The redeemer's gateway could not be reached over the network — a
+    /// transport-level failure, not a rejection from the endpoint.
+    #[error(
+        "Could not reach {url}. Check that you copied the address exactly, then ask the \
+         person who invited you whether their FAMP gateway is running."
+    )]
+    GatewayUnreachable { url: String },
+    /// The redeemer's own domain equals the inviter's own domain — the
+    /// endpoint's `own_domain_refused` rejection (T-18-07).
+    #[error(
+        "This code cannot be redeemed on the same machine that created it. Run this on the \
+         machine you want to connect."
+    )]
+    SameMachineRefusal,
+    // Operator-facing (revoke by id, an internal lookup miss) — not one of
+    // the seven redeemer-facing failure modes.
     #[error("unknown invite: {id}")]
     UnknownInvite { id: String },
 }
@@ -150,4 +192,94 @@ pub struct RedemptionResponse {
 #[serde(deny_unknown_fields)]
 pub struct RedemptionReject {
     pub reason: String,
+}
+
+/// Map a reject reason slug to its operator-facing [`PairingError`].
+///
+/// `reason` is the wire vocabulary
+/// `crates/famp-gateway/src/pairing_ingress.rs::reject_status` matches
+/// on; the returned value's `Display` is the operator-facing message for
+/// it. `crates/famp/src/cli/pair/redeem.rs` is the sole production
+/// caller.
+///
+/// Five reasons map 1:1 onto five of the seven redeemer-facing failure
+/// modes (`code_mismatch`, `expired`, `already_redeemed`,
+/// `attempts_exhausted`, `own_domain_refused`); the sixth and seventh
+/// (malformed code, gateway unreachable) never reach this function — the
+/// former is caught client-side by `parse_code` before any network call,
+/// the latter is a transport failure, not an HTTP rejection. Any reason
+/// this endpoint can return that isn't one of those five
+/// (`no_pending_invite`, `invalid_signature`, `internal_error`, or an
+/// unrecognized string) falls back to the wrong-code message: T-18-09
+/// already groups `no_pending_invite` and `code_mismatch` under the same
+/// oracle-avoidance HTTP status, and no separate non-jargon wording exists
+/// for "no invite is currently outstanding" that isn't itself the
+/// wrong-code message in different words.
+#[must_use]
+pub fn reject_reason_to_pairing_error(reason: &str) -> PairingError {
+    match reason {
+        "expired" => PairingError::Expired,
+        "already_redeemed" => PairingError::AlreadyRedeemed,
+        "attempts_exhausted" => PairingError::AttemptsExhausted,
+        "own_domain_refused" => PairingError::SameMachineRefusal,
+        // "code_mismatch" and every other/unrecognized reason.
+        _ => PairingError::WrongCode,
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::PairingError;
+
+    /// The seven redeemer-facing failure modes (PAIR-05's mechanical
+    /// half), in the order `.planning/REQUIREMENTS.md`'s `18-03-PLAN.md`
+    /// lists them.
+    fn seven_failure_messages() -> [String; 7] {
+        [
+            PairingError::CodeMalformed {
+                reason: "any".to_string(),
+            }
+            .to_string(),
+            PairingError::WrongCode.to_string(),
+            PairingError::Expired.to_string(),
+            PairingError::AlreadyRedeemed.to_string(),
+            PairingError::AttemptsExhausted.to_string(),
+            PairingError::GatewayUnreachable {
+                url: "https://gateway.example.test:8443".to_string(),
+            }
+            .to_string(),
+            PairingError::SameMachineRefusal.to_string(),
+        ]
+    }
+
+    #[test]
+    fn pair_errors_are_pairwise_distinct() {
+        let messages = seven_failure_messages();
+        for i in 0..messages.len() {
+            for j in 0..messages.len() {
+                if i == j {
+                    continue;
+                }
+                assert_ne!(
+                    messages[i], messages[j],
+                    "messages at index {i} and {j} must differ: {messages:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_failure_message_names_an_imperative_next_action() {
+        // A cheap proxy for "names an imperative next-action clause":
+        // every message contains at least one of the verbs the plan's own
+        // seven exact texts use to tell the human what to do next.
+        let verbs = ["Ask", "Check", "Run", "try again", "type it again", "tell"];
+        for message in seven_failure_messages() {
+            assert!(
+                verbs.iter().any(|v| message.contains(v)),
+                "message has no imperative next-action clause: {message}"
+            );
+        }
+    }
 }

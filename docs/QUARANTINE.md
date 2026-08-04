@@ -64,3 +64,20 @@ None of the following are implemented in this phase. Provenance is the prerequis
 - **A listener profile with tools disabled** — a mode a recipient can opt into where inbound content is readable but no local tool execution is available in the same turn.
 
 **Resolved 2026-08-02 (Ben, Option B): v1.1 does not ship any of these.** An independent adversarial review of the `PreToolUse` design found structural bypasses — the MCP-only arming point misses non-MCP render paths (`famp inbox list` via Bash), and provenance laundering (QUAR-11) disarms it mesh-wide behind one unhooked peer. Shipping it would have licensed a false claim rather than closed a real gap. See `.planning/REQUIREMENTS.md`'s resolved scope decision for the full reasoning. This is not a rejection of the idea forever — a tools-restricted listener profile is under independent review separately — but nothing here should be read as v1.1 delivering it.
+
+## Consent warning (QUAR-15)
+
+Everything above describes what happens once two agents are already exchanging
+signed envelopes. Pairing (`famp pair`, Phase 18) is the step that gets a person to
+that point at all, and it is the one place a human — often someone with no
+cryptography background — makes the actual trust decision. The wording below is
+shown in the invite artifact itself (`famp pair invite`'s printed output), strictly
+before the five-word code, so it is read while the decision is still open rather
+than after it has already been made:
+
+> Pairing with someone means their agent's messages will be read by your agent, which can run commands on your machine. Pair only with someone you would let type into your terminal.
+
+This is the single authored source of the sentence above:
+`crates/famp/src/pairing/consent.rs`'s `CONSENT_WARNING` constant. The bytes on
+this page are rendered from that constant, not re-typed — `consent_warning_matches_quarantine_doc`
+(`crates/famp/tests/pair_cli.rs`) fails the build if this section drifts from it.
