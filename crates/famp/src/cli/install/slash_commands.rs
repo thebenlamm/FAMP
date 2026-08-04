@@ -67,18 +67,25 @@ pub fn write_all(commands_dir: &Path) -> Result<(), CliError> {
 
 /// Remove all 7 markdown templates from `commands_dir`. Tolerates `NotFound`
 /// per-file. Used by `uninstall-claude-code` (plan 03-04).
-pub fn remove_all(commands_dir: &Path) -> Result<(), CliError> {
+///
+/// Returns how many of [`TEMPLATES`] were actually removed, so the caller can
+/// report what happened instead of an unconditional "7 files removed". An
+/// uninstaller's report is its product: claiming removals that did not occur
+/// tells an operator a suspected duplicate install is resolved when the
+/// duplication may be untouched and living somewhere else.
+pub fn remove_all(commands_dir: &Path) -> Result<usize, CliError> {
+    let mut removed = 0usize;
     for (filename, _) in TEMPLATES {
         let path = commands_dir.join(filename);
         match std::fs::remove_file(&path) {
-            Ok(()) => {}
+            Ok(()) => removed += 1,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(source) => {
                 return Err(CliError::Io { path, source });
             }
         }
     }
-    Ok(())
+    Ok(removed)
 }
 
 #[cfg(test)]
