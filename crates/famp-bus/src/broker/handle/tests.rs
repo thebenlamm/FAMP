@@ -43,6 +43,17 @@ fn hello_canonical(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: I
 }
 
 fn register(broker: &mut Broker<TestEnv>, client: u64, name: &str, pid: u32, now: Instant) {
+    register_with_origin(broker, client, name, pid, Origin::Local, now);
+}
+
+fn register_with_origin(
+    broker: &mut Broker<TestEnv>,
+    client: u64,
+    name: &str,
+    pid: u32,
+    origin: Origin,
+    now: Instant,
+) {
     let _ = broker.handle(
         BrokerInput::Wire {
             client: ClientId::from(client),
@@ -51,7 +62,7 @@ fn register(broker: &mut Broker<TestEnv>, client: u64, name: &str, pid: u32, now
                 pid,
                 cwd: None,
                 listen: false,
-                origin: None,
+                origin: Some(origin),
             },
         },
         now,
@@ -117,8 +128,14 @@ fn audit_log_reply_envelope(
 
 fn apply_mailbox(env: &TestEnv, outs: &[Out]) {
     for out in outs {
-        if let Out::AppendMailbox { target, line, .. } = out {
-            env.mailbox.append(target, line.clone());
+        if let Out::AppendMailbox {
+            target,
+            line,
+            origin,
+        } = out
+        {
+            let stamped = crate::stamp_line(line, *origin).expect("test append should stamp");
+            env.mailbox.append(target, stamped);
         }
     }
 }
@@ -933,6 +950,297 @@ fn count_await_oks(outs: &[Out]) -> Vec<ClientId> {
             _ => None,
         })
         .collect()
+}
+
+fn send_ok_woken(outs: &[Out], sender: u64) -> bool {
+    outs.iter()
+        .find_map(|out| match out {
+            Out::Reply(ClientId(client), BusReply::SendOk { delivered, .. })
+                if *client == sender =>
+            {
+                Some(delivered.first().expect("DM delivery row").woken)
+            }
+            _ => None,
+        })
+        .expect("sender should receive SendOk")
+}
+
+fn has_await_completion_for(outs: &[Out], client: u64) -> bool {
+    let client = ClientId::from(client);
+    outs.iter().any(|out| {
+        matches!(
+            out,
+            Out::Reply(
+                target,
+                BusReply::AwaitOk { .. }
+                    | BusReply::AwaitTimeout {}
+                    | BusReply::Err {
+                        kind: BusErrorKind::Internal,
+                        ..
+                    }
+            ) if *target == client
+        ) || matches!(out, Out::UnparkAwait { client: target } if *target == client)
+    })
+}
+
+#[test]
+fn auto_wake_gateway_and_unknown_keep_dm_waiter_parked() {
+    for (case, origin) in [("gateway", Origin::Gateway), ("unknown", Origin::Unknown)] {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 100, now);
+        park_unfiltered_await(&mut broker, 1, now);
+
+        hello_canonical(&mut broker, 2, "bob", now);
+        register_with_origin(&mut broker, 2, "bob", 200, origin, now);
+        let outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(2_u64),
+                msg: BusMessage::Send {
+                    to: Target::Agent {
+                        name: "alice".into(),
+                    },
+                    envelope: audit_log_envelope(1, "bob"),
+                },
+            },
+            now,
+        );
+
+        assert!(
+            matches!(
+                outs.first(),
+                Some(Out::AppendMailbox {
+                    target: MailboxName::Agent(name),
+                    origin: actual,
+                    ..
+                }) if name == "alice" && *actual == origin
+            ),
+            "{case}: append must be first and retain authoritative origin: {outs:?}"
+        );
+        assert!(
+            !send_ok_woken(&outs, 2),
+            "{case}: SendOk must report not woken"
+        );
+        assert!(
+            !has_await_completion_for(&outs, 1),
+            "{case}: remote send must not complete or unpark alice's Await: {outs:?}"
+        );
+        assert!(
+            broker
+                .state
+                .pending_awaits
+                .contains_key(&ClientId::from(1_u64)),
+            "{case}: alice must remain parked"
+        );
+    }
+}
+
+#[test]
+fn auto_wake_local_wakes_dm_waiter() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    park_unfiltered_await(&mut broker, 1, now);
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Agent {
+                    name: "alice".into(),
+                },
+                envelope: audit_log_envelope(1, "bob"),
+            },
+        },
+        now,
+    );
+
+    assert!(matches!(
+        outs.first(),
+        Some(Out::AppendMailbox {
+            origin: Origin::Local,
+            ..
+        })
+    ));
+    assert!(send_ok_woken(&outs, 2));
+    let reply_pos = outs
+        .iter()
+        .position(|out| matches!(out, Out::Reply(ClientId(1), BusReply::AwaitOk { .. })))
+        .expect("Local send should reply AwaitOk");
+    let unpark_pos = outs
+        .iter()
+        .position(|out| {
+            matches!(
+                out,
+                Out::UnparkAwait {
+                    client: ClientId(1)
+                }
+            )
+        })
+        .expect("Local send should unpark Await");
+    assert!(reply_pos < unpark_pos, "AwaitOk must precede UnparkAwait");
+    assert!(!broker
+        .state
+        .pending_awaits
+        .contains_key(&ClientId::from(1_u64)));
+}
+
+#[test]
+fn auto_wake_initial_drain_skips_remote_and_preserves_inbox() {
+    for origin in [Origin::Gateway, Origin::Unknown] {
+        let env = TestEnv::default();
+        let mailbox = MailboxName::Agent("alice".into());
+        let mut broker = Broker::new(env.clone());
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 100, now);
+
+        let envelope = audit_log_envelope(1, "remote");
+        let line = famp_canonical::canonicalize(&envelope).unwrap();
+        let stamped = crate::stamp_line(&line, origin).unwrap();
+        env.mailbox.append(&mailbox, stamped);
+        let remote_end = env.mailbox.drain_from(&mailbox, 0).unwrap().next_offset;
+
+        let await_outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Await {
+                    timeout_ms: 10_000,
+                    task: None,
+                },
+            },
+            now,
+        );
+        assert!(
+            parked(&await_outs),
+            "{origin:?} record alone must not satisfy Await"
+        );
+        assert_eq!(await_cursor(&broker, 1, &mailbox), Some(remote_end));
+
+        let inbox_outs = broker.handle(
+            BrokerInput::Wire {
+                client: ClientId::from(1_u64),
+                msg: BusMessage::Inbox {
+                    since: Some(0),
+                    include_terminal: None,
+                },
+            },
+            now,
+        );
+        let stamped = inbox_outs
+            .iter()
+            .find_map(|out| match out {
+                Out::Reply(ClientId(1), BusReply::InboxOk { envelopes, .. }) => envelopes.first(),
+                _ => None,
+            })
+            .expect("explicit Inbox from zero must retain remote record");
+        assert_eq!(stamped.origin, origin);
+        assert_eq!(stamped.envelope, envelope);
+    }
+}
+
+#[test]
+fn auto_wake_remote_then_local_has_no_head_of_line_blocking() {
+    let env = TestEnv::default();
+    let mailbox = MailboxName::Agent("alice".into());
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+
+    for (origin, envelope) in [
+        (Origin::Gateway, audit_log_envelope(1, "remote")),
+        (Origin::Local, audit_log_envelope(2, "bob")),
+    ] {
+        let line = famp_canonical::canonicalize(&envelope).unwrap();
+        env.mailbox
+            .append(&mailbox, crate::stamp_line(&line, origin).unwrap());
+    }
+    let mailbox_end = env.mailbox.drain_from(&mailbox, 0).unwrap().next_offset;
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Await {
+                timeout_ms: 10_000,
+                task: None,
+            },
+        },
+        now,
+    );
+
+    let (envelopes, next_offset) = await_ok(&outs, 1).expect("later Local record must deliver");
+    assert_eq!(seqs(&envelopes), vec![2]);
+    assert_eq!(next_offset, mailbox_end);
+    assert_eq!(await_cursor(&broker, 1, &mailbox), Some(mailbox_end));
+}
+
+#[test]
+fn auto_wake_gateway_channel_post_wakes_no_member() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env.clone());
+    let now = Instant::now();
+    for (client, name, pid) in [(1, "alice", 100), (2, "bob", 200)] {
+        handshake_register_join(&mut broker, &env, client, name, pid, "#gate", now);
+        park_unfiltered_await(&mut broker, client, now);
+    }
+
+    hello_canonical(&mut broker, 3, "remote", now);
+    register_with_origin(&mut broker, 3, "remote", 300, Origin::Gateway, now);
+    let remote_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(3_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#gate".into(),
+                },
+                envelope: audit_log_envelope(1, "remote"),
+            },
+        },
+        now,
+    );
+    assert!(matches!(
+        remote_outs.first(),
+        Some(Out::AppendMailbox {
+            origin: Origin::Gateway,
+            ..
+        })
+    ));
+    assert!(count_await_oks(&remote_outs).is_empty());
+    assert!(!has_await_completion_for(&remote_outs, 1));
+    assert!(!has_await_completion_for(&remote_outs, 2));
+    assert_eq!(broker.state.pending_awaits.len(), 2);
+    apply_mailbox(&env, &remote_outs);
+
+    hello_canonical(&mut broker, 4, "local", now);
+    register(&mut broker, 4, "local", 400, now);
+    let local_outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(4_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#gate".into(),
+                },
+                envelope: audit_log_envelope(2, "local"),
+            },
+        },
+        now,
+    );
+    let woken: std::collections::HashSet<_> = count_await_oks(&local_outs).into_iter().collect();
+    assert_eq!(
+        woken,
+        [ClientId::from(1_u64), ClientId::from(2_u64)]
+            .into_iter()
+            .collect(),
+        "Local control must wake both channel members"
+    );
 }
 
 #[test]
