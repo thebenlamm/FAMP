@@ -36,7 +36,7 @@ auto-wake by reacting to `FAMP_WAKE` lines (stdout or the `.wake` file).
 
 | Host | Install | Wake mechanism | Blocking UI? |
 |---|---|---|---|
-| **Claude Code** | `famp install-claude-code` | Stop hook → `famp-await.sh` → `decision: block` | Yes (by design) |
+| **Claude Code** | `/plugin install famp@famp` (or legacy `famp install-claude-code` — one or the other, never both) | Stop hook → `famp-await.sh` → `decision: block` | Yes (by design) |
 | **Codex** | `famp install-codex` | Project Stop hook → native `famp hook codex-stop` | Yes (by design) |
 | **Grok** | `famp install-grok` | Stop hook → `famp-await.sh` → `decision: block` (same as Claude) | Yes (by design) |
 

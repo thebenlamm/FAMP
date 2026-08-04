@@ -411,9 +411,23 @@ smoke-test:
 
 # Install famp to ~/.cargo/bin — the path every .mcp.json references.
 # Run this after any change to the MCP tool surface (server.rs, tool schemas).
+#
+# This deliberately does NOT run `famp install-claude-code`. On a machine wired
+# via the `famp@famp` plugin, running it registers a SECOND MCP server under the
+# same name: 24 tools instead of 12, four Stop hooks instead of two (see
+# plugins/README.md "Do not run both"). Host wiring is a one-time, per-developer
+# choice; this recipe is a per-build step, so it only moves the binary.
+#
+# Caveat, because dropping it is NOT free: neither wiring path is guaranteed to
+# read ~/.cargo/bin/famp. The plugin shim execs the first of $FAMP_BIN,
+# ~/.famp/bin/famp, ~/.cargo/bin/famp, /usr/local/bin/famp,
+# /opt/homebrew/bin/famp; the legacy installer pins the absolute path of
+# whichever binary ran it (also baked into ~/.famp/hook-runner.sh and
+# ~/.claude/hooks/famp-await.sh). Re-running the installer used to self-heal a
+# stale pin as a side effect. It no longer does — if you export $FAMP_BIN or
+# keep a binary outside ~/.cargo/bin, re-run your wiring step yourself.
 install:
     cargo install --path crates/famp --locked --force
-    famp install-claude-code
 
 # Install famp-gateway to ~/.cargo/bin — the v1.0 federation binary. `just
 # install` (above) never touches this; run this after any change to
