@@ -12,6 +12,15 @@
 //! the CRATE-INTERNAL `_at`-suffixed variant is clock-injectable, and
 //! that variant is `pub(crate)`-scoped, unreachable from this external
 //! test file).
+//!
+//! (Plan 02, 2026-08-04): the literal invite-creation timestamp was
+//! bumped from `2026-08-03` to `2030-08-03` — Plan 02 wired real
+//! `is_expired` enforcement into `ingest_redemption`'s real-clock read,
+//! and the original literal's 24-hour window had already elapsed against
+//! the real wall clock by the time Plan 02 landed, which made every test
+//! here fail `expired` rather than proceed. `2030-08-03` is not a
+//! magic-safe date either — it is a placeholder that will eventually need
+//! the same bump — but it buys years rather than hours.
 
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -112,7 +121,7 @@ async fn happy_path_pins_both_sides_mutually() {
     let code = draw_invite(
         inviter_home.path(),
         "agent:inviter.test/gateway",
-        "2026-08-03T00:00:00Z",
+        "2030-08-03T00:00:00Z",
         1,
     );
 
@@ -129,7 +138,7 @@ async fn happy_path_pins_both_sides_mutually() {
         },
         &mut reader,
         &client,
-        "2026-08-03T00:05:00Z",
+        "2030-08-03T00:05:00Z",
     )
     .await
     .expect("redeem::run_at must succeed against a correct code");
@@ -151,7 +160,7 @@ async fn happy_path_pins_both_sides_mutually() {
     );
 
     let mut status_out = Vec::new();
-    status::run_at(inviter_home.path(), &mut status_out, "2026-08-03T00:10:00Z")
+    status::run_at(inviter_home.path(), &mut status_out, "2030-08-03T00:10:00Z")
         .expect("status::run_at must pin the Redeemed record");
 
     let redeemer_principal: Principal = "agent:redeemer.test/gateway".parse().unwrap();
@@ -173,20 +182,29 @@ async fn happy_path_pins_both_sides_mutually() {
 }
 
 /// A code differing by exactly one word is rejected `code_mismatch`; the
-/// invite record's state stays `Pending` and the store file is
-/// byte-identical before and after (T-18-03, checked-before-mutate).
+/// invite record's state stays `Pending` (T-18-03, checked-before-mutate).
+///
+/// (Plan 02, 2026-08-04): the store is NO LONGER byte-identical after a
+/// wrong-code redemption — Plan 02 makes the attempt counter the sole,
+/// deliberate mutation on this path (PAIR-02's server-side attempt
+/// budget). This test now asserts the counter incremented by exactly one
+/// and every other byte is unchanged, rather than full byte identity; the
+/// full-byte-identity assertion moved to `pairing_ingress.rs`'s coverage
+/// of the OTHER rejection paths (expired/already_redeemed/
+/// attempts_exhausted/no_pending_invite), which still mutate nothing.
 #[tokio::test]
-async fn wrong_code_leaves_store_byte_identical_and_pending() {
+async fn wrong_code_burns_one_attempt_and_stays_pending() {
     let inviter_home = TempDir::new().unwrap();
     let code = draw_invite(
         inviter_home.path(),
         "agent:inviter.test/gateway",
-        "2026-08-03T00:00:00Z",
+        "2030-08-03T00:00:00Z",
         2,
     );
 
     let store_path = pairing_store_path(inviter_home.path());
-    let before = std::fs::read(&store_path).unwrap();
+    let before = famp::pairing::invite::InviteStore::load(&store_path).unwrap();
+    assert_eq!(before.invites[0].attempts, 0);
 
     // Flip exactly one word.
     let mut words: Vec<&str> = code.split(' ').collect();
@@ -215,13 +233,11 @@ async fn wrong_code_leaves_store_byte_identical_and_pending() {
     };
     assert_eq!(reject.reason, "code_mismatch");
 
-    let after = std::fs::read(&store_path).unwrap();
-    assert_eq!(
-        before, after,
-        "a wrong-code redemption must leave pairing.json byte-identical"
-    );
-
     let store = famp::pairing::invite::InviteStore::load(&store_path).unwrap();
+    assert_eq!(
+        store.invites[0].attempts, 1,
+        "a wrong-code redemption's only mutation is the attempt counter"
+    );
     assert!(matches!(
         store.invites[0].state,
         famp::pairing::invite::InviteState::Pending
@@ -255,7 +271,7 @@ async fn own_domain_refused_when_redeemer_claims_inviter_authority() {
     let code = draw_invite(
         inviter_home.path(),
         "agent:inviter.test/gateway",
-        "2026-08-03T00:00:00Z",
+        "2030-08-03T00:00:00Z",
         3,
     );
 

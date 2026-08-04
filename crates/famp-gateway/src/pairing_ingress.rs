@@ -17,20 +17,35 @@
 //! 2. reject `own_domain_refused` if the presented principal's domain
 //!    equals this gateway's own domain (T-18-07) — a redeemer cannot
 //!    claim a principal inside the inviter's own authority.
-//! 3. load the store — absent or zero `Pending` records ->
-//!    `no_pending_invite`, HTTP 404 (T-18-06: the unauthenticated surface
-//!    is live only while an invite is genuinely outstanding).
-//! 4. compare the presented code's digest against every `Pending` record
-//!    via `digests_equal` -> `code_mismatch` on no match, ALSO HTTP 404 —
-//!    a distinct status code here would let a caller distinguish "no
-//!    invite exists at all" from "wrong code for an existing invite", the
-//!    exact oracle T-18-09 is scoped to avoid.
-//! 5. verify the request signature against the presented `pubkey_b64url`
-//!    -> `invalid_signature` (T-18-04, proof of possession).
-//! 6. on match: `StoreLock`, re-load, mutate the matched record to
-//!    `Redeemed`, `save_atomic`, and ONLY THEN build and sign the
-//!    response. Persist before replying, never the reverse (T-18-03). On
-//!    ANY rejection, mutate nothing.
+//! 3. load the store and call `InviteStore::decide` (Plan 02,
+//!    `famp::pairing::invite`) — a pure, read-only classification against
+//!    the gateway's own wall clock (T-18-11). `NoPendingInvite` and
+//!    `WrongCode` both 404 (T-18-09: a distinct status code between them
+//!    would let a caller distinguish "no invite exists at all" from
+//!    "wrong code for an existing invite").
+//! 4. `WrongCode`: acquire `StoreLock`, RE-LOAD, `burn_attempt`,
+//!    `save_atomic`, drop the lock, THEN reject `code_mismatch` — the
+//!    ONLY rejection path that mutates anything.
+//! 5. `Expired`/`AlreadyRedeemed`/`AttemptsExhausted`/`NoPendingInvite`:
+//!    reject immediately with zero filesystem writes; the lock is never
+//!    acquired.
+//! 6. `Accept`: verify the request signature against the presented
+//!    `pubkey_b64url` FIRST (T-18-04, proof of possession, and the
+//!    expensive check that must not run for any cheap rejection above).
+//!    Then acquire `StoreLock`, RE-LOAD, and call `decide` a SECOND TIME
+//!    under the lock — a racing request that already consumed the invite
+//!    makes this second `decide` return `AlreadyRedeemed`, which is what
+//!    turns two concurrent valid redemptions into exactly one success. On
+//!    a still-`Accept` second decision: `consume`, `save_atomic`, drop
+//!    the lock, and ONLY THEN build and sign the response. **This
+//!    ordering — persist under the lock, THEN construct the HTTP
+//!    response — is a load-bearing invariant** (T-18-03): a process kill
+//!    between the two must leave the invite consumed, never available for
+//!    replay. Pinned by
+//!    `crates/famp-gateway/tests/pairing_ingress.rs`'s
+//!    `replay_of_consumed_code_after_reload_is_rejected`, itself proven
+//!    fail-first by a recorded manual falsification against the reverted
+//!    ordering (18-02-SUMMARY.md).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,8 +59,8 @@ use axum::{
     Router,
 };
 use famp::cli::peer::identity::load_or_generate;
-use famp::pairing::invite::{InviteState, InviteStore, StoreLock};
-use famp::pairing::wordlist::{code_digest, digest_from_hex, digests_equal, parse_code};
+use famp::pairing::invite::{InviteStore, RedemptionDecision, StoreLock};
+use famp::pairing::wordlist::{code_digest, parse_code};
 use famp::pairing::{RedemptionReject, RedemptionRequest, RedemptionResponse, Signed};
 use famp::{FampSigningKey, Principal, TrustedVerifyingKey};
 use famp_crypto::key_id;
@@ -100,7 +115,9 @@ fn reject_status(reason: &str) -> StatusCode {
     match reason {
         "malformed_code" | "invalid_signature" => StatusCode::BAD_REQUEST,
         "own_domain_refused" => StatusCode::FORBIDDEN,
-        "no_pending_invite" | "code_mismatch" => StatusCode::NOT_FOUND,
+        "no_pending_invite" | "code_mismatch" | "expired" => StatusCode::NOT_FOUND,
+        "already_redeemed" => StatusCode::CONFLICT,
+        "attempts_exhausted" => StatusCode::TOO_MANY_REQUESTS,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }
@@ -165,59 +182,128 @@ async fn ingest_redemption_at(
         return Err(reject("own_domain_refused"));
     }
 
-    // (3) load the store — absent or zero Pending -> 404.
+    // (3) load the store and classify — pure, read-only, no lock held.
     let store = InviteStore::load(&state.store_path).map_err(|_| reject("no_pending_invite"))?;
-    let any_pending = store
-        .invites
-        .iter()
-        .any(|r| matches!(r.state, InviteState::Pending));
-    if !any_pending {
-        return Err(reject("no_pending_invite"));
-    }
-
-    // (4) constant-time digest compare against every Pending record.
     let presented_digest = code_digest(&code);
-    let matched_id = store
-        .invites
-        .iter()
-        .filter(|r| matches!(r.state, InviteState::Pending))
-        .find(|r| {
-            digest_from_hex(&r.code_digest)
-                .is_some_and(|stored| digests_equal(&presented_digest, &stored))
-        })
-        .map(|r| r.id.clone());
-    let Some(invite_id) = matched_id else {
-        return Err(reject("code_mismatch"));
-    };
+    let decision = store.decide(&presented_digest, now);
 
-    // (5) verify the request signature — proof of possession (T-18-04).
-    signed_request
-        .verify(&presented_vk)
-        .map_err(|_| reject("invalid_signature"))?;
+    match decision {
+        // (5) cheap rejections: zero filesystem writes, lock never
+        // acquired.
+        RedemptionDecision::NoPendingInvite => Err(reject("no_pending_invite")),
+        RedemptionDecision::Expired => Err(reject("expired")),
+        RedemptionDecision::AlreadyRedeemed => Err(reject("already_redeemed")),
+        RedemptionDecision::AttemptsExhausted => Err(reject("attempts_exhausted")),
 
-    let redeemer_key_id = key_id(&presented_vk);
+        // (4) the ONLY rejection path that mutates: burn the attempt
+        // budget under the lock, persist, THEN reject.
+        RedemptionDecision::WrongCode => {
+            burn_and_reject_wrong_code(state, now)?;
+            Err(reject("code_mismatch"))
+        }
 
-    // (6) persist BEFORE replying (T-18-03). Re-acquire the lock and
-    // re-load rather than trusting the step-4 read, so a concurrent
-    // redemption that won the race in between is not double-honored.
+        // (6) Accept: verify signature FIRST (expensive), then
+        // lock+re-decide+consume+persist, THEN build the response.
+        RedemptionDecision::Accept { id: first_pass_id } => {
+            signed_request
+                .verify(&presented_vk)
+                .map_err(|_| reject("invalid_signature"))?;
+            accept_and_consume(
+                state,
+                &signed_request.statement,
+                &presented_vk,
+                &presented_digest,
+                &first_pass_id,
+                now,
+            )
+        }
+    }
+}
+
+/// The WrongCode mutation, isolated so [`ingest_redemption_at`] stays
+/// under the workspace's function-length lint: acquire the lock, RE-LOAD,
+/// `burn_attempt`, `save_atomic`, drop the lock. Never called for any
+/// other [`RedemptionDecision`] — the caller is the sole match arm.
+fn burn_and_reject_wrong_code(
+    state: &PairingIngressState,
+    now: &str,
+) -> Result<(), RedemptionReject> {
     let lock = StoreLock::acquire(&state.store_path).map_err(|_| reject("no_pending_invite"))?;
     let mut store =
         InviteStore::load(&state.store_path).map_err(|_| reject("no_pending_invite"))?;
-    let Some(record) = store
+    store.burn_attempt(now);
+    store
+        .save_atomic(&state.store_path)
+        .map_err(|_| reject("internal_error"))?;
+    drop(lock);
+    Ok(())
+}
+
+/// The Accept lock-and-consume sequence, isolated so
+/// [`ingest_redemption_at`] stays under the workspace's function-length
+/// lint. Re-decides UNDER the lock before consuming — see this module's
+/// doc comment for why that ordering is load-bearing (T-18-03).
+fn accept_and_consume(
+    state: &PairingIngressState,
+    request: &RedemptionRequest,
+    presented_vk: &TrustedVerifyingKey,
+    presented_digest: &[u8; 32],
+    first_pass_id: &str,
+    now: &str,
+) -> Result<Signed<RedemptionResponse>, RedemptionReject> {
+    let redeemer_key_id = key_id(presented_vk);
+
+    let lock = StoreLock::acquire(&state.store_path).map_err(|_| reject("no_pending_invite"))?;
+    let mut store =
+        InviteStore::load(&state.store_path).map_err(|_| reject("no_pending_invite"))?;
+
+    // Re-decide UNDER the lock: a racing request that already consumed
+    // this invite in between makes this second decide return
+    // AlreadyRedeemed, turning two concurrent valid redemptions into
+    // exactly one success (T-18-03).
+    let invite_id = match store.decide(presented_digest, now) {
+        RedemptionDecision::Accept { id } => id,
+        RedemptionDecision::AlreadyRedeemed => {
+            drop(lock);
+            return Err(reject("already_redeemed"));
+        }
+        RedemptionDecision::Expired => {
+            drop(lock);
+            return Err(reject("expired"));
+        }
+        RedemptionDecision::AttemptsExhausted => {
+            drop(lock);
+            return Err(reject("attempts_exhausted"));
+        }
+        RedemptionDecision::WrongCode | RedemptionDecision::NoPendingInvite => {
+            drop(lock);
+            return Err(reject("no_pending_invite"));
+        }
+    };
+    debug_assert_eq!(
+        invite_id, first_pass_id,
+        "re-decide under the lock matched a different record than the unlocked pass"
+    );
+
+    let Some(inviter_principal) = store
         .invites
-        .iter_mut()
-        .find(|r| r.id == invite_id && matches!(r.state, InviteState::Pending))
+        .iter()
+        .find(|r| r.id == invite_id)
+        .map(|r| r.principal.clone())
     else {
         drop(lock);
-        return Err(reject("code_mismatch"));
+        return Err(reject("no_pending_invite"));
     };
-    let inviter_principal = record.principal.clone();
-    record.state = InviteState::Redeemed {
-        by: request.principal.clone(),
-        key_id: redeemer_key_id.clone(),
-        pubkey_b64url: request.pubkey_b64url.clone(),
-        at: now.to_string(),
-    };
+
+    store
+        .consume(
+            &invite_id,
+            &request.principal,
+            &redeemer_key_id,
+            &request.pubkey_b64url,
+            now,
+        )
+        .map_err(|_| reject("internal_error"))?;
     store
         .save_atomic(&state.store_path)
         .map_err(|_| reject("internal_error"))?;
@@ -226,6 +312,8 @@ async fn ingest_redemption_at(
     // Build + sign the response with the INVITER's own gateway key —
     // never a per-invite key — loaded via the same idempotent
     // `load_or_generate` path `famp peer export`/`import` already use.
+    // Constructed strictly AFTER the successful persist above (T-18-03's
+    // load-bearing ordering, see this module's doc comment).
     let sk: FampSigningKey =
         load_or_generate(&state.signing_key_path).map_err(|_| reject("internal_error"))?;
     let response = RedemptionResponse {
