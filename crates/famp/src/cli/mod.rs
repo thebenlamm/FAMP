@@ -21,6 +21,7 @@ pub mod leave;
 pub mod listen_wake;
 pub mod mcp;
 pub mod own_domain;
+pub mod pair;
 pub mod paths;
 pub mod peer;
 pub mod perms;
@@ -166,6 +167,14 @@ pub enum Commands {
     /// key material ever crosses FAMP — the blob transport is the
     /// operator's own clipboard/Signal.
     Peer(peer::PeerArgs),
+    /// Cross-person trust bootstrap via a five-word texted code (Phase
+    /// 18, PAIR-01/06): `famp pair invite --as <principal>` generates a
+    /// single-use code; `famp pair redeem --from <url>` reads it from
+    /// stdin ONLY (never a positional argument) and POSTs the redemption
+    /// to the inviter's gateway; `famp pair status` is the ONLY place the
+    /// inviter-side pin ever happens, after printing who is about to be
+    /// trusted.
+    Pair(pair::PairArgs),
 }
 
 /// Build a multi-thread tokio runtime and block on `fut`. Shared by every
@@ -222,6 +231,7 @@ pub fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Whoami(args) => block_on_async(whoami::run(args)),
         Commands::Inspect(args) => block_on_async(inspect::run(args)),
         Commands::Daemon(args) => block_on_async(daemon::run(args)),
+        Commands::Pair(args) => block_on_async(pair::run(args)),
     }
 }
 
