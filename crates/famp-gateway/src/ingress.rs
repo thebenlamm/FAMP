@@ -131,16 +131,34 @@ impl GatewayIngressState {
 /// relay-fetch loop too, so a request admitted/rejected on one ingest
 /// path counts against the SAME replay cache and rate-limit budget as
 /// one on the other (INGR-02/INGR-06/INGR-08).
+///
+/// `pairing_router` (18-01, Task 1 Option A binding constraint 2): the
+/// cross-person pairing redemption route
+/// ([`crate::pairing_ingress::build_pairing_router`]), merged in via
+/// `Router::merge`.
+///
+/// That merge happens BEFORE the shared body-size cap below is layered
+/// on, so it inherits the same 1 MiB cap `INBOX_ROUTE` gets — merging it
+/// AFTER the layer would leave it uncapped. `None` when no pairing store
+/// is configured (never the case in production; `main.rs` always builds
+/// one, but tests that only exercise `INBOX_ROUTE` pass `None` to avoid
+/// standing up an unused pairing state).
 pub fn build_gateway_router(
     registry: Arc<Mutex<GatewayRegistry>>,
     keyring: Arc<Keyring>,
     own_domain: Arc<str>,
     guard: Arc<Mutex<IngressGuard>>,
+    pairing_router: Option<Router>,
 ) -> Router {
     let state = GatewayIngressState::new(registry, keyring, own_domain, guard);
-    Router::new()
+    let router = Router::new()
         .route(INBOX_ROUTE, post(inbox_handler))
-        .with_state(state)
+        .with_state(state);
+    let router = match pairing_router {
+        Some(pairing_router) => router.merge(pairing_router),
+        None => router,
+    };
+    router
         .layer(ServiceBuilder::new().layer(tower_http::limit::RequestBodyLimitLayer::new(ONE_MIB)))
 }
 
@@ -702,6 +720,13 @@ async fn deliver(
 /// raced inside `main.rs`'s `tokio::select!` alongside the egress drain loop
 /// and shutdown signal — this future does not resolve until the underlying
 /// server task exits (bind error, accept-loop error, or panic).
+// 8 params, one over clippy's default threshold: 18-01-PLAN.md Task 2
+// mandates adding `pairing_router: Option<Router>` as an additive 8th
+// parameter to this pre-existing 7-param signature, and Plans 02/03 build
+// against this EXACT signature (see 18-01-SUMMARY.md). Bundling the
+// existing 7 into a config struct is out of this plan's scope and would
+// itself be a signature change downstream plans do not expect.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_ingress(
     listen_addr: SocketAddr,
     tls_cert_path: &std::path::Path,
@@ -710,6 +735,7 @@ pub async fn run_ingress(
     keyring: Arc<Keyring>,
     own_domain: Arc<str>,
     guard: Arc<Mutex<IngressGuard>>,
+    pairing_router: Option<Router>,
 ) -> std::io::Result<()> {
     let cert =
         famp_transport_http::tls::load_pem_cert(tls_cert_path).map_err(std::io::Error::other)?;
@@ -721,7 +747,7 @@ pub async fn run_ingress(
     let listener = std::net::TcpListener::bind(listen_addr)?;
     listener.set_nonblocking(true)?;
 
-    let router = build_gateway_router(registry, keyring, own_domain, guard);
+    let router = build_gateway_router(registry, keyring, own_domain, guard, pairing_router);
     let handle = famp_transport_http::tls_server::serve_std_listener(
         listener,
         router,
@@ -817,6 +843,7 @@ mod tests {
                 Arc::new(keyring),
                 Arc::from(own_domain),
                 Arc::new(Mutex::new(IngressGuard::new())),
+                None,
             ),
             registry,
         )
@@ -899,6 +926,7 @@ mod tests {
             Arc::new(keyring),
             Arc::from(own_domain),
             Arc::new(Mutex::new(IngressGuard::new())),
+            None,
         );
         (router, registry, broker)
     }

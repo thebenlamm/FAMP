@@ -244,6 +244,7 @@ async fn build_harness(own_domain: &str, sk: &FampSigningKey) -> Harness {
         Arc::new(keyring),
         Arc::from(own_domain),
         Arc::new(Mutex::new(IngressGuard::new())),
+        None,
     );
 
     Harness {

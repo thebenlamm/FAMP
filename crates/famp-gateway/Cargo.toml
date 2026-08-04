@@ -49,6 +49,11 @@ reqwest    = { version = "0.13", default-features = false, features = ["rustls-n
 assert_cmd = "2.0"
 tempfile = "3"
 famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.1" }
+# 18-01: `tests/pairing_e2e.rs` seeds a deterministic `StdRng` for
+# `invite::run_at`'s code draw, and constructs `famp::cli::Cli` via
+# `clap::Parser::try_parse_from` for the PAIR-06 argv-refusal proof.
+rand = { workspace = true }
+clap = { version = "4.6", features = ["derive"] }
 # REACH-05 (17-06): dev-only, for `egress.rs`'s `ack_class_has_no_fsm_effect`
 # unit test, which asserts an unsolicited ack has no legal transition on
 # famp-fsm's own transition surface. Zero source change to the frozen

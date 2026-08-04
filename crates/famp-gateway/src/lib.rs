@@ -44,11 +44,21 @@ use famp_inspect_proto as _;
 #[cfg(test)]
 use tempfile as _;
 
+// Silencer: `clap`/`rand` (Phase 18, 18-01-PLAN.md Task 2) added to
+// `Cargo.toml` as dev-dependencies exclusively for
+// `tests/pairing_e2e.rs`'s seeded `StdRng` draws and CLI-arg-shaped
+// fixtures — a separate compilation unit from this lib target.
+#[cfg(test)]
+use clap as _;
+#[cfg(test)]
+use rand as _;
+
 pub mod clock;
 pub mod egress;
 pub mod error;
 pub mod ingress;
 pub mod ingress_guard;
+pub mod pairing_ingress;
 pub mod principal;
 pub mod registry;
 pub mod relay_fetch;

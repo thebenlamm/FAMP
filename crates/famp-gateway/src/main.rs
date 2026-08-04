@@ -65,11 +65,12 @@ use thiserror as _;
 // this bin target doesn't reference it directly.
 use famp_envelope as _;
 
-// Silencer: `axum`/`famp-crypto`/`famp-transport`/`serde_json`/`time`/
-// `tower`/`tower-http`/`uuid` back the relay implementation inside the
-// lib's `egress.rs`/`ingress.rs` modules (09-02/09-03) — this bin target
+// Silencer: `famp-crypto`/`famp-transport`/`serde_json`/`time`/`tower`/
+// `tower-http`/`uuid` back the relay implementation inside the lib's
+// `egress.rs`/`ingress.rs` modules (09-02/09-03) — this bin target
 // consumes those modules' public functions, not these crates, directly.
-use axum as _;
+// (`axum` dropped from this list in 18-01: `build_pairing_router_for`
+// below references `axum::Router` directly.)
 use famp_crypto as _;
 use famp_transport as _;
 use serde_json as _;
@@ -97,6 +98,14 @@ use assert_cmd as _;
 use famp_inspect_proto as _;
 #[cfg(test)]
 use tempfile as _;
+
+// Silencer: `clap`/`rand` (Phase 18, 18-01-PLAN.md Task 2) are
+// dev-dependencies used exclusively by `tests/pairing_e2e.rs`, a separate
+// compilation unit from this bin's own unittest build.
+#[cfg(test)]
+use clap as _;
+#[cfg(test)]
+use rand as _;
 // REACH-05 (17-06): `famp-fsm` is a dev-dep used only by
 // `egress.rs`'s `ack_class_has_no_fsm_effect` test (the lib target's own
 // test compile unit) — this bin's test compile unit has no direct
@@ -135,6 +144,11 @@ struct GatewayArgs {
     /// shared-secret credential (D-26); plan 05 owns whatever
     /// signed-fetch-specific flags it needs beyond this URL.
     relay_fetch: Option<Url>,
+    /// 18-01 (PAIR-01): optional override for the pairing invite store
+    /// path, `--pairing-store <path>`. Defaults to
+    /// `famp::pairing::invite::pairing_store_path(&home)` when absent —
+    /// see `main()`'s resolution site.
+    pairing_store: Option<PathBuf>,
 }
 
 /// Parse `--socket <path>`, `--listen <addr>`, `--tls-cert <path>`,
@@ -200,7 +214,7 @@ fn parse_backs_flag(raw: &str, backs: &mut Vec<Principal>) -> Result<(), String>
 /// guards: this string names every real flag and none that don't exist.
 const USAGE: &str = "usage: famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
      --tls-key <path> [--peer <domain>=<url>]... [--backs agent:<domain>/<name>]... \
-     [--trust-cert <path>] [--relay-fetch <url>] <principal-name>...";
+     [--trust-cert <path>] [--relay-fetch <url>] [--pairing-store <path>] <principal-name>...";
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, String> {
     let _bin = args.next();
@@ -213,6 +227,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     let mut backs: Vec<Principal> = Vec::new();
     let mut trust_cert: Option<PathBuf> = None;
     let mut relay_fetch: Option<Url> = None;
+    let mut pairing_store: Option<PathBuf> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -259,6 +274,12 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
                     .map_err(|e| format!("--relay-fetch: invalid url '{raw}': {e}"))?;
                 relay_fetch = Some(url);
             }
+            "--pairing-store" => {
+                let path = args
+                    .next()
+                    .ok_or("--pairing-store requires a path argument")?;
+                pairing_store = Some(PathBuf::from(path));
+            }
             // 17-05: any other `--`-prefixed token is an UNRECOGNIZED
             // flag, never silently absorbed as a positional principal
             // name. `--relay-token` is the concrete regression this
@@ -294,6 +315,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
         backs,
         trust_cert,
         relay_fetch,
+        pairing_store,
     })
 }
 
@@ -473,6 +495,32 @@ async fn run_relay_fetch_branch(
     .await;
 }
 
+/// Build the 18-01 (PAIR-01, Task 1 Option A) cross-person pairing
+/// redemption router, its OWN `Router`/state (never
+/// `GatewayIngressState`) — merged into the ingress router by
+/// `run_ingress`/`build_gateway_router` BEFORE the shared body-size cap.
+///
+/// `pairing_store` overrides the default `<home>/gateway/pairing.json`
+/// path (`--pairing-store`); the signing key is the SAME gateway identity
+/// at `identity_path` (one key per gateway). Extracted from `main` solely
+/// to satisfy `clippy::too_many_lines`, mirroring `parse_peer_flag`'s
+/// extraction precedent above.
+fn build_pairing_router_for(
+    home: &std::path::Path,
+    pairing_store: Option<PathBuf>,
+    identity_path: &std::path::Path,
+    ingress_own_domain: &Arc<str>,
+) -> axum::Router {
+    let pairing_store_file =
+        pairing_store.unwrap_or_else(|| famp::pairing::invite::pairing_store_path(home));
+    let pairing_state = famp_gateway::pairing_ingress::PairingIngressState::new(
+        Arc::new(pairing_store_file),
+        Arc::new(identity_path.to_path_buf()),
+        Arc::clone(ingress_own_domain),
+    );
+    famp_gateway::pairing_ingress::build_pairing_router(pairing_state)
+}
+
 #[tokio::main]
 async fn main() {
     let args = match parse_args(std::env::args()) {
@@ -600,8 +648,15 @@ async fn main() {
     let ingress_guard: Arc<Mutex<famp_gateway::ingress_guard::IngressGuard>> =
         Arc::new(Mutex::new(famp_gateway::ingress_guard::IngressGuard::new()));
 
+    let pairing_router = build_pairing_router_for(
+        &home,
+        args.pairing_store.clone(),
+        &identity_path,
+        &ingress_own_domain,
+    );
+
     tokio::select! {
-        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), Arc::clone(&ingress_own_domain), Arc::clone(&ingress_guard)) => {
+        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), Arc::clone(&ingress_own_domain), Arc::clone(&ingress_guard), Some(pairing_router)) => {
             if let Err(e) = result {
                 eprintln!("famp-gateway: ingress server exited: {e}");
             }
