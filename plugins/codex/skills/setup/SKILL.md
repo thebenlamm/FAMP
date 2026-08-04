@@ -90,9 +90,22 @@ should now run `/famp:register <name>` in each session they want to message
 from — `register` holds the identity for the lifetime of that session, so the
 session must stay open.
 
+Also tell them what to expect on that first registered turn: with listen mode on
+(the default for MCP `famp_register`), the plugin's `Stop` hook parks until an
+inbound message wakes the session. Codex asks for trust the first time it sees a
+hook, so the first turn after `/famp:register` may surface a hook-review prompt —
+approving it is what arms listen mode.
+
 ## Notes
 
 - Do not also run `famp install-codex`. It registers a second, unscoped MCP
-  server under the same name and duplicates the hooks.
+  server under the same name and installs a second `Stop` await hook (in the
+  project's `.codex/hooks.json`) on top of the plugin's.
+- **Unverified:** that Codex executes a *plugin-provided* Stop hook has not been
+  confirmed in a live session — only that `codex plugin add` accepts the
+  manifest's `hooks` field and copies `hooks/hooks.json` into the plugin cache.
+  To confirm, after one turn check that `~/.codex/config.toml` gained a
+  `[hooks.state]` key ending in `hooks/hooks.json:stop:0:0`. If it did not, fall
+  back to `famp install-codex` for the hook half and report it.
 - After upgrading the binary, run `famp daemon restart` so the running broker
   picks it up. A stale daemon surfaces as `ProtocolMismatch`.

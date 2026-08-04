@@ -71,6 +71,30 @@
 #                     codex|grok   FAMP_BIN=famp
 #                                  (bare name; /famp:setup puts it on PATH)
 #
+#                   Which shims a host gets is NOT uniform:
+#
+#                     famp-await.sh    all three. The asset is host-aware — it
+#                                      accepts snake_case (Claude/Codex) and
+#                                      camelCase (Grok) input keys, and falls
+#                                      back to resolving Codex's rollout file
+#                                      from its state DB by session_id when the
+#                                      Stop payload omits a transcript path.
+#                     hook-runner.sh   claude-code ONLY. HOOK-04b edit-glob
+#                                      dispatch parses Claude's `transcript_path`
+#                                      JSONL for Edit/Write/MultiEdit `tool_use`
+#                                      blocks. Codex's Stop payload carries no
+#                                      Claude-format transcript, and Grok's
+#                                      documented Stop input carries no
+#                                      transcript field at all (common fields are
+#                                      hookEventName/sessionId/cwd/workspaceRoot/
+#                                      timestamp/permissionMode, plus
+#                                      stopHookActive/lastAssistantMessage). On
+#                                      either host it would exit 0 at step 2 on
+#                                      every turn — a shipped file that can never
+#                                      fire. The legacy `install-codex` /
+#                                      `install-grok` paths never installed it
+#                                      either, so this is parity, not a removal.
+#
 #                   After render, unresolved `@FAMP_BIN@` in hooks/ is a hard
 #                   error, and each shim is syntax-checked with `bash -n`.
 #
@@ -138,8 +162,14 @@ fi
 
 # Host-specific render of the #28 asset token. Plugins have no install-time
 # step, so this is the only place @FAMP_BIN@ becomes a real assignment.
+ALL_SHIMS="hook-runner.sh famp-await.sh"
+case "$HOST" in
+  claude-code) SHIMS="hook-runner.sh famp-await.sh" ;;
+  codex|grok)  SHIMS="famp-await.sh" ;;   # hook-runner is Claude-only; see above
+esac
+
 echo "rendering Stop-hook shims to $PLUGIN/hooks/"
-for shim in hook-runner.sh famp-await.sh; do
+for shim in $SHIMS; do
   src="$ASSETS/$shim"
   dest="$PLUGIN/hooks/$shim"
 
@@ -179,6 +209,20 @@ for shim in hook-runner.sh famp-await.sh; do
   fi
 
   echo "  $shim"
+done
+
+# Drop any shim this host does not ship. Without this, a shim that was correct
+# under an earlier revision of the table above would linger in the packaging and
+# the drift check would keep passing on it — the exact failure mode that shipped
+# an inert hook-runner.sh to codex and grok.
+for stale in $ALL_SHIMS; do
+  case " $SHIMS " in
+    *" $stale "*) continue ;;
+  esac
+  if [ -e "$PLUGIN/hooks/$stale" ]; then
+    rm -f "$PLUGIN/hooks/$stale"
+    echo "  removed $stale (not shipped for $HOST)"
+  fi
 done
 
 # Scoped token guard: only generated hooks (not docs that may mention the token).
