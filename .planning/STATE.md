@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase: 17
-current_phase_name: Cross-Person Trust Bootstrap (Pairing)
+current_phase: 18
+current_phase_name: cross-person-trust-bootstrap-pairing
 status: executing
 stopped_at: Phase 16 complete (5/5), v1.1.0-rc.1 released and verified
-last_updated: "2026-08-03T20:24:19.379Z"
+last_updated: "2026-08-03T21:01:40.254Z"
 last_activity: 2026-08-03
-last_activity_desc: Phase 16 complete, transitioned to Phase 17
+last_activity_desc: Phase 18 execution started
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 23
   completed_plans: 20
-  percent: 80
+  percent: 67
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 16 — distribution
+**Current focus:** Phase 18 — cross-person-trust-bootstrap-pairing
 
 ## Current Position
 
-Phase: 17 — Protocol-Grade Ingress + Reachability Implementation
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-03 — Phase 16 complete, transitioned to Phase 17
+Phase: 18 (cross-person-trust-bootstrap-pairing) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 18
+Last activity: 2026-08-03 — Phase 18 execution started
 
 ## v1.1 Phase Map
 
