@@ -31,7 +31,7 @@ pub(super) enum DrainCap {
     Scanned(usize),
 }
 
-/// The three axes on which the drain consumers legitimately differ.
+/// The four axes on which the drain consumers legitimately differ.
 pub(super) struct DrainPolicy<'a> {
     /// Which envelopes this caller wants. `AwaitFilter::Any` makes the
     /// filter-mismatch stop branch unreachable, which is why the `Inbox`
@@ -42,6 +42,10 @@ pub(super) struct DrainPolicy<'a> {
     /// correct on the DM / register / join paths, where a message a client
     /// addressed to itself must still arrive.
     pub skip_self_authored: Option<&'a str>,
+    /// Positive-trust gate for automatic ingestion. Only `Await` enables
+    /// this; explicit `Inbox`, `Register`, and `Join` drains remain
+    /// origin-inclusive so remote records stay visible to a human reader.
+    pub require_local_origin: bool,
     /// `None` walks every record handed in.
     pub cap: Option<DrainCap>,
 }
@@ -153,6 +157,13 @@ pub(super) fn walk(
                 next_offset = record.end;
             }
             Ok((origin, value)) => {
+                if policy.require_local_origin && origin != Origin::Local {
+                    // Permanently ineligible for this Await consumer, but
+                    // retained on disk for explicit Inbox reads. Advance
+                    // only the caller's Await-owned offset.
+                    next_offset = record.end;
+                    continue;
+                }
                 if is_self_authored(&value, policy.skip_self_authored) {
                     // Permanently unmatchable under ANY filter (a subscriber
                     // never receives its own posts) — safe to advance past

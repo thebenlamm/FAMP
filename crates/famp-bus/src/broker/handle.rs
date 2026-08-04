@@ -468,12 +468,12 @@ fn send_agent<E: BrokerEnv>(
     // `famp send` and the `famp_send` MCP tool unable to surface the
     // task id to downstream callers.
     let task_id = task_id_from(envelope);
-    let waiters = waiting_clients_for_name(broker, &name, envelope);
-    let woken = !waiters.is_empty();
-    let line_len = line.len();
     // D-02: resolve the SENDER's declared origin before mutating any
     // state below (the borrow is immutable and short-lived).
     let origin = client_origin(broker, sender);
+    let waiters = waiting_clients_for_name(broker, &name, envelope, origin);
+    let woken = !waiters.is_empty();
+    let line_len = line.len();
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply.
     let mut out = Vec::with_capacity(2 + 2 * waiters.len());
@@ -546,7 +546,7 @@ fn send_channel<E: BrokerEnv>(
         if is_self_authored(envelope, Some(member)) {
             continue;
         }
-        let waiters = waiting_clients_for_name(broker, member, envelope);
+        let waiters = waiting_clients_for_name(broker, member, envelope, origin);
         if waiters.is_empty() {
             continue;
         }
@@ -750,6 +750,7 @@ fn inbox<E: BrokerEnv>(
             &DrainPolicy {
                 filter: &AwaitFilter::Any,
                 skip_self_authored: Some(&name),
+                require_local_origin: false,
                 cap: Some(DrainCap::Scanned(CHANNEL_DRAIN_CAP)),
             },
         );
@@ -1189,6 +1190,7 @@ fn decode_lines(
         &DrainPolicy {
             filter: &AwaitFilter::Any,
             skip_self_authored: None,
+            require_local_origin: false,
             cap: None,
         },
     )

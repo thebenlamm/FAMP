@@ -250,6 +250,7 @@ fn drain_await_batch<E: BrokerEnv>(
         &DrainPolicy {
             filter,
             skip_self_authored: awaiter_identity.as_deref(),
+            require_local_origin: true,
             cap: Some(DrainCap::Delivered(AWAIT_BATCH_CAP)),
         },
     );
@@ -298,7 +299,7 @@ fn drain_await_batch<E: BrokerEnv>(
                 next_offset + trigger_line_len as u64 + JSONL_RECORD_TERMINATOR_LEN;
             let trigger_self_authored =
                 is_self_authored(trigger_envelope, awaiter_identity.as_deref());
-            if trigger_self_authored {
+            if trigger_origin != Origin::Local || trigger_self_authored {
                 // Permanently unmatchable — same as the main-loop case.
                 next_offset = trigger_next_offset;
             } else if filter_matches(filter, trigger_envelope) {
@@ -327,7 +328,11 @@ pub(super) fn waiting_clients_for_name<E: BrokerEnv>(
     broker: &Broker<E>,
     name: &str,
     envelope: &serde_json::Value,
+    origin: Origin,
 ) -> Vec<ClientId> {
+    if origin != Origin::Local {
+        return Vec::new();
+    }
     broker
         .state
         .pending_awaits
