@@ -74,13 +74,31 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # export`/`import` (Phase 8, TRUST-01) read/write the gateway peer
 # keyring at runtime, not just in tests.
 famp-keyring = { path = "../famp-keyring", version = "1.1.0-rc.1" }
+# 18-01 (PAIR-01): `famp pair redeem`'s outbound HTTPS POST to the
+# inviter's gateway. Same crate/version/feature-set famp-gateway,
+# famp-relay, and famp-transport-http already declare directly (NOT
+# `{ workspace = true }` — the root workspace `[workspace.dependencies]`
+# reqwest entry names a feature, `rustls-tls-native-roots`, that does not
+# exist on reqwest 0.13.x; every other workspace member already avoids it
+# by declaring reqwest inline with `rustls-no-provider`, the manually-
+# provider-installed variant `famp_transport_http::tls::build_client_config`
+# is written against). `rustls-no-provider` + `install_default_provider()`
+# (called internally by `build_client_config`) is the SAME construction
+# this crate's `cli::pair::redeem` uses.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
+# 18-01: `cli::pair::redeem` builds its outbound `reqwest::Client` via
+# `famp_transport_http::tls::build_client_config` — the SAME
+# TLS-preconfigured-client construction `famp-gateway`'s `relay_fetch.rs`
+# uses internally, rather than standing up a second TLS stack. Promoted
+# from dev-only (previously below, `famp-transport-http` was test-only)
+# to a REAL dependency for this reason; no cycle — famp-transport-http
+# does not depend on this crate.
+famp-transport-http = { path = "../famp-transport-http", version = "1.1.0-rc.1" }
 [dev-dependencies]
 # test-util feature of famp-transport is ONLY enabled in dev-dependencies so
 # send_raw_for_test is unreachable from production builds (D-D6).
-famp-transport-http = { path = "../famp-transport-http", version = "1.1.0-rc.1" }
 famp-transport = { path = "../famp-transport", version = "1.1.0-rc.1", features = ["test-util"] }
 tokio = { workspace = true, features = ["sync", "rt", "rt-multi-thread", "macros", "time", "test-util", "process", "io-util", "signal", "net"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 axum = "0.8"
 assert_cmd = "2.0"
 insta = { version = "1.47.2", features = ["json"] }

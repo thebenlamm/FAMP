@@ -37,13 +37,6 @@ use famp_inspect_server as _;
 use famp_keyring as _;
 #[cfg(test)]
 use famp_transport as _;
-#[cfg(test)]
-use famp_transport_http as _;
-use hex as _;
-use rand as _;
-#[cfg(test)]
-use reqwest as _;
-use sha2 as _;
 use tempfile as _;
 use tower as _;
 use tower_http as _;
@@ -79,3 +72,4 @@ pub use famp_envelope::{
 
 pub mod bus_client;
 pub mod cli;
+pub mod pairing;

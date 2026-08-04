@@ -27,7 +27,11 @@ use famp_keyring as _;
 use famp_taskdir as _;
 #[cfg(test)]
 use famp_transport as _;
-#[cfg(test)]
+// 18-01 (PAIR-01): `famp-transport-http`/`reqwest` are now REAL (non-dev)
+// dependencies of the lib target (`cli::pair::redeem`'s outbound HTTPS
+// client); the bin target itself still only calls `famp::cli::run`, so
+// silence unconditionally rather than `#[cfg(test)]`-gating them, mirroring
+// the `famp-keyring` precedent above.
 use famp_transport_http as _;
 use hex as _;
 use humantime as _;
@@ -36,7 +40,6 @@ use insta as _;
 use nix as _;
 use rand as _;
 use regex as _;
-#[cfg(test)]
 use reqwest as _;
 use rusqlite as _;
 use serde as _;
