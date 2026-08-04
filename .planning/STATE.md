@@ -5,16 +5,16 @@ milestone_name: Open-Internet Federation
 current_phase: 18
 current_phase_name: cross-person-trust-bootstrap-pairing
 status: executing
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-08-04T01:29:57.085Z"
+stopped_at: Completed 18-03-PLAN.md
+last_updated: "2026-08-04T02:41:56.530Z"
 last_activity: 2026-08-03
 last_activity_desc: Phase 18 execution started
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 23
-  completed_plans: 22
-  percent: 67
+  completed_plans: 23
+  percent: 83
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 18 (cross-person-trust-bootstrap-pairing) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-08-03 — Phase 18 execution started
 
@@ -230,6 +230,9 @@ Last activity: 2026-08-03 — Phase 18 execution started
 - [Phase ?]: 16-04: replaced cargo install famp (never published to crates.io) with the dist curl installer across all four onboarding docs; from-source fallback is now cargo install --path, cross-checked against smoke-test.yml
 - [Phase ?]: 16-04: docs/DISTRIBUTION.md's checksum claim tightened to D-06's exact locked wording; install_docs_accuracy.rs mechanically forbids any paraphrase or overclaim (authenticity/provenance/publisher identity)
 - [Phase ?]: InviteStore::decide checks AttemptsExhausted ahead of Accept (T-18-12); a Revoked record never matches its own digest
+- [Phase ?]: [18-03] status.rs observe/pin split makes observe-before-pin structural: pin_redeemed_record writes+flushes the REDEEMED BY: line in one write_all call, then calls a separate pin() that owns 100% of the module's filesystem mutation; verified with a Write-wrapping snapshot test plus a recorded falsification control.
+- [Phase ?]: [18-03] crates/famp/tests/pair_cli.rs uses a self-built in-process mock inviter endpoint (not famp-gateway's real ingest_redemption) since famp cannot depend on famp-gateway (dependency runs the other way); mock skips code/attempt validation, already covered by pairing_ingress.rs/pairing_e2e.rs.
+- [Phase ?]: [18-03] PAIR-05's comprehension half is explicitly NOT closed by this plan's string-assertion tests; it remains open for Phase 20's UAT-02.
 
 ## Issues / Blockers
 
@@ -391,11 +394,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 16 P02 | 30min | 3 tasks | 3 files |
 | Phase 16 P04 | 35min | 3 tasks | 8 files |
 | Phase 18-cross-person-trust-bootstrap-pairing P02 | 55min | 3 tasks | 7 files |
+| Phase 18 P03 | 70min | 3 tasks | 8 files |
 
 ## Session
 
-**Last session:** 2026-08-04T01:29:39.500Z
-**Stopped At:** Completed 18-02-PLAN.md
+**Last session:** 2026-08-04T02:41:56.511Z
+**Stopped At:** Completed 18-03-PLAN.md
 **Resume File:** None
 
 **HANDOFF STATE — read before doing anything:**

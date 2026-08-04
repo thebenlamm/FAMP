@@ -236,7 +236,7 @@ Plans:
   4. A pairing failure names which step failed and what to do next, in language that does not assume the human knows what a public key is.
   5. The pairing artifact carries the QUAR-15 consent warning at the moment of consent — pairing with a peer means their agent's messages will be read by your agent, which can run commands on your machine.
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 
 Plans:
 **Wave 1**
@@ -249,7 +249,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 18-03-PLAN.md — one artifact with consent before code, plain-language failure taxonomy, observe-before-pin done-signals (PAIR-04, PAIR-05, PAIR-07, PAIR-08)
+- [x] 18-03-PLAN.md — one artifact with consent before code, plain-language failure taxonomy, observe-before-pin done-signals (PAIR-04, PAIR-05, PAIR-07, PAIR-08)
 
 **Waves:** W1 = 18-01 · W2 = 18-02 · W3 = 18-03 (strictly serial — all three plans write the same `famp::pairing` and `famp pair` files; no two can share a wave)
 **One-way door — RESOLVED 2026-08-03, Ben selected `option-a`:** the pairing rendezvous transport was a blocking `checkpoint:decision` at the head of 18-01; it is now closed and the executor must NOT re-ask it. Selected: a dedicated unauthenticated `POST /famp/v1/pair/redeem` on the inviter's own gateway, with its own `Router` and state type, merged before the shared 1 MiB body cap, 404ing whenever no `Pending` invite exists. Routing through `famp-relay` (option-b) was rejected as blocked today — enqueue 404s until a domain is manually pre-registered with a relay restart, and `verify_inbound_any` rejects the unpinned senders every pairing peer is by definition. Accepted limitation: option-a requires the INVITER to be publicly reachable (true for the Lightsail-fronted gateway, not true for a NATed inviter); the symmetric case is deliberately out of scope this milestone.
@@ -340,7 +340,7 @@ Plans:
 | 15. Keyring Multi-Key Extension + Revocation | v1.1 | 4/4 | In Progress|  |
 | 16. Distribution | v1.1 | 5/5 | In Progress|  |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 6/6 | In Progress|  |
-| 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 2/3 | In Progress|  |
+| 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 3/3 | In Progress|  |
 | 19. Auto-Wake Gate | v1.1 | 0/0 | Not started | - |
 | 20. Human Acceptance Gate | v1.1 | 0/0 | Not started | - |
 | 21. Push Notification Adapter | v1.1 | 0/0 | Not started | - |
