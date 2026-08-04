@@ -19,15 +19,27 @@ famp --version
 ```
 
 This plugin does not ship a PATH shim, so `famp` must be on your `PATH`
-directly — `~/.cargo/bin` after a source build.
+directly — `~/.cargo/bin` after either the installer or a source build.
 
 - **Prints a version** → go to Step 3.
 - **`command not found`** → Step 2.
 
 ## Step 2 — install the binary
 
-FAMP is not published to crates.io and ships no release binaries, so this builds
-from source. Requires Rust 1.89+.
+FAMP ships prebuilt binaries. Prefer the installer — no Rust toolchain, seconds
+rather than minutes:
+
+```bash
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+```
+
+It writes to `$CARGO_HOME/bin`, defaulting to `~/.cargo/bin`; make sure that
+directory is on your `PATH` and relay any `PATH` warning it prints verbatim.
+Re-run `famp --version`, then go to Step 3.
+
+Prebuilt binaries cover macOS (arm64, x86_64) and Linux x86_64 (glibc 2.35+).
+**Only if the installer reports no archive for this platform** — Linux aarch64
+is the known gap — fall back to a source build, which requires Rust 1.89+:
 
 ```bash
 cargo --version
@@ -51,8 +63,8 @@ cargo install --path "$SRC/crates/famp" --locked
 ```
 
 Roughly 90 seconds. Ensure `~/.cargo/bin` is on `PATH`, then re-run
-`famp --version`. Builds whatever the default branch is at clone time until
-release artifacts exist.
+`famp --version`. Note that this builds whatever the default branch is at clone
+time, which may be ahead of the latest release.
 
 ## Step 3 — install the broker service
 

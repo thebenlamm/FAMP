@@ -17,17 +17,20 @@ flag, see [docs/CONFIGURATION.md](CONFIGURATION.md).
 | Requirement | Version | Notes |
 |---|---|---|
 | macOS or Linux | — | `famp daemon install` supports macOS (launchd) and Linux (systemd `--user`); WSL and minimal distros without systemd use the [no-install bridge](#no-install-bridge) |
-| `git` | any | For cloning if building from source |
-| `curl` | any | Required by the `rustup` installer |
-| Rust | 1.89+ | The Quick Start installs `rustup` if you do not have it |
+| `curl` | any | To download the installer |
+| `git` + Rust 1.89+ | — | **Only if building from source** — see Step 1 |
 
-No prior Rust experience is required — the install script handles the toolchain.
+The recommended path installs a prebuilt binary and needs **no Rust
+toolchain**. No prior Rust experience is required either way.
 
 ---
 
 ## Installation
 
-### Step 1 — Install Rust (skip if already installed)
+### Step 1 — Install Rust (most users skip this)
+
+Only needed if you are building from source, or on a platform the prebuilt
+binaries don't cover (Linux aarch64). Otherwise go straight to Step 2.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
@@ -74,15 +77,39 @@ instead.
 
 ### Step 4 — Wire your agent client
 
-**Claude Code:**
+**Claude Code — use the plugin.** Run these inside a Claude Code window:
+
+```text
+/plugin marketplace add thebenlamm/FAMP
+/plugin install famp@famp
+```
+
+The plugin supplies the MCP server, the slash commands (`/famp:register`,
+`/famp:inbox`, …), the `Stop` hooks, and the listen-mode await shim — all
+scoped to the plugin: no `mcpServers` entry, no files in `~/.claude/commands/`,
+no `Stop` hooks in `settings.json`. (Claude Code does record the plugin itself
+as installed and enabled — `pluginUsage` in `~/.claude.json`, `enabledPlugins`
+and `extraKnownMarketplaces` in `settings.json` — but none of the FAMP wiring
+lands in your own config.) If you have not already done Steps 2–3,
+`/famp:setup` performs both.
+
+> [!IMPORTANT]
+> **Do not also run `famp install-claude-code`.** Both register an MCP server
+> under the same name, so running both yields 24 tools instead of 12 and four
+> `Stop` hooks instead of two. Already ran it? `famp uninstall-claude-code`.
+> See [plugins/README.md](../plugins/README.md#do-not-run-both).
+
+<details>
+<summary>Legacy alternative: <code>famp install-claude-code</code></summary>
 
 ```bash
 famp install-claude-code
 ```
 
-This writes the MCP server config, slash commands (`/famp-register`,
-`/famp-inbox`, etc.), the Stop hook, and the listen-mode await shim. Restart
-any open Claude Code windows after running this.
+Writes the MCP server config, slash commands (`/famp-register`, `/famp-inbox`,
+etc.), the Stop hook, and the listen-mode await shim into your home directory.
+Restart any open Claude Code windows after running this.
+</details>
 
 **Codex:**
 
@@ -105,18 +132,23 @@ famp inspect wake --identity <name>
 
 ## First Run
 
-Open two Claude Code windows (or one Claude Code + one Codex window).
+Open two **fresh** Claude Code windows (or one Claude Code + one Codex window).
+They must be started *after* Step 4 — a window that was already open has not
+loaded the MCP server, and every command below is an MCP call.
+
+Commands are shown for the plugin. On the legacy `famp install-claude-code`
+path the same commands are named `/famp-register`, `/famp-inbox`, … instead.
 
 **Window A — register as `alice`:**
 
 ```
-/famp-register alice
+/famp:register alice
 ```
 
 **Window B — register as `bob`:**
 
 ```
-/famp-register bob
+/famp:register bob
 ```
 
 **Window A — send a message to bob:**
@@ -183,9 +215,17 @@ auto-install it when you first run a `cargo` command inside the repo.
 
 **Claude Code windows not seeing the new MCP integration**
 
-`famp install-claude-code` writes config at installation time. Restart all open
-Claude Code windows after running it. If a window was open during install, it
-will not pick up the integration until restarted.
+Both wiring paths take effect at installation time, so restart all open Claude
+Code windows afterward — whether you ran `/plugin install famp@famp` or
+`famp install-claude-code`. A window that was open during install will not pick
+up the MCP server until restarted.
+
+**Every FAMP tool appears twice (24 tools instead of 12)**
+
+You have both the plugin and the legacy installer wired for the same host. Keep
+one: `famp uninstall-claude-code` (keeping the plugin), or `/plugin uninstall
+famp@famp` (keeping the installer). The same cause produces four `Stop` hooks
+instead of two.
 
 **After upgrading `famp`, windows show a version-skew error**
 

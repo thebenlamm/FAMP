@@ -24,6 +24,10 @@ set -euo pipefail
 
 DOCS=(README.md)
 while IFS= read -r f; do DOCS+=("$f"); done < <(find docs -maxdepth 1 -name '*.md' | sort)
+# The host packagings print install URLs too -- notably each setup skill, which
+# is the one instruction a plugin user actually follows. Leaving plugins/ out
+# meant a broken installer URL there sailed past this gate.
+while IFS= read -r f; do DOCS+=("$f"); done < <(find plugins -type f -name '*.md' | sort)
 
 URL_RE='https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/releases/[^ )`"'"'"']+'
 

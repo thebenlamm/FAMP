@@ -196,8 +196,16 @@ fn from_source_fallback_command_is_a_working_form() {
     // `cargo install just`) do not match, because no `famp` appears within the
     // bound. Regression guard: if a doc gains or loses a mention, this fails and
     // you must recount deliberately rather than let coverage drift silently.
+    //
+    // README dropped from 4 to 3 when Upgrading was rewritten to show the
+    // prebuilt and from-source paths as two lines of one fence. The lost match
+    // was the prose "in place of `git pull` + `cargo install --path`", which
+    // only restated the commands the fence now shows directly -- a redundant
+    // mention, not lost coverage: both upgrade paths and the required
+    // `famp daemon restart` are still documented. Recounted deliberately, per
+    // the note above.
     let expected_counts = [
-        ("README.md", 4),
+        ("README.md", 3),
         ("docs/GETTING-STARTED.md", 1),
         ("docs/GATEWAY-SETUP.md", 2),
         ("docs/ONBOARDING.md", 1),
