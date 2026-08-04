@@ -1,78 +1,97 @@
 ---
 phase: 19
 slug: auto-wake-gate
-status: draft
+status: blocked
 nyquist_compliant: false
 wave_0_complete: false
 created: 2026-08-03
+last_run: 2026-08-04
 ---
 
 # Phase 19 — Validation Strategy
 
-> Per-phase validation contract for feedback sampling during execution.
-
----
+> Final execution ledger for Phase 19. Focused Phase 19 evidence is green; the phase-wide workspace gate is blocked by the exact failure recorded below.
 
 ## Test Infrastructure
 
 | Property | Value |
-|----------|-------|
-| **Framework** | Rust built-in test harness via `cargo test`; Tokio only in `famp` integration tests |
-| **Config file** | Workspace `Cargo.toml` and crate manifests |
-| **Quick run command** | `cargo test -p famp-bus --lib auto_wake && cargo test -p famp --test auto_wake_gate` |
-| **Full suite command** | `cargo test --workspace && just lint && cargo fmt --all -- --check && just check-no-tokio-in-bus` |
-| **Estimated runtime** | Measure during Wave 0 and record before sign-off |
-
----
-
-## Sampling Rate
-
-- **After every task commit:** Run the task's focused test target plus `just check-no-tokio-in-bus`
-- **After every plan wave:** Run `cargo test -p famp-bus && cargo test -p famp --test auto_wake_gate --test quarantine_surfaces --test pair_cli && just lint && cargo fmt --all -- --check`
-- **Before `$gsd-verify-work`:** Run `cargo test --workspace && just lint && cargo fmt --all -- --check && just check-no-tokio-in-bus`; the full suite must be green
-- **Max feedback latency:** Record measured focused-test runtime during Wave 0; keep each task's default feedback command focused rather than workspace-wide
-
----
+|---|---|
+| Framework | Rust built-in test harness via `cargo test`; Tokio only in `famp` integration tests |
+| Quick run | `cargo test -p famp-bus --lib auto_wake && cargo test -p famp --test auto_wake_gate` |
+| Full gate | `cargo test --workspace && just lint && cargo fmt --all -- --check && just check-no-tokio-in-bus` |
+| Full-gate status | BLOCKED — `cargo test --workspace` does not exit zero |
+| Full workspace runtime | 1049.44s to the blocking target on the latest definitive run |
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 19-01-01 | 01 | 1 | QUAR-12, QUAR-13, QUAR-14 | T-19-01, T-19-02, T-19-03 | Gateway and Unknown cannot select or drain into Await; Local wakes; remote-then-local does not starve | broker actor unit | `cargo test -p famp-bus --lib auto_wake` | ❌ W0 cases in existing `handle/tests.rs` | ⬜ pending |
-| 19-01-02 | 01 | 1 | QUAR-12, QUAR-13 | T-19-02, T-19-03 | Repeated fixtures preserve production Local stamps without erasing legacy controls | property regression | `cargo test -p famp-bus --test prop01_dm_fanin_order --test prop02_channel_fanout --test prop04_drain_completeness` | ✅ existing files; fixture repair pending | ⬜ pending |
-| 19-02-01 | 02 | 2 | QUAR-12, QUAR-13, QUAR-14 | T-19-05, T-19-06 | One real socket proves remote held, Local wakes, and explicit Inbox retains remote | integration | `cargo test -p famp --test auto_wake_gate` | ❌ W0 new file | ⬜ pending |
-| 19-02-02 | 02 | 2 | QUAR-12, QUAR-14 | T-19-05 | Conflicting Phase 14 Gateway-Await-wakes expectation is removed while rendering controls stay green | integration regression | `cargo test -p famp --test quarantine_surfaces` | ✅ existing file; expectation replacement pending | ⬜ pending |
-| 19-03-01 | 03 | 3 | QUAR-12, QUAR-13, QUAR-14, QUAR-15 | T-19-08, T-19-10 | Live MCP descriptor and all active guides state Local-only Await/listen-mode wake, explicit remote Inbox recovery, and every residual limitation | descriptor/docs assertions + focused Rust integration + install | <code>set -e; contract='Only Local-origin records satisfy a parked `famp await`; Gateway- and Unknown-origin records remain available through explicit Inbox reads.'; for doc in docs/QUARANTINE.md docs/CONFIGURATION.md README.md CLAUDE.md docs/CLAUDE-CODE-CONTEXT-GUIDE.md docs/CHANNEL-DISCUSSION-GUIDE.md docs/HOST-WAKE-ADAPTERS.md; do rg -Fq "$contract" "$doc"; done; rg -Fq 'Block until one or more new Local-origin messages arrive.' crates/famp/src/cli/mcp/server.rs; rg -Fq 'Only Local-origin records satisfy parked famp_await; Gateway- and Unknown-origin records remain available through explicit famp_inbox reads.' crates/famp/src/cli/mcp/server.rs; rg -Fq 'Agents auto-wake on Local-origin inbound messages without an explicit flag:' CLAUDE.md; rg -Fq 'When a Local-origin message arrives, Claude wakes automatically and receives:' CLAUDE.md; rg -Fq '  → Local-origin message arrives' docs/CLAUDE-CODE-CONTEXT-GUIDE.md; rg -Fq '`famp_await` delivers one eligible Local-origin message at a time.' docs/CHANNEL-DISCUSSION-GUIDE.md; rg -Fq 'fires only on **Local-origin channel messages**' docs/CHANNEL-DISCUSSION-GUIDE.md; rg -Fq 'On each Local-origin batch it prints **one scrubbed stdout line**' docs/HOST-WAKE-ADAPTERS.md; rg -Fq 'On a Local-origin message, emits' docs/HOST-WAKE-ADAPTERS.md; ! rg -Fq 'Block until one or more new messages arrive.' crates/famp/src/cli/mcp/server.rs; ! rg -Fq 'famp_await delivers every message as it arrives' crates/famp/src/cli/mcp/server.rs; ! rg -Fq 'auto-wake on inbound messages' CLAUDE.md; ! rg -Fq 'When a message arrives, Claude wakes automatically and receives:' CLAUDE.md; ! rg -Fq '  → message arrives' docs/CLAUDE-CODE-CONTEXT-GUIDE.md; ! rg -Fq '`famp_await` delivers one message at a time.' docs/CHANNEL-DISCUSSION-GUIDE.md; ! rg -Fq 'fires on **every channel message**' docs/CHANNEL-DISCUSSION-GUIDE.md; ! rg -Fq 'On each inbound batch' docs/HOST-WAKE-ADAPTERS.md; ! rg -Fq 'On message, emits' docs/HOST-WAKE-ADAPTERS.md; for doc in docs/QUARANTINE.md docs/CONFIGURATION.md README.md; do for forbidden_claim in 'blocks remote mailbox ingress' 'remote ingress is blocked' 'remote mailbox ingress is blocked' 'blocks remote content' 'remote content is safe' 'all remote content is safe' 'comprehensive safety' 'provides comprehensive safety' 'prevents remote steering' 'remote agents cannot steer' 'steering is prevented' 'prevents provenance laundering' 'origin cannot be laundered' 'laundering is prevented' 'prevents mailbox growth' 'prevents remote mailbox growth' 'remote traffic cannot grow the mailbox' 'mailbox growth is prevented' 'prevents host re-entry' 'prevents host UI/model re-entry' 'host re-entry is prevented'; do if rg -Fqi "$forbidden_claim" "$doc"; then exit 1; fi; done; done; cargo test -p famp --lib tool_descriptors_has_exactly_twelve_named_tools && cargo test -p famp --test auto_wake_gate && cargo test -p famp --test quarantine_surfaces && cargo test -p famp --test pair_cli consent_warning_matches_quarantine_doc && just check-no-tokio-in-bus && just install</code> | ✅ eight existing descriptor/guide surfaces; truth update pending | ⬜ pending |
-| 19-03-02 | 03 | 3 | QUAR-15 | T-19-09 | Consent warning precedes pairing code and matches quarantine documentation; phase gate measured | integration regression + phase gate | `cargo test -p famp --test pair_cli consent_warning_matches_quarantine_doc && cargo test -p famp --test pair_cli artifact_code_offset_greater_than_consent_and_install_lines` | ✅ existing tests | ⬜ pending |
+| Task ID | Plan | Wave | Requirement | Threat Ref | Automated command | Measured runtime | Status |
+|---|---:|---:|---|---|---|---:|---|
+| 19-01-01 | 01 | 1 | QUAR-12, QUAR-13, QUAR-14 | T-19-01, T-19-02, T-19-03 | `cargo test -p famp-bus --lib auto_wake` | 7.13s | ✅ green (5 passed) |
+| 19-01-02 | 01 | 1 | QUAR-12, QUAR-13 | T-19-02, T-19-03 | `cargo test -p famp-bus --test prop01_dm_fanin_order --test prop02_channel_fanout --test prop04_drain_completeness` | 27.03s | ✅ green (5 passed) |
+| 19-02-01 | 02 | 2 | QUAR-12, QUAR-13, QUAR-14 | T-19-05, T-19-06 | `cargo test -p famp --test auto_wake_gate` | 2.23s final warm run | ✅ green (1 passed) |
+| 19-02-02 | 02 | 2 | QUAR-12, QUAR-14 | T-19-05 | `cargo test -p famp --test quarantine_surfaces` | 2.32s | ✅ green (12 passed) |
+| 19-03-01 | 03 | 3 | QUAR-12, QUAR-13, QUAR-14, QUAR-15 | T-19-08, T-19-10 | Exact Task 19-03-01 `<automated>` fixed-string assertions, focused Rust targets, no-Tokio gate, and `just install` (executed verbatim from `19-03-PLAN.md`) | 186.17s across timed components | ✅ green |
+| 19-03-02 | 03 | 3 | QUAR-15 | T-19-09 | `cargo test -p famp --test pair_cli consent_warning_matches_quarantine_doc && cargo test -p famp --test pair_cli artifact_code_offset_greater_than_consent_and_install_lines && cargo test -p famp-bus --lib auto_wake && cargo test -p famp --test auto_wake_gate && cargo test -p famp --test quarantine_surfaces && cargo test --workspace && just lint && cargo fmt --all -- --check && just check-no-tokio-in-bus` | 1049.44s to workspace blocker; remaining gates measured separately | ❌ blocked |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+## Measured Evidence
 
----
+- Task 19-03-01 deterministic positive/negative documentation assertions: PASS (0.40s).
+- MCP twelve-tool descriptor regression: PASS (61.55s cold build).
+- Task 19-03-01 real-socket gate: PASS (25.15s cold run).
+- Task 19-03-01 quarantine surfaces: PASS, 12/12 (20.38s cold run).
+- Task 19-03-01 consent warning/doc regression: PASS (18.39s cold run).
+- `just check-no-tokio-in-bus`: PASS (0.96s during install gate; 0.05s final run).
+- `just install`: PASS (59.74s); `~/.cargo/bin/famp` and Claude Code integration were refreshed.
+- QUAR-15 exact doc bytes: PASS (0.67s).
+- QUAR-15 warning-before-five-word-code order: PASS (0.24s).
+- Narrow blocker regressions: `adversarial` 6/6 PASS (0.39s final warm run), `e2e_two_daemons_adversarial` PASS (67.79s cold rebuild), and `quarantine_gate` 2/2 PASS (27.40s).
+- `just lint`: PASS (161.33s).
+- `cargo fmt --all -- --check`: PASS (1.01s).
+- Final `just check-no-tokio-in-bus`: PASS (0.05s).
+
+## Blocking Full-Gate Result
+
+`cargo test --workspace` remains incomplete. The latest definitive run passed all Phase 19 targets, both provider-initialization regressions, the quarantine mechanical gate, and the long cross-host/relay tests before failing here:
+
+```text
+test: famp-gateway/tests/e2e_shipping_surface.rs
+case: shipping_send_happy_path_full_cycle_and_observable_negative
+expected: forged envelope rejected with 403 ServerStatus
+actual: Err(ReqwestFailed(... source: TimedOut))
+workspace runtime to failure: 1049.44s
+```
+
+The isolated resume command reproduces the same timeout:
+
+```bash
+cargo test -p famp-gateway --test e2e_shipping_surface
+```
+
+Isolated result: FAIL after 51.37s test time (113.36s including rebuild), with the same reqwest timeout. This target is outside Plan 19-03's declared files and requires separate gateway E2E diagnosis. No deeper gateway change was made.
 
 ## Wave 0 Requirements
 
-- [ ] Repair broker test fixtures so local clients register `Origin::Local`, origin-specific fixtures are explicit, and mailbox helpers stamp `Out::AppendMailbox` exactly as production does; retain intentional absent-origin compatibility cases.
-- [ ] Add focused actor cases in `crates/famp-bus/src/broker/handle/tests.rs` for Gateway, Unknown, Local, preexisting remote drain, remote-then-local ordering, and the channel path.
-- [ ] Add `crates/famp/tests/auto_wake_gate.rs` using the established broker/register/`BusClient` harness.
-- [ ] Replace `quarantine_surfaces.rs::await_marks_gateway_origin`, whose expected behavior conflicts with Phase 19.
-- [ ] Confirm the existing QUAR-15 `pair_cli` regressions remain green.
-- [ ] Measure focused and full validation runtimes and replace the provisional latency entries above.
+- [x] Production-faithful Local/origin-specific broker fixtures exist and pass.
+- [x] Actor cases cover Gateway, Unknown, Local, initial remote drain, remote-then-local ordering, and channel delivery.
+- [x] `crates/famp/tests/auto_wake_gate.rs` proves the one-broker remote-held/Local-wake/Inbox-visible sequence.
+- [x] The obsolete `await_marks_gateway_origin` expectation is removed; truthful rendering controls remain green.
+- [x] Both existing QUAR-15 pairing regressions remain green without pairing-file changes.
+- [x] Focused and full-gate runtimes were measured and recorded.
 
----
+`wave_0_complete` remains false while Task 19-03-02 and the phase-wide full gate are incomplete.
 
 ## Manual-Only Verifications
 
-All phase behaviors have automated verification. Documentation wording is asserted where a stable exact string is required and reviewed as part of the plan acceptance criteria.
-
----
+None. All Phase 19 behavior and stable wording checks are automated.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency is measured and bounded
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] Every task has an automated command.
+- [x] Sampling continuity has no three-task gap.
+- [x] All Wave 0 files and focused tests exist.
+- [x] No watch-mode flags are used.
+- [x] Focused feedback latency is measured.
+- [ ] `cargo test --workspace` exits zero.
+- [ ] `nyquist_compliant: true` is set in frontmatter.
 
-**Approval:** pending
+**Approval:** blocked pending a green `cargo test -p famp-gateway --test e2e_shipping_surface`, followed by a green exact `cargo test --workspace`.
