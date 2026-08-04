@@ -33,7 +33,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
                 pid: 10_000 + u32::try_from(client).unwrap(),
                 cwd: None,
                 listen: false,
-                origin: None,
+                origin: Some(Origin::Local),
             },
         },
         now,
@@ -42,8 +42,14 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
 
 fn apply_mailbox(env: &TestEnv, out: &[Out]) {
     for item in out {
-        if let Out::AppendMailbox { target, line, .. } = item {
-            env.mailbox().append(target, line.clone());
+        if let Out::AppendMailbox {
+            target,
+            line,
+            origin,
+        } = item
+        {
+            let stamped = stamp_line(line, *origin).unwrap();
+            env.mailbox().append(target, stamped);
         }
     }
 }
@@ -91,7 +97,11 @@ proptest! {
         let decoded: Vec<serde_json::Value> = drained
             .records
             .iter()
-            .map(|record| famp_canonical::from_slice_strict(&record.bytes).unwrap())
+            .map(|record| {
+                let stamped: serde_json::Value =
+                    famp_canonical::from_slice_strict(&record.bytes).unwrap();
+                split_stamped(&stamped).1.clone()
+            })
             .collect();
 
         for sender_idx in 0..n_senders {

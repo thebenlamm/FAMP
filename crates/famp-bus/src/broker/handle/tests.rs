@@ -2838,10 +2838,12 @@ fn alice_mailbox() -> MailboxName {
     MailboxName::Agent("alice".into())
 }
 
-/// The exact bytes the broker would append for `envelope` (canonical JSON,
-/// no trailing `\n` — `InMemoryMailbox` supplies the framing).
+/// The exact bytes the production executor appends for a Local envelope
+/// (canonical provenance wrapper, no trailing `\n` — `InMemoryMailbox`
+/// supplies the framing).
 fn mailbox_line(envelope: &serde_json::Value) -> Vec<u8> {
-    famp_canonical::canonicalize(envelope).expect("fixture envelope must canonicalize")
+    let inner = famp_canonical::canonicalize(envelope).expect("fixture envelope must canonicalize");
+    crate::stamp_line(&inner, Origin::Local).expect("fixture envelope must stamp")
 }
 
 fn await_now(broker: &mut Broker<TestEnv>, client: u64, now: Instant) -> Vec<Out> {

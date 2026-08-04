@@ -473,7 +473,19 @@ fn send_agent<E: BrokerEnv>(
     let origin = client_origin(broker, sender);
     let waiters = waiting_clients_for_name(broker, &name, envelope, origin);
     let woken = !waiters.is_empty();
-    let line_len = line.len();
+    // The executor persists the provenance wrapper, not the inner canonical
+    // envelope. Await's folded trigger offset must therefore use the exact
+    // stamped record length or its cursor lands before the real JSONL EOF.
+    let line_len = match crate::stamp_line(&line, origin) {
+        Ok(stamped) => stamped.len(),
+        Err(_) => {
+            return vec![err(
+                sender,
+                BusErrorKind::Internal,
+                "failed to stamp mailbox record",
+            )];
+        }
+    };
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply.
     let mut out = Vec::with_capacity(2 + 2 * waiters.len());
@@ -521,10 +533,19 @@ fn send_channel<E: BrokerEnv>(
 ) -> Vec<Out> {
     let members = broker.state.channels.get(name).cloned().unwrap_or_default();
     let task_id = task_id_from(envelope);
-    let line_len = line.len();
     // D-02: resolve the SENDER's declared origin before mutating any
     // state below.
     let origin = client_origin(broker, sender);
+    let line_len = match crate::stamp_line(&line, origin) {
+        Ok(stamped) => stamped.len(),
+        Err(_) => {
+            return vec![err(
+                sender,
+                BusErrorKind::Internal,
+                "failed to stamp mailbox record",
+            )];
+        }
+    };
     let mut out = Vec::new();
 
     // D-04: AppendMailbox FIRST, before any AwaitOk reply. Previously

@@ -34,7 +34,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
                 pid: 20_000 + u32::try_from(client).unwrap(),
                 cwd: None,
                 listen: false,
-                origin: None,
+                origin: Some(Origin::Local),
             },
         },
         now,
@@ -43,8 +43,14 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
 
 fn apply_mailbox(env: &TestEnv, out: &[Out]) {
     for item in out {
-        if let Out::AppendMailbox { target, line, .. } = item {
-            env.mailbox().append(target, line.clone());
+        if let Out::AppendMailbox {
+            target,
+            line,
+            origin,
+        } = item
+        {
+            let stamped = stamp_line(line, *origin).unwrap();
+            env.mailbox().append(target, stamped);
         }
     }
 }
@@ -105,7 +111,7 @@ proptest! {
             .map(|record| {
                 let value: serde_json::Value =
                     famp_canonical::from_slice_strict(&record.bytes).unwrap();
-                value["channel_seq"].as_u64().unwrap()
+                split_stamped(&value).1["channel_seq"].as_u64().unwrap()
             })
             .collect();
         prop_assert_eq!(observed.len(), n_messages);

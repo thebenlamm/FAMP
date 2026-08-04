@@ -50,7 +50,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
                 pid: 40_000 + u32::try_from(client).unwrap(),
                 cwd: None,
                 listen: false,
-                origin: None,
+                origin: Some(Origin::Local),
             },
         },
         now,
@@ -59,8 +59,14 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
 
 fn apply_mailbox(env: &TestEnv, out: &[Out]) {
     for item in out {
-        if let Out::AppendMailbox { target, line, .. } = item {
-            env.mailbox().append(target, line.clone());
+        if let Out::AppendMailbox {
+            target,
+            line,
+            origin,
+        } = item
+        {
+            let stamped = stamp_line(line, *origin).unwrap();
+            env.mailbox().append(target, stamped);
         }
     }
 }
@@ -114,9 +120,10 @@ proptest! {
                 client: ClientId::from(client),
                 msg: BusMessage::Register {
                     name: "alice".into(),
-                    pid: 40_000 + u32::try_from(client).unwrap(),
+                pid: 40_000 + u32::try_from(client).unwrap(),
                 cwd: None,
-                listen: false, origin: None,
+                listen: false,
+                origin: Some(Origin::Local),
                 },
             },
             now,
@@ -227,13 +234,11 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_register() {
     );
 }
 
-/// Head-of-line resilience (await path — the live-wedged site). A listen-mode
-/// agent draining its mailbox via `Await` must skip an undecodable line and
-/// advance past it, delivering the good envelopes behind it. Pre-fix, the
-/// `?` in `drain_await_batch` returned before advancing the offset, so the
-/// cursor never moved past the bad line and the inbox stayed jammed forever
-/// (this is exactly what happened to scs-opus). Seed AFTER register so the
-/// await drains over the poison from offset 0.
+/// Head-of-line resilience (await path — the live-wedged site). Phase 19 makes
+/// every intentionally raw fixture fail closed to `Origin::Unknown`, so none
+/// may satisfy `Await`; the raw poison and legacy-good records must still be
+/// skipped with cursor progress so a later stamped Local record wakes the
+/// parked client. The raw records remain byte-for-byte unchanged.
 #[test]
 fn malformed_drain_line_is_skipped_and_cursor_advances_on_await() {
     let env = TestEnv::new();
@@ -246,7 +251,7 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_await() {
     mailbox.append(&alice, line(&malformed_envelope()));
     mailbox.append(&alice, line(&audit_log_envelope(1)));
 
-    let out = broker.handle(
+    let park_out = broker.handle(
         BrokerInput::Wire {
             client: ClientId::from(1),
             msg: BusMessage::Await {
@@ -256,11 +261,35 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_await() {
         },
         now,
     );
-    let Some(envelopes) = out.iter().find_map(|o| match o {
+    assert!(
+        park_out.iter().any(|out| matches!(
+            out,
+            Out::ParkAwait {
+                client: ClientId(1),
+                ..
+            }
+        )),
+        "raw Unknown records must not satisfy Await: {park_out:?}"
+    );
+
+    hello_register(&mut broker, 2, "bob", now);
+    let wake_out = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2),
+            msg: BusMessage::Send {
+                to: Target::Agent {
+                    name: "alice".into(),
+                },
+                envelope: audit_log_envelope(2),
+            },
+        },
+        now,
+    );
+    let Some(envelopes) = wake_out.iter().find_map(|out| match out {
         Out::Reply(ClientId(1), BusReply::AwaitOk { envelopes, .. }) => Some(envelopes),
         _ => None,
     }) else {
-        panic!("expected AwaitOk (skip-and-advance over poison), got {out:?}")
+        panic!("later stamped Local record must wake past raw poison: {wake_out:?}")
     };
     let seqs: Vec<u64> = envelopes
         .iter()
@@ -272,7 +301,8 @@ fn malformed_drain_line_is_skipped_and_cursor_advances_on_await() {
         .collect();
     assert_eq!(
         seqs,
-        vec![0, 1],
-        "await drain delivers good envelopes, skips the poison line"
+        vec![2],
+        "Await skips raw Unknown records and poison, delivering only later Local"
     );
+    assert_eq!(envelopes[0].origin, Origin::Local);
 }
