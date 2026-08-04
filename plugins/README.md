@@ -201,12 +201,86 @@ not a reason to run both.
 ## If you added this repo as a `directory` marketplace
 
 Adding a marketplace from a local path (rather than `thebenlamm/FAMP`) records a
-**`directory` source pointing at your working tree** — the plugin is not a
-pinned, copied artifact. Editing `plugins/<host>/hooks/*` changes what executes
-at the next session `Stop` immediately, with no install or update step, and a
-`git pull` or branch switch re-arms your hooks the same way.
+**`directory` source pointing at your working tree**. Two things then happen
+that appear to contradict each other, and the second one is what matters:
 
-That is convenient when you are developing the packaging and surprising
-otherwise. If you want a stable plugin, install from the GitHub source
-(`/plugin marketplace add thebenlamm/FAMP`) instead; check which you have with
-`extraKnownMarketplaces` in `~/.claude/settings.json`.
+1. **The plugin files are copied** into a versioned cache
+   (`~/.claude/plugins/cache/<mp>/<plugin>/<version>/`), stamped with a
+   `version` and a `gitCommitSha`. No symlinks; distinct inodes. It looks
+   pinned.
+2. **The copy is not what runs.** For a `directory` source,
+   `${CLAUDE_PLUGIN_ROOT}` resolves to the marketplace's `installLocation` —
+   your working tree — so `hooks.json` invokes the hook out of
+   `plugins/<host>/hooks/`, not out of the cache.
+
+So the version pin buys you nothing. Editing `plugins/<host>/hooks/*` changes
+what executes at the next session `Stop` with no install or update step, and a
+`git pull`, a branch switch, or an agent writing to the repo does the same.
+Meanwhile the cache keeps reporting the version and commit you installed at,
+which can be far behind — the pinned-looking metadata is the trap, because it
+invites you to conclude you are insulated.
+
+<details>
+<summary>How this was established (measured 2026-08-04, Claude Code)</summary>
+
+A probe line was added to the <em>cache</em> copy of <code>famp-await.sh</code>
+only. One turn later the hook had run and logged <code>hook invoked</code> —
+with no probe output, so the cache copy did not execute. Every other hook
+source was ruled out first: empty <code>hooks.Stop</code> in user and project
+<code>settings.json</code>, no legacy <code>~/.claude/hooks/famp-await.sh</code>,
+no <code>~/.famp/hook-runner.sh</code>, and <code>famp@famp</code> the only
+enabled plugin supplying famp hooks.
+
+The same probe added to the <em>repo</em> copy then fired:
+
+```text
+PROBE root=/home/ben/Workspace/FAMP/plugins/claude-code
+      self=/home/ben/Workspace/FAMP/plugins/claude-code/hooks/famp-await.sh
+```
+
+At that moment the cache read `version 1.0.0`, `gitCommitSha 69dd238` while the
+working tree was 26 commits further on.
+</details>
+
+**The exposure is per open session, not per machine.** Every window running at
+the moment the tree changes picks the change up independently at its own next
+turn end; nine concurrent hook processes across several sessions were observed
+resolving to the same working-tree path.
+
+That live-reload is convenient while you are developing the packaging and
+surprising otherwise. For an install you actually rely on, use the GitHub source
+(`/plugin marketplace add thebenlamm/FAMP`) — **but not because it runs from the
+cache.** By the rule above, a `github` source resolves its root the same way,
+into the marketplace clone:
+
+```json
+{"source": {"source": "github", "repo": "thebenlamm/FAMP"},
+ "installLocation": ".../plugins/marketplaces/famp"}
+```
+
+and that clone carries the full `plugins/<host>/` subtree, hooks included. The
+reason to prefer it is narrower and worth stating exactly: **the clone is not
+your working tree, and nothing local writes to it** — no editor, no `git pull`
+you ran, no agent. It still is not the pinned cache, and
+`claude plugin marketplace update` moves it under running sessions, so the same
+mechanism applies in a much quieter place.
+
+Check which you have with `extraKnownMarketplaces` in
+`~/.claude/settings.json`, or read `installLocation` in
+`~/.claude/plugins/known_marketplaces.json`.
+
+To identify the executing file on a host you would rather not perturb, read the
+hook process's argv instead of editing anything — non-mutating, and it names the
+path directly:
+
+```bash
+# while a turn is ending
+cat /proc/<pid>/cmdline | tr '\0' ' '
+```
+
+Correlate that pid against `await-hook.log` to be sure the argv belongs to the
+real invocation rather than a process that merely looks right.
+
+> Measured on Claude Code. The same `installLocation` indirection is expected to
+> apply to the Codex and Grok packagings, whose caches are likewise copies, but
+> neither was probed at runtime — treat those as unverified.
