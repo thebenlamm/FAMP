@@ -6,9 +6,10 @@
 //! 14-01) deferred, plus the fail-closed edge cases D-04/D-05 require.
 //!
 //! Task 2 truths pinned here:
-//!   - `famp_await` (via `run_at_structured`) marks gateway-origin
-//!     content and leaves local-origin content verbatim
-//!     (`await_marks_gateway_origin`, `await_leaves_local_origin_verbatim`).
+//!   - `famp_await` (via `run_at_structured`) leaves eligible local-origin
+//!     content verbatim (`await_leaves_local_origin_verbatim`). Gateway
+//!     records no longer satisfy Await; `auto_wake_gate` owns that behavioral
+//!     proof and explicit Inbox recovery coverage.
 //!   - CLI `wait-reply` marks gateway-origin content
 //!     (`wait_reply_marks_gateway_origin`).
 //!   - CLI `register --tail` marks gateway-origin content
@@ -154,85 +155,6 @@ fn rendered_body_text(v: &serde_json::Value) -> String {
 }
 
 // ── Task 2 ───────────────────────────────────────────────────────────────
-
-/// `famp_await` (via `run_at_structured`, the function the MCP `famp_await`
-/// tool and CLI `await` both call) marks a gateway-origin sender's body
-/// and adds a machine-readable `"origin"` field.
-#[test]
-fn await_marks_gateway_origin() {
-    runtime().block_on(async {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let sock = tmp.path().join("bus.sock");
-        let _broker = spawn_broker(&sock);
-        wait_for_socket(&sock).await;
-
-        let _bob = spawn_register(&sock, "bob");
-        wait_for_registration(&sock, "bob").await;
-
-        // Park bob's await on a background task BEFORE alice sends, so the
-        // wake (not a drain-on-connect) is what delivers the envelope.
-        let sock_for_await = sock.clone();
-        let await_task = tokio::spawn(async move {
-            await_run_at_structured(
-                &sock_for_await,
-                AwaitArgs {
-                    timeout: humantime::Duration::from(Duration::from_secs(10)),
-                    task: None,
-                    act_as: Some("bob".into()),
-                    abort_on_fd: None,
-                },
-            )
-            .await
-            .expect("bob await")
-        });
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        let mut alice = BusClient::connect(&sock, None).await.unwrap();
-        let reply = alice
-            .send_recv(BusMessage::Register {
-                name: "alice".into(),
-                pid: std::process::id(),
-                cwd: None,
-                listen: false,
-                origin: Some(Origin::Gateway),
-            })
-            .await
-            .unwrap();
-        assert!(matches!(reply, famp_bus::BusReply::RegisterOk { .. }));
-
-        let body_marker = marker();
-        let envelope = valid_envelope("alice", "bob", &body_marker, None);
-        let send_reply = alice
-            .send_recv(BusMessage::Send {
-                to: famp_bus::Target::Agent { name: "bob".into() },
-                envelope: envelope.clone(),
-            })
-            .await
-            .unwrap();
-        assert!(matches!(send_reply, famp_bus::BusReply::SendOk { .. }));
-
-        let outcome = tokio::time::timeout(Duration::from_secs(10), await_task)
-            .await
-            .expect("await task must finish within 10s")
-            .expect("await task must not panic");
-
-        assert_eq!(outcome.envelopes.len(), 1, "bob must receive alice's post");
-        let received = &outcome.envelopes[0];
-        assert_eq!(received["origin"], "gateway");
-        assert!(
-            received["body"].is_string(),
-            "gateway-origin body must render as a wrapped STRING, not the raw structured Value: {received}"
-        );
-        let body = rendered_body_text(&received["body"]);
-        assert!(
-            body.contains(&body_marker),
-            "wrapped body must still contain the original marker text: {body}"
-        );
-        assert!(body.contains("origin=gateway"));
-
-        alice.shutdown().await;
-    });
-}
 
 /// A local-origin sender's body renders verbatim through `famp_await`.
 #[test]
