@@ -270,7 +270,14 @@ Plans:
   4. The filter is enforced broker-side, not in the CLI drain — proven by the same test suite, not by inspection; a client-side filter would advance the read cursor past envelopes it declined to deliver (the 999.1 failure class).
   5. The consent warning appears in the pairing artifact (DOC-06) at the moment of consent, not only in `docs/QUARANTINE.md`.
 
-**Plans:** TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — broker positive-trust Await gate, actor proofs, and production-faithful fixtures
+- [ ] 19-02-PLAN.md — real-socket remote-held/local-wake/Inbox-visible proof and conflicting test replacement
+- [ ] 19-03-PLAN.md — narrow documentation truth, QUAR-15 regression, and Nyquist sign-off
+
+**Waves:** W1 = 19-01 · W2 = 19-02 + 19-03 (parallel after the broker gate; zero file overlap)
 **Constraint:** `AwaitFilter` already exists at `crates/famp-bus/src/proto.rs:54` and `BUS_PROTO_VERSION` is already 2 — the likely integration point, named here as context. The implementation approach is plan-phase work, not decided here.
 **Road not taken (recorded, not rejected):** held-by-default-at-ingress — a remote envelope is held at the broker's ingress append site and never enters the recipient's mailbox at all until a human releases it or the peer has a standing per-peer auto-deliver grant. Strictly stronger than this phase; deliberately not v1.1 because this phase delivers most of the value at a fraction of the build. Natural upgrade path if the threat model ever demands more.
 
