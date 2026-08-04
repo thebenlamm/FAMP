@@ -1,10 +1,16 @@
 //! `famp pair invite` — generate a five-word invite code (PAIR-01) and
 //! persist a `Pending` invite record to `~/.famp/gateway/pairing.json`.
 //!
-//! In THIS plan the printed artifact is minimal: an install line naming
-//! `famp pair redeem --from <url>` followed by the five-word code on the
-//! LAST line. Plan 03 owns the real artifact text, the consent warning,
-//! and the PAIR-08 layout-ordering assertions — not attempted here.
+//! Prints ONE artifact in one call to one writer (PAIR-08): a one-line
+//! opening, the install step, [`crate::pairing::consent::CONSENT_WARNING`]
+//! (before the code, so it is read while the decision is still open), the
+//! `famp pair redeem --from <url>` step, a note that the code is typed at
+//! a prompt, and the five-word code alone on the FINAL line — so the code
+//! outlives the follower's slowest step (install). Refuses to run without
+//! `--confirm-installed` (PAIR-08's generate-after-install clause,
+//! T-18-19): the 24-hour window starts the moment this invite is created,
+//! so it must not start burning down while the follower is still
+//! installing `famp`.
 
 use std::fmt::Write as _;
 use std::io::Write;
@@ -15,11 +21,19 @@ use rand::rngs::OsRng;
 
 use crate::cli::error::CliError;
 use crate::cli::home;
+use crate::pairing::consent::CONSENT_WARNING;
 use crate::pairing::invite::{
     pairing_store_path, InviteRecord, InviteState, InviteStore, StoreLock,
 };
 use crate::pairing::wordlist::{code_digest, draw_code, PairingCode};
 use crate::pairing::PairingError;
+
+/// Placeholder text substituted into the artifact's redeem step when
+/// `--url` is absent. Contains characters (`<`, `>`) outside the
+/// base64url alphabet by design, so it can never be mistaken for a
+/// PAIR-04-prohibited key/fingerprint/id token by an artifact-scanning
+/// test.
+const URL_PLACEHOLDER: &str = "<PASTE-THIS-GATEWAYS-URL-HERE>";
 
 /// CLI args for `famp pair invite`.
 #[derive(clap::Args, Debug)]
@@ -33,11 +47,18 @@ pub struct PairInviteArgs {
     /// Base URL of THIS gateway's pairing route (e.g.
     /// `https://gateway.example.com:8443`), printed in the artifact so
     /// the redeemer's `famp pair redeem --from <url>` knows where to
-    /// POST. Optional in this plan (Plan 03 owns the full artifact
-    /// text); when absent, the artifact prints a placeholder reminder
-    /// instead of a real URL.
+    /// POST. When absent, the artifact prints a clearly-marked
+    /// placeholder and a stderr note reminding the inviter to fill it in
+    /// before sending.
     #[arg(long)]
     pub url: Option<String>,
+    /// Required: confirms the follower's `famp` install already works
+    /// (e.g. `famp --version` succeeded on their machine) BEFORE this
+    /// invite is created. Without it, `run_at` exits 2 and creates no
+    /// record — see this module's doc comment for why (PAIR-08,
+    /// T-18-19).
+    #[arg(long)]
+    pub confirm_installed: bool,
 }
 
 /// Production entry point.
@@ -54,6 +75,11 @@ pub fn run(args: &PairInviteArgs) -> Result<(), CliError> {
 /// Explicit `&Path` + writer + `now` + an injected `rand::Rng` so tests
 /// can substitute a seeded `StdRng` for the uniform-coverage proof,
 /// matching the `run`/`run_at` split convention.
+///
+/// Without `args.confirm_installed`: returns `CliError::Exit(2)` after
+/// printing why to stderr, writes NOTHING to `out`, and creates NO
+/// record — mirrors `famp peer rotate`'s missing-`--confirm-rotation`
+/// exit-2-and-mutate-nothing contract exactly (T-18-19).
 pub fn run_at<R: rand::Rng>(
     home: &Path,
     args: &PairInviteArgs,
@@ -61,6 +87,19 @@ pub fn run_at<R: rand::Rng>(
     now: &str,
     rng: &mut R,
 ) -> Result<(), CliError> {
+    if !args.confirm_installed {
+        eprintln!(
+            "Refusing to create an invite without --confirm-installed: this invite's \
+             24-hour window starts the moment it is created, so it must not start \
+             burning down while the other person is still installing famp."
+        );
+        eprintln!(
+            "Confirm their install works first (they should be able to run \
+             `famp --version` successfully), then re-run with --confirm-installed."
+        );
+        return Err(CliError::Exit(2));
+    }
+
     let principal: Principal = args.as_principal.parse().map_err(|e| {
         CliError::Generic(format!(
             "invalid --as principal '{}': {e}",
@@ -81,6 +120,7 @@ pub fn run_at<R: rand::Rng>(
         attempts: 0,
         state: InviteState::Pending,
     };
+    let invite_id = record.id.clone();
 
     let store_path = pairing_store_path(home);
     {
@@ -90,36 +130,64 @@ pub fn run_at<R: rand::Rng>(
         store.save_atomic(&store_path).map_err(pairing_err_to_cli)?;
     }
 
-    write_artifact(out, home, args, &code, &principal)?;
+    let artifact = build_artifact(args, &code, &principal);
+    out.write_all(artifact.as_bytes())
+        .map_err(|e| CliError::Io {
+            path: home.to_path_buf(),
+            source: e,
+        })?;
+
+    if args.url.is_none() {
+        eprintln!(
+            "NOTE: no --url given; the artifact above has a placeholder where this \
+             gateway's base URL belongs. Fill it in before sending the artifact."
+        );
+    }
+    eprintln!(
+        "NOTE: this invite (id {invite_id}) is valid for 24 hours and allows 5 wrong \
+         guesses before it locks. Run `famp pair status` on this machine once it has \
+         been redeemed, or `famp pair revoke --id {invite_id}` to cancel it."
+    );
+
     Ok(())
 }
 
-/// Write the minimal Plan-01 artifact: install instructions, code LAST.
-fn write_artifact(
-    out: &mut dyn Write,
-    home: &Path,
-    args: &PairInviteArgs,
-    code: &PairingCode,
-    principal: &Principal,
-) -> Result<(), CliError> {
-    let from_hint = args
-        .url
-        .clone()
-        .unwrap_or_else(|| "<this gateway's base url>".to_string());
+/// Build the ONE artifact string this invite prints, in the exact
+/// PAIR-08 section order: opening line, install step, consent warning,
+/// redeem step, "type at the prompt" note, and the code alone on the
+/// FINAL line. Built and returned as a single `String` — `run_at` writes
+/// it to `out` in exactly one call, never piecemeal.
+fn build_artifact(args: &PairInviteArgs, code: &PairingCode, principal: &Principal) -> String {
+    let from_value = args.url.as_deref().unwrap_or(URL_PLACEHOLDER);
+
     let mut buf = String::new();
-    let _ = writeln!(
-        buf,
-        "Pairing invite for {principal} — valid 24 hours, single use."
+    let _ = writeln!(buf, "{principal} is inviting you to pair FAMP agents.");
+    buf.push('\n');
+
+    buf.push_str("Step 1 -- install famp (skip this if it is already installed):\n");
+    buf.push_str(
+        "  curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh\n",
     );
-    buf.push_str("On the OTHER machine, run:\n");
-    let _ = writeln!(buf, "  famp pair redeem --from {from_hint}");
-    buf.push_str("Then read out (or text) this five-word code:\n");
+    buf.push_str("  Then check it worked:\n");
+    buf.push_str("  famp --version\n");
+    buf.push('\n');
+
+    buf.push_str(CONSENT_WARNING);
+    buf.push('\n');
+    buf.push('\n');
+
+    buf.push_str("Step 2 -- on that same machine, run:\n");
+    let _ = writeln!(buf, "  famp pair redeem --from {from_value}");
+    buf.push('\n');
+
+    buf.push_str(
+        "Step 3 -- when it asks for the code, type it there. Do not add it to the command above.\n",
+    );
+    buf.push('\n');
+
     buf.push_str(code.as_str());
     buf.push('\n');
-    out.write_all(buf.as_bytes()).map_err(|e| CliError::Io {
-        path: home.to_path_buf(),
-        source: e,
-    })
+    buf
 }
 
 /// `now` plus 24 hours (PAIR-03's explicit 24-hour window), formatted in
@@ -152,6 +220,7 @@ fn pairing_err_to_cli(e: PairingError) -> CliError {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::{run_at, PairInviteArgs};
+    use crate::cli::error::CliError;
     use crate::pairing::invite::{pairing_store_path, InviteState, InviteStore};
     use rand::{rngs::StdRng, SeedableRng};
 
@@ -161,6 +230,7 @@ mod tests {
         let args = PairInviteArgs {
             as_principal: "agent:inviter.test/gateway".to_string(),
             url: Some("https://gateway.inviter.test:8443".to_string()),
+            confirm_installed: true,
         };
         let mut out = Vec::new();
         let mut rng = StdRng::seed_from_u64(1);
@@ -186,6 +256,36 @@ mod tests {
             last_line.split(' ').count(),
             5,
             "code (last line) must be exactly 5 space-joined words: {last_line}"
+        );
+    }
+
+    #[test]
+    fn run_at_without_confirm_installed_exits_2_writes_nothing_creates_no_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let args = PairInviteArgs {
+            as_principal: "agent:inviter.test/gateway".to_string(),
+            url: Some("https://gateway.inviter.test:8443".to_string()),
+            confirm_installed: false,
+        };
+        let mut out = Vec::new();
+        let mut rng = StdRng::seed_from_u64(1);
+        let err = run_at(
+            tmp.path(),
+            &args,
+            &mut out,
+            "2026-08-03T00:00:00Z",
+            &mut rng,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(err, CliError::Exit(2)),
+            "expected Exit(2), got {err:?}"
+        );
+        assert!(out.is_empty(), "writer must receive zero bytes");
+        assert!(
+            !pairing_store_path(tmp.path()).exists(),
+            "no pairing.json must be created without --confirm-installed"
         );
     }
 }

@@ -97,6 +97,7 @@ fn draw_invite(home: &Path, as_principal: &str, now: &str, seed: u64) -> String 
         &invite::PairInviteArgs {
             as_principal: as_principal.to_string(),
             url: None,
+            confirm_installed: true,
         },
         &mut artifact,
         now,
