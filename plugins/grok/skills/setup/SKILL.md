@@ -89,6 +89,11 @@ should now run `/famp:register <name>` in each session they want to message
 from — `register` holds the identity for the lifetime of that session, so the
 session must stay open.
 
+Also tell them that with listen mode on (the default for MCP `famp_register`),
+the plugin's `Stop` hook parks until an inbound message wakes the session — no
+separate listen skill is required, and `famp listen-wake` is only for non-plugin
+workflows.
+
 ## Notes
 
 - This plugin's hooks and MCP server stay inactive until the plugin is trusted.

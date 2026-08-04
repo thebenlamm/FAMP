@@ -7,20 +7,31 @@ This directory holds one packaging per host.
 | :--- | :--- | :--- | :--- |
 | Claude Code | `/plugin marketplace add thebenlamm/FAMP` | [`claude-code/`](claude-code/) | **verified end to end** |
 | Codex | `codex plugin marketplace add thebenlamm/FAMP` | [`codex/`](codex/) | installs; tool naming unverified |
-| Grok Build | `grok plugin marketplace add thebenlamm/FAMP` | [`grok/`](grok/) | **unproven — never run** |
+| Grok Build | `grok plugin marketplace add thebenlamm/FAMP` | [`grok/`](grok/) | installs + validates; no live session |
 
 > **Only the Claude Code packaging has been exercised end to end** — installed
 > from a clean checkout, a real message sent through its MCP server, delivery
 > confirmed. The Codex packaging installs and loads (`installed, enabled
 > 1.0.0`), but no live session has confirmed its tool names. The Grok packaging
-> has never been run at all; its layout and namespace come from reading
-> `xai-org/grok-build`.
+> passes `grok plugin validate` and installs from a local path with `--trust`
+> (`components: 1 skill dir(s), 1 command dir(s), 0 agent dir(s), hooks, MCP
+> servers`), but no live session has run it either; its namespace comes from
+> reading `xai-org/grok-build`.
 >
 > This matters because of *how* it would fail. The commands hard-code tool names
 > in `allowed-tools`. If a host's real namespacing differs from the table below,
 > the commands load cleanly and then match no tool — nothing errors. Before
 > trusting the Codex or Grok packaging, run `<host> plugin validate` against it
 > and confirm one real tool call in a live session.
+>
+> **The same caveat applies to Codex hook execution.** The Codex manifest now
+> declares `"hooks": "./hooks/hooks.json"` — accepted by `codex plugin add`, and
+> the file is copied into the plugin cache alongside `hooks/famp-await.sh`. What
+> is *not* yet confirmed is that Codex runs a plugin-provided Stop hook in a live
+> session. The check takes one turn: start a Codex session with the plugin
+> installed and grep `~/.codex/config.toml` for a `[hooks.state]` key ending in
+> `hooks/hooks.json:stop:0:0`. Codex prompts to trust a newly seen hook before it
+> will run, so expect a trust prompt on that first turn.
 
 Then install and run the one-time setup:
 
@@ -139,11 +150,33 @@ Beyond namespacing:
   `bin/famp` resolver shim, so its `.mcp.json` can point at
   `${CLAUDE_PLUGIN_ROOT}/bin/famp`. The Codex and Grok packagings invoke a bare
   `famp` and therefore require it on `PATH`; their `/famp:setup` skills say so.
-- **Listen mode is Stop-hook only in v1.** All three packagings (where hooks are
-  wired) park via `famp-await.sh` on turn end. A Claude background monitor /
-  `/famp:listen` skill is not shipped — a second bus waiter would race the Stop
-  hook. Grok's host-native non-blocking wake adapter (`famp listen-wake`) remains
-  available as a CLI for non-plugin workflows.
+- **Listen mode is Stop-hook only in v1.** All three packagings park via
+  `famp-await.sh` on turn end. A Claude background monitor / `/famp:listen` skill
+  is not shipped — a second bus waiter would race the Stop hook. Grok's
+  host-native non-blocking wake adapter (`famp listen-wake`) remains available as
+  a CLI for non-plugin workflows.
+- **Each host declares hooks its own way.** Claude and Grok auto-discover
+  `hooks/hooks.json` inside the plugin; Codex needs the manifest to name it
+  (`"hooks": "./hooks/hooks.json"` in `.codex-plugin/plugin.json`). Note that
+  Codex's *bundled* `plugin-creator` skill contradicts itself here — its
+  `references/plugin-json-spec.md` sample lists `hooks` as a manifest field while
+  its "Required behavior" section says to omit `hooks` as unsupported. The sample
+  is the one that matches observed behavior: `codex plugin add` accepts the field
+  and copies the file. The root-token also differs: Grok injects
+  `GROK_PLUGIN_ROOT`, while **Codex has no `CODEX_PLUGIN_ROOT`** — its hook
+  command runner injects `CLAUDE_PLUGIN_ROOT`/`CLAUDE_PLUGIN_DATA`, so the Codex
+  `hooks.json` uses the Claude token deliberately.
+- **`hook-runner.sh` is Claude-Code-only** — and is no longer shipped to the
+  other two. HOOK-04b edit-glob dispatch parses Claude's `transcript_path` JSONL
+  looking for `Edit`/`Write`/`MultiEdit` `tool_use` blocks. Codex's Stop payload
+  carries no Claude-format transcript, and Grok's documented Stop input carries
+  no transcript field at all, so on either host the shim exits 0 at step 2 on
+  every turn. It shipped inert in both packagings until 2026-08-04. The legacy
+  `install-codex` / `install-grok` paths never installed it either, so dropping
+  it is parity, not a feature removal. `famp-await.sh`, by contrast, *is*
+  host-aware: it accepts snake_case (Claude/Codex) and camelCase (Grok) input
+  keys and resolves Codex's rollout file from its state DB when the Stop payload
+  omits a transcript path.
 - **Hook binary pin is rendered at gen time.** Canonical assets use
   `FAMP_BIN=@FAMP_BIN@` for `install-*`; `scripts/gen-plugin.sh` renders Claude
   hooks to `${CLAUDE_PLUGIN_ROOT}/bin/famp` and Codex/Grok hooks to bare `famp`.
@@ -158,6 +191,12 @@ same machine loads two MCP servers under the same name. On Claude Code that
 surfaces as 24 tools instead of 12 — every FAMP tool twice, under both
 namespaces — plus four `Stop` hooks instead of two. Run
 `famp uninstall-<host>` first.
+
+The duplicate-hook half of that applies to all three hosts now that each
+packaging wires its own `Stop` await: two awaiters would park on the same
+identity. `famp-await.sh` carries a per-identity mkdir-lock singleton, so the
+second one exits as a no-op rather than double-parking — but that is a backstop,
+not a reason to run both.
 
 ## If you added this repo as a `directory` marketplace
 
