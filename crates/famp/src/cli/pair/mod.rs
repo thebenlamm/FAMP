@@ -26,6 +26,7 @@ use crate::cli::error::CliError;
 
 pub mod invite;
 pub mod redeem;
+pub mod revoke;
 pub mod status;
 
 #[derive(Args, Debug)]
@@ -52,6 +53,11 @@ pub enum PairSubcommand {
     /// pin ever happens. Prints the redeemer's principal and key_id
     /// BEFORE pinning.
     Status(status::PairStatusArgs),
+    /// Kill an outstanding invite (by id) or every currently `Pending`
+    /// invite before its 24-hour window closes (PAIR-03's explicit
+    /// `famp pair revoke` clause). Durable across a gateway restart —
+    /// the kill lives in the same persisted `pairing.json` record.
+    Revoke(revoke::PairRevokeArgs),
 }
 
 /// Async dispatcher — `redeem` needs a tokio runtime for its outbound
@@ -68,6 +74,7 @@ pub async fn run(args: PairArgs) -> Result<(), CliError> {
         PairSubcommand::Invite(args) => invite::run(&args),
         PairSubcommand::Redeem(args) => redeem::run(&args).await,
         PairSubcommand::Status(args) => status::run(&args),
+        PairSubcommand::Revoke(args) => revoke::run(&args),
     }
 }
 
