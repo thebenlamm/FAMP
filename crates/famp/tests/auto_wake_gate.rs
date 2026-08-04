@@ -109,6 +109,33 @@ fn assert_agent_delivery(reply: BusReply, expected_woken: bool) {
     );
 }
 
+async fn assert_remote_remains_in_inbox(
+    sock: &std::path::Path,
+    remote_id: &str,
+    remote_marker: &str,
+) {
+    let inbox = inbox_run_at_structured(
+        sock,
+        ListArgs {
+            since: None,
+            include_terminal: false,
+            act_as: Some("bob".into()),
+        },
+    )
+    .await
+    .expect("explicit Inbox read from zero");
+    let held = inbox
+        .envelopes
+        .iter()
+        .find(|stamped| stamped.envelope["id"] == remote_id)
+        .expect("held Gateway record must remain in Bob's mailbox");
+    assert_eq!(held.origin, Origin::Gateway);
+    assert!(
+        held.envelope.to_string().contains(remote_marker),
+        "explicit Inbox must return the original remote marker"
+    );
+}
+
 #[test]
 fn remote_is_held_until_local_wakes_and_remains_in_inbox() {
     runtime().block_on(async {
@@ -207,26 +234,7 @@ fn remote_is_held_until_local_wakes_and_remains_in_inbox() {
             "held Gateway record must not leak into the Await result"
         );
 
-        let inbox = inbox_run_at_structured(
-            &sock,
-            ListArgs {
-                since: None,
-                include_terminal: false,
-                act_as: Some("bob".into()),
-            },
-        )
-        .await
-        .expect("explicit Inbox read from zero");
-        let held = inbox
-            .envelopes
-            .iter()
-            .find(|stamped| stamped.envelope["id"] == remote_id)
-            .expect("held Gateway record must remain in Bob's mailbox");
-        assert_eq!(held.origin, Origin::Gateway);
-        assert!(
-            held.envelope.to_string().contains(&remote_marker),
-            "explicit Inbox must return the original remote marker"
-        );
+        assert_remote_remains_in_inbox(&sock, &remote_id, &remote_marker).await;
 
         local_proxy.shutdown().await;
         remote.shutdown().await;

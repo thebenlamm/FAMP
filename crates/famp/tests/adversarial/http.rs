@@ -57,6 +57,13 @@ fn build_bob_keyring() -> Arc<Keyring> {
 }
 
 async fn build_rig() -> HttpRig {
+    // This crate uses reqwest's `rustls-no-provider` feature. The production
+    // transport installs the workspace's aws-lc-rs provider while building
+    // its TLS config; do the same before this test's intentionally raw HTTP
+    // client calls `reqwest::Client::new()`.
+    let _provider_initialized = famp_transport_http::tls::build_client_config(None)
+        .expect("install the default rustls provider for raw reqwest tests");
+
     // Pre-register bob so the failure mode cannot be unknown_recipient — we
     // want bad_envelope / signature_invalid / canonical_divergence to surface.
     let inboxes: Arc<InboxRegistry> = Arc::new(Mutex::new(HashMap::new()));
