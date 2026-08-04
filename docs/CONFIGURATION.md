@@ -227,6 +227,29 @@ All broker runtime data lives under the directory that contains the socket
 The `mailboxes/` subdirectory is created automatically by the broker on first
 start. Cursor files are managed client-side by `famp inbox ack --offset <N>`.
 
+**`broker.log` is not rotated.** Both service definitions append to it
+(`StandardOutput=append:` on systemd, `StandardOutPath` on launchd) and nothing
+truncates it. The broker is not chatty — a healthy one writes a few hundred
+bytes — so this is a slow fuse rather than a live problem, but a broker stuck in
+a restart loop writes a startup error per attempt and it is unbounded. On a
+long-lived machine, cap it:
+
+```
+# ~/.config/logrotate.d/famp-broker  (run via a user logrotate timer)
+/home/YOU/.famp/broker.log {
+    weekly
+    rotate 4
+    maxsize 10M
+    missingok
+    notifempty
+    copytruncate
+}
+```
+
+`copytruncate` matters: the broker holds the file open, so a plain rename would
+leave it writing to the rotated inode. Truncating it by hand
+(`: > ~/.famp/broker.log`) is safe at any time and does not require a restart.
+
 ### v0.8 identity-home layout (under `FAMP_HOME`, default `~/.famp`)
 
 ```

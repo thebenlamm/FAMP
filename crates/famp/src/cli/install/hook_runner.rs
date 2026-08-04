@@ -11,6 +11,7 @@ use std::path::Path;
 
 use crate::cli::error::CliError;
 use crate::cli::executable::{posix_shell_literal, FampExecutable};
+use crate::cli::install::json_merge::MergeOutcome;
 
 /// The bash shim source, embedded at compile time.
 pub const HOOK_RUNNER_SH: &str = include_str!("../../../assets/hook-runner.sh");
@@ -43,10 +44,17 @@ pub(crate) fn install_shim(path: &Path, executable: &FampExecutable) -> Result<(
 }
 
 /// Remove the shim. Tolerates `NotFound`. Used by `uninstall-claude-code`.
-pub fn remove_shim(path: &Path) -> Result<(), CliError> {
+/// Remove the shim, reporting whether it was actually there.
+///
+/// The outcome is returned rather than swallowed so callers can print what
+/// happened instead of an unconditional "removed". An uninstaller's report IS
+/// its product: printing "shim removed" when nothing was present turns a
+/// diagnostic into a false all-clear, and sends an operator chasing a
+/// duplicate install somewhere else entirely.
+pub fn remove_shim(path: &Path) -> Result<MergeOutcome, CliError> {
     match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(()) => Ok(MergeOutcome::Removed),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(MergeOutcome::NotPresent),
         Err(source) => Err(CliError::Io {
             path: path.to_path_buf(),
             source,

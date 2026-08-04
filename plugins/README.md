@@ -158,3 +158,16 @@ same machine loads two MCP servers under the same name. On Claude Code that
 surfaces as 24 tools instead of 12 — every FAMP tool twice, under both
 namespaces — plus four `Stop` hooks instead of two. Run
 `famp uninstall-<host>` first.
+
+## If you added this repo as a `directory` marketplace
+
+Adding a marketplace from a local path (rather than `thebenlamm/FAMP`) records a
+**`directory` source pointing at your working tree** — the plugin is not a
+pinned, copied artifact. Editing `plugins/<host>/hooks/*` changes what executes
+at the next session `Stop` immediately, with no install or update step, and a
+`git pull` or branch switch re-arms your hooks the same way.
+
+That is convenient when you are developing the packaging and surprising
+otherwise. If you want a stable plugin, install from the GitHub source
+(`/plugin marketplace add thebenlamm/FAMP`) instead; check which you have with
+`extraKnownMarketplaces` in `~/.claude/settings.json`.

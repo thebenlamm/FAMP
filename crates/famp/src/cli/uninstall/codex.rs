@@ -87,11 +87,12 @@ pub fn run_at_project(
     )
     .ok();
 
-    await_hook::remove_shim(&await_shim_path)?;
+    let await_outcome = await_hook::remove_shim(&await_shim_path)?;
     writeln!(
         err,
-        "  [2/4] {} :: legacy await shim removed",
-        await_shim_path.display()
+        "  [2/4] {} :: legacy await shim -> {:?}",
+        await_shim_path.display(),
+        await_outcome
     )
     .ok();
 
