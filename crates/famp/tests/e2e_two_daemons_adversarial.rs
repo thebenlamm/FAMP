@@ -39,6 +39,11 @@ struct HttpRig {
 }
 
 async fn build_rig() -> HttpRig {
+    // reqwest is built with `rustls-no-provider`; mirror the transport's
+    // provider initialization before this test constructs its raw client.
+    let _provider_initialized = famp_transport_http::tls::build_client_config(None)
+        .expect("install the default rustls provider for raw reqwest tests");
+
     let inboxes: Arc<InboxRegistry> = Arc::new(Mutex::new(HashMap::new()));
     let (tx, inbox_rx) = mpsc::channel::<TransportMessage>(8);
     inboxes.lock().await.insert(bob(), tx);
