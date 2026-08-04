@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use common::TestEnv;
 use famp_bus::{
-    Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName, Out, Target,
+    Broker, BrokerInput, BusMessage, BusReply, ClientId, MailboxName, Origin, Out, Target,
     BUS_PROTO_VERSION,
 };
 use proptest::prelude::*;
@@ -32,7 +32,7 @@ fn hello_register(broker: &mut Broker<TestEnv>, client: u64, name: &str, now: In
                 pid: 1000 + u32::try_from(client).unwrap(),
                 cwd: None,
                 listen: false,
-                origin: None,
+                origin: Some(Origin::Local),
             },
         },
         now,
