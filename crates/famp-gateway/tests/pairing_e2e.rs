@@ -242,6 +242,24 @@ async fn wrong_code_burns_one_attempt_and_stays_pending() {
         store.invites[0].state,
         famp::pairing::invite::InviteState::Pending
     ));
+
+    // The doc comment above claims the attempt counter is the ONLY mutation.
+    // Assert exactly that, rather than trusting the two field checks above to
+    // imply it: take the before-record, apply the single mutation the wrong-code
+    // path is permitted to make, and require full structural equality with what
+    // actually landed on disk. A stray write to `expires_at`, `code_digest`, or
+    // `principal` fails here and would slip past an attempts-and-state check.
+    let mut expected = before.invites[0].clone();
+    expected.attempts = 1;
+    assert_eq!(
+        store.invites[0], expected,
+        "the attempt counter must be the ONLY field a wrong-code redemption mutates"
+    );
+    assert_eq!(
+        store.invites.len(),
+        before.invites.len(),
+        "a wrong-code redemption must not add or drop invite records"
+    );
 }
 
 /// PAIR-06: `famp pair redeem` accepts no positional argument and no
