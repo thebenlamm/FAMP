@@ -273,11 +273,19 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 19-01-PLAN.md — broker positive-trust Await gate, actor proofs, and production-faithful fixtures
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 19-02-PLAN.md — real-socket remote-held/local-wake/Inbox-visible proof and conflicting test replacement
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 19-03-PLAN.md — narrow documentation truth, QUAR-15 regression, and Nyquist sign-off
 
-**Waves:** W1 = 19-01 · W2 = 19-02 + 19-03 (parallel after the broker gate; zero file overlap)
+**Waves:** W1 = 19-01 · W2 = 19-02 · W3 = 19-03 (documentation and Nyquist sign-off consume the real-socket proof and 19-02 summary)
 **Constraint:** `AwaitFilter` already exists at `crates/famp-bus/src/proto.rs:54` and `BUS_PROTO_VERSION` is already 2 — the likely integration point, named here as context. The implementation approach is plan-phase work, not decided here.
 **Road not taken (recorded, not rejected):** held-by-default-at-ingress — a remote envelope is held at the broker's ingress append site and never enters the recipient's mailbox at all until a human releases it or the peer has a standing per-peer auto-deliver grant. Strictly stronger than this phase; deliberately not v1.1 because this phase delivers most of the value at a fraction of the build. Natural upgrade path if the threat model ever demands more.
 
