@@ -58,7 +58,7 @@ the shipped `famp-gateway`.
   - `famp whoami` — show the current identity
   - `famp send` — send local bus messages
   - `famp inbox list` — inspect received messages (includes posts from joined channels; `--include-terminal` is accepted but currently a no-op — broker-side terminal filtering did not land in v1.0 and remains deferred)
-  - `famp await` — block until new messages arrive (unfiltered; canonical real-time signal, including task completion)
+  - `famp await` — block until new Local-origin messages arrive (canonical real-time signal for eligible Local-origin traffic, including task completion)
   - `famp join` / `famp leave` — manage channel membership
 - **MCP server** (`famp mcp`) for Claude Code and Codex
 - **Local-first bus (v0.9, shipped):** UDS-backed broker replacing the
@@ -289,7 +289,7 @@ Full CLI:
 | `famp register <name>` | Bind a local identity (auto-spawns a broker for unsandboxed clients if none is running; sandboxed clients need a daemon or the bridge) |
 | `famp send --to <name> --new-task "<text>"` | Send a new task over the local bus |
 | `famp send --to <name> --task <id> --body "<text>"` | Reply to an existing task |
-| `famp await [--task <id>]` | Block until a message arrives |
+| `famp await [--task <id>]` | Block until an eligible Local-origin message arrives |
 | `famp inbox [--include-terminal]` | List unread agent + joined-channel envelopes (the `--include-terminal` flag is wire-accepted but currently a no-op) |
 | `famp join <channel>` / `famp leave <channel>` | Manage local bus channel membership |
 | `famp sessions` | Show registered broker sessions |
@@ -304,6 +304,8 @@ Full CLI:
 | `famp install-grok` / `famp uninstall-grok` | Install or remove Grok MCP + Stop-hook listen (same model as Claude) |
 | `famp listen-wake --as <id> [--loop]` | Host-neutral wake line for monitors / future hosts; no peer body |
 | `famp inspect wake --identity <name>` | Diagnose Codex holder, hook/trust, MCP binding, waiter, and end-to-end wake readiness |
+
+Only Local-origin records satisfy a parked `famp await`; Gateway- and Unknown-origin records remain available through explicit Inbox reads.
 
 The v0.8 `famp-local` wrapper has moved into history at
 [`docs/history/v0.9-prep-sprint/famp-local/famp-local`](docs/history/v0.9-prep-sprint/famp-local/famp-local).
@@ -464,8 +466,10 @@ The MCP tools `famp_join` and `famp_leave` handle membership directly.
 
 ### On-demand blocking wait (`famp_await`)
 
-`famp_await` blocks until a new message arrives (or up to 23 h). It is the
-primitive that listen mode is built on. Two ways to use it:
+`famp_await` blocks until a new Local-origin message arrives (or up to 23 h).
+It is the primitive that listen mode is built on. Gateway- and Unknown-origin
+records stay in the mailbox for explicit `famp_inbox` or `famp inbox` reads.
+Two ways to use it:
 
 - **Listen mode (recommended for dedicated agent windows):** pass `listen: true`
   to `famp_register` to request automatic wake. When the current host Stop hook
@@ -476,14 +480,17 @@ primitive that listen mode is built on. Two ways to use it:
   the whole window to listen mode.
 
 General-purpose dev windows should use neither — call `famp_inbox` on demand.
+The Await gate controls automatic wake only; it does not change mailbox
+admission, provenance marking, or the trust decision an operator makes before
+acting on explicitly retrieved content.
 
 ### Listen Mode (inbound wake-up)
 
 Passing `listen: true` to `famp_register` sets broker listen intent (the MCP
 default). Automatic wake additionally requires the current host integration
 and Stop hook to be installed and loaded. With that adapter active, the Stop
-hook blocks after every turn and wakes the host agent when an inbound message
-arrives (sub-minute latency). For Codex, verify the full chain with
+hook blocks after every turn and wakes the host agent when an eligible
+Local-origin message arrives (sub-minute latency). For Codex, verify the full chain with
 `famp inspect wake --identity <name>`.
 
 ```text

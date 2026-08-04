@@ -34,14 +34,16 @@ Full crate selection rationale, alternatives, version compatibility, and beginne
 
 ## Listen Mode
 
-Listen mode is ON BY DEFAULT for MCP `famp_register` calls (as of 2026-05-12). Agents auto-wake on inbound messages without an explicit flag:
+Listen mode is ON BY DEFAULT for MCP `famp_register` calls (as of 2026-05-12). Agents auto-wake on Local-origin inbound messages without an explicit flag:
 
 ```
 famp_register({identity: "dk"})              // listen mode ON (default)
 famp_register({identity: "dk", listen: false}) // opt out for general-purpose windows
 ```
 
-When listen mode is active, the Stop hook (`~/.claude/hooks/famp-await.sh`) blocks after each turn waiting for an inbound FAMP message (up to 23h). When a message arrives, Claude wakes automatically and receives: `"New FAMP message from <sender>. Call famp_inbox to read it."` — then calls `famp_inbox` to retrieve the content.
+Only Local-origin records satisfy a parked `famp await`; Gateway- and Unknown-origin records remain available through explicit Inbox reads.
+
+When listen mode is active, the Stop hook (`~/.claude/hooks/famp-await.sh`) blocks after each turn waiting for an eligible FAMP message (up to 23h). When a Local-origin message arrives, Claude wakes automatically and receives: `"New FAMP message from <sender>. Call famp_inbox to read it."` — then calls `famp_inbox` to retrieve the content. Gateway- and Unknown-origin records stay explicitly readable without waking the parked Stop hook.
 
 **Flipping listen mode without re-registering:** Use `famp_set_listen({listen: true|false})`. This mutates the canonical holder's listen flag in place — no mailbox replay, no new identity binding. Use this when a window registered with the wrong mode, or when an interactive window needs to toggle into listen mode for a long-running peer conversation.
 

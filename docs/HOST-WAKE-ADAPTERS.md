@@ -9,12 +9,18 @@ famp listen-wake --as <identity> [--timeout 23h] [--loop] [--force] [--daemon] [
 ```
 
 Parks on the same bus await as Claude/Codex/Grok Stop hooks, off the agent
-turn. On each inbound batch it prints **one scrubbed stdout line** and
+turn. On each Local-origin batch it prints **one scrubbed stdout line** and
 appends the same line to `~/.famp/listen-wake-<identity>.wake`:
 
 ```
 FAMP_WAKE identity=<id> sender=<sender|unknown> count=<n>
 ```
+
+Only Local-origin records satisfy a parked `famp await`; Gateway- and Unknown-origin records remain available through explicit Inbox reads.
+
+Gateway- and Unknown-origin batches do not wake host adapters. They remain
+explicitly readable from Inbox, independently of host wake and UI/model
+re-entry behavior.
 
 - Never prints peer message body (there is none on this line).
 - Exit codes: `0` message (once), `2` timeout (once; stderr `TIMEOUT`), `3`
@@ -47,7 +53,7 @@ auto-wake by reacting to `FAMP_WAKE` lines (stdout or the `.wake` file).
 2. Host Stop fires its FAMP adapter (Codex uses native `famp hook codex-stop`;
    Claude and Grok use `famp-await.sh`, timeout 86400).
 3. Hook parks on `famp await --as <id> --timeout 23h`.
-4. On message, emits `{"decision":"block","reason":"..."}` so the agent
+4. On a Local-origin message, emits `{"decision":"block","reason":"..."}` so the agent
    calls `famp_inbox` (or channel tools). Peer bytes never enter `reason`.
 
 When the host omits `transcript_path` / `transcriptPath`, the hook still

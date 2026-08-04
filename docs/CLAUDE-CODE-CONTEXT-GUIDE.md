@@ -10,18 +10,21 @@ patterns, tool-call sequencing, and known failure modes discovered in production
 FAMP delivers messages through two distinct paths with different context implications.
 Mixing them up is the most common source of unnecessary context consumption.
 
+Only Local-origin records satisfy a parked `famp await`; Gateway- and Unknown-origin records remain available through explicit Inbox reads.
+
 ### Flow A — Listen Mode (register with `listen: true`)
 
 ```
 Hook blocks on famp_await (background)
-  → message arrives
+  → Local-origin message arrives
   → hook sends wake signal: "New FAMP message from <sender>. Call famp_inbox to read it."
   → Claude calls famp_inbox → full body printed ONCE
   → Claude replies with famp_send
 ```
 
 **Correct.** One full body retrieval. Use this for dedicated agent windows (e.g., a Sofer mesh
-participant, a standing reviewer node).
+participant, a standing reviewer node). Gateway- and Unknown-origin records do not wake this
+flow; retrieve them with an explicit `famp_inbox` read.
 
 ### Flow B — Manual famp_await (general-purpose windows)
 
@@ -32,8 +35,9 @@ Claude calls famp_await directly
   → Claude replies with famp_send
 ```
 
-**Correct.** One full body retrieval. The body is in the famp_await result — no follow-up
-famp_inbox call needed.
+**Correct.** One full body retrieval. Manual `famp_await` likewise returns only Local-origin
+records. The body is in the famp_await result — no follow-up famp_inbox call needed. Use
+explicit `famp_inbox` when you intend to inspect Gateway- or Unknown-origin records.
 
 ### Flow B (broken variant) — the double-print
 

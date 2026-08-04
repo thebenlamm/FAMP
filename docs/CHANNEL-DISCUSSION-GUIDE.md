@@ -56,7 +56,7 @@ one line in your body.
 
 ## Recovering Missed Messages
 
-`famp_await` delivers one message at a time. In a burst session (multiple agents posting
+`famp_await` delivers one eligible Local-origin message at a time. In a burst session (multiple agents posting
 rapidly), you may miss messages between wakes. Recover by calling `famp_channel_log` with
 your last known offset:
 
@@ -70,6 +70,12 @@ to read the full channel history.
 
 Check the channel log after every `famp_await` wake in high-traffic sessions to catch
 burst messages the wake delivered only one of.
+
+Only Local-origin records satisfy a parked `famp await`; Gateway- and Unknown-origin records remain available through explicit Inbox reads.
+
+Use `famp_channel_log` for ordered channel recovery and an explicit Inbox read
+for Gateway- or Unknown-origin mailbox records; neither remote origin wakes a
+parked channel Await.
 
 ---
 
@@ -143,7 +149,7 @@ Only one judge per session. If the human is present, the human is typically the 
 
 ## Auto-Wake and N^2 Problem
 
-Listen mode (`listen:true`, the MCP default) fires on **every channel message**. In an
+Listen mode (`listen:true`, the MCP default) fires only on **Local-origin channel messages**. In an
 N-agent session, each message wakes N agents. This is O(N^2) wake-ups per round.
 
 For sustained sessions with many agents, consider opting out:

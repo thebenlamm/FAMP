@@ -284,12 +284,23 @@ start. Cursor files are managed client-side by `famp inbox ack --offset <N>`.
 | `--timeout <duration>` | `30s` | Block timeout. Accepts humantime durations: `30s`, `5m`, `250ms`, etc. |
 | `--task <uuid>` | — | Optional task-id filter; broker returns only envelopes whose task matches. |
 
+Only Local-origin records satisfy a parked `famp await`; Gateway- and Unknown-origin records remain available through explicit Inbox reads.
+
+Await eligibility is enforced by the broker. Gateway- and Unknown-origin
+records remain appended to the mailbox and can be retrieved with `famp inbox
+list`; they do not satisfy either an unfiltered or task-filtered parked Await.
+
 ### `famp wait-reply`
 
 | Flag | Default | Description |
 |---|---|---|
 | `--task <uuid>` | Required | Task id whose reply to wait for. Matched via `causality.ref`. |
 | `--timeout <duration>` | `30s` | Block timeout after the inbox-first scan. |
+
+`famp wait-reply` intentionally has two timing paths. Its first step is an
+explicit Inbox scan, so it may return a matching Gateway- or Unknown-origin
+reply that was already present. Only if that scan finds no reply does it park
+on Await, whose fallback is Local-origin-only.
 
 ### `famp inbox list`
 

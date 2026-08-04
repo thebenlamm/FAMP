@@ -54,7 +54,7 @@ fn tool_descriptors() -> serde_json::Value {
         },
         {
             "name": "famp_await",
-            "description": "Block until one or more new messages arrive. Returns { envelopes: [...], mailbox, next_offset } for the first mailbox with queued messages, capped at 50 envelopes per call; re-call immediately if you need to drain more. AwaitTimeout remains { timeout: true }. This is the canonical real-time signal — famp_await delivers every message as it arrives, including the closing 'terminal' reply that finishes a task. USE THIS to detect when a task you sent via famp_send completes. Pass task_id to wait only for a reply to that specific task.",
+            "description": "Block until one or more new Local-origin messages arrive. Returns { envelopes: [...], mailbox, next_offset } for the first mailbox with queued eligible messages, capped at 50 envelopes per call; re-call immediately if you need to drain more. AwaitTimeout remains { timeout: true }. Only Local-origin records satisfy parked famp_await; Gateway- and Unknown-origin records remain available through explicit famp_inbox reads. This is the canonical real-time signal for eligible Local-origin records, including a closing 'terminal' reply that finishes a task. USE THIS to detect when a Local-origin task reply sent via famp_send completes. Pass task_id to wait only for a reply to that specific task.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
