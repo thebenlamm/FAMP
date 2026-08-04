@@ -51,6 +51,23 @@ pub enum PairingError {
     Crypto(#[from] CryptoError),
     #[error("wire error: {reason}")]
     Wire { reason: String },
+    // TODO(18-03): give this a real operator-facing message; PAIR-03's
+    // expiry clause is what it exists to enforce.
+    #[error("invite expired")]
+    Expired,
+    // TODO(18-03): give this a real operator-facing message.
+    #[error("invite already redeemed")]
+    AlreadyRedeemed,
+    // TODO(18-03): give this a real operator-facing message; PAIR-02's
+    // attempt-budget clause is what it exists to enforce.
+    #[error("attempt budget exhausted")]
+    AttemptsExhausted,
+    // TODO(18-03): give this a real operator-facing message.
+    #[error("wrong code")]
+    WrongCode,
+    // TODO(18-03): give this a real operator-facing message naming `id`.
+    #[error("unknown invite: {id}")]
+    UnknownInvite { id: String },
 }
 
 /// A statement plus its detached Ed25519 signature — mirrors
