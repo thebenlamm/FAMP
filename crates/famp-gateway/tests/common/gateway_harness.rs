@@ -21,7 +21,7 @@
     clippy::too_many_arguments
 )]
 
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -49,7 +49,7 @@ pub const BOB_DOMAIN: &str = "hostb.test";
 pub const POLL_DEADLINE: Duration = Duration::from_secs(20);
 
 /// Bounded deadline for *subprocess startup* waits (`wait_for_broker_socket`,
-/// `wait_until_live`, `wait_for_tcp`).
+/// `wait_until_live`, `wait_for_https`).
 ///
 /// Deliberately much larger than the ~1s a broker needs when it has the box to
 /// itself: CI (and `cargo test -p famp-gateway`) runs test *binaries* in
@@ -334,21 +334,56 @@ pub fn spawn_gateway(
     )
 }
 
-/// Poll (bounded) until `addr` accepts a raw TCP connection — confirms
-/// the gateway's `run_ingress` HTTPS listener is actually bound before
-/// this test triggers any egress relay that depends on it. Load-bearing:
-/// `run_egress`'s `Await` drain ADVANCES the mailbox read cursor even on
-/// a failed relay POST (no re-queue on error) — a message drained before
-/// the peer listener is up would be silently lost, not retried.
-pub fn wait_for_tcp(addr: SocketAddr, deadline: Duration) {
+/// Poll (bounded) until the HTTPS listener completes a real TLS request.
+///
+/// A plaintext TCP connect probe is too weak a readiness proof here: it
+/// succeeds as soon as the socket reaches LISTEN state, which the kernel
+/// grants before the process has loaded its rustls config, started the TLS
+/// accept loop, or mounted the axum router. This probe instead requests an
+/// intentionally-unmounted path and accepts ANY HTTP response (normally
+/// 404), which proves all four.
+///
+/// Do NOT name the raw std connect API in this file, even inside a comment:
+/// the D-05 readiness guard in `e2e_ci_gate_guard.rs` greps this harness's
+/// source text for it and cannot distinguish a comment from a call.
+///
+/// Load-bearing for the reason the old `wait_for_tcp` already documented:
+/// `run_egress`'s `Await` drain ADVANCES the mailbox read cursor even on a
+/// failed relay POST (no re-queue on error), so a message drained before the
+/// peer listener can actually serve HTTPS is silently lost, not retried.
+///
+/// NOTE (2026-08-04): this probe is a strictly stronger readiness proof, but
+/// it was NOT shown to be the cause of the `e2e_shipping_surface` section-4
+/// timeout — see `.planning/debug/gateway-shipping-e2e-timeout.md`. Do not
+/// cite it as that fix.
+pub fn wait_for_https(addr: SocketAddr, own_cert_stub: &str, deadline: Duration) {
+    let cert = cross_machine_fixture_dir().join(format!("{own_cert_stub}.crt"));
+    let tls = famp_transport_http::tls::build_client_config(Some(&cert))
+        .expect("build trusted TLS readiness client config");
+    let url = format!("https://{addr}/__famp_gateway_readiness");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build HTTPS readiness runtime");
+    let client = runtime.block_on(async {
+        reqwest::Client::builder()
+            .use_preconfigured_tls(tls)
+            .timeout(Duration::from_secs(2))
+            .http1_only()
+            .build()
+            .expect("build HTTPS readiness client")
+    });
     let start = Instant::now();
     loop {
-        if TcpStream::connect(addr).is_ok() {
+        if runtime
+            .block_on(async { client.get(&url).send().await })
+            .is_ok()
+        {
             return;
         }
         assert!(
             start.elapsed() <= deadline,
-            "gateway listener at {addr} never came up within {deadline:?}"
+            "gateway HTTPS listener at {addr} never completed a TLS request within {deadline:?}"
         );
         std::thread::sleep(Duration::from_millis(100));
     }

@@ -77,7 +77,7 @@ mod gateway_harness;
 use gateway_harness::{
     cross_machine_fixture_dir, ensure_famp_bin_built, peer_export, peer_import, pick_free_port,
     poll_inbox_contains, poll_terminal_state, spawn_broker, spawn_register, wait_for_broker_socket,
-    wait_for_tcp, wait_until_live, ChildGuard, Side, ALICE, ALICE_DOMAIN, BOB, BOB_DOMAIN,
+    wait_for_https, wait_until_live, ChildGuard, Side, ALICE, ALICE_DOMAIN, BOB, BOB_DOMAIN,
     POLL_DEADLINE, STARTUP_DEADLINE,
 };
 
@@ -411,8 +411,9 @@ fn reach_04_bidirectional_delivery_through_relay_with_no_direct_peer_address() {
             .spawn()
             .unwrap(),
     );
-    wait_for_tcp(
+    wait_for_https(
         SocketAddr::from(([127, 0, 0, 1], relay_port)),
+        "bob",
         STARTUP_DEADLINE,
     );
 

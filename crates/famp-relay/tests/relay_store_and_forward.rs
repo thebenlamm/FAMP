@@ -15,7 +15,7 @@ use tower as _;
 use tower_http as _;
 use uuid as _;
 
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -54,17 +54,19 @@ fn pick_free_port() -> u16 {
         .port()
 }
 
-fn wait_for_tcp(addr: SocketAddr, deadline: Duration) {
+async fn wait_for_https(addr: SocketAddr, client: &reqwest::Client, deadline: Duration) {
     let start = Instant::now();
+    let url = format!("https://{addr}/__famp_relay_readiness");
     loop {
-        if TcpStream::connect(addr).is_ok() {
+        let probe = tokio::time::timeout(Duration::from_secs(2), client.get(&url).send()).await;
+        if matches!(probe, Ok(Ok(_))) {
             return;
         }
         assert!(
             start.elapsed() <= deadline,
-            "relay listener at {addr} never came up within {deadline:?}"
+            "relay listener at {addr} never became HTTPS-ready within {deadline:?}"
         );
-        std::thread::sleep(Duration::from_millis(100));
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
@@ -119,13 +121,14 @@ async fn live_relay_accepts_post_and_returns_same_bytes_on_signed_fetch() {
     let sk_a = FampSigningKey::generate();
     let sk_b = FampSigningKey::generate();
     let _relay = spawn_relay(port, &sk_a, &sk_b);
-    wait_for_tcp(
-        format!("127.0.0.1:{port}").parse().unwrap(),
-        STARTUP_DEADLINE,
-    );
-
     let fixtures = cross_machine_fixture_dir();
     let client = tls_client(&fixtures);
+    wait_for_https(
+        format!("127.0.0.1:{port}").parse().unwrap(),
+        &client,
+        STARTUP_DEADLINE,
+    )
+    .await;
     let base = format!("https://127.0.0.1:{port}");
     let public_url = Url::parse(&base).unwrap();
     let audience = normalize_audience(&public_url);
@@ -172,13 +175,14 @@ async fn live_relay_cross_domain_fetch_drains_nothing_then_correct_fetch_still_w
     let sk_a = FampSigningKey::generate();
     let sk_b = FampSigningKey::generate();
     let _relay = spawn_relay(port, &sk_a, &sk_b);
-    wait_for_tcp(
-        format!("127.0.0.1:{port}").parse().unwrap(),
-        STARTUP_DEADLINE,
-    );
-
     let fixtures = cross_machine_fixture_dir();
     let client = tls_client(&fixtures);
+    wait_for_https(
+        format!("127.0.0.1:{port}").parse().unwrap(),
+        &client,
+        STARTUP_DEADLINE,
+    )
+    .await;
     let base = format!("https://127.0.0.1:{port}");
     let audience = normalize_audience(&Url::parse(&base).unwrap());
 

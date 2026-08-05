@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use assert_cmd::cargo::CommandCargoExt;
 use famp::bus_client::BusClient;
-use famp_bus::{BusMessage, BusReply, Target};
+use famp_bus::{BusMessage, BusReply, Origin, Target};
 use famp_gateway::{GatewayRegistry, ProxiedPrincipal};
 
 #[path = "common/child_guard.rs"]
@@ -130,7 +130,7 @@ async fn send_recv_round_trips_await_timeout_and_send() {
             pid: std::process::id(),
             cwd: None,
             listen: false,
-            origin: None,
+            origin: Some(Origin::Local),
         })
         .await
         .expect("alice register");

@@ -92,7 +92,7 @@ mod gateway_harness;
 use gateway_harness::{
     cross_machine_fixture_dir, ensure_famp_bin_built, famp_cmd, peer_export, peer_import,
     pick_free_port, poll_inbox_contains, poll_terminal_state, spawn_broker, spawn_register,
-    wait_for_broker_socket, wait_for_tcp, wait_until_live, ChildGuard, Side, ALICE, ALICE_DOMAIN,
+    wait_for_broker_socket, wait_for_https, wait_until_live, ChildGuard, Side, ALICE, ALICE_DOMAIN,
     BOB, BOB_DOMAIN, POLL_DEADLINE, STARTUP_DEADLINE,
 };
 
@@ -408,8 +408,16 @@ fn shipping_send_happy_path_full_cycle_and_observable_negative() {
 
     wait_until_live(&side_a.sock(), side_a.home(), "bob", STARTUP_DEADLINE);
     wait_until_live(&side_b.sock(), side_b.home(), "alice", STARTUP_DEADLINE);
-    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_a)), STARTUP_DEADLINE);
-    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_b)), STARTUP_DEADLINE);
+    wait_for_https(
+        SocketAddr::from(([127, 0, 0, 1], port_a)),
+        "alice",
+        STARTUP_DEADLINE,
+    );
+    wait_for_https(
+        SocketAddr::from(([127, 0, 0, 1], port_b)),
+        "bob",
+        STARTUP_DEADLINE,
+    );
 
     // ===================================================================
     // 1. HAPPY PATH — `famp send --to agent:<bob-domain>/bob --new-task`

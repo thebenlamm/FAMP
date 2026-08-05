@@ -52,7 +52,7 @@ use axum::body::to_bytes;
 use axum::Router;
 use famp::bus_client::BusClient;
 use famp::{AuthorityScope, FampSigningKey, MessageId, Principal, Timestamp, UnsignedEnvelope};
-use famp_bus::{BusMessage, BusReply};
+use famp_bus::{BusMessage, BusReply, Origin};
 use famp_envelope::body::ack::{AckBody, AckDisposition};
 use famp_gateway::ingress::build_gateway_router;
 use famp_gateway::ingress_guard::IngressGuard;
@@ -186,29 +186,32 @@ async fn register_real(sock: &Path, name: &str) -> BusClient {
             pid: std::process::id(),
             cwd: None,
             listen: false,
-            origin: None,
+            origin: Some(Origin::Local),
         })
         .await
         .expect("register");
     client
 }
 
-/// Assert `client`'s mailbox is currently empty (a short `Await` times
-/// out) — the load-bearing "no mailbox insertion occurred" check this
-/// plan requires beyond a bare HTTP status assertion.
+/// Assert `client`'s mailbox is currently empty across every provenance.
+/// `Await` deliberately filters non-local records, so it cannot prove a
+/// rejected gateway-origin envelope was never inserted; `Inbox` can.
 async fn assert_mailbox_empty(client: &mut BusClient) {
     let reply = client
-        .send_recv(BusMessage::Await {
-            timeout_ms: 300,
-            task: None,
+        .send_recv(BusMessage::Inbox {
+            since: Some(0),
+            include_terminal: None,
         })
         .await
-        .expect("send_recv await");
-    assert!(
-        matches!(reply, BusReply::AwaitTimeout {}),
-        "expected an empty mailbox (AwaitTimeout), got {reply:?} — a reject path must \
-         perform zero mailbox insertion"
-    );
+        .expect("send_recv inbox");
+    match reply {
+        BusReply::InboxOk { envelopes, .. } => assert!(
+            envelopes.is_empty(),
+            "expected an empty mailbox, got {envelopes:?} — a reject path must perform zero \
+             mailbox insertion"
+        ),
+        other => panic!("expected InboxOk, got {other:?}"),
+    }
 }
 
 struct Harness {
@@ -319,23 +322,22 @@ async fn well_formed_same_domain_envelope_still_delivers() {
     assert_eq!(resp.status(), axum::http::StatusCode::ACCEPTED);
 
     let reply = bob
-        .send_recv(BusMessage::Await {
-            timeout_ms: 5_000,
-            task: None,
+        .send_recv(BusMessage::Inbox {
+            since: Some(0),
+            include_terminal: None,
         })
         .await
-        .expect("send_recv await");
+        .expect("send_recv inbox");
     match reply {
-        BusReply::AwaitOk { envelopes, .. } => {
+        BusReply::InboxOk { envelopes, .. } => {
             assert!(
-                envelopes
-                    .iter()
-                    .any(|e| e.envelope.get("id").and_then(|v| v.as_str())
+                envelopes.iter().any(|e| e.origin == Origin::Gateway
+                    && e.envelope.get("id").and_then(|v| v.as_str())
                         == Some(id.to_string().as_str())),
                 "delivered envelope not found in bob's mailbox: {envelopes:?}"
             );
         }
-        other => panic!("expected AwaitOk, got {other:?}"),
+        other => panic!("expected InboxOk, got {other:?}"),
     }
 }
 

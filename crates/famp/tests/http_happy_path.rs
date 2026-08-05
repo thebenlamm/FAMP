@@ -22,6 +22,7 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use famp_core::Principal;
@@ -37,9 +38,26 @@ fn fixture_dir() -> PathBuf {
         .join("cross_machine")
 }
 
-async fn wait_for_tls_listener_ready() {
-    tokio::task::yield_now().await;
-    tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+async fn wait_for_tls_listener_ready(addr: std::net::SocketAddr, trust_cert: &std::path::Path) {
+    let tls = tls::build_client_config(Some(trust_cert)).expect("readiness client tls config");
+    let client = reqwest::Client::builder()
+        .use_preconfigured_tls(tls)
+        .timeout(Duration::from_secs(2))
+        .build()
+        .expect("readiness client");
+    let url = format!("https://localhost:{}/__famp_http_readiness", addr.port());
+    let start = Instant::now();
+
+    loop {
+        if client.get(&url).send().await.is_ok() {
+            return;
+        }
+        assert!(
+            start.elapsed() <= Duration::from_secs(30),
+            "TLS listener at {addr} never became HTTPS-ready"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -118,7 +136,8 @@ async fn http_happy_path_same_process() {
     bob_transport.attach_server(bob_handle).await;
     alice_transport.attach_server(alice_handle).await;
 
-    wait_for_tls_listener_ready().await;
+    wait_for_tls_listener_ready(bob_addr, &alice_trust).await;
+    wait_for_tls_listener_ready(alice_addr, &bob_trust).await;
 
     // --- Drive the cycle via the shared helper ---
     let trace_alice: cycle_driver::Trace = Arc::new(Mutex::new(Vec::new()));

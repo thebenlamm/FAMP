@@ -85,7 +85,7 @@ mod gateway_harness;
 use gateway_harness::{
     ensure_famp_bin_built, peer_export, peer_import, pick_free_port, poll_inbox_contains,
     poll_terminal_state, spawn_broker, spawn_gateway, spawn_register, wait_for_broker_socket,
-    wait_for_tcp, wait_until_live, Side, ALICE, ALICE_DOMAIN, BOB, BOB_DOMAIN, POLL_DEADLINE,
+    wait_for_https, wait_until_live, Side, ALICE, ALICE_DOMAIN, BOB, BOB_DOMAIN, POLL_DEADLINE,
     STARTUP_DEADLINE,
 };
 
@@ -331,8 +331,16 @@ fn gw01_gw02_gw03_two_process_cross_host_delivery() {
 
     wait_until_live(&side_a.sock(), side_a.home(), "bob", STARTUP_DEADLINE);
     wait_until_live(&side_b.sock(), side_b.home(), "alice", STARTUP_DEADLINE);
-    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_a)), STARTUP_DEADLINE);
-    wait_for_tcp(SocketAddr::from(([127, 0, 0, 1], port_b)), STARTUP_DEADLINE);
+    wait_for_https(
+        SocketAddr::from(([127, 0, 0, 1], port_a)),
+        "alice",
+        STARTUP_DEADLINE,
+    );
+    wait_for_https(
+        SocketAddr::from(([127, 0, 0, 1], port_b)),
+        "bob",
+        STARTUP_DEADLINE,
+    );
 
     // --- Harness ready: two isolated broker+gateway pairs with mutual
     // --- TOFU trust over loopback HTTPS (Task 1's <done> criterion).

@@ -49,7 +49,7 @@ use famp_keyring::Keyring;
 mod gateway_harness;
 use gateway_harness::{
     ensure_famp_bin_built, famp_cmd, pick_free_port, spawn_broker, spawn_gateway, spawn_register,
-    wait_for_broker_socket, wait_for_tcp, wait_until_live, ChildGuard, Side, ALICE, ALICE_DOMAIN,
+    wait_for_broker_socket, wait_for_https, wait_until_live, ChildGuard, Side, ALICE, ALICE_DOMAIN,
     BOB, BOB_DOMAIN, POLL_DEADLINE, STARTUP_DEADLINE,
 };
 
@@ -287,8 +287,9 @@ fn reach05_failure_notification_surfaces_at_sender_when_peer_never_started() {
         ALICE_DOMAIN,
     );
     wait_until_live(&side.sock(), side.home(), "bob", STARTUP_DEADLINE);
-    wait_for_tcp(
+    wait_for_https(
         SocketAddr::from(([127, 0, 0, 1], listen_port)),
+        "alice",
         STARTUP_DEADLINE,
     );
 

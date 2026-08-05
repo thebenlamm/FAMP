@@ -194,6 +194,19 @@ fn e2e_cross_host_delivery_stays_hermetic_and_ci_safe() {
          and CI-safe. Fix the E2E, do not weaken this guard."
     );
 
+    assert!(
+        !source.contains("TcpStream::connect") && source.contains("wait_for_https"),
+        "D-05 hermetic guard (TLS readiness): the gateway E2E harness must prove listener \
+         readiness with a COMPLETED trusted-TLS request, not a plaintext TcpStream connect. \
+         A TCP connect succeeds as soon as the socket reaches LISTEN state — it proves \
+         nothing about the rustls config loading, the TLS accept loop running, or the axum \
+         router being mounted. That gap is load-bearing for a documented reason (see \
+         `wait_for_https`): `run_egress`'s `Await` drain ADVANCES the mailbox read cursor \
+         even when the relay POST fails, with no re-queue on error, so an envelope drained \
+         before the peer can actually serve HTTPS is silently LOST rather than retried. \
+         Strengthen the probe; do not weaken this guard."
+    );
+
     let daemon_default_needle = format!("{home}{path}", home = "~", path = "/.famp/bus.sock");
     assert!(
         !source.contains(&daemon_default_needle),
