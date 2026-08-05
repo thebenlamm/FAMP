@@ -5,16 +5,16 @@ milestone_name: Open-Internet Federation
 current_phase: 20
 current_phase_name: Human Acceptance Gate
 status: planning
-stopped_at: Completed 19-03-PLAN.md
-last_updated: "2026-08-05T18:26:56.057Z"
+stopped_at: Phase 20 context gathered
+last_updated: "2026-08-05T18:52:54.503Z"
 last_activity: 2026-08-05
 last_activity_desc: Phase 19 complete, transitioned to Phase 20
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 3
   total_plans: 9
   completed_plans: 9
-  percent: 50
+  percent: 43
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -403,9 +403,9 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 
 ## Session
 
-**Last session:** 2026-08-04T13:22:30.237Z
-**Stopped At:** Completed 19-03-PLAN.md
-**Resume File:** None
+**Last session:** 2026-08-05T18:52:54.467Z
+**Stopped At:** Phase 20 context gathered
+**Resume File:** .planning/phases/20-human-acceptance-gate/20-CONTEXT.md
 
 **HANDOFF STATE — read before doing anything:**
 
