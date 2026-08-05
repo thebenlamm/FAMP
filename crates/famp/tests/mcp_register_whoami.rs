@@ -114,6 +114,113 @@ fn register_idempotent_same_identity() {
 }
 
 #[test]
+fn register_different_identity_without_rebind_is_rejected() {
+    with_fresh_socket(|| {
+        let mut h = Harness::with_agents(&["alice", "bob"]);
+        let r1 = h.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
+        assert!(
+            r1.get("result").is_some(),
+            "first register must succeed: {r1}"
+        );
+
+        let r2 = h.tool_call("famp_register", &serde_json::json!({ "identity": "bob" }));
+        assert_eq!(Harness::error_kind(&r2), "envelope_invalid");
+        let message = r2["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("alice") && message.contains("bob"),
+            "rebind-rejection message must name both identities: {message}"
+        );
+        assert!(
+            message.contains("rebind"),
+            "rebind-rejection message must mention rebind: {message}"
+        );
+
+        // The guard must not half-apply: the original binding survives.
+        let w = h.tool_call("famp_whoami", &serde_json::json!({}));
+        let wb = Harness::ok_content(&w);
+        assert_eq!(
+            wb["active"], "alice",
+            "rejected rebind must leave the original binding intact: {wb}"
+        );
+    });
+}
+
+#[test]
+fn register_different_identity_with_rebind_true_succeeds() {
+    with_fresh_socket(|| {
+        let mut h = Harness::with_agents(&["alice", "bob"]);
+        let r1 = h.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
+        assert!(
+            r1.get("result").is_some(),
+            "first register must succeed: {r1}"
+        );
+
+        let r2 = h.tool_call(
+            "famp_register",
+            &serde_json::json!({ "identity": "bob", "rebind": true }),
+        );
+        let body2 = Harness::ok_content(&r2);
+        assert_eq!(body2["active"], "bob", "rebind register response: {body2}");
+
+        let w = h.tool_call("famp_whoami", &serde_json::json!({}));
+        let wb = Harness::ok_content(&w);
+        assert_eq!(wb["active"], "bob", "whoami after rebind: {wb}");
+    });
+}
+
+#[test]
+fn register_same_identity_twice_stays_idempotent() {
+    with_fresh_socket(|| {
+        let mut h = Harness::with_agents(&["alice"]);
+        let r1 = h.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
+        assert!(
+            r1.get("result").is_some(),
+            "first register must succeed: {r1}"
+        );
+
+        let r2 = h.tool_call("famp_register", &serde_json::json!({ "identity": "alice" }));
+        let body2 = Harness::ok_content(&r2);
+        assert_eq!(
+            body2["active"], "alice",
+            "second same-name register response: {body2}"
+        );
+    });
+}
+
+#[test]
+fn register_unbound_session_with_rebind_true_is_permissive_noop() {
+    with_fresh_socket(|| {
+        let mut h = Harness::with_agents(&["alice"]);
+        let r = h.tool_call(
+            "famp_register",
+            &serde_json::json!({ "identity": "alice", "rebind": true }),
+        );
+        let body = Harness::ok_content(&r);
+        assert_eq!(
+            body["active"], "alice",
+            "rebind:true on an unbound session must succeed: {body}"
+        );
+    });
+}
+
+#[test]
+fn register_rebind_non_bool_returns_envelope_invalid() {
+    with_fresh_socket(|| {
+        let mut h = Harness::with_agents(&["alice"]);
+        let r = h.tool_call(
+            "famp_register",
+            &serde_json::json!({ "identity": "alice", "rebind": "yes" }),
+        );
+        assert_eq!(Harness::error_kind(&r), "envelope_invalid");
+        let message = r["error"]["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("rebind") && message.contains("boolean"),
+            "non-bool rebind message must name the field and expected type: {message}"
+        );
+    });
+}
+
+#[test]
 fn whoami_unregistered_returns_null_active() {
     with_fresh_socket(|| {
         let mut h = Harness::with_agents(&[]);

@@ -85,11 +85,54 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     // unchanged.
     let listen = input.get("listen").and_then(Value::as_bool).unwrap_or(true);
 
+    // STRICT: rebind MUST be a JSON boolean if present. Mirrors the
+    // include_terminal shape in inbox.rs — a non-bool surfaces a typed
+    // error naming both the field and the expected type so an MCP client
+    // can self-correct rather than be silently coerced.
+    let rebind = match input.get("rebind") {
+        None | Some(Value::Null) => false,
+        Some(Value::Bool(b)) => *b,
+        Some(_) => {
+            return Err(ToolError::new(
+                BusErrorKind::EnvelopeInvalid,
+                "field rebind must be a boolean",
+            ));
+        }
+    };
+
     session::ensure_bus()
         .await
         .map_err(|(kind, detail)| ToolError::new(kind, detail))?;
 
     let mut guard = session::state().lock().await;
+
+    // Rebind guard (T-058-01): this MCP session is process-wide for the
+    // whole window INCLUDING its subagents, since Claude Code subagents
+    // issue MCP calls through the PARENT window's `famp mcp` process. A
+    // subagent that calls famp_register with a DIFFERENT identity than
+    // the one already bound would otherwise silently hijack the parent
+    // window's binding. Checked BEFORE the broker round-trip so nothing
+    // mutates on the rejected path. `Some(prev) where prev == name` (the
+    // idempotent same-name case, a real recovery affordance after a
+    // `/compact` drops the register marker) and `None` (nothing bound
+    // yet) both fall through unchanged below.
+    if let Some(prev) = guard.active_identity.as_deref() {
+        if prev != name && !rebind {
+            let message = format!(
+                "this MCP session is already registered as {prev:?}; registering as \
+                 {name:?} would rebind it. This MCP session is PROCESS-WIDE for the \
+                 entire window, including every subagent that window spawns — a \
+                 subagent calling famp_register would silently hijack the parent \
+                 window's identity, since subagent MCP calls arrive on the parent \
+                 window's famp mcp process. Subagents must NOT call famp_register. \
+                 If you genuinely intend to take this window over and move its \
+                 binding from {prev:?} to {name:?}, pass rebind: true."
+            );
+            drop(guard);
+            return Err(ToolError::new(BusErrorKind::EnvelopeInvalid, message));
+        }
+    }
+
     let Some(bus) = guard.bus.as_mut() else {
         // ensure_bus() succeeded but the slot is empty — only possible if
         // a concurrent caller cleared `bus` (test code only). Treat as a

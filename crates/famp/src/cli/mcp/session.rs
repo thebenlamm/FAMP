@@ -255,6 +255,17 @@ pub async fn active_identity() -> Option<String> {
 /// it would re-lock the same tokio `Mutex` and deadlock). Its
 /// `RegisterOk` arm duplicates this reset next to its own
 /// `active_identity` assignment. Keep both resets in sync.
+///
+/// **Rebind guard bypass hazard (T-058-01):** this function has ZERO
+/// production callers as of this writing (`tools::register::call` is the
+/// only production write path to `active_identity`, and it writes
+/// inline as described above). The identity-rebind guard — the check
+/// that rejects a `famp_register` under a DIFFERENT name than the one
+/// already bound, unless `rebind: true` is passed — lives entirely in
+/// `register.rs`, not here. If a future caller is ever wired to this
+/// function instead of going through `tools::register::call`, it would
+/// bypass that guard silently. Any such caller must carry its own
+/// rebind check.
 pub async fn set_active_identity(name: String) {
     let mut guard = state().lock().await;
     guard.active_identity = Some(name);
