@@ -301,12 +301,12 @@ Plans:
   3. An agent on Ben's machine and an agent on a second person's machine — different networks, no shared VPN, no hand-copied keys — exchange signed envelopes in both directions, and both task FSMs reach a terminal state.
   4. The pass criterion is the receiving person's own `famp inspect tasks` output — never a sender-side exit 0, and never a Ben-relayed report.
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 20-01-PLAN.md — follower guide, semantic gates, clean-host preflight, and evidence infrastructure
+- [x] 20-01-PLAN.md — follower guide, semantic gates, clean-host preflight, and evidence infrastructure
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -372,7 +372,7 @@ Plans:
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 6/6 | In Progress|  |
 | 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 3/3 | In Progress|  |
 | 19. Auto-Wake Gate | v1.1 | 1/3 | In Progress|  |
-| 20. Human Acceptance Gate | v1.1 | 0/3 | Planned | - |
+| 20. Human Acceptance Gate | v1.1 | 1/3 | In Progress|  |
 | 21. Push Notification Adapter | v1.1 | 0/0 | Not started | - |
 
 ## Backlog
