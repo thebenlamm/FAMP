@@ -3,6 +3,7 @@
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use famp::pairing::PairingError;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -63,6 +64,7 @@ fn complete_acceptance() -> String {
     .map(str::to_string)
     .collect::<Vec<_>>();
     for n in 1..=7 {
+        rows.push(format!("message_{n}_text=SHIPPED_MESSAGE_{n}"));
         rows.push(format!("message_{n}_owner=Follower"));
         rows.push(format!("message_{n}_utc=2030-01-02T03:{n:02}:05Z"));
         rows.push(format!("message_{n}_first_paraphrase=REDACTED:action-{n}"));
@@ -146,8 +148,29 @@ fn templates_encode_owner_time_machine_and_comprehension_contracts() {
         assert!(acceptance.contains(anchor), "missing {anchor}");
     }
     for n in 1..=7 {
+        assert!(acceptance.contains(&format!("message_{n}_text=")));
         assert!(acceptance.contains(&format!("message_{n}_first_paraphrase=")));
         assert!(acceptance.contains(&format!("message_{n}_judgment=")));
+    }
+    for message in [
+        PairingError::CodeMalformed {
+            reason: String::new(),
+        }
+        .to_string(),
+        PairingError::Expired.to_string(),
+        PairingError::AlreadyRedeemed.to_string(),
+        PairingError::AttemptsExhausted.to_string(),
+        PairingError::WrongCode.to_string(),
+        PairingError::GatewayUnreachable {
+            url: "{url}".into(),
+        }
+        .to_string(),
+        PairingError::SameMachineRefusal.to_string(),
+    ] {
+        assert!(
+            acceptance.contains(&message),
+            "template drifted from PairingError: {message}"
+        );
     }
     assert!(!root(".planning/phases/20-human-acceptance-gate/20-REHEARSAL.md").exists());
     assert!(!root(".planning/phases/20-human-acceptance-gate/20-ACCEPTANCE.md").exists());
