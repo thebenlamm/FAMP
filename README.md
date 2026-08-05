@@ -21,6 +21,10 @@ layered model is documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 exchanging messages via the local bus. See [Quick Start](#quick-start)
 below; no cert wrangling, no peer-card piping.
 
+**Setting up with another person:** follow the single, release-binary path in
+[Follower Setup](docs/FOLLOWER-SETUP.md). It covers pairing, gateway readiness,
+explicit remote Inbox processing, and receiver-owned terminal proof.
+
 Under the hood it's a v0.5.2-spec-conformant stack: canonical JSON
 (RFC 8785), Ed25519 signatures with domain separation, typed identity
 and envelope types, and a 5-state task FSM. The local bus is the same-host

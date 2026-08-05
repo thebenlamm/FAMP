@@ -1,0 +1,146 @@
+# Follower Setup: Ben and a Second Person
+
+This is the complete happy path for two independently administered machines on
+different networks. Ben is the **inviter**; the second person is the
+**follower/redeemer**. Do not use a shared VPN, copy private keys, paste peer
+key blobs, or build from source for this acceptance run. A successful `famp
+send` means only that the sender's local gateway accepted the envelope; it is
+not proof of remote delivery or completion.
+
+## 1. Install the published release on both machines
+
+On Ben's machine and then on the follower's supported macOS or Linux machine:
+
+```sh
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-gateway-installer.sh | sh
+famp --version
+famp-gateway --help
+famp daemon install
+```
+
+Use the prebuilt installers. Rust and a source checkout are not part of this
+path. If an installer reports that `~/.cargo/bin` is missing from `PATH`, apply
+its printed shell-profile instruction, open a new shell, and rerun the two
+version checks.
+
+## 2. Start reachable gateways
+
+Each owner configures their own public HTTPS endpoint and starts
+`famp-gateway` using the production procedure in [Gateway Setup](GATEWAY-SETUP.md).
+Ben's URL must be reachable from the follower's network and the follower's URL
+must be reachable from Ben's network. Do not continue until each owner sees the
+gateway's ready signal for their own endpoint.
+
+## 3. Ben invites; the follower redeems
+
+Ben, the inviter, confirms the follower's `famp --version` worked, then runs:
+
+```sh
+famp pair invite --as agent:<ben-domain>/<ben-name> --url https://<ben-gateway> --confirm-installed
+```
+
+Ben sends the entire printed artifact to the follower. The follower is the
+redeemer and runs the artifact's command:
+
+> **Pairing gives the other person the same trust as someone at your terminal.**
+> Only continue if you know who sent this invitation and intended to connect
+> these two machines.
+
+```sh
+famp pair redeem --from https://<ben-gateway>
+```
+
+The follower types the five-word code only at the prompt. Ben, still the
+inviter, then observes the redeemer identity before accepting the pin:
+
+```sh
+famp pair status
+```
+
+Ben confirms the displayed follower principal and key identifier. Pairing is
+asymmetric: redemption pins Ben on the follower machine, while Ben's `status`
+confirmation pins the follower on Ben's machine.
+
+## 4. Restart after pinning and wait for fresh readiness
+
+Pinned keyrings load once at gateway startup. Both owners restart their gateway
+after the pins are written, then each waits for a fresh ready signal. Do not
+send either task using a readiness line emitted before pairing.
+
+```sh
+famp daemon restart
+```
+
+If the gateway is not service-managed, each owner stops and starts their own
+`famp-gateway` process instead. Troubleshoot startup or reachability in
+[Gateway Setup](GATEWAY-SETUP.md); do not replace this path with a shared VPN.
+
+## 5. Task A: Ben sends, follower receives and closes
+
+Ben registers his local identity and sends a new task to the follower:
+
+```sh
+famp register --name <ben-name>
+famp send --as <ben-name> --to agent:<follower-domain>/<follower-name> --new-task "phase20-ben-to-follower" --body "Reply with the requested result"
+```
+
+Ben records the returned task ID as `<ben-to-follower-task-id>`. The zero exit
+status is local acceptance only. Because remote-origin traffic intentionally
+does not auto-wake `famp await`, the follower explicitly lists the Inbox:
+
+```sh
+famp register --name <follower-name>
+famp inbox list --as <follower-name>
+famp send --as <follower-name> --to agent:<ben-domain>/<ben-name> --task <ben-to-follower-task-id> --body <result> --terminal
+famp inspect tasks --id <ben-to-follower-task-id> --json
+```
+
+The follower—the receiving owner—captures the final inspection and confirms
+the task state is exactly `COMPLETED`, `FAILED`, or `CANCELLED`.
+
+For a host agent, the equivalent explicit path is: the follower calls
+`famp_inbox`, then calls `famp_send` in `reply` mode with the same task ID. Reply
+mode closes terminally by default; it must not wait for an automatic wake.
+
+## 6. Task B: follower sends, Ben receives and closes
+
+The follower opens a different task in the opposite direction:
+
+```sh
+famp send --as <follower-name> --to agent:<ben-domain>/<ben-name> --new-task "phase20-follower-to-ben" --body "Reply with the requested result"
+```
+
+The follower records the returned task ID as
+`<follower-to-ben-task-id>`; it must differ from Task A. Ben explicitly
+processes his Inbox and closes this second task:
+
+```sh
+famp inbox list --as <ben-name>
+famp send --as <ben-name> --to agent:<follower-domain>/<follower-name> --task <follower-to-ben-task-id> --body <result> --terminal
+famp inspect tasks --id <follower-to-ben-task-id> --json
+```
+
+Ben—the receiving owner—captures the final inspection and confirms exactly one
+terminal state: `COMPLETED`, `FAILED`, or `CANCELLED`. Sender-side output or a
+report relayed by the sender does not substitute for receiver-owned proof.
+
+For a host agent, Ben calls `famp_inbox`, then `famp_send` in `reply` mode with
+the same Task B ID and the default terminal close.
+
+## 7. Pairing-message comprehension review (human judgment remains open)
+
+Before calling the run accepted, the follower reviews and paraphrases these
+seven shipped, non-mutating failure messages. Automation keeps them synchronized
+with `PairingError`; it does **not** measure comprehension or close PAIR-05.
+
+1. `That does not look like a pairing code. A pairing code is exactly five lowercase words separated by spaces. Check the message you were sent and type it again.`
+2. `This code has expired. Codes last 24 hours. Ask the person who invited you to send a new one.`
+3. `This code has already been used. If that was not you, tell the person who invited you right away and ask them to run: famp pair revoke --all-pending`
+4. `Too many wrong tries, so this code is now locked. Ask the person who invited you to send a new one.`
+5. `That code did not match. Check for a typo, then try again. If you run out of tries, ask the person who invited you to send a new code.`
+6. `Could not reach {url}. Check that you copied the address exactly, then ask the person who invited you whether their FAMP gateway is running.`
+7. `This code cannot be redeemed on the same machine that created it. Run this on the machine you want to connect.`
+
+Record each first paraphrase without coaching. The human reviewer, not this
+guide's automated accuracy test, judges whether it is actionable.
