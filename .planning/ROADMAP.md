@@ -270,12 +270,12 @@ Plans:
   4. The filter is enforced broker-side, not in the CLI drain — proven by the same test suite, not by inspection; a client-side filter would advance the read cursor past envelopes it declined to deliver (the 999.1 failure class).
   5. The consent warning appears in the pairing artifact (DOC-06) at the moment of consent, not only in `docs/QUARANTINE.md`.
 
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 19-01-PLAN.md — broker positive-trust Await gate, actor proofs, and production-faithful fixtures
+- [x] 19-01-PLAN.md — broker positive-trust Await gate, actor proofs, and production-faithful fixtures
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -356,7 +356,7 @@ Plans:
 | 16. Distribution | v1.1 | 5/5 | In Progress|  |
 | 17. Protocol-Grade Ingress + Reachability Implementation | v1.1 | 6/6 | In Progress|  |
 | 18. Cross-Person Trust Bootstrap (Pairing) | v1.1 | 3/3 | In Progress|  |
-| 19. Auto-Wake Gate | v1.1 | 0/0 | Not started | - |
+| 19. Auto-Wake Gate | v1.1 | 1/3 | In Progress|  |
 | 20. Human Acceptance Gate | v1.1 | 0/0 | Not started | - |
 | 21. Push Notification Adapter | v1.1 | 0/0 | Not started | - |
 

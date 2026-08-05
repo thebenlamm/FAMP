@@ -5,16 +5,16 @@ milestone_name: Open-Internet Federation
 current_phase: 19
 current_phase_name: Auto-Wake Gate
 status: executing
-stopped_at: Completed 18-03-PLAN.md
-last_updated: "2026-08-04T04:36:16.264Z"
-last_activity: 2026-08-03
-last_activity_desc: Phase 18 complete, transitioned to Phase 19
+stopped_at: Completed 19-01-PLAN.md
+last_updated: "2026-08-04T13:22:30.246Z"
+last_activity: 2026-08-04
+last_activity_desc: Phase 19 execution started
 progress:
-  total_phases: 6
+  total_phases: 12
   completed_phases: 5
-  total_plans: 23
-  completed_plans: 23
-  percent: 83
+  total_plans: 26
+  completed_plans: 24
+  percent: 42
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 18 — cross-person-trust-bootstrap-pairing
+**Current focus:** Phase 19 — Auto-Wake Gate
 
 ## Current Position
 
-Phase: 19 — Auto-Wake Gate
-Plan: Not started
+Phase: 19 (Auto-Wake Gate) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-08-03 — Phase 18 complete, transitioned to Phase 19
+Last activity: 2026-08-04 — Phase 19 execution started
 
 ## v1.1 Phase Map
 
@@ -233,6 +233,9 @@ Last activity: 2026-08-03 — Phase 18 complete, transitioned to Phase 19
 - [Phase ?]: [18-03] status.rs observe/pin split makes observe-before-pin structural: pin_redeemed_record writes+flushes the REDEEMED BY: line in one write_all call, then calls a separate pin() that owns 100% of the module's filesystem mutation; verified with a Write-wrapping snapshot test plus a recorded falsification control.
 - [Phase ?]: [18-03] crates/famp/tests/pair_cli.rs uses a self-built in-process mock inviter endpoint (not famp-gateway's real ingest_redemption) since famp cannot depend on famp-gateway (dependency runs the other way); mock skips code/attempt validation, already covered by pairing_ingress.rs/pairing_e2e.rs.
 - [Phase ?]: [18-03] PAIR-05's comprehension half is explicitly NOT closed by this plan's string-assertion tests; it remains open for Phase 20's UAT-02.
+- [Phase 19]: Only exact Origin::Local is Await-eligible; Gateway and Unknown fail closed in live selection and initial drains. — Positive trust prevents absent or legacy provenance from being upgraded.
+- [Phase 19]: Non-Local records advance only await_offsets and remain durable for explicit Inbox reads. — Await and Inbox own independent cursors, preserving recovery visibility.
+- [Phase 19]: Folded wake-trigger offsets use persisted stamped-record length rather than inner envelope length. — The cursor must match the exact JSONL bytes written by the production executor.
 
 ## Issues / Blockers
 
@@ -395,11 +398,12 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 | Phase 16 P04 | 35min | 3 tasks | 8 files |
 | Phase 18-cross-person-trust-bootstrap-pairing P02 | 55min | 3 tasks | 7 files |
 | Phase 18 P03 | 70min | 3 tasks | 8 files |
+| Phase 19 P01 | 25min | 2 tasks | 8 files |
 
 ## Session
 
-**Last session:** 2026-08-04T02:41:56.511Z
-**Stopped At:** Completed 18-03-PLAN.md
+**Last session:** 2026-08-04T13:22:30.237Z
+**Stopped At:** Completed 19-01-PLAN.md
 **Resume File:** None
 
 **HANDOFF STATE — read before doing anything:**
