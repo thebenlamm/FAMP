@@ -21,7 +21,7 @@
 # machine relay protocol, added and justified in that phase's plan 04).
 # Records map onto the seven as:
 #
-#   1. famp_inbox (MCP)            -> crates/famp/src/cli/mcp/tools/inbox.rs:186,197
+#   1. famp_inbox (MCP)            -> crates/famp/src/cli/mcp/tools/inbox.rs:228,239
 #   2. famp_await (MCP)            -> crates/famp/src/cli/mcp/tools/await_.rs:91
 #                                      (renders via await_cmd::render_stamped_envelopes,
 #                                      crates/famp/src/cli/await_cmd/mod.rs:362)
@@ -125,8 +125,8 @@ crates/famp/src/cli/inbox/list.rs:72:envelope-body
 crates/famp/src/cli/mcp/tools/await_.rs:91:envelopes-field
 crates/famp/src/cli/mcp/tools/channel_log.rs:109:envelope-body
 crates/famp/src/cli/mcp/tools/channel_log.rs:123:envelopes-field
-crates/famp/src/cli/mcp/tools/inbox.rs:186:envelope-body
-crates/famp/src/cli/mcp/tools/inbox.rs:197:envelope-body
+crates/famp/src/cli/mcp/tools/inbox.rs:228:envelope-body
+crates/famp/src/cli/mcp/tools/inbox.rs:239:envelope-body
 crates/famp/src/cli/register.rs:211:emit-tail-line
 crates/famp/src/cli/register.rs:288:emit-tail-line
 crates/famp/src/cli/register.rs:353:emit-tail-line
