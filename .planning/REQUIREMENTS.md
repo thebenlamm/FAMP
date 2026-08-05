@@ -121,7 +121,7 @@ Settled before any outside person connects. Delivers machine-checkable provenanc
 - [x] **QUAR-12**: A remote-origin (non-`Local`) envelope does **not** satisfy a parked `famp await` — it never auto-wakes an idle agent. Local-origin traffic is unaffected; the same-host mesh's auto-wake behavior is unchanged.
 - [x] **QUAR-13**: The filter is enforced **broker-side**, never in the CLI drain. A client-side filter would advance the read cursor past envelopes it declined to deliver — the 999.1 failure class.
 - [x] **QUAR-14**: Proven by tests, not by inspection: (a) a gateway-origin envelope delivered to a parked awaiter does **not** wake it; (b) that same envelope **is** visible on the next human-initiated inbox read — held back from auto-wake, never dropped; (c) a local-origin envelope **does** still wake a parked awaiter. All three, or the gate is either vacuous or a data-loss bug.
-- [ ] **QUAR-15**: The consent warning lives in the **pairing artifact** (DOC-06), at the moment of consent — not only in `docs/QUARANTINE.md`, which the person who most needs the warning will never open. Wording to adapt: *pairing with a peer means their agent's messages will be read by your agent, which can run commands on your machine — pair only with someone you'd let type into your terminal.*
+- [x] **QUAR-15**: The consent warning lives in the **pairing artifact** (DOC-06), at the moment of consent — not only in `docs/QUARANTINE.md`, which the person who most needs the warning will never open. Wording to adapt: *pairing with a peer means their agent's messages will be read by your agent, which can run commands on your machine — pair only with someone you'd let type into your terminal.*
 
 ### Push Notification Adapter (WATCH) — SEED-002
 
@@ -242,7 +242,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | QUAR-12 | Phase 19 | Complete |
 | QUAR-13 | Phase 19 | Complete |
 | QUAR-14 | Phase 19 | Complete |
-| QUAR-15 | Phase 19 | Pending |
+| QUAR-15 | Phase 19 | Complete |
 | WATCH-01 | Phase 21 | Pending |
 | WATCH-02 | Phase 21 | Pending |
 | WATCH-03 | Phase 21 | Pending |

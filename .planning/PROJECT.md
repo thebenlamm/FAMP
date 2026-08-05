@@ -97,7 +97,7 @@ Detailed requirements: see `.planning/REQUIREMENTS.md`. Eight requirement areas:
 - [ ] **Cross-person trust bootstrap** — replaces hand-copied `peer export`/`import`; must survive a real human who is not Ben.
 - [ ] **Prebuilt-binary distribution** — tag-triggered release workflow, checksummed binaries, no-Rust-toolchain install (DIST-01..05).
 - [ ] **Protocol-grade ingress** — freshness / bounded replay cache, audience binding, DoS ordering, key revocation.
-- [ ] **Auto-wake gate** — a remote-origin envelope never auto-wakes a parked `famp await`, enforced broker-side (QUAR-12..15).
+- [x] **Auto-wake gate** — a remote-origin envelope never auto-wakes a parked `famp await`, enforced broker-side (QUAR-12..15). *Validated in Phase 19: Auto-Wake Gate.*
 - [ ] **Inbound-content-is-DATA provenance** — FAMP-side structural quarantine, harness-agnostic, adversarial corpus in CI. Prerequisite for enforcement, not a steering boundary itself (Ben resolved to Option B, 2026-08-02 — see REQUIREMENTS.md). **Blocking before any outside person connects.**
 - [ ] **SEED-002 push-notification harness adapter** — `famp watch --notify`, retiring the `famp await` poll + Stop-hook convention as the primary wake path.
 - [ ] **Human acceptance gate (early)** — second person, own machine, own network, no shared VPN, no hand-copied keys, doc-only, bidirectional, both FSMs terminal.
@@ -424,6 +424,8 @@ v0.9 shipped a working broker but conversation state stayed opaque — three inc
 
 ## Current State
 
+**v1.1 progress (2026-08-05):** Phase 19 Auto-Wake Gate is complete and independently verified 10/10. The broker admits only Local-origin records to parked Await, preserves Gateway/Unknown records for explicit Inbox reads, and the pairing artifact carries the QUAR-15 consent warning. Current work advances to Phase 20, the Human Acceptance Gate.
+
 **Shipped:**
 - **v0.5.1 Spec Fork** (2026-04-13) — interop contract locked.
 - **v0.6 Foundation Crates** (2026-04-13) — substrate: `famp-canonical`, `famp-crypto`, `famp-core`. 25/25 requirements, 112/112 tests.
@@ -445,4 +447,4 @@ Also open and unscoped: the FAMP-Sec capability/approval/tool-admission plane (v
 **Usable-from-Claude-Code finish line ✓✓:** Two Claude Code windows registering as different identities and exchanging a message is now reachable in **≤12 lines / ≤30 seconds** via `cargo install famp && famp install-claude-code` — no per-identity TLS certs, no peer cards, no `FAMP_HOME` juggling. MCP surface grew from 8 tools (v0.9) to 12 (current); the contract is stable across v0.8 → v0.9 → v1.0, the count is not.
 
 ---
-*Last updated: 2026-07-30 after opening milestone **v1.1 Open-Internet Federation** — goal: two different people exchange signed envelopes over the open internet, no shared VPN, no hand-copied keys, follower unassisted. Reachability model deferred to a zero-code Phase-13 spike; human acceptance gate scheduled early (Phase 2–3 of the milestone, second person lined up); prompt-injection boundary enforced FAMP-side and harness-agnostic; SEED-002 promoted into scope. Layer 0 stays untouched. Phase numbering continues from Phase 12 → starts at Phase 13. Prior: 2026-07-29 after v1.0 milestone — **v1.0 Federation Profile — Gateway Core SHIPPED**, `v1.0.0` tagged at `5edff41`. Gate A closed: cross-host signed messaging between two machines Ben controls, driven by the shipping client (UAT-01 live macOS ↔ Linux). 6 phases (7–12), 29 plans, 29/29 requirements. The 2026-06-08 mesh-VPN Gate A draft is collapsed above as superseded — the tailnet is no longer the trust boundary; the gateway verifies INV-10 at the boundary itself. Next: planning open; Gate B (conformance vector pack, 2nd implementer) and the v1.1 open-internet sketch both remain event-driven. Core Value re-checked and unchanged. Prior: v0.11 shipped 2026-06-06 (3 phases, 11 plans, 15/15 reqs).*
+*Last updated: 2026-08-05 after completing Phase 19 Auto-Wake Gate. Broker-enforced Local-only Await behavior and QUAR-15 pairing consent are independently verified; Phase 20 Human Acceptance Gate is next.*

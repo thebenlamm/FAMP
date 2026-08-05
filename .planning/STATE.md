@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Open-Internet Federation
-current_phase: 19
-current_phase_name: Auto-Wake Gate
-status: executing
-stopped_at: Completed 19-01-PLAN.md
-last_updated: "2026-08-04T13:22:30.246Z"
-last_activity: 2026-08-04
-last_activity_desc: Phase 19 execution started
+current_phase: 20
+current_phase_name: Human Acceptance Gate
+status: planning
+stopped_at: Completed 19-03-PLAN.md
+last_updated: "2026-08-05T18:26:56.057Z"
+last_activity: 2026-08-05
+last_activity_desc: Phase 19 complete, transitioned to Phase 20
 progress:
-  total_phases: 12
-  completed_phases: 5
-  total_plans: 26
-  completed_plans: 24
-  percent: 42
+  total_phases: 6
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
+  percent: 50
 ---
 
 # STATE: FAMP — v1.1 Open-Internet Federation
@@ -27,14 +27,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 **Core Value:** A byte-exact, signature-verifiable FAMP substrate a single developer can use today, and two independent parties can interop against later. v1.0 extended that substrate across a second machine — the gateway proxies remote principals onto the local bus, over a signed cross-host wire, with two-machine TOFU trust.
 
-**Current focus:** Phase 19 — Auto-Wake Gate
+**Current focus:** Phase 20 — Human Acceptance Gate
 
 ## Current Position
 
-Phase: 19 (Auto-Wake Gate) — EXECUTING
-Plan: 2 of 3
-Status: Ready to execute
-Last activity: 2026-08-05 — Completed quick task 260805-058: MCP inbox cursor + register rebind guard (root cause RETRACTED post-review; corruption origin still open)
+Phase: 20 — Human Acceptance Gate
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-05 — Phase 19 complete, transitioned to Phase 20
 
 ## v1.1 Phase Map
 
@@ -404,7 +404,7 @@ Items acknowledged and deferred at v0.11 milestone close on 2026-06-06 (per `gsd
 ## Session
 
 **Last session:** 2026-08-04T13:22:30.237Z
-**Stopped At:** Completed 19-01-PLAN.md
+**Stopped At:** Completed 19-03-PLAN.md
 **Resume File:** None
 
 **HANDOFF STATE — read before doing anything:**

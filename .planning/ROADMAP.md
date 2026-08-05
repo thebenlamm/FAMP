@@ -29,7 +29,7 @@ expanded, backlog at the bottom.
 - [x] **Phase 16: Distribution** - Prebuilt `famp`, `famp-gateway`, and `famp-relay` binaries for macOS arm64/x86_64 and Linux x86_64, published by a tag-triggered release workflow and installed by a checksum-verified curl command on a machine with no Rust toolchain. (completed 2026-08-03)
 - [ ] **Phase 17: Protocol-Grade Ingress + Reachability Implementation** - Replay cache, freshness enforcement, audience binding, DoS-safe ordering, and the live reachability path from Phase 13 — shipped together, never one without the other.
 - [x] **Phase 18: Cross-Person Trust Bootstrap (Pairing)** - Fail-loud short-code pairing between two people with no prior shared secret, replacing v1.0's paste-a-blob TOFU. Mechanism: a five-word texted code (~55 bits, 2048-word list); security rests on entropy + single-use + server-side attempt limits. **No PAKE** (decided 2026-07-31, see REQUIREMENTS.md). (completed 2026-08-03)
-- [ ] **Phase 19: Auto-Wake Gate** - A remote-origin envelope never auto-wakes a parked `famp await`, enforced broker-side — the real enforcement mechanism the tool-gating scope decision resolved to, after two harness-side designs failed adversarial review.
+- [x] **Phase 19: Auto-Wake Gate** - A remote-origin envelope never auto-wakes a parked `famp await`, enforced broker-side — the real enforcement mechanism the tool-gating scope decision resolved to, after two harness-side designs failed adversarial review. (completed 2026-08-05)
 - [ ] **Phase 20: Human Acceptance Gate** - A second person, unassisted, exchanges signed envelopes bidirectionally with Ben's agent over the open internet; both task FSMs reach a terminal state.
 - [ ] **Phase 21: Push Notification Adapter** - `famp watch --notify` replaces the await-poll + Stop-hook + sentinel convention with zero `famp-bus` change.
 
@@ -270,7 +270,7 @@ Plans:
   4. The filter is enforced broker-side, not in the CLI drain — proven by the same test suite, not by inspection; a client-side filter would advance the read cursor past envelopes it declined to deliver (the 999.1 failure class).
   5. The consent warning appears in the pairing artifact (DOC-06) at the moment of consent, not only in `docs/QUARANTINE.md`.
 
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans executed
 
 Plans:
 **Wave 1**
@@ -279,11 +279,11 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 19-02-PLAN.md — real-socket remote-held/local-wake/Inbox-visible proof and conflicting test replacement
+- [x] 19-02-PLAN.md — real-socket remote-held/local-wake/Inbox-visible proof and conflicting test replacement
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 19-03-PLAN.md — narrow documentation truth, QUAR-15 regression, and Nyquist sign-off
+- [x] 19-03-PLAN.md — narrow documentation truth, QUAR-15 regression, and Nyquist sign-off
 
 **Waves:** W1 = 19-01 · W2 = 19-02 · W3 = 19-03 (documentation and Nyquist sign-off consume the real-socket proof and 19-02 summary)
 **Constraint:** `AwaitFilter` already exists at `crates/famp-bus/src/proto.rs:54` and `BUS_PROTO_VERSION` is already 2 — the likely integration point, named here as context. The implementation approach is plan-phase work, not decided here.
