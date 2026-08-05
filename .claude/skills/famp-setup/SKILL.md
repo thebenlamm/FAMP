@@ -179,7 +179,7 @@ flag. The fingerprint in `peers.toml` is the trust anchor from that point on.
 
 | Tool | When to call | Notes |
 |---|---|---|
-| `famp_register` | **First, every new window** | Binds session to identity; idempotent |
+| `famp_register` | **First, every new window** | Binds session to identity; idempotent for the same identity, rejected (unless `rebind: true`) for a different one |
 | `famp_whoami` | Debug / confirm binding | Never errors; returns `null` if unregistered |
 | `famp_send` | Send a message | Requires prior `famp_register` |
 | `famp_inbox` | List active inbox entries | Filters terminal tasks by default |
