@@ -9,9 +9,13 @@
 //! This MCP surface is **list-only**. It reads exactly two fields; anything
 //! else in the input `Value` is ignored (there is no `deny_unknown_fields`
 //! on this path, so a v0.8-era caller still passing `action: "list"` keeps
-//! working). Advancing the read cursor is **CLI-only** (`famp inbox ack`) —
-//! a real MCP `ack` lands with backlog 999.11's unified cursor, which will
-//! remove the on-disk `.cursor` file this tool would otherwise have to write.
+//! working). The on-disk `.cursor` is written through on **every** MCP
+//! `famp_inbox` call (see `cursor_write_target` below): the target is
+//! monotonic in the broker's `next_offset` EXCEPT for the EOF clamp, which
+//! can regress a corrupt past-EOF cursor back down to the mailbox's real
+//! byte size — this is how an already-corrupt on-disk cursor self-heals on
+//! its next read. There is still no MCP `ack`; the `since`-based session
+//! offset below remains the read-position mechanism callers control.
 //!
 //! - `since: u64` — optional cursor offset. When the caller omits it (or
 //!   passes `null`), the MCP **session layer** remembers the previous
@@ -73,6 +77,51 @@ fn read_disk_cursor(dir: &std::path::Path, name: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// Read the byte length of `name`'s mailbox file under `dir`'s
+/// `mailboxes/` directory. `0` when the file is missing or unreadable —
+/// mirrors `read_disk_cursor`'s never-block posture; this is a
+/// best-effort observability read, never a gate on the already-succeeded
+/// inbox call it feeds.
+fn read_mailbox_size(dir: &std::path::Path, name: &str) -> u64 {
+    let mailbox_path = dir.join("mailboxes").join(format!("{name}.jsonl"));
+    std::fs::metadata(&mailbox_path)
+        .map(|m| m.len())
+        .unwrap_or(0)
+}
+
+/// Compute the disk-cursor write target given the current on-disk value,
+/// the broker's returned `next_offset`, and the mailbox's real byte size.
+///
+/// `current.max(next_offset)` preserves the existing monotonic floor: a
+/// manual `since: 0` full-mailbox replay must not rewind the `unread`
+/// floor that `famp inspect identities` reads from disk. `.min(mailbox_size)`
+/// is the EOF clamp: without it, a cursor that ever lands past EOF is
+/// unrecoverable by construction (`max` can only ever grow it further) and
+/// the identity reads empty forever — indistinguishable from "no new
+/// mail". The caller fires the write on `target != current`, not
+/// `target > current`, because the clamp's whole purpose is to let a
+/// regression from a past-EOF value actually land and self-heal an
+/// already-corrupt cursor.
+///
+/// Benign race, noted so a future reader does not "fix" it: another agent
+/// may append to the mailbox between the broker's read and the
+/// `read_mailbox_size` call, which can only make `mailbox_size` LARGER and
+/// therefore only relaxes the clamp. The dangerous direction (size smaller
+/// than a legitimate `next_offset`) means the mailbox was truncated or
+/// rotated, where clamping down is the correct answer anyway.
+const fn cursor_write_target(current: u64, next_offset: u64, mailbox_size: u64) -> u64 {
+    let advanced = if current >= next_offset {
+        current
+    } else {
+        next_offset
+    };
+    if advanced <= mailbox_size {
+        advanced
+    } else {
+        mailbox_size
+    }
+}
+
 /// Dispatch a `famp_inbox` tool call.
 pub async fn call(input: &Value) -> Result<Value, ToolError> {
     // `since`: optional u64. When the caller omits it, fall back to the
@@ -102,6 +151,17 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         }
     };
 
+    // Single identity snapshot — the fix for the TOCTOU documented in
+    // the module doc above. A concurrent `famp_register` landing between
+    // a read-site snapshot and a write-site snapshot could otherwise
+    // redirect the cursor write-through below to a DIFFERENT identity's
+    // `.cursor` file than the one the broker actually read against. Bind
+    // ONCE here and reuse this same local for both the broker call's
+    // `act_as` AND the write-through's cursor filename. `call()` must
+    // read the session's active identity exactly once — a structural
+    // test pins that property.
+    let identity = session::active_identity().await;
+
     let args = ListArgs {
         since,
         include_terminal,
@@ -109,7 +169,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
         // `cli::inbox::list::run_at_structured`'s `resolve_identity()`
         // does not fall back to wires.tsv. dispatch_tool guarantees
         // active_identity is Some by this point.
-        act_as: session::active_identity().await,
+        act_as: identity.clone(),
     };
 
     match run_at_structured(&resolve_sock_path(), args).await {
@@ -128,21 +188,24 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // above has already succeeded, so this is a best-effort
             // observability write, not a gate on the tool's success.
             //
-            // Monotonic `max(current_disk_cursor, out.next_offset)` — NEVER
-            // regress the disk cursor, even when the caller passed an
-            // explicit `since` override for a manual replay (`since: 0` must
-            // not rewind it). This is deliberately NOT the same policy as
-            // `session::set_inbox_offset` above (which follows the broker's
-            // shrink-clamp down, #11/#16): the disk cursor is the `unread`
-            // floor read by the inspector and by `register`/`join`, and must
-            // advance monotonically regardless of what a manual replay does
-            // to the session-local offset. Do not unify the two policies.
-            if let Some(name) = session::active_identity().await {
+            // Reuses the SAME `identity` snapshot bound above the broker
+            // call — not a second read of the session's active identity —
+            // so a concurrent `famp_register` cannot redirect this write to a
+            // different identity's cursor file (the TOCTOU this task
+            // closes). `cursor_write_target` folds in the EOF clamp: the
+            // monotonic floor is deliberately NOT the same policy as
+            // `session::set_inbox_offset` above (which follows the
+            // broker's shrink-clamp down, #11/#16) — the disk cursor is
+            // the `unread` floor read by the inspector and by
+            // `register`/`join`, and must advance monotonically except
+            // when clamped to EOF. Do not unify the two policies.
+            if let Some(name) = identity.as_deref() {
                 let dir = bus_dir(&resolve_sock_path()).to_path_buf();
-                let current = read_disk_cursor(&dir, &name);
-                let target = current.max(out.next_offset);
-                if target > current {
-                    if let Err(e) = execute_advance_cursor(&dir, &name, target).await {
+                let current = read_disk_cursor(&dir, name);
+                let size = read_mailbox_size(&dir, name);
+                let target = cursor_write_target(current, out.next_offset, size);
+                if target != current {
+                    if let Err(e) = execute_advance_cursor(&dir, name, target).await {
                         eprintln!(
                             "warning: famp_inbox cursor write-through failed for {name} \
                              (target offset {target}): {e}"
@@ -215,5 +278,114 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             }))
         }
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    // ── cursor_write_target ──────────────────────────────────────────
+
+    /// Normal advance: broker offset wins, under EOF.
+    #[test]
+    fn cursor_write_target_normal_advance() {
+        assert_eq!(cursor_write_target(100, 500, 9000), 500);
+    }
+
+    /// Monotonic floor holds on a manual replay: a `since: 0` full-replay
+    /// must NOT rewind the disk cursor.
+    #[test]
+    fn cursor_write_target_monotonic_floor_holds_on_replay() {
+        assert_eq!(cursor_write_target(500, 0, 9000), 500);
+    }
+
+    /// EOF clamp on a fresh overrun — the exact live `lane-x-merge`
+    /// numbers (14334 was the corrupted `.cursor` value, exactly the byte
+    /// size of a DIFFERENT identity's mailbox; 9865 is `lane-x-merge`'s
+    /// real mailbox size).
+    #[test]
+    fn cursor_write_target_eof_clamp_on_fresh_overrun() {
+        assert_eq!(cursor_write_target(0, 14334, 9865), 9865);
+    }
+
+    /// EOF clamp self-heals an already-corrupt cursor — the exact live
+    /// `opus-coordinator-0805` numbers. Proves the clamp can regress a
+    /// past-EOF disk cursor, which is intended: this is the self-heal.
+    #[test]
+    fn cursor_write_target_eof_clamp_self_heals_corrupt_cursor() {
+        assert_eq!(cursor_write_target(202_562, 0, 12_154), 12_154);
+    }
+
+    /// Missing mailbox file: size reads as 0, target clamps to 0.
+    #[test]
+    fn cursor_write_target_missing_mailbox() {
+        assert_eq!(cursor_write_target(2154, 0, 0), 0);
+    }
+
+    /// Already at EOF: current == next_offset == mailbox_size, target
+    /// equals current so the caller writes nothing.
+    #[test]
+    fn cursor_write_target_already_at_eof() {
+        assert_eq!(cursor_write_target(9865, 9865, 9865), 9865);
+    }
+
+    // ── read_mailbox_size ────────────────────────────────────────────
+
+    #[test]
+    fn read_mailbox_size_missing_file_reads_zero() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        assert_eq!(read_mailbox_size(tmp.path(), "nobody"), 0);
+    }
+
+    #[test]
+    fn read_mailbox_size_existing_file_round_trips_length() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mailboxes = tmp.path().join("mailboxes");
+        std::fs::create_dir_all(&mailboxes).unwrap();
+        let body = b"hello world\n";
+        std::fs::write(mailboxes.join("alice.jsonl"), body).unwrap();
+        assert_eq!(read_mailbox_size(tmp.path(), "alice"), body.len() as u64);
+    }
+
+    // ── TOCTOU structural assertion ──────────────────────────────────
+
+    /// A true concurrency test is impractical at this layer: `call()`
+    /// needs a live broker plus a racing `famp_register`, and the failing
+    /// interleaving is not reliably reproducible. This structural
+    /// assertion is the honest substitute — it pins the single-snapshot
+    /// property (`call()`'s body contains EXACTLY ONE `active_identity()`
+    /// read) that IS the fix, rather than trying to force the race.
+    #[test]
+    fn call_body_reads_active_identity_exactly_once() {
+        let source = include_str!("inbox.rs");
+        let start = source
+            .find("pub async fn call(")
+            .expect("call() signature not found in inbox.rs — did it move?");
+        let body = &source[start..];
+        let end = body
+            .find("\n#[cfg(test)]")
+            .expect("#[cfg(test)] module not found after call() — did it move?");
+        let call_body = &body[..end];
+
+        // Non-vacuity: if the slicing above ever breaks (e.g. call() is
+        // renamed or restructured), fail loudly rather than silently
+        // counting zero occurrences in an empty/wrong slice.
+        assert!(
+            call_body.contains("run_at_structured"),
+            "sliced call() body does not contain run_at_structured — \
+             slicing logic is broken"
+        );
+
+        // Build the needle at runtime so this test's own source text
+        // never contains the literal `active_identity()` and cannot
+        // inflate its own count.
+        let needle = ["active", "identity()"].join("_");
+        let count = call_body.matches(&needle).count();
+        assert_eq!(
+            count, 1,
+            "expected exactly one `active_identity()` read in call(), found {count}"
+        );
     }
 }
