@@ -225,14 +225,15 @@ fn rebind_rejection(active: Option<&str>, requested: &str, rebind: bool) -> Opti
         return None;
     }
     Some(format!(
-        "this MCP session is already registered as {prev:?}; registering as \
-         {requested:?} would rebind it. This MCP session is PROCESS-WIDE for the \
-         entire window, including every subagent that window spawns — a \
-         subagent calling famp_register would silently hijack the parent \
-         window's identity, since subagent MCP calls arrive on the parent \
-         window's famp mcp process. Subagents must NOT call famp_register. \
-         If you genuinely intend to take this window over and move its \
-         binding from {prev:?} to {requested:?}, pass rebind: true."
+        "this MCP session is already bound to {prev:?}; registering as \
+         {requested:?} would rebind it. If you genuinely intend to take this \
+         window over and move its binding from {prev:?} to {requested:?}, \
+         pass rebind: true. (If you are a subagent: this MCP session is \
+         PROCESS-WIDE for the entire window, including every subagent that \
+         window spawns, since subagent MCP calls arrive on the parent \
+         window's famp mcp process — so registering here would silently \
+         hijack the parent window's identity. Subagents must NOT call \
+         famp_register.)"
     ))
 }
 
