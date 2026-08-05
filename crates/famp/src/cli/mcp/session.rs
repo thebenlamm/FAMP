@@ -16,8 +16,10 @@
 //! - the optional `BusClient` field — the long-lived UDS connection to
 //!   the local broker. Lazily opened on first tool call via [`ensure_bus`].
 //! - the optional canonical-identity field — the name this MCP server
-//!   has registered as. `None` until [`set_active_identity`] is called
-//!   by `tools::register::call` after a successful `RegisterOk`.
+//!   has registered as. `None` until `tools::register::call` binds it
+//!   (inline, on its own held mutex guard) after a successful
+//!   `RegisterOk`. [`set_active_identity`] is a separate, currently
+//!   callerless setter — see its doc comment for why.
 //!
 //! ## D-10: MCP is the registered slot, NOT a proxy
 //!
@@ -127,9 +129,10 @@ pub struct SessionState {
 /// | `None`  | `None`            | Pristine — server just started.            |
 /// | `Some`  | `None`            | `ensure_bus` ran; not yet registered.      |
 /// | `Some`  | `Some`            | Registered; ready to dispatch tool calls.  |
-/// | `None`  | `Some`            | Unreachable — `set_active_identity` only   |
-/// |         |                   | runs after a successful Register, which    |
-/// |         |                   | requires the bus to be open.               |
+/// | `None`  | `Some`            | Unreachable — `tools::register::call` only |
+/// |         |                   | binds `active_identity` (inline, on this   |
+/// |         |                   | mutex guard) after a successful Register,  |
+/// |         |                   | which requires the bus to already be open. |
 pub fn state() -> &'static Mutex<SessionState> {
     static S: OnceLock<Mutex<SessionState>> = OnceLock::new();
     S.get_or_init(|| {
@@ -259,13 +262,15 @@ pub async fn active_identity() -> Option<String> {
 /// **Rebind guard bypass hazard (T-058-01):** this function has ZERO
 /// production callers as of this writing (`tools::register::call` is the
 /// only production write path to `active_identity`, and it writes
-/// inline as described above). The identity-rebind guard — the check
-/// that rejects a `famp_register` under a DIFFERENT name than the one
-/// already bound, unless `rebind: true` is passed — lives entirely in
-/// `register.rs`, not here. If a future caller is ever wired to this
-/// function instead of going through `tools::register::call`, it would
-/// bypass that guard silently. Any such caller must carry its own
-/// rebind check.
+/// inline as described above — see the table on [`state`] above, which
+/// this paragraph does not contradict: `set_active_identity` remains
+/// unused by production code, not an alternate writer). The
+/// identity-rebind guard — the check that rejects a `famp_register` under
+/// a DIFFERENT name than the one already bound, unless `rebind: true` is
+/// passed — lives entirely in `register.rs`, not here. If a future caller
+/// is ever wired to this function instead of going through
+/// `tools::register::call`, it would bypass that guard silently. Any such
+/// caller must carry its own rebind check.
 pub async fn set_active_identity(name: String) {
     let mut guard = state().lock().await;
     guard.active_identity = Some(name);
