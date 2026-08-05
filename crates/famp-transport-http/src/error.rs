@@ -85,6 +85,7 @@ mod tests {
     /// only surfaces it when `.send()` is awaited.
     #[tokio::test]
     async fn reqwest_failed_display_contains_source_text() {
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
         let inner_err = reqwest::Client::new()
             .get("not a url")
             .send()
