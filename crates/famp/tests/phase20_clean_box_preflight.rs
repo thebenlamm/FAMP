@@ -30,7 +30,7 @@ fn snapshot(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
             .unwrap()
             .map(|e| e.unwrap())
             .collect::<Vec<_>>();
-        entries.sort_by_key(|e| e.path());
+        entries.sort_by_key(std::fs::DirEntry::path);
         for entry in entries {
             let path = entry.path();
             if path.is_dir() {
