@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-06T02:48:14.037Z",
+  "phase": "20",
+  "phase_name": "Human Acceptance Gate",
+  "phase_dir": ".planning/phases/20-human-acceptance-gate",
+  "plan": 2,
+  "task": 2,
+  "total_tasks": 2,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": "20-01",
+      "name": "Follower guide, semantic gates, clean-host preflight, and evidence infrastructure",
+      "status": "done",
+      "commit": "f848c9e"
+    },
+    {
+      "id": "20-02-01",
+      "name": "Freeze rehearsal candidate and prove repository-local readiness",
+      "status": "done",
+      "commit": "5ca0538"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": "20-02-02",
+      "name": "Execute and attest the genuine supported clean-host rehearsal",
+      "status": "blocked_human_action"
+    },
+    {
+      "id": "20-03",
+      "name": "Run the genuine second-person UAT, PAIR-05 comprehension review, and evidence closeout",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "DOC-07 requires an untouched external supported host; this development workspace cannot establish that fact.",
+      "type": "external",
+      "workaround": "None. Run the frozen guide on a genuine untouched supported macOS or Linux host and record owner-attributed evidence."
+    }
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {
+      "action": "Run the Phase 20 clean-host rehearsal and populate .planning/phases/20-human-acceptance-gate/20-REHEARSAL.md.",
+      "context": "The repository-local readiness suite is green and the guide is frozen at f848c9e747ad769a162408249a8dd084f34e2350 with SHA-256 43f793114a9e51cf2a94c86dea47077cc1b800c2b344d81fa0bcc04eb6e1a01c.",
+      "blocking": true
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Automation validates evidence shape but never supplies or approves DOC-07/UAT-02 evidence.",
+      "rationale": "Clean-machine state, independent networks, lack of coaching, and human comprehension are external facts.",
+      "phase": "20"
+    },
+    {
+      "decision": "The follower guide uses explicit Inbox processing and terminal replies rather than Phase 21 push notification.",
+      "rationale": "Phase 19 deliberately prevents remote-origin traffic from auto-waking an agent.",
+      "phase": "20"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "On an untouched supported host, run scripts/phase20-clean-box-preflight.sh before installation, follow docs/FOLLOWER-SETUP.md exactly, populate 20-REHEARSAL.md, validate it, then resume with $gsd-resume-work and report 'rehearsal recorded'.",
+  "context_notes": "Phase 19 is complete and verified. Phase 20 planning passed independent review. Plan 20-01 and Plan 20-02 Task 1 are complete. Do not start Plan 20-03 until the clean-host rehearsal passes and 20-02-SUMMARY.md exists."
+}
