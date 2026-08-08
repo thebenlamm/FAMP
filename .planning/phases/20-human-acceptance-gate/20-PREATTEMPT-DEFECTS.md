@@ -1,5 +1,31 @@
 # Phase 20 — Pre-Attempt Defect Log
 
+> **RESOLUTION STATUS — updated 2026-08-08, after quick task `260808-ix4`.**
+> Each row below was re-checked against its destination file, not against this
+> document's own earlier text.
+>
+> | Defect | State | Evidence |
+> |---|---|---|
+> | D1 `famp-gateway --help` exits 1 | **FIXED** | `de5aa1f` — §1 now uses `command -v famp-gateway` |
+> | D2 §2 points at the v1.0 topology doc | **FIXED** | `de5aa1f` + `624ef80` — §2 states the inbound requirement directly; `GATEWAY-SETUP.md`'s no-relay claim and flag surface corrected; `README.md` paraphrase fixed |
+> | D3 accuracy gate never executed commands | **FIXED** | `185dd9a` — `crates/famp-gateway/tests/follower_setup_gateway_commands.rs`, 3 tests incl. `red_path_trips_on_prerepair_invocation`; wired to CI via `cargo nextest run --workspace` (`ci.yml:119`) |
+> | D4 inviter needs inbound reachability | **OPEN** | Product property, not a doc bug. Blocked on an inbound-reachable inviter endpoint; see the host table below. |
+> | D5 relay host is bare | **OPEN** | Re-confirmed exhaustively 2026-08-08 (full-filesystem `find`, all regions, no container services) |
+>
+> **The freeze recorded below is now STALE.** `docs/FOLLOWER-SETUP.md` changed in
+> `de5aa1f`, so both the commit and the SHA-256 in this file and in
+> `20-REHEARSAL.md`'s candidate block describe a guide that no longer exists.
+> Re-freezing is deliberately NOT done here: per 20-02-PLAN's D-01/D-02/D-04 the
+> guide is frozen as a rehearsal candidate at Task 1 and only proven by a
+> successful run. Refresh the candidate block immediately before the attempt.
+>
+> A new doc landed alongside these repairs: `docs/RELAY-SETUP.md`, the
+> store-and-forward relay procedure that did not previously exist anywhere
+> (closing D3's documentation half). It was drafted by a Codex agent and its
+> flag surface, four exact missing-flag error strings, readiness-line format,
+> and four-key-per-domain limit were each verified against the crate sources
+> before it was committed.
+
 **Status: no rehearsal attempt has started.** Nothing below was observed during a
 DOC-07 run. Every item was found by reading shipped code/docs and by smoke-testing
 a *throwaway* Linux host that is explicitly not the clean-host candidate.
