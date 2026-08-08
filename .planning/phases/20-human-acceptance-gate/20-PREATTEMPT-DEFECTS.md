@@ -8,7 +8,8 @@
 > |---|---|---|
 > | D1 `famp-gateway --help` exits 1 | **FIXED** | `de5aa1f` — §1 now uses `command -v famp-gateway` |
 > | D2 §2 points at the v1.0 topology doc | **FIXED** | `de5aa1f` + `624ef80` — §2 states the inbound requirement directly; `GATEWAY-SETUP.md`'s no-relay claim and flag surface corrected; `README.md` paraphrase fixed |
-> | D3 accuracy gate never executed commands | **FIXED** | `185dd9a` — `crates/famp-gateway/tests/follower_setup_gateway_commands.rs`, 3 tests incl. `red_path_trips_on_prerepair_invocation`; wired to CI via `cargo nextest run --workspace` (`ci.yml:119`) |
+> | D3 no document covers relay deployment | **FIXED** | `823e582` — `docs/RELAY-SETUP.md`, verified against the crate sources before commit |
+> | *(gate hole, described inside D1 — not separately numbered above)* | **FIXED** | `185dd9a` — `crates/famp-gateway/tests/follower_setup_gateway_commands.rs`, 3 tests incl. `red_path_trips_on_prerepair_invocation`; wired to CI via `cargo nextest run --workspace` (`ci.yml:119`) |
 > | D4 inviter needs inbound reachability | **OPEN** | Product property, not a doc bug. Blocked on an inbound-reachable inviter endpoint; see the host table below. |
 > | D5 relay host is bare | **OPEN** | Re-confirmed exhaustively 2026-08-08 (full-filesystem `find`, all regions, no container services) |
 >
