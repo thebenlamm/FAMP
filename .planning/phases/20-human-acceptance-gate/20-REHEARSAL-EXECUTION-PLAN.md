@@ -60,8 +60,39 @@ It stayed invisible because both landed as docs-only commits: `f848c9e` and
 `5ca0538` each got **0 check-runs** — `paths-ignore` yields zero runs, which is not
 a pass. `94de8a6` was already failing both test jobs before any of today's work.
 
-**Decision: option B.** The assertion becomes "exists and still carries
-`outcome=unresolved`" rather than "must not exist". Rationale: the candidate file's
+**Decision: option B′** (B, corrected after adversarial review refuted the first
+formulation — see below). The assertion becomes **stage-aware**: if the file exists,
+`unresolved` requires `<REQUIRED>` placeholders present AND validator-fail;
+`pass` requires validator-pass; `product_or_guide_failure`/`invalid` are permitted;
+anything else fails. The `20-ACCEPTANCE.md` line gets the same treatment — "absent
+OR passes the acceptance validator" — because must-not-exist is the identical time
+bomb waiting to detonate during 20-03.
+
+**Why plain option B was wrong, and this matters beyond this test.** B asserted
+`outcome=unresolved`. But `scripts/phase20-evidence-check.sh` rejects `unresolved`
+twice — at `:16` (`''|*'<REQUIRED>'*|unresolved` → "incomplete field") and `:23`
+(only `pass|product_or_guide_failure|invalid` accepted). `20-02-PLAN.md:131` defines
+Task 2's verification as `cargo test …phase20_evidence_schema && …evidence-check.sh`,
+so A demanded exactly what B rejected: **the checkpoint gate was unsatisfiable at
+every outcome.** Worse, the assertion message ("rehearsal candidate must have
+unresolved outcome") would have instructed a future agent to overwrite genuine
+acceptance evidence to make CI pass — inverting the gate's meaning. Stage-aware
+never needs a future edit, which is the property that actually prevents that.
+
+Superseded rationale, recorded so it is not reused: the original argument was that
+presence-plus-unresolved "distinguishes not-started from completed-then-deleted".
+That is decorative and does not survive scrutiny — it distinguishes those cases no
+better than must-not-exist did. B′ is right because 20-02-PLAN mandates the
+candidate's existence, not because of that argument.
+
+**Known separate defect (issue being filed, do not fix inline):**
+`phase20-evidence-check.sh`'s `require()` rejects any field still holding
+`<REQUIRED>`, so it cannot accept an honest `product_or_guide_failure` or `invalid`
+record — exactly the records a failed run produces, where later fields legitimately
+never got filled. Needs a Phase 20 scope decision.
+
+Original (rejected) formulation, for the record: "exists and still carries
+`outcome=unresolved`". Rationale: the candidate file's
 entire purpose is to be *visibly incomplete* until the external run happens, so
 presence is correct and unresolved-ness is the real invariant. Must-not-exist
 cannot distinguish "not started" from "completed and deleted", which is the weaker
