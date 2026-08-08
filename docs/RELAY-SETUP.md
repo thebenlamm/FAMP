@@ -66,19 +66,57 @@ TOFU or first-come registration.
 
 ## Deploy the relay
 
+### Install the relay binary
+
+`famp-relay` ships as a prebuilt binary in the GitHub release assets, one per supported platform. On the host where you want to run the relay:
+
+```sh
+curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-relay-installer.sh | sh
+command -v famp-relay
+famp-relay --version
+```
+
+The installer places `famp-relay` in `~/.cargo/bin`. Verify that this directory is on your `PATH` by running `command -v famp-relay` — if it prints the binary path, installation is complete.
+
+For scripted or non-interactive deploys over SSH, be aware that many SSH sessions do not put `~/.cargo/bin` on the `PATH` by default. Use absolute paths to the binary or ensure your deploy script sources the shell profile that adds it:
+
+```sh
+~/.cargo/bin/famp-relay --listen ... --tls-cert ... --tls-key ... --public-url ... --domain ...
+```
+
 ### TLS certificate and key
 
 `famp-relay` always serves TLS. `--tls-cert` must name a PEM file containing at
 least one certificate. `--tls-key` must name a PEM file containing a supported
 PKCS#8, RSA, or SEC1 private key, and the key must work with the certificate
-chain. The server does not request a TLS client certificate; queue drains are
-authorized by signed fetch headers instead.
+chain. SEC1 is the format for ECDSA keys, which is the default key type certbot
+produces; ECDSA keys work with `famp-relay`. The server does not request a TLS
+client certificate; queue drains are authorized by signed fetch headers instead.
 
 Use a certificate that validates for the hostname in the relay URL. Gateways
 use the operating system root store by default. For a private CA or self-signed
 development certificate, pass the PEM certificate to each gateway with
 `--trust-cert`; that file is added to, rather than substituted for, the OS root
 store.
+
+#### Obtaining a certificate with certbot
+
+For a relay on a real domain name with a public DNS entry, use certbot with the
+HTTP-01 challenge:
+
+```bash
+sudo certbot certonly --standalone --preferred-challenges http \
+  -d relay.example.com
+```
+
+This creates `/etc/letsencrypt/live/relay.example.com/` with:
+
+- `fullchain.pem` — the complete certificate chain; use this for `--tls-cert`
+- `privkey.pem` — the private key; use this for `--tls-key`
+
+Pass `fullchain.pem`, not `cert.pem`, to `--tls-cert`. The chain ensures intermediate certificates are delivered during the TLS handshake.
+
+**Critical:** Port 80 must be reachable at both issuance time and every renewal. If you block port 80 after the initial certificate is issued, certbot renewal will fail silently and the certificate will expire. When renewal fails, the relay stops serving because its TLS handshakes fail. Set up port 80 forwarding to the relay host before running certbot, and keep it open for the certificate's lifetime.
 
 ### Public URL and fetch audience
 
@@ -88,6 +126,8 @@ bound into every signed queue-drain request. The relay normalizes the audience
 to scheme, lowercased host, and an explicit non-default port; it excludes path,
 query, and trailing slash. The gateway applies the same normalization to its
 `--relay-fetch` URL.
+
+Normalization omits the port number when it is the default for the scheme — port 443 for HTTPS and port 80 for HTTP. This means `https://relay.example:443` and `https://relay.example` normalize to the identical audience string `https://relay.example` (no port segment). As a result, the readiness line does not print a port when the relay listens on a default port.
 
 Use the same clean base URL for `--public-url`, every `--relay-fetch`, and the
 URL portion of every `--peer`. A wrong audience causes the relay's exact fetch
