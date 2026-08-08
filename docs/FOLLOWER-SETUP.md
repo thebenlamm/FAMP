@@ -15,22 +15,45 @@ On Ben's machine and then on the follower's supported macOS or Linux machine:
 curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh
 curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-gateway-installer.sh | sh
 famp --version
-famp-gateway --help
+command -v famp-gateway
 famp daemon install
 ```
 
+`famp-gateway` has no `--help` (it's a hand-rolled parser, not clap) and no
+`--version`; every real invocation needs `--listen`, `--tls-cert`,
+`--tls-key`, and a running broker, so the install check is a `PATH` presence
+check that prints the installed path.
+
 Use the prebuilt installers. Rust and a source checkout are not part of this
 path. If an installer reports that `~/.cargo/bin` is missing from `PATH`, apply
-its printed shell-profile instruction, open a new shell, and rerun the two
-version checks.
+its printed shell-profile instruction, open a new shell, and rerun the `famp
+--version` and `command -v famp-gateway` checks.
 
 ## 2. Start reachable gateways
 
-Each owner configures their own public HTTPS endpoint and starts
-`famp-gateway` using the production procedure in [Gateway Setup](GATEWAY-SETUP.md).
-Ben's URL must be reachable from the follower's network and the follower's URL
-must be reachable from Ben's network. Do not continue until each owner sees the
-gateway's ready signal for their own endpoint.
+The follower's pairing redemption in section 3 (`crates/famp/src/cli/pair/redeem.rs`)
+POSTs the signed pairing code directly to `<url>/famp/v1/pair/redeem` over
+HTTPS with a 10-second timeout — a direct dial of the inviter's gateway,
+never relay-carried. So before section 3, Ben's gateway URL must be
+inbound-reachable from the follower's network. A relay carries ongoing
+message transport, not pairing, so deploying one does not remove this
+requirement. The follower dials out during pairing and so does not need an
+inbound-reachable endpoint for section 3, but still needs a running gateway
+of their own for sections 5 and 6.
+
+Sections 5 and 6 additionally need message transport in both directions:
+either both gateways inbound-reachable to each other, or both pointed at a
+relay — see [Relay Setup](RELAY-SETUP.md) for that procedure.
+
+[Gateway Setup](GATEWAY-SETUP.md) is still the reference for the mechanical
+parts: its section 1 TLS certificate recipe and macOS inbound-firewall step,
+its section 4 flag surface and ready signal, and its section 5 own-domain
+configuration. Skip its section 3 out-of-band key exchange entirely — `famp
+pair` in section 3 below replaces it, and this run must not move key
+material by hand.
+
+Do not continue until each owner sees the gateway's ready signal for their
+own endpoint.
 
 ## 3. Ben invites; the follower redeems
 
