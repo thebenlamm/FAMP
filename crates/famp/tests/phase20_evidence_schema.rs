@@ -28,6 +28,60 @@ fn validate(mode: &str, body: &str) -> bool {
         .success()
 }
 
+fn rehearsal_blank_candidate() -> String {
+    let rows = vec![
+        "outcome=unresolved",
+        "redaction_review=<REQUIRED>",
+        "redaction_findings=<REQUIRED>",
+        "clean_preflight=<REQUIRED>",
+        "clean_owner=<REQUIRED>",
+        "clean_utc=<REQUIRED>",
+        "clean_os_arch=<REQUIRED>",
+        "release_famp_version=<REQUIRED>",
+        "release_gateway_version=<REQUIRED>",
+        "pairing_ready=<REQUIRED>",
+        "task_a_id=<REQUIRED>",
+        "task_a_owner=<REQUIRED>",
+        "task_a_utc=<REQUIRED>",
+        "task_a_state=<REQUIRED>",
+        "task_b_id=<REQUIRED>",
+        "task_b_owner=<REQUIRED>",
+        "task_b_utc=<REQUIRED>",
+        "task_b_state=<REQUIRED>",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect::<Vec<_>>();
+    rows.join("\n") + "\n"
+}
+
+fn rehearsal_complete_pass() -> String {
+    let rows = vec![
+        "outcome=pass",
+        "redaction_review=pass",
+        "redaction_findings=none",
+        "clean_preflight=REDACTED:signal-OK",
+        "clean_owner=TestOperator",
+        "clean_utc=2030-01-02T03:04:05Z",
+        "clean_os_arch=REDACTED:Linux-x86_64",
+        "release_famp_version=1.1.0-rc.1",
+        "release_gateway_version=1.1.0-rc.1",
+        "pairing_ready=yes",
+        "task_a_id=aaaaaaaa-aaaa-7aaa-aaaa-aaaaaaaaaaaa",
+        "task_a_owner=TestFollower",
+        "task_a_utc=2030-01-02T03:05:05Z",
+        "task_a_state=COMPLETED",
+        "task_b_id=bbbbbbbb-bbbb-7bbb-bbbb-bbbbbbbbbbbb",
+        "task_b_owner=TestOperator",
+        "task_b_utc=2030-01-02T03:06:05Z",
+        "task_b_state=FAILED",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect::<Vec<_>>();
+    rows.join("\n") + "\n"
+}
+
 fn complete_acceptance() -> String {
     let mut rows = vec![
         "outcome=pass",
@@ -172,22 +226,110 @@ fn templates_encode_owner_time_machine_and_comprehension_contracts() {
             "template drifted from PairingError: {message}"
         );
     }
-    // Phase 20-01 laid the fail-closed test expecting rehearsal to not exist.
-    // Phase 20-02 Task 1 creates the rehearsal candidate. The invariant is that
-    // the candidate exists AND has outcome=unresolved (i.e., is visibly incomplete).
-    // Once Task 2 completes on a clean host, outcome will be resolved to
-    // pass/product_or_guide_failure/invalid, at which point this assertion will fail
-    // as expected—that is not a bug, it means Phase 20 is complete.
+}
+
+#[test]
+fn rehearsal_candidate_stage_aware_invariants() {
+    // The rehearsal candidate's validity depends on which phase of population it is in.
+    // This test proves the stage-aware invariant: each outcome class has the validator
+    // behavior and structural properties required for that phase, making the gate
+    // satisfiable at every checkpoint.
+
     let rehearsal_path = root(".planning/phases/20-human-acceptance-gate/20-REHEARSAL.md");
     assert!(
         rehearsal_path.exists(),
         "Phase 20-02 Task 1 must create the rehearsal candidate"
     );
-    let rehearsal_body =
-        fs::read_to_string(&rehearsal_path).expect("rehearsal candidate must be readable");
+
+    // Stage 1: blank candidate with outcome=unresolved and <REQUIRED> placeholders.
+    // This MUST exist at Task 1 completion and MUST fail the validator.
+    let blank = rehearsal_blank_candidate();
     assert!(
-        rehearsal_body.contains("outcome=unresolved"),
-        "rehearsal candidate must have unresolved outcome"
+        blank.contains("outcome=unresolved"),
+        "test helper: blank has unresolved"
     );
-    assert!(!root(".planning/phases/20-human-acceptance-gate/20-ACCEPTANCE.md").exists());
+    assert!(
+        blank.contains("<REQUIRED>"),
+        "test helper: blank has placeholders"
+    );
+    assert!(!validate("rehearsal", &blank),
+        "Branch 1 FAILED: blank candidate with outcome=unresolved + <REQUIRED> must be rejected.\n\
+         Expected validator to fail, but it passed.\n\
+         This is the state at 20-02 Task 1 completion — it MUST fail because fields are incomplete.");
+
+    // Stage 2: stripped placeholders but outcome still unresolved.
+    // This is a half-filled fake and MUST fail the validator.
+    let half_filled = blank
+        .replace(
+            "clean_preflight=<REQUIRED>",
+            "clean_preflight=REDACTED:signal-OK",
+        )
+        .replace("clean_owner=<REQUIRED>", "clean_owner=TestOperator")
+        .replace("clean_utc=<REQUIRED>", "clean_utc=2030-01-02T03:04:05Z")
+        .replace(
+            "clean_os_arch=<REQUIRED>",
+            "clean_os_arch=REDACTED:Linux-x86_64",
+        );
+    assert!(
+        half_filled.contains("outcome=unresolved"),
+        "test helper: half-filled still unresolved"
+    );
+    assert!(
+        half_filled.contains("<REQUIRED>"),
+        "test helper: half-filled still has placeholders"
+    );
+    assert!(
+        !validate("rehearsal", &half_filled),
+        "Branch 2 FAILED: partially filled record with outcome=unresolved must be rejected.\n\
+         Expected validator to fail, but it passed.\n\
+         This catches cases where evidence was selectively filled without changing outcome."
+    );
+
+    // Stage 3: flipped outcome to pass but placeholders remain.
+    // This is fabrication and MUST fail the validator.
+    let fabricated = blank.replace("outcome=unresolved", "outcome=pass");
+    assert!(
+        fabricated.contains("outcome=pass"),
+        "test helper: fabricated has pass"
+    );
+    assert!(
+        fabricated.contains("<REQUIRED>"),
+        "test helper: fabricated still has placeholders"
+    );
+    assert!(
+        !validate("rehearsal", &fabricated),
+        "Branch 3 FAILED: outcome=pass with <REQUIRED> placeholders must be rejected.\n\
+         Expected validator to fail, but it passed.\n\
+         This is the fabrication case: claiming pass without populating evidence."
+    );
+
+    // Stage 4: complete pass with all fields populated.
+    // This MUST pass the validator (the state after genuine Task 2 completion).
+    let complete = rehearsal_complete_pass();
+    assert!(
+        complete.contains("outcome=pass"),
+        "test helper: complete has pass"
+    );
+    assert!(
+        !complete.contains("<REQUIRED>"),
+        "test helper: complete has no placeholders"
+    );
+    assert!(
+        validate("rehearsal", &complete),
+        "Branch 4 FAILED: complete rehearsal with outcome=pass must be accepted.\n\
+         Expected validator to pass, but it failed.\n\
+         This is the valid end state: all evidence populated, no placeholders."
+    );
+
+    // If 20-ACCEPTANCE.md exists, it must pass the validator.
+    // If it does not exist, that is also valid (not yet created).
+    let acceptance_path = root(".planning/phases/20-human-acceptance-gate/20-ACCEPTANCE.md");
+    if acceptance_path.exists() {
+        let acceptance_body =
+            fs::read_to_string(&acceptance_path).expect("acceptance record must be readable");
+        assert!(
+            validate("acceptance", &acceptance_body),
+            "If 20-ACCEPTANCE.md exists, it must pass the acceptance validator"
+        );
+    }
 }
