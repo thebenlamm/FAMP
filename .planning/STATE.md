@@ -4,11 +4,11 @@ milestone: v1.1
 milestone_name: Open-Internet Federation
 current_phase: 20
 current_phase_name: Human Acceptance Gate
-status: executing
-stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-08-05T22:07:45.815Z"
-last_activity: 2026-08-05
-last_activity_desc: Phase 19 complete, transitioned to Phase 20
+status: blocked_human_action
+stopped_at: Plan 20-02 Task 2 — blocked on external clean-host rehearsal (DOC-07)
+last_updated: "2026-08-08T00:00:00.000Z"
+last_activity: 2026-08-08
+last_activity_desc: Session resumed; Phase 20 still blocked on the untouched-supported-host rehearsal
 progress:
   total_phases: 7
   completed_phases: 3
@@ -32,9 +32,16 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 ## Current Position
 
 Phase: 20 — Human Acceptance Gate
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-05 — Phase 19 complete, transitioned to Phase 20
+Plan: 20-02, Task 2 of 2
+Status: BLOCKED on human action — genuine untouched supported host required for DOC-07
+Last activity: 2026-08-08 — session resumed; no repository-local work remains before the rehearsal
+
+## Session Continuity
+
+Last session: 2026-08-08 (resume)
+Stopped at: Plan 20-02 Task 2 — clean-host rehearsal not yet run
+Resume file: `.planning/phases/20-human-acceptance-gate/.continue-here.md` (+ `.planning/HANDOFF.json`)
+Frozen guide: `docs/FOLLOWER-SETUP.md` @ `f848c9e747ad769a162408249a8dd084f34e2350`, SHA-256 `43f793114a9e51cf2a94c86dea47077cc1b800c2b344d81fa0bcc04eb6e1a01c`
 
 ## v1.1 Phase Map
 
