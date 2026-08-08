@@ -172,6 +172,22 @@ fn templates_encode_owner_time_machine_and_comprehension_contracts() {
             "template drifted from PairingError: {message}"
         );
     }
-    assert!(!root(".planning/phases/20-human-acceptance-gate/20-REHEARSAL.md").exists());
+    // Phase 20-01 laid the fail-closed test expecting rehearsal to not exist.
+    // Phase 20-02 Task 1 creates the rehearsal candidate. The invariant is that
+    // the candidate exists AND has outcome=unresolved (i.e., is visibly incomplete).
+    // Once Task 2 completes on a clean host, outcome will be resolved to
+    // pass/product_or_guide_failure/invalid, at which point this assertion will fail
+    // as expected—that is not a bug, it means Phase 20 is complete.
+    let rehearsal_path = root(".planning/phases/20-human-acceptance-gate/20-REHEARSAL.md");
+    assert!(
+        rehearsal_path.exists(),
+        "Phase 20-02 Task 1 must create the rehearsal candidate"
+    );
+    let rehearsal_body =
+        fs::read_to_string(&rehearsal_path).expect("rehearsal candidate must be readable");
+    assert!(
+        rehearsal_body.contains("outcome=unresolved"),
+        "rehearsal candidate must have unresolved outcome"
+    );
     assert!(!root(".planning/phases/20-human-acceptance-gate/20-ACCEPTANCE.md").exists());
 }
