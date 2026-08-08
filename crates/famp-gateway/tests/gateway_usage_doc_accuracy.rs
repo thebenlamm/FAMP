@@ -31,7 +31,10 @@ const GATEWAY_FLAGS: &[&str] = &[
     "--tls-cert",
     "--tls-key",
     "--peer",
+    "--backs",
     "--trust-cert",
+    "--relay-fetch",
+    "--pairing-store",
 ];
 
 fn gateway_setup_doc_path() -> PathBuf {

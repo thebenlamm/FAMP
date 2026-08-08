@@ -2,10 +2,14 @@
 
 This guide walks through standing up `famp-gateway` between **two machines
 you own** — e.g. your laptop and a dev server, connected directly or over a
-VPN you already control. **There is no public relay.** Both hosts must be
-directly reachable from each other (or reachable over your own VPN) at the
-address you give `--listen`; FAMP does not provide discovery, NAT traversal,
-or a hosted directory.
+VPN you already control. This guide covers the **direct** topology: both
+hosts reachable from each other at the address you give `--listen`. FAMP
+does not provide discovery, NAT traversal, or a hosted directory. A relay
+is available — `famp-relay` ships in the release and `famp-gateway` accepts
+`--relay-fetch <url>` — which removes the mutual-reachability requirement
+for message transport; see [Relay Setup](RELAY-SETUP.md) for that
+procedure. Pairing (`famp pair redeem --from <url>`) is always a direct
+dial of the inviter's gateway and is never relay-carried.
 
 Everything below is copy-pasteable and uses the exact flag spellings the
 shipping `famp-gateway` and `famp peer` binaries accept — see
@@ -180,7 +184,8 @@ full flag surface is:
 
 ```
 famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
-             --tls-key <path> [--peer <domain>=<url>]... [--trust-cert <path>] \
+             --tls-key <path> [--peer <domain>=<url>]... [--backs agent:<domain>/<name>]... \
+             [--trust-cert <path>] [--relay-fetch <url>] [--pairing-store <path>] \
              <principal-name>...
 ```
 
@@ -191,8 +196,17 @@ famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
 | `--tls-cert <path>` | **Yes** | TLS certificate served on `--listen` |
 | `--tls-key <path>` | **Yes** | TLS private key for that certificate |
 | `--peer <domain>=<url>` | No, repeatable | Maps a remote federation domain to that peer's gateway base URL, e.g. `hostb.example=https://hostb.example:8443` |
+| `--backs agent:<domain>/<name>` | No, repeatable | Explicitly binds one locally-backed principal to its route |
 | `--trust-cert <path>` | No | Extra CA cert to trust when calling out to peers (omit to use the system trust store) |
-| `<principal-name>...` | **Yes, ≥1** | Bare local principal name(s) this gateway backs, e.g. `bob` — at least one is required or the binary refuses to start |
+| `--relay-fetch <url>` | No | Signed-fetch relay-polling URL |
+| `--pairing-store <path>` | No | Overrides the default pairing invite store path |
+| `<principal-name>...` | **Yes, ≥1** | Bare local principal name(s) this gateway backs, e.g. `bob` — at least one is required or the binary refuses to start, and it stays required even when `--backs` is used |
+
+`--backs` supplements the positional form rather than replacing it: at
+least one positional `<principal-name>` is still required. With at most
+one `--peer`, the bare names route on their own. With two or more `--peer`
+entries, bare names are a startup-fatal ambiguity, so each principal must
+be bound explicitly with `--backs`.
 
 **The `<principal-name>` a gateway backs is the REMOTE principal it proxies
 for, not a local one.** A gateway running on A relays traffic on behalf of
