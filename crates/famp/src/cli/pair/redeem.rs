@@ -48,6 +48,12 @@ pub struct PairRedeemArgs {
     /// connection — same flag shape as `famp-gateway --trust-cert`.
     #[arg(long)]
     pub trust_cert: Option<std::path::PathBuf>,
+    /// Confirm replacing an existing pinned key with a new one. If the
+    /// inviter's key has changed and this flag is not set, the redemption
+    /// will be rejected to prevent silent overwrites. Pass `--confirm-key-change`
+    /// when you have verified the new key out-of-band.
+    #[arg(long)]
+    pub confirm_key_change: bool,
 }
 
 /// Production entry point.
@@ -174,8 +180,19 @@ pub async fn run_at(
         })?;
 
     let keyring_path = gateway_peers_keyring_path(home);
-    if !super::rotate_to_with_validation(&keyring_path, &inviter_principal, inviter_vk, &now, true)?
-    {
+    // `confirmed` is the caller's explicit `--confirm-key-change`, never a
+    // hardcoded `true` (P3). With an Active entry already pinned under this
+    // principal holding a DIFFERENT key, `rotate_to` would otherwise retire
+    // it and pin the incoming one silently — so anyone holding a valid code
+    // could take over an existing pin. First-pin and already-pinned both
+    // return before that check, so the default path is unaffected.
+    if !super::rotate_to_with_validation(
+        &keyring_path,
+        &inviter_principal,
+        inviter_vk,
+        now,
+        args.confirm_key_change,
+    )? {
         eprintln!(
             "pin did not verify on reload at {} — pin failed. \
              The inviter's key was not saved to the keyring.",

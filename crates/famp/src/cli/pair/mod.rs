@@ -25,7 +25,7 @@ use std::path::Path;
 use clap::{Args, Subcommand};
 use famp_core::Principal;
 use famp_crypto::TrustedVerifyingKey;
-use famp_keyring::{KeyLookupOutcome, Keyring};
+use famp_keyring::{KeyLookupOutcome, Keyring, KeyringError};
 
 use crate::cli::error::CliError;
 
@@ -138,9 +138,23 @@ fn rotate_to_with_validation(
     } else {
         Keyring::new()
     };
-    keyring
-        .rotate_to(principal.clone(), vk, now, None, confirmed)
-        .map_err(|e| CliError::Generic(e.to_string()))?;
+    match keyring.rotate_to(principal.clone(), vk, now, None, confirmed) {
+        Ok(_) => {}
+        Err(KeyringError::KeyChangeRequiresConfirmation {
+            principal: p,
+            previous_key_id,
+            new_key_id,
+        }) => {
+            return Err(CliError::Generic(format!(
+                "key change requires confirmation for {p}: currently pinned to {previous_key_id}, \
+                 incoming {new_key_id}. Pass --confirm-key-change if you have verified the new \
+                 key out-of-band."
+            )));
+        }
+        Err(e) => {
+            return Err(CliError::Generic(e.to_string()));
+        }
+    }
     if let Some(parent) = keyring_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| CliError::Io {
             path: parent.to_path_buf(),

@@ -27,17 +27,23 @@ use crate::pairing::invite::{
 };
 use crate::pairing::PairingError;
 
-/// CLI args for `famp pair status`. No fields — this subcommand takes no
-/// input, only `$FAMP_HOME`.
+/// CLI args for `famp pair status`.
 #[derive(clap::Args, Debug)]
-pub struct PairStatusArgs {}
+pub struct PairStatusArgs {
+    /// Confirm replacing an existing pinned key with a new one. If a
+    /// redeemer's key has changed and this flag is not set, the pin will be
+    /// rejected to prevent silent overwrites. Pass `--confirm-key-change`
+    /// when you have verified the new key out-of-band.
+    #[arg(long)]
+    pub confirm_key_change: bool,
+}
 
 /// Production entry point.
-pub fn run(_args: &PairStatusArgs) -> Result<(), CliError> {
+pub fn run(args: &PairStatusArgs) -> Result<(), CliError> {
     let home_path = home::resolve_famp_home()?;
     let now = super::now_canonical_utc();
     let mut stdout = std::io::stdout().lock();
-    run_at(&home_path, &mut stdout, &now)
+    run_at(&home_path, &mut stdout, &now, args.confirm_key_change)
 }
 
 /// One-line message printed when the store holds no `Redeemed` records
@@ -46,8 +52,13 @@ pub fn run(_args: &PairStatusArgs) -> Result<(), CliError> {
 const NOTHING_REDEEMED_YET: &str = "Nothing redeemed yet. Wait for the other person to run \
      `famp pair redeem`, or check they received the code.";
 
-/// Test-facing entry point: explicit `&Path` + writer + `now`.
-pub fn run_at(home: &Path, out: &mut dyn Write, now: &str) -> Result<(), CliError> {
+/// Test-facing entry point: explicit `&Path` + writer + `now` + confirm_key_change.
+pub fn run_at(
+    home: &Path,
+    out: &mut dyn Write,
+    now: &str,
+    confirm_key_change: bool,
+) -> Result<(), CliError> {
     let store_path = pairing_store_path(home);
     let keyring_path = gateway_peers_keyring_path(home);
 
@@ -79,7 +90,15 @@ pub fn run_at(home: &Path, out: &mut dyn Write, now: &str) -> Result<(), CliErro
             key_id: &key_id,
             pubkey_b64url: &pubkey_b64url,
         };
-        match pin_redeemed_record(out, home, &keyring_path, record, &info, now)? {
+        match pin_redeemed_record(
+            out,
+            home,
+            &keyring_path,
+            record,
+            &info,
+            now,
+            confirm_key_change,
+        )? {
             PinOutcome::Pinned => any_pinned = true,
             PinOutcome::Failed => pin_failed = true,
         }
@@ -159,6 +178,7 @@ fn pin_redeemed_record(
     record: &mut InviteRecord,
     info: &RedeemedInfo<'_>,
     now: &str,
+    confirm_key_change: bool,
 ) -> Result<PinOutcome, CliError> {
     let by = info.by;
     let key_id = info.key_id;
@@ -202,7 +222,13 @@ fn pin_redeemed_record(
         }
     };
 
-    if super::rotate_to_with_validation(keyring_path, &redeemer_principal, vk, now, true)? {
+    if super::rotate_to_with_validation(
+        keyring_path,
+        &redeemer_principal,
+        vk,
+        now,
+        confirm_key_change,
+    )? {
         record.state = InviteState::Pinned {
             at: now.to_string(),
         };
@@ -251,7 +277,9 @@ mod tests {
 
     #[test]
     fn run_at_pins_redeemed_record_and_marks_it_pinned() {
-        let _ = PairStatusArgs {};
+        let _ = PairStatusArgs {
+            confirm_key_change: false,
+        };
         let tmp = tempfile::tempdir().unwrap();
         let sk = FampSigningKey::from_bytes([9u8; 32]);
         let vk = sk.verifying_key();
@@ -277,7 +305,7 @@ mod tests {
         .unwrap();
 
         let mut out = Vec::new();
-        run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z").unwrap();
+        run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z", false).unwrap();
 
         let store = InviteStore::load(&pairing_store_path(tmp.path())).unwrap();
         assert!(matches!(store.invites[0].state, InviteState::Pinned { .. }));
@@ -309,7 +337,7 @@ mod tests {
         .unwrap();
 
         let mut out = Vec::new();
-        run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z").unwrap();
+        run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z", false).unwrap();
         let printed = String::from_utf8(out).unwrap();
         assert!(
             printed.contains("Nothing redeemed yet"),

@@ -361,7 +361,7 @@ fn status_observe_before_pin_keyring_unchanged_at_write_time() {
         keyring_path: &keyring_path,
         snapshot: None,
     };
-    status::run_at(tmp.path(), &mut writer, "2026-08-03T02:00:00Z").unwrap();
+    status::run_at(tmp.path(), &mut writer, "2026-08-03T02:00:00Z", false).unwrap();
 
     let printed = String::from_utf8(writer.inner).unwrap();
     assert!(
@@ -390,7 +390,7 @@ fn status_redeemed_by_line_has_principal_and_key_id() {
     let tmp = TempDir::new().unwrap();
     let vk = seed_redeemed_record(tmp.path(), "inv-line-shape");
     let mut out = Vec::new();
-    status::run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z").unwrap();
+    status::run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z", false).unwrap();
     let printed = String::from_utf8(out).unwrap();
     let line = printed
         .lines()
@@ -418,7 +418,7 @@ fn status_no_redeemed_records_is_ok_and_keyring_untouched() {
     .unwrap();
 
     let mut out = Vec::new();
-    status::run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z")
+    status::run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z", false)
         .expect("zero Redeemed records is Ok, not an error");
     assert!(!gateway_peers_keyring_path(tmp.path()).exists());
 }
@@ -520,6 +520,7 @@ async fn redeem_pins_principal_matching_send_from_for_same_identity() {
     redeem::run_at(
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
+            confirm_key_change: false,
             from: base_url,
             as_identity: identity.to_string(),
             trust_cert: None,
@@ -564,6 +565,7 @@ async fn redeem_malformed_code_rejected_before_network_call() {
     let err = redeem::run_at(
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
+            confirm_key_change: false,
             from: "http://127.0.0.1:1".to_string(),
             as_identity: "redeemer".to_string(),
             trust_cert: None,
@@ -592,6 +594,7 @@ async fn redeem_gateway_unreachable_message_interpolates_url() {
     let err = redeem::run_at(
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
+            confirm_key_change: false,
             from: from.clone(),
             as_identity: "redeemer".to_string(),
             trust_cert: None,
@@ -634,6 +637,7 @@ async fn two_home_mutual_pin_via_cli() {
     redeem::run_at(
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
+            confirm_key_change: false,
             from: base_url,
             as_identity: "gateway".to_string(),
             trust_cert: None,
@@ -646,8 +650,13 @@ async fn two_home_mutual_pin_via_cli() {
     .expect("redeem::run_at must succeed against the mock inviter");
 
     let mut status_out = Vec::new();
-    status::run_at(inviter_home.path(), &mut status_out, "2030-08-03T00:10:00Z")
-        .expect("status::run_at must pin the redeemer's key");
+    status::run_at(
+        inviter_home.path(),
+        &mut status_out,
+        "2030-08-03T00:10:00Z",
+        false,
+    )
+    .expect("status::run_at must pin the redeemer's key");
 
     let inviter_principal: Principal = "agent:inviter.test/gateway".parse().unwrap();
     let redeemer_principal: Principal = "agent:redeemer.test/gateway".parse().unwrap();
@@ -727,4 +736,78 @@ async fn redeem_success_done_signal_is_single_sentence_no_brace() {
         done_line.ends_with('.'),
         "done signal must end with a period: {done_line}"
     );
+}
+
+/// P3: a pin that would REPLACE an existing Active key under the same
+/// principal must be refused unless the operator explicitly opts in.
+///
+/// `rotate_to`'s `confirmed` parameter silently retires the existing Active
+/// entry and pins the incoming key when it is `true`
+/// (`famp-keyring/src/lib.rs`'s rotation contract). Both pair call sites used
+/// to hardcode `true`, so — now that `--as` is caller-controlled — anyone
+/// holding a valid invite code could take over an already-pinned principal.
+///
+/// Seeds a DIFFERENT key under the exact principal `status` will try to pin,
+/// so the rotation reaches the `confirmed` check rather than returning early
+/// via `FirstPin` or `AlreadyPinned`.
+fn seed_conflicting_pin(home: &Path) {
+    let victim_home = TempDir::new().unwrap();
+    let args = famp::cli::peer::export::PeerExportArgs {
+        as_principal: "agent:redeemer.test/gateway".to_string(),
+    };
+    let mut blob = Vec::new();
+    famp::cli::peer::export::run_at(victim_home.path(), &args, &mut blob).unwrap();
+    famp::cli::peer::import::run_at(home, &mut Cursor::new(blob)).unwrap();
+}
+
+#[test]
+fn status_refuses_to_replace_an_existing_pin_without_confirmation() {
+    let tmp = TempDir::new().unwrap();
+    seed_redeemed_record(tmp.path(), "inv-p3-refuse");
+    seed_conflicting_pin(tmp.path());
+
+    let keyring_path = gateway_peers_keyring_path(tmp.path());
+    let before = std::fs::read(&keyring_path).unwrap();
+
+    let mut out = Vec::new();
+    let err = status::run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z", false)
+        .expect_err("replacing an existing Active key without --confirm-key-change must fail");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--confirm-key-change"),
+        "the error must name the remedy, got: {msg}"
+    );
+    assert!(
+        msg.contains("agent:redeemer.test/gateway"),
+        "the error must name the affected principal, got: {msg}"
+    );
+
+    assert_eq!(
+        std::fs::read(&keyring_path).unwrap(),
+        before,
+        "a refused pin must leave the keyring byte-identical"
+    );
+}
+
+#[test]
+fn status_replaces_an_existing_pin_when_confirmation_is_given() {
+    let tmp = TempDir::new().unwrap();
+    let incoming_vk = seed_redeemed_record(tmp.path(), "inv-p3-confirm");
+    seed_conflicting_pin(tmp.path());
+
+    let mut out = Vec::new();
+    status::run_at(tmp.path(), &mut out, "2026-08-03T02:00:00Z", true)
+        .expect("--confirm-key-change must permit an explicit key replacement");
+
+    let keyring = Keyring::load_from_file(&gateway_peers_keyring_path(tmp.path())).unwrap();
+    let principal: Principal = "agent:redeemer.test/gateway".parse().unwrap();
+    match keyring.active_key(&principal, "2026-08-03T02:00:01Z") {
+        KeyLookupOutcome::Active(vk) => assert_eq!(
+            vk.to_b64url(),
+            incoming_vk.to_b64url(),
+            "the confirmed replacement must leave the INCOMING key Active"
+        ),
+        other => panic!("expected an Active key after a confirmed rotation, got: {other:?}"),
+    }
 }

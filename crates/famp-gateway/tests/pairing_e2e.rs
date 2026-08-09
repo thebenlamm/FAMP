@@ -134,6 +134,7 @@ async fn happy_path_pins_both_sides_mutually() {
     redeem::run_at(
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
+            confirm_key_change: false,
             from: base_url,
             as_identity: "gateway".to_string(),
             trust_cert: None,
@@ -162,8 +163,13 @@ async fn happy_path_pins_both_sides_mutually() {
     );
 
     let mut status_out = Vec::new();
-    status::run_at(inviter_home.path(), &mut status_out, "2030-08-03T00:10:00Z")
-        .expect("status::run_at must pin the Redeemed record");
+    status::run_at(
+        inviter_home.path(),
+        &mut status_out,
+        "2030-08-03T00:10:00Z",
+        false,
+    )
+    .expect("status::run_at must pin the Redeemed record");
 
     let redeemer_principal: Principal = "agent:redeemer.test/gateway".parse().unwrap();
     let inviter_keyring =
