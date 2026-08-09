@@ -120,3 +120,61 @@ Defects it found, both since fixed:
 Also observed: a gateway started over SSH dies at disconnect unless detached
 with `setsid`. The guide warns that `famp register` must keep running but says
 nothing equivalent for `famp-gateway`.
+
+
+## Pre-attempt verification of the §5/§6 host-agent claim (2026-08-09)
+
+Sections 5 and 6 tell a host agent that `famp_send` in `reply` mode commits the
+task with `expect_reply: true` and closes it without. That sentence was
+originally derived from the MCP tool description's legacy-alias line, never
+tested. It is now verified, and the guide needs no change — **the freeze at
+`6bfed80` stands.**
+
+What was checked, and how:
+
+- **Wire equivalence, empirical.** A task was opened on the local bus by CLI and
+  answered twice through the MCP surface. The receiving mailbox recorded
+  `famp.send.deliver` with `mode: "deliver"` and no terminal flag for the
+  `expect_reply: true` reply, then `famp.send.deliver_terminal` with
+  `"terminal": true` for the bare reply. Those are exactly the envelopes the CLI
+  emits for a reply without `--terminal` and a reply with it.
+- **Code agrees.** `cli/mcp/tools/send.rs:184` maps `reply` to
+  `terminal = !expect_reply`; the legacy `deliver` / `terminal` aliases below it
+  produce the same two shapes.
+- **Representative of the published binary.** `cli/mcp/tools/send.rs` is
+  unchanged across `v1.1.0-rc.1..HEAD` (so unchanged in rc.2), and the installed
+  binary used for the test postdates that file's last commit.
+
+What the local test could **not** show, and why it does not matter: local-bus
+envelopes carry `class: audit_log`, and the inspector's fold returns `UNKNOWN`
+for that class by construction (`famp-inspect-server/src/parse.rs:62`), so no
+FSM transition is observable on the local path by design. The
+`REQUESTED -> COMMITTED -> COMPLETED` leg comes from the dirty walkthrough
+above, which drove it over the gateway with the CLI. It transfers to the host
+agent because the gateway sees only envelopes and the two surfaces emit
+identical ones.
+
+Scope of this verification: the MCP-to-CLI mode mapping, not gateway FSM
+behavior, which rests on the dirty-run evidence.
+
+
+## Inviter and relay carry state from the dirty run (2026-08-09)
+
+Recorded before the clean attempt, because a fresh follower host is not by
+itself a clean run. Read from the live boxes, not from notes:
+
+- Inviter `44.204.243.222` still pins one line,
+  `agent:follower.famp.dev/dana`, holding the terminated box's gateway key.
+- Relay still serves `--domain follower.famp.dev=<same dead key>` alongside
+  `ben.famp.dev`.
+- The inviter's running gateway hardcodes the follower in three places:
+  `--backs agent:follower.famp.dev/dana`, `--peer
+  follower.famp.dev=https://relay.famp.dev`, and the positional `dana` that
+  `registry.back()` uses for the local stand-in holder (`main.rs:535-536`).
+- `follower.famp.dev` has no DNS A record, and needs none — the follower
+  fetches from the relay rather than receiving inbound.
+
+Consequence: §3 would re-pair over an existing pin rather than pin into an empty
+keyring, and §4a would be a no-op rather than the add-from-nothing step whose
+404s-to-zero the dirty run observed. Both are first-run paths under test.
+Resolution is pending Ben's go; see the reset proposal in the session record.
