@@ -2,7 +2,7 @@
 
 Copy this file to `20-REHEARSAL.md` only when a real supported clean host is
 available. Every evidence value is owner-attributed, UTC-timestamped, and
-redacted. Never record invite codes, private keys, authentication tokens, raw
+redacted. Never record pairing codes, signing-key material, credentials, raw
 transcripts, or unredacted home paths. A product/guide failure requires repair
 and reset; an invalid run requires a fully clean rerun.
 

@@ -333,3 +333,107 @@ fn rehearsal_candidate_stage_aware_invariants() {
         );
     }
 }
+
+/// Fill every `<REQUIRED>` placeholder in a real template with a value the
+/// validator accepts, and classify the record `pass`.
+///
+/// Deliberately operates on the template's FULL text, prose included, rather
+/// than on a synthetic list of `key=value` rows.
+fn fill_template_as_pass(template: &str) -> String {
+    template
+        .lines()
+        .map(|line| {
+            let Some((key, value)) = line.split_once('=') else {
+                return line.to_string();
+            };
+            if key.contains(' ') || (value != "<REQUIRED>" && value != "unresolved") {
+                return line.to_string();
+            }
+            let filled = match key {
+                "outcome" | "redaction_review" => "pass",
+                "redaction_findings" => "none",
+                "independent_machines" | "different_networks" | "no_coaching" => "yes",
+                "shared_vpn" | "copied_keys" => "no",
+                "task_a_id" => "task-a-0001",
+                "task_b_id" => "task-b-0002",
+                k if k.ends_with("_state") => "COMPLETED",
+                k if k.ends_with("_os_arch") => "REDACTED:Linux/x86_64",
+                k if k.ends_with("_utc") => "2026-01-01T00:00:00Z",
+                _ => "filled",
+            };
+            format!("{key}={filled}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n"
+}
+
+/// A fully populated `pass` record built from the REAL template must validate.
+///
+/// Regression test for the gate defect found while populating 20-REHEARSAL.md
+/// on 2026-08-09: the template's own redaction warning spelled out two of the
+/// literals `phase20-evidence-check.sh` greps for, so any `pass` record
+/// inherited them and was rejected as leaking a secret. The forbidden-pattern
+/// grep runs only on the `pass` path, so every earlier `unresolved` state
+/// missed it -- the same shape as G3, mirrored onto the success outcome.
+///
+/// The existing helpers could not catch this: they assemble synthetic
+/// `key=value` rows, so the template's prose was never part of a validated
+/// body. This test validates the template text itself.
+#[test]
+fn real_templates_populated_as_pass_are_accepted() {
+    for (mode, path) in [
+        (
+            "rehearsal",
+            ".planning/phases/20-human-acceptance-gate/20-REHEARSAL-TEMPLATE.md",
+        ),
+        (
+            "acceptance",
+            ".planning/phases/20-human-acceptance-gate/20-ACCEPTANCE-TEMPLATE.md",
+        ),
+    ] {
+        let template = fs::read_to_string(root(path))
+            .unwrap_or_else(|e| panic!("template {path} must be readable: {e}"));
+        let populated = fill_template_as_pass(&template);
+        // Prose legitimately mentions `<REQUIRED>` (the "replace every
+        // <REQUIRED> value" instruction), so only field lines are checked.
+        let unfilled: Vec<&str> = populated
+            .lines()
+            .filter(|l| {
+                l.split_once('=')
+                    .is_some_and(|(k, v)| v == "<REQUIRED>" && !k.contains(' '))
+            })
+            .collect();
+        assert!(
+            unfilled.is_empty(),
+            "{path}: filler left field placeholders behind, extend \
+             fill_template_as_pass: {unfilled:?}"
+        );
+        assert!(
+            validate(mode, &populated),
+            "{path}: a fully populated `pass` record built from the real template \
+             was REJECTED by phase20-evidence-check.sh.\n\
+             The most likely cause is prose in the template matching the validator's \
+             forbidden secret/path grep -- describe those literals, do not spell them."
+        );
+    }
+}
+
+/// The live rehearsal record must never carry a secret or unredacted home path,
+/// whatever outcome it currently holds.
+///
+/// The validator only reaches its redaction grep on the `pass` path, so this
+/// stays honest while `outcome` is still awaiting a provenance call.
+#[test]
+fn live_rehearsal_record_is_redaction_clean_at_any_outcome() {
+    let path = ".planning/phases/20-human-acceptance-gate/20-REHEARSAL.md";
+    let Ok(body) = fs::read_to_string(root(path)) else {
+        return; // record not created yet
+    };
+    let populated = body.replace("outcome=unresolved", "outcome=pass");
+    assert!(
+        validate("rehearsal", &populated),
+        "{path}: classified `pass`, the live record does not satisfy the validator. \
+         Fix the record before attesting an outcome."
+    );
+}

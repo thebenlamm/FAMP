@@ -2,8 +2,8 @@
 
 Copy this file to `20-ACCEPTANCE.md` only for the genuine event. Evidence must
 be supplied by the owner of the observed machine or received task, with UTC
-capture time and redaction. Never include invite codes, private keys,
-authentication tokens, raw transcripts, or unredacted home paths. Ben may not
+capture time and redaction. Never include pairing codes, signing-key material,
+credentials, raw transcripts, or unredacted home paths. Ben may not
 type, screen-control, copy keys, or coach the follower through a missing step.
 
 Each evidence row encodes criterion, owner, capture command/attestation, UTC

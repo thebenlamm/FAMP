@@ -50,7 +50,7 @@ Readiness suite re-run green against this freeze: `follower_setup_doc_accuracy`
 (1). `git diff --exit-code -- docs/FOLLOWER-SETUP.md` is clean at this commit.
 
 Every evidence value below is owner-attributed, UTC-timestamped, and redacted.
-Never record invite codes, private keys, authentication tokens, raw
+Never record pairing codes, signing-key material, credentials, raw
 transcripts, or unredacted home paths. A product/guide failure requires repair
 and reset; an invalid run requires a fully clean rerun.
 
@@ -59,26 +59,31 @@ redacted evidence, result. Replace every `<REQUIRED>` value; do not edit keys.
 
 ```text
 outcome=unresolved
-failure_stage=<REQUIRED>
-failure_detail=<REQUIRED>
-redaction_review=<REQUIRED>
-redaction_findings=<REQUIRED>
-clean_preflight=<REQUIRED>
-clean_owner=<REQUIRED>
-clean_utc=<REQUIRED>
-clean_os_arch=<REQUIRED>
-release_famp_version=<REQUIRED>
-release_gateway_version=<REQUIRED>
-pairing_ready=<REQUIRED>
-task_a_id=<REQUIRED>
-task_a_owner=<REQUIRED>
-task_a_utc=<REQUIRED>
-task_a_state=<REQUIRED>
-task_b_id=<REQUIRED>
-task_b_owner=<REQUIRED>
-task_b_utc=<REQUIRED>
-task_b_state=<REQUIRED>
+failure_stage=none
+failure_detail=none
+redaction_review=pass
+redaction_findings=none
+clean_preflight=PASS
+clean_owner=ben
+clean_utc=2026-08-09T13:19:31Z
+clean_os_arch=REDACTED:Linux/x86_64
+release_famp_version=1.1.0-rc.2
+release_gateway_version=1.1.0-rc.2
+pairing_ready=yes
+task_a_id=019fe6b2-0e60-7591-80d5-88391ea7e29b
+task_a_owner=dana
+task_a_utc=2026-08-09T13:24:44Z
+task_a_state=COMPLETED
+task_b_id=019fe6b2-a168-7260-8b44-016106c7c112
+task_b_owner=ben
+task_b_utc=2026-08-09T13:25:02Z
+task_b_state=COMPLETED
 ```
+
+**`outcome` is deliberately still `unresolved`.** Every other field above is
+factual and captured. The classification is withheld pending the provenance
+attestation below, because the one question this record cannot answer for
+itself is who counts as the operator.
 
 Exactly one final outcome is permitted: `pass`, `product_or_guide_failure`, or
 `invalid`. This candidate deliberately defaults to none of them.
@@ -224,3 +229,109 @@ Expected after restart: the gateway logs `ready, backing 1 principal(s): dana`
 with an empty keyring, and the relay logs
 `serving domain(s): ben.famp.dev (1 key(s))`. Do not launch the clean box until
 both are confirmed.
+
+
+## Clean-host attempt run log (2026-08-09)
+
+Host: a freshly launched EC2 VM (not a container), Linux/x86_64, created for
+this attempt and never previously touched by FAMP. Its security group allows
+only SSH from the operator's address and no inbound FAMP port at all, which
+also exercises §2's claim that the follower needs no inbound-reachable
+endpoint. Inviter and relay were reset to their pre-pairing state first
+(previous section).
+
+Guide identity confirmed immediately before the run:
+`sha256(docs/FOLLOWER-SETUP.md) = f1262fc6…3268`, matching the freeze, with a
+clean `git diff --exit-code` on that path. No guide edit occurred at any point
+during the attempt.
+
+Sequence, in order, with nothing skipped or repaired:
+
+1. **Preflight before installation.** `phase20-clean-box-preflight.sh` emitted
+   `CLEAN HOST: PASS` at `2026-08-09T13:19:31Z`, exit 0, on a host with no
+   `famp`, `famp-gateway`, `rustc`, or `cargo` on `PATH` and no `~/.famp`.
+2. **§1.** Both published installers ran from `releases/latest` and delivered
+   `1.1.0-rc.2`. `famp --version` and `command -v famp-gateway` succeeded in a
+   plain login shell with no manual `PATH` repair. `famp daemon install`
+   printed the linger note exactly as §1 describes; the printed
+   `loginctl enable-linger` command succeeded without elevation, and
+   `famp daemon status` then reported `linger=yes`.
+3. **§2.** The TLS recipe produced a leaf with `CA:FALSE` and `serverAuth`.
+   The empty `peers.keyring` was created before first start. The gateway
+   printed `ready, backing 1 principal(s): ben` and then logged
+   `relay-fetch[follower.famp.dev] … 404` — the correct pre-§4a state, and
+   direct confirmation that the relay reset landed.
+4. **§3.** Redemption as `dana` succeeded against the inviter's public
+   endpoint with no `--trust-cert` needed. `famp pair status` on the inviter
+   displayed `REDEEMED BY: agent:follower.famp.dev/dana` and pinned the AGENT
+   principal — #43's fix holding on real hosts a second time. Because the
+   keyring had been reset to empty, this was a genuine first pin: no
+   `--confirm-key-change` guard was reached.
+5. **§4a.** `grep "<follower-domain>" ~/.famp/gateway/peers.keyring` returned
+   **exactly one line**, as the guide promises. The relay gained the domain and
+   restarted; the inviter gateway restarted and reloaded the pin; the follower
+   gateway was restarted with the byte-identical command. Its
+   `follower.famp.dev` 404 count went to **zero** — §4a's success signal.
+6. **§5 / Task A.** Inbound arrived wrapped in the FAMP-QUARANTINE boundary
+   with `origin=gateway` and `class=request`. Commit reply, then terminal
+   reply. Receiver-owned `famp inspect tasks --json` showed
+   `REQUESTED → COMMITTED → COMPLETED` with `sig_verified=true` on all three
+   envelopes.
+7. **§6 / Task B.** Same in the opposite direction, distinct task id, same
+   three-state progression, `sig_verified=true` throughout, captured by the
+   receiving owner.
+8. **§7.** Not performed. No second person participated, so the seven
+   comprehension fields stay open for Plan 20-03 and **no comprehension claim
+   is made here.**
+
+Operator note, recorded rather than hidden: while restarting the follower
+gateway, a `pkill -f` pattern also matched the driving SSH session and dropped
+it. Nothing on the host was altered beyond stopping the gateway, and the very
+next action — rerunning the identical gateway command — is precisely what §4a
+prescribes. No guide step was skipped, repeated out of order, or repaired.
+
+### Gate defect found by populating this record
+
+A fully populated `pass` record **cannot validate**, and the cause is this
+template's own redaction warning. `phase20-evidence-check.sh` greps the record
+for `invite[_ -]?code` and `private[_ -]?key`; the template's line telling the
+author not to record those things contains both literals. The grep runs only on
+the `pass` path, so every earlier state missed it — the same shape as G3, which
+made failure outcomes unrecordable, mirrored onto the success outcome.
+
+Demonstrated with a control: a fully populated probe failed with
+`redaction review required: forbidden secret/path pattern`; rewording that one
+warning line and changing nothing else produced
+`EVIDENCE RECORD: VALID rehearsal pass`. Both templates were reworded to say
+"pairing codes, signing-key material, credentials", which keeps the warning and
+drops the literals. The guide's §preamble carries one of the same literals too,
+but the validator never reads the guide, so **the guide is unaffected and the
+freeze stands.**
+
+Note for anyone editing this record: prose *about* the banned literals trips the
+same grep. This section originally did, on a sentence quoting the guide. Describe
+them, do not spell them.
+
+This was found after the host run had finished. It is a defect in this phase's
+evidence tooling, not in the guide or the product, and no host step was redone
+because of it.
+
+### Provenance attestation — REQUIRED before `outcome` may be set
+
+The mechanics above were executed by an agent over SSH against machines Ben
+owns and administers, at his direction. Ben owns the hosts, the invite, and
+both receiver captures; he did not personally type the commands.
+
+Plan 20-02 Task 2 requires a human to confirm the record's provenance, and
+whether agent-driven execution satisfies DOC-07's "external operator" is a
+judgment only Ben can make. Two readings are honestly available:
+
+- **`pass`** — DOC-07 asks for an untouched supported clean host, the frozen
+  guide followed exactly, and owner-attributed receiver evidence. All three
+  hold. Independent-person judgment is UAT-02's job, and Plan 20-03 still
+  gates it.
+- **`invalid`** — if "external operator" means a human at the keyboard, then
+  this is a second dirty run, however clean the host was, and DOC-07 stays
+  open until a person repeats it.
+
+No `pass` is claimed here. Set `outcome` only after that call is made.
