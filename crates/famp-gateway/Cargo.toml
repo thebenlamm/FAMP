@@ -12,19 +12,19 @@ description = "FAMP v0.5.2 — famp-gateway crate (Layer 2 cross-host federation
 workspace = true
 
 [dependencies]
-famp-bus            = { path = "../famp-bus", version = "1.1.0-rc.1" }
-famp                = { path = "../famp", version = "1.1.0-rc.1" }
-famp-keyring        = { path = "../famp-keyring", version = "1.1.0-rc.1" }
-famp-envelope       = { path = "../famp-envelope", version = "1.1.0-rc.1" }
-famp-crypto         = { path = "../famp-crypto", version = "1.1.0-rc.1" }
-famp-transport      = { path = "../famp-transport", version = "1.1.0-rc.1" }
-famp-transport-http = { path = "../famp-transport-http", version = "1.1.0-rc.1" }
+famp-bus            = { path = "../famp-bus", version = "1.1.0-rc.2" }
+famp                = { path = "../famp", version = "1.1.0-rc.2" }
+famp-keyring        = { path = "../famp-keyring", version = "1.1.0-rc.2" }
+famp-envelope       = { path = "../famp-envelope", version = "1.1.0-rc.2" }
+famp-crypto         = { path = "../famp-crypto", version = "1.1.0-rc.2" }
+famp-transport      = { path = "../famp-transport", version = "1.1.0-rc.2" }
+famp-transport-http = { path = "../famp-transport-http", version = "1.1.0-rc.2" }
 # 17-05/D-26: famp-relay is the SOLE source of truth for the relay-fetch
 # wire contract this crate's relay_fetch.rs client consumes (the fetch
 # route, the four x-famp-relay-* header names, the signed authorization
 # form, and normalize_audience) -- retyping any of them here instead of
 # importing them is exactly how the client and the relay would drift.
-famp-relay          = { path = "../famp-relay", version = "1.1.0-rc.1" }
+famp-relay          = { path = "../famp-relay", version = "1.1.0-rc.2" }
 tokio      = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
 thiserror  = { workspace = true }
 serde      = { workspace = true }
@@ -48,7 +48,7 @@ reqwest    = { version = "0.13", default-features = false, features = ["rustls-n
 [dev-dependencies]
 assert_cmd = "2.0"
 tempfile = "3"
-famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.1" }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.2" }
 # 18-01: `tests/pairing_e2e.rs` seeds a deterministic `StdRng` for
 # `invite::run_at`'s code draw, and constructs `famp::cli::Cli` via
 # `clap::Parser::try_parse_from` for the PAIR-06 argv-refusal proof.
@@ -59,7 +59,7 @@ clap = { version = "4.6", features = ["derive"] }
 # famp-fsm's own transition surface. Zero source change to the frozen
 # famp-fsm crate itself (D-15) -- this is a dev-dependency EDGE from
 # famp-gateway only.
-famp-fsm = { path = "../famp-fsm", version = "1.1.0-rc.1" }
+famp-fsm = { path = "../famp-fsm", version = "1.1.0-rc.2" }
 
 [[bin]]
 name = "famp-gateway"

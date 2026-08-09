@@ -1,6 +1,6 @@
 {
   "name": "famp",
-  "version": "1.1.0-rc.1",
+  "version": "1.1.0-rc.2",
   "description": "Local-first messaging between Codex sessions — direct messages, IRC-style channels, and a signed task FSM over a shared UDS broker.",
   "keywords": ["messaging", "multi-agent", "coordination", "mcp"],
   "commands": "./commands/",

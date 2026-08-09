@@ -17,10 +17,10 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v7"] }
-famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.1" }
-famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.1" }
-famp-core = { path = "../famp-core", version = "1.1.0-rc.1" }
-famp-envelope = { path = "../famp-envelope", version = "1.1.0-rc.1" }
+famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.2" }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.2" }
+famp-core = { path = "../famp-core", version = "1.1.0-rc.2" }
+famp-envelope = { path = "../famp-envelope", version = "1.1.0-rc.2" }
 tracing = "0.1"
 
 [dev-dependencies]

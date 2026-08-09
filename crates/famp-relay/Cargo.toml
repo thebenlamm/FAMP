@@ -17,7 +17,7 @@ workspace = true
 # who may drain a queue. It is NOT here to make any trust decision about a
 # message; that decision stays exclusively `verify_inbound_any` at the
 # receiving gateway.
-famp-crypto = { path = "../famp-crypto", version = "1.1.0-rc.1" }
+famp-crypto = { path = "../famp-crypto", version = "1.1.0-rc.2" }
 # Present for `INBOX_ROUTE` (the enqueue route string, reused verbatim so a
 # sending gateway needs zero egress change) and the TLS server helpers
 # only. This transitively pulls the envelope and keyring crates into this
@@ -25,7 +25,7 @@ famp-crypto = { path = "../famp-crypto", version = "1.1.0-rc.1" }
 # boundary D-26/D-02 draw. The boundary is enforced at the SOURCE level: no
 # file in this crate names `famp-envelope`'s or `famp-keyring`'s module
 # paths or calls the receiving gateway's inbound envelope verification.
-famp-transport-http = { path = "../famp-transport-http", version = "1.1.0-rc.1" }
+famp-transport-http = { path = "../famp-transport-http", version = "1.1.0-rc.2" }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "signal", "time"] }
 thiserror  = { workspace = true }
 serde      = { workspace = true }

@@ -24,19 +24,19 @@ has_local 2>/dev/null || alias local=typeset
 set -u
 
 APP_NAME="famp-relay"
-APP_VERSION="1.1.0-rc.1"
+APP_VERSION="1.1.0-rc.2"
 if [ -n "${FAMP_RELAY_DOWNLOAD_URL:-}" ]; then
     ARTIFACT_DOWNLOAD_URLS="$FAMP_RELAY_DOWNLOAD_URL"
 elif [ -n "${INSTALLER_DOWNLOAD_URL:-}" ]; then
     ARTIFACT_DOWNLOAD_URLS="$INSTALLER_DOWNLOAD_URL"
 elif [ -n "${FAMP_RELAY_INSTALLER_GHE_BASE_URL:-}" ]; then
     INSTALLER_BASE_URL="$FAMP_RELAY_INSTALLER_GHE_BASE_URL"
-    ARTIFACT_DOWNLOAD_URLS="${INSTALLER_BASE_URL}/thebenlamm/FAMP/releases/download/v1.1.0-rc.1"
+    ARTIFACT_DOWNLOAD_URLS="${INSTALLER_BASE_URL}/thebenlamm/FAMP/releases/download/v1.1.0-rc.2"
 elif [ -n "${FAMP_RELAY_INSTALLER_GITHUB_BASE_URL:-}" ]; then
     INSTALLER_BASE_URL="$FAMP_RELAY_INSTALLER_GITHUB_BASE_URL"
-    ARTIFACT_DOWNLOAD_URLS="${INSTALLER_BASE_URL}/thebenlamm/FAMP/releases/download/v1.1.0-rc.1"
+    ARTIFACT_DOWNLOAD_URLS="${INSTALLER_BASE_URL}/thebenlamm/FAMP/releases/download/v1.1.0-rc.2"
 else
-    ARTIFACT_DOWNLOAD_URLS="https://github.com/thebenlamm/FAMP/releases/download/v1.1.0-rc.1"
+    ARTIFACT_DOWNLOAD_URLS="https://github.com/thebenlamm/FAMP/releases/download/v1.1.0-rc.2"
 fi
 if [ -n "${FAMP_RELAY_PRINT_VERBOSE:-}" ]; then
     PRINT_VERBOSE="$FAMP_RELAY_PRINT_VERBOSE"
@@ -66,7 +66,7 @@ fi
 AUTH_TOKEN="${FAMP_RELAY_GITHUB_TOKEN:-}"
 
 read -r RECEIPT <<EORECEIPT
-{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.32.0"},"source":{"app_name":"famp-relay","name":"FAMP","owner":"thebenlamm","release_type":"github"},"version":"1.1.0-rc.1"}
+{"binaries":["CARGO_DIST_BINS"],"binary_aliases":{},"cdylibs":["CARGO_DIST_DYLIBS"],"cstaticlibs":["CARGO_DIST_STATICLIBS"],"install_layout":"unspecified","install_prefix":"AXO_INSTALL_PREFIX","modify_path":true,"provider":{"source":"cargo-dist","version":"0.32.0"},"source":{"app_name":"famp-relay","name":"FAMP","owner":"thebenlamm","release_type":"github"},"version":"1.1.0-rc.2"}
 EORECEIPT
 
 # Some Linux distributions don't set HOME
@@ -120,10 +120,10 @@ usage() {
     cat <<EOF
 famp-relay-installer.sh
 
-The installer for famp-relay 1.1.0-rc.1
+The installer for famp-relay 1.1.0-rc.2
 
 This script detects what platform you're on and fetches an appropriate archive from
-https://github.com/thebenlamm/FAMP/releases/download/v1.1.0-rc.1
+https://github.com/thebenlamm/FAMP/releases/download/v1.1.0-rc.2
 then unpacks the binaries and installs them to
 
     \$CARGO_HOME/bin (or \$HOME/.cargo/bin)

@@ -12,8 +12,8 @@ description = "FAMP v0.7 — local-file TOFU keyring for Personal Profile"
 workspace = true
 
 [dependencies]
-famp-core = { path = "../famp-core", version = "1.1.0-rc.1" }
-famp-crypto = { path = "../famp-crypto", version = "1.1.0-rc.1" }
+famp-core = { path = "../famp-core", version = "1.1.0-rc.2" }
+famp-crypto = { path = "../famp-crypto", version = "1.1.0-rc.2" }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

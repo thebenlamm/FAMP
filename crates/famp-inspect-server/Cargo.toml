@@ -17,8 +17,8 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 time = { version = "0.3", features = ["formatting", "parsing"] }
-famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.1" }
-famp-bus = { path = "../famp-bus", version = "1.1.0-rc.1" }
-famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.1" }
-famp-envelope = { path = "../famp-envelope", version = "1.1.0-rc.1" }
-famp-fsm = { path = "../famp-fsm", version = "1.1.0-rc.1" }
+famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.2" }
+famp-bus = { path = "../famp-bus", version = "1.1.0-rc.2" }
+famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.2" }
+famp-envelope = { path = "../famp-envelope", version = "1.1.0-rc.2" }
+famp-fsm = { path = "../famp-fsm", version = "1.1.0-rc.2" }
