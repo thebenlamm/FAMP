@@ -71,9 +71,10 @@ material by hand.
 
 **Create the empty peer keyring before the first gateway start.** On a machine
 that has never pinned a peer the file does not exist yet, and the released
-`v1.1.0-rc.1` gateway exits with `failed to load peers keyring … No such file
-or directory` instead of starting (issue #42). An empty file is a valid
-keyring — it pins nobody, which is the correct state before pairing:
+gateway exits with `failed to load peers keyring … No such file or directory`
+instead of starting, rather than treating the absent file as an empty keyring
+(issue #42 — still open, so this step is still required). An empty file is a
+valid keyring: it pins nobody, which is the correct state before pairing.
 
 ```sh
 mkdir -p ~/.famp/gateway && touch ~/.famp/gateway/peers.keyring
