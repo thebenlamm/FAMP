@@ -27,13 +27,25 @@ fn root_file(path: &str) -> PathBuf {
 fn all_fenced_block_lines(doc: &str) -> Vec<String> {
     let mut in_block = false;
     let mut lines: Vec<String> = Vec::new();
+    // Only INSTRUCTION blocks are classified as commands. A ```text fence is
+    // sample output the reader compares against (a gateway ready line, an
+    // error string) — running it makes no sense, and demanding it clap-parse
+    // would push authors to drop expected-output samples from the guide
+    // entirely. Untagged fences are treated as instructions, so the default
+    // for anything ambiguous is "must be classified", never "skipped".
+    let mut is_instruction_block = false;
 
     for line in doc.lines() {
-        if line.trim_start().starts_with("```") {
+        let trimmed_start = line.trim_start();
+        if trimmed_start.starts_with("```") {
+            if !in_block {
+                let lang = trimmed_start.trim_start_matches('`').trim();
+                is_instruction_block = lang.is_empty() || lang == "sh";
+            }
             in_block = !in_block;
             continue;
         }
-        if in_block {
+        if in_block && is_instruction_block {
             let trimmed = line.trim();
             if !trimmed.is_empty() && !trimmed.starts_with('#') {
                 lines.push(trimmed.to_owned());
@@ -559,4 +571,89 @@ fn seven_pairing_messages_are_synchronized_but_do_not_claim_comprehension() {
         );
     }
     assert!(doc.contains("does **not** measure comprehension or close PAIR-05"));
+}
+
+/// A `sh`-tagged fenced block whose every line is a `#` comment contributes
+/// nothing to `all_fenced_block_lines` (which strips comments), so the
+/// classifier above accepts it silently — it is a block of instructions with
+/// no instruction in it.
+///
+/// That is not hypothetical: the first D9 repair replaced section 4's wrong
+/// `famp daemon restart` with a three-comment block reading "see Gateway Setup
+/// for details on your platform", naming a macOS LaunchAgent and a systemd
+/// user service for `famp-gateway` that **do not exist** anywhere in this
+/// repo. It passed the generalized gate. A reader following it has no command
+/// to run.
+///
+/// Returns the 1-based line number of the opening fence of the first
+/// offending block.
+fn sh_blocks_with_no_command(doc: &str) -> Option<usize> {
+    let mut in_block = false;
+    let mut is_sh = false;
+    let mut opened_at = 0usize;
+    let mut commands = 0usize;
+
+    for (idx, line) in doc.lines().enumerate() {
+        let trimmed_start = line.trim_start();
+        if trimmed_start.starts_with("```") {
+            if in_block {
+                if is_sh && commands == 0 {
+                    return Some(opened_at);
+                }
+            } else {
+                is_sh = trimmed_start.trim_start_matches('`').trim() == "sh";
+                opened_at = idx + 1;
+                commands = 0;
+            }
+            in_block = !in_block;
+            continue;
+        }
+        if in_block {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                commands += 1;
+            }
+        }
+    }
+
+    None
+}
+
+#[test]
+fn every_sh_block_contains_at_least_one_real_command() {
+    let doc = std::fs::read_to_string(root_file("docs/FOLLOWER-SETUP.md")).unwrap();
+
+    assert!(
+        sh_blocks_with_no_command(&doc).is_none(),
+        "an ```sh block at line {:?} contains only comments — a reader gets no \
+         runnable command. Either give the block a real command or retag the \
+         fence (```text) so it does not present as something to run.",
+        sh_blocks_with_no_command(&doc)
+    );
+}
+
+#[test]
+fn sh_block_command_check_trips_on_a_comment_only_block() {
+    // Control for the assertion above: prove the detector actually fires,
+    // rather than being green because it can never see a positive.
+    let comment_only = "# heading\n\n```sh\n# do a thing\n# see another doc\n```\n";
+    assert_eq!(
+        sh_blocks_with_no_command(comment_only),
+        Some(3),
+        "a comment-only sh block must be detected at its opening fence"
+    );
+
+    let has_command = "```sh\n# explain\nfamp --version\n```\n";
+    assert_eq!(
+        sh_blocks_with_no_command(has_command),
+        None,
+        "a block with a real command must pass"
+    );
+
+    let text_block = "```text\nfamp-gateway: ready\n```\n";
+    assert_eq!(
+        sh_blocks_with_no_command(text_block),
+        None,
+        "a non-sh block is output, not instructions, and is exempt"
+    );
 }

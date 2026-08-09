@@ -113,16 +113,28 @@ Pinned keyrings load once at gateway startup. Both owners restart their gateway
 after the pins are written, then each waits for a fresh ready signal. Do not
 send either task using a readiness line emitted before pairing.
 
-**Restart the gateway itself, not the broker.** `famp daemon restart` restarts only the broker — it does NOT restart the gateway, so the gateway will keep its pre-pairing empty keyring. Stop and start your `famp-gateway` process by hand:
+**Restart the gateway itself, not the broker.** `famp daemon restart` restarts
+only the broker; it does **not** restart a gateway, and there is no
+`famp daemon` command that does. Running it here leaves the gateway holding the
+empty keyring it loaded before pairing, and section 5 then fails with no error
+message at all — the task simply never arrives.
 
-```sh
-# On macOS: kill and restart the LaunchAgent for famp-gateway
-# On Linux: stop and start the systemd user service for famp-gateway
-# See [Gateway Setup](GATEWAY-SETUP.md) for details on your platform
+`famp-gateway` is the plain foreground process each owner started in section 2.
+To restart it: press `Ctrl-C` in the terminal running it, then run **the exact
+same command again** — same `--listen`, same `--tls-cert`/`--tls-key`, same
+`--peer`/`--relay-fetch`/`--backs`, same trailing principal name. Changing any
+flag here changes what you are testing.
+
+Wait for a **new** ready line before continuing:
+
+```text
+famp-gateway: ready, backing N principal(s): <names>
 ```
 
-If the gateway is not service-managed (running as a background process), each owner stops and starts their own
-`famp-gateway` process instead. Troubleshoot startup or reachability in
+A `ready` line printed before the pins were written does not count. If you
+started your gateway under a service manager you wrote yourself, restart it
+through that instead — the requirement is a fresh process, not a particular
+mechanism. Troubleshoot startup or reachability in
 [Gateway Setup](GATEWAY-SETUP.md); do not replace this path with a shared VPN.
 
 ## 5. Task A: Ben sends, follower receives and closes
