@@ -200,16 +200,26 @@ In a different terminal, the follower checks the Inbox:
 
 ```sh
 famp inbox list --as <follower-name>
+famp send --as <follower-name> --to agent:<ben-domain>/<ben-name> --task <ben-to-follower-task-id> --body <interim-note>
 famp send --as <follower-name> --to agent:<ben-domain>/<ben-name> --task <ben-to-follower-task-id> --body <result> --terminal
 famp inspect tasks --id <ben-to-follower-task-id> --json
 ```
+
+**Two replies, and the order matters.** A task advances
+`REQUESTED -> COMMITTED -> COMPLETED`, one step per message: the first reply
+(no `--terminal`) commits the task, the second (`--terminal`) closes it. A lone
+`--terminal` reply tries to jump straight from `REQUESTED` to a terminal state,
+which the task state machine refuses — nothing errors, the send still reports
+success, and the inspection below simply keeps showing `REQUESTED`. A correct
+run then looks like a failed one.
 
 The follower—the receiving owner—captures the final inspection and confirms
 the task state is exactly `COMPLETED`, `FAILED`, or `CANCELLED`.
 
 For a host agent, the equivalent explicit path is: the follower calls
-`famp_inbox`, then calls `famp_send` in `reply` mode with the same task ID. Reply
-mode closes terminally by default; it must not wait for an automatic wake.
+`famp_inbox`, then calls `famp_send` in `reply` mode with the same task ID
+twice — first with `expect_reply: true`, which commits the task, then without
+it, which closes the thread. It must not wait for an automatic wake.
 
 ## 6. Task B: follower sends, Ben receives and closes
 
@@ -225,16 +235,21 @@ processes his Inbox and closes this second task:
 
 ```sh
 famp inbox list --as <ben-name>
+famp send --as <ben-name> --to agent:<follower-domain>/<follower-name> --task <follower-to-ben-task-id> --body <interim-note>
 famp send --as <ben-name> --to agent:<follower-domain>/<follower-name> --task <follower-to-ben-task-id> --body <result> --terminal
 famp inspect tasks --id <follower-to-ben-task-id> --json
 ```
+
+The same two-reply rule as section 5: commit first, then close. One
+`--terminal` reply on its own leaves this task at `REQUESTED` too.
 
 Ben—the receiving owner—captures the final inspection and confirms exactly one
 terminal state: `COMPLETED`, `FAILED`, or `CANCELLED`. Sender-side output or a
 report relayed by the sender does not substitute for receiver-owned proof.
 
 For a host agent, Ben calls `famp_inbox`, then `famp_send` in `reply` mode with
-the same Task B ID and the default terminal close.
+the same Task B ID twice — `expect_reply: true` to commit, then without it to
+close.
 
 ## 7. Pairing-message comprehension review (human judgment remains open)
 

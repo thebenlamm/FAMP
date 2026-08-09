@@ -94,6 +94,7 @@ fn placeholder_map() -> HashMap<String, String> {
     [
         ("<ben-name>", "ben"),
         ("<follower-name>", "follower"),
+        ("<interim-note>", "still-working"),
         ("<ben-domain>", "ben.example.test"),
         ("<follower-domain>", "follower.example.test"),
         ("<ben-gateway>", "https://ben.example.test:8443"),
