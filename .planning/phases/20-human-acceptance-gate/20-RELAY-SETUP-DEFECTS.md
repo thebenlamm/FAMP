@@ -93,3 +93,33 @@ prose whether they need to convert it.
 **Not yet done:** the follower host does not exist. Per issue #39 the relay must be
 restarted once the follower's gateway identity exists so its `--domain` can be
 added — harmless here only because no traffic has been queued yet.
+
+## Inviter status correction (verified 2026-08-08, later the same day)
+
+The row above says the inviter is deployed. That is true of the *host*, not of a
+*serving gateway*. Verified directly, not taken on report:
+
+```text
+from outside AWS:  ben.famp.dev -> 44.204.243.222; tcp/443, tcp/8443, tcp/9443 all
+                   refused; tcp/22 open
+on the box:        pgrep -laf famp-gateway -> none
+                   ss -tlnp                -> :22 only
+                   systemctl --user        -> famp-broker.service active running
+                   loginctl Linger         -> yes
+                   ~/.famp/own-domain      -> ben.famp.dev
+                   ~/.famp/gateway/identity.ed25519 -> present, 0600
+                   /etc/letsencrypt/live/ben.famp.dev/ -> present (issued 21:34Z)
+```
+
+So execution-plan step 3 is **incomplete**: identity, domain, broker, linger, and
+TLS material are all in place, but no `famp-gateway` process is running and no unit
+exists to start one. Because there is no listener, the closed ports do not yet tell
+us whether the EC2 security group also needs a rule — start the listener first, then
+re-probe from outside; only a still-refused port after that implicates the SG.
+
+This is R3 (no systemd unit) recurring on a second host: the relay needed a
+hand-written unit and so will the inviter gateway.
+
+**Access note:** the only SSH key that authenticates to the inviter is
+`famp-phase20-key.pem`, and it currently lives *only* in an ephemeral session
+scratchpad under `/private/tmp`. Copy it somewhere durable before relying on it.

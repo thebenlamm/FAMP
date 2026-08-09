@@ -10,15 +10,16 @@
 > | D2 §2 points at the v1.0 topology doc | **FIXED** | `de5aa1f` + `624ef80` — §2 states the inbound requirement directly; `GATEWAY-SETUP.md`'s no-relay claim and flag surface corrected; `README.md` paraphrase fixed |
 > | D3 no document covers relay deployment | **FIXED** | `823e582` — `docs/RELAY-SETUP.md`, verified against the crate sources before commit |
 > | *(gate hole, described inside D1 — not separately numbered above)* | **FIXED** | `185dd9a` — `crates/famp-gateway/tests/follower_setup_gateway_commands.rs`, 3 tests incl. `red_path_trips_on_prerepair_invocation`; wired to CI via `cargo nextest run --workspace` (`ci.yml:119`) |
-> | D4 inviter needs inbound reachability | **OPEN** | Product property, not a doc bug. Blocked on an inbound-reachable inviter endpoint; see the host table below. |
-> | D5 relay host is bare | **OPEN** | Re-confirmed exhaustively 2026-08-08 (full-filesystem `find`, all regions, no container services) |
+> | D4 inviter needs inbound reachability | **PARTLY ADDRESSED** | The host-table verdict below is superseded: the answer is a dedicated cloud inviter, not Ben's home network. EC2 `ben.famp.dev` → `44.204.243.222` has broker, linger, own-domain, gateway identity, and a Let's Encrypt cert — but **no gateway process is running and no port is open**. See the inviter status correction in `20-RELAY-SETUP-DEFECTS.md`. |
+> | D5 relay host is bare | **FIXED** | `relay.famp.dev` → `44.219.73.36`, port 443, systemd, Let's Encrypt cert (exp. 2026-11-06). Verified from outside AWS with no `-k`: HTTP 404, TLS verify result 0. |
+> | D6 guide never mentions linger on a headless Linux host | **FIXED** | `f3210a0` — §1 now tells the reader to act on the note `famp daemon install` already prints, and confirm `linger=yes` via `famp daemon status` |
 >
-> **The freeze recorded below is now STALE.** `docs/FOLLOWER-SETUP.md` changed in
-> `de5aa1f`, so both the commit and the SHA-256 in this file and in
-> `20-REHEARSAL.md`'s candidate block describe a guide that no longer exists.
-> Re-freezing is deliberately NOT done here: per 20-02-PLAN's D-01/D-02/D-04 the
-> guide is frozen as a rehearsal candidate at Task 1 and only proven by a
-> successful run. Refresh the candidate block immediately before the attempt.
+> **The freeze below is superseded — re-frozen 2026-08-08.** The guide changed in
+> `de5aa1f` (D1/D2) and `f3210a0` (D6). Current values live in `20-REHEARSAL.md`:
+> `guide_commit=f3210a009083fc6dcb07063073dea55927bd6935`,
+> `guide_digest=b1019294330f49c2c224f94c70584e761a267cd855da467730a7ce08a7c0567e`.
+> Per 20-02-PLAN's D-01/D-02/D-04 that is a rehearsal *candidate* freeze; only a
+> successful run proves it. Re-freeze again if the guide changes before the attempt.
 >
 > A new doc landed alongside these repairs: `docs/RELAY-SETUP.md`, the
 > store-and-forward relay procedure that did not previously exist anywhere

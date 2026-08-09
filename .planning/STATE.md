@@ -4,11 +4,11 @@ milestone: v1.1
 milestone_name: Open-Internet Federation
 current_phase: 20
 current_phase_name: Human Acceptance Gate
-status: blocked_human_action
-stopped_at: Plan 20-02 Task 2 — blocked on external clean-host rehearsal (DOC-07)
-last_updated: "2026-08-08T00:00:00.000Z"
+status: in_progress
+stopped_at: Plan 20-02 Task 2 — execution-plan steps 1-3 done (CI green, relay + inviter live); next is re-freezing the guide, then the clean follower box
+last_updated: "2026-08-08T23:00:00.000Z"
 last_activity: 2026-08-08
-last_activity_desc: Session resumed; Phase 20 still blocked on the untouched-supported-host rehearsal
+last_activity_desc: Relay deployed on Lightsail (relay.famp.dev, LE cert), inviter EC2 up (ben.famp.dev), RELAY-SETUP R1/R4/R5/R6 closed, R2/R3 filed as issue #41
 progress:
   total_phases: 7
   completed_phases: 3
@@ -33,15 +33,16 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 Phase: 20 — Human Acceptance Gate
 Plan: 20-02, Task 2 of 2
-Status: BLOCKED on human action — genuine untouched supported host required for DOC-07
-Last activity: 2026-08-08 — session resumed; no repository-local work remains before the rehearsal
+Status: IN PROGRESS — unblocked by `20-REHEARSAL-EXECUTION-PLAN.md` (rehearsal runs cloud-to-cloud; D-07's independent-network rule governs 20-03, not 20-02)
+Last activity: 2026-08-08 — steps 1-3 of the execution plan complete
 
 ## Session Continuity
 
 Last session: 2026-08-08 (resume)
-Stopped at: Plan 20-02 Task 2 — clean-host rehearsal not yet run
-Resume file: `.planning/phases/20-human-acceptance-gate/.continue-here.md` (+ `.planning/HANDOFF.json`)
-Frozen guide: `docs/FOLLOWER-SETUP.md` @ `f848c9e747ad769a162408249a8dd084f34e2350`, SHA-256 `43f793114a9e51cf2a94c86dea47077cc1b800c2b344d81fa0bcc04eb6e1a01c`
+Stopped at: Execution-plan step 4 — re-freeze the guide (recompute `guide_commit`/`guide_digest`), then step 5 launch the clean follower EC2 box
+Resume file: `.planning/phases/20-human-acceptance-gate/20-REHEARSAL-EXECUTION-PLAN.md` (supersedes `.continue-here.md` and the stale `.planning/HANDOFF.json`)
+Frozen guide: **STALE** — `f848c9e…` / SHA-256 `43f7931…` predate `de5aa1f`; must be recomputed at step 4
+Live infra: relay `relay.famp.dev` → 44.219.73.36 (Lightsail, LE cert exp. 2026-11-06, root, systemd); inviter `ben.famp.dev` → 44.204.243.222 (EC2 `i-0c63694b9fa161da3`, t3.small, `Purpose=FAMP-DOC-07`)
 
 ## v1.1 Phase Map
 
