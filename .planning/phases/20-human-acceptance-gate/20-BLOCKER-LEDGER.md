@@ -37,8 +37,8 @@ executed §3.
 | id | defect | evidence | state |
 |---|---|---|---|
 | P1 | Pairing pins `agent:<domain>/gateway`; `send` signs `from = agent:<domain>/<name>`; ingress does an exact-match lookup → every paired peer rejects the other | `pair/redeem.rs:102`, `send/mod.rs:679`, `verify.rs:105`, `famp-keyring` `map.get` | **FIXED** by option A (`2ff774d`), issue #43 |
-| P2 | `redeem.rs` writes the keyring with a raw `save_to_file` — a pin that fails reload-validation has already overwritten the last-good file, bricking the gateway with no CLI recovery | `redeem.rs:197` vs the hardened `status.rs::pin()` (`f092bd5`) | OPEN |
-| P3 | Both pair call sites pass `rotate_to(..., confirmed = true)`, silently retiring an existing Active key. With `--as` now caller-controlled, a holder of a valid invite code can take over another agent's pin | `redeem.rs:189`, `status.rs:277`; semantics at `famp-keyring/src/lib.rs:406-412` | OPEN |
+| P2 | `redeem.rs` writes the keyring with a raw `save_to_file` — a pin that fails reload-validation has already overwritten the last-good file, bricking the gateway with no CLI recovery | `redeem.rs:197` vs the hardened `status.rs::pin()` (`f092bd5`) | FIXED `1846c36` |
+| P3 | Both pair call sites pass `rotate_to(..., confirmed = true)`, silently retiring an existing Active key. With `--as` now caller-controlled, a holder of a valid invite code can take over another agent's pin | `redeem.rs:189`, `status.rs:277`; semantics at `famp-keyring/src/lib.rs:406-412` | FIXED `9abf997` |
 | P4 | Gateway hard-exits on a missing `peers.keyring`, so a first-run gateway cannot start before its first pairing | `famp-gateway/src/main.rs:575` | issue #42; doc workaround shipped in `aaac461` |
 
 **P3 has a consequence neither reviewer raised.** `confirmed = false` alone is
@@ -52,20 +52,20 @@ explicit opt-in (`--confirm-key-change` or equivalent) that passes `true`.
 
 | id | defect | evidence | state |
 |---|---|---|---|
-| D7 | §5/§6 say `famp register --name <name>`; the flag does not exist — it is positional `<NAME>` | `cli/register.rs:54`; shipped binary exits 2 | OPEN |
-| D8 | `famp register` is a long-lived blocking foreground process, printed as line 1 of a sequential block. Ctrl-C it and every later command fails `NotRegistered` | `register.rs` doc comment; `broker/identity.rs` `resolve_op_identity` | OPEN |
-| D9 | §4's `famp daemon restart` restarts **famp-broker only** — never a gateway. §4 exists to reload pinned keyrings, which load at *gateway* start, so it exits 0 having reloaded nothing | `cli/daemon/restart.rs:11`; no `gateway` anywhere in `cli/daemon/` | OPEN |
-| D10 | Onboarding `follower.famp.dev` at the relay is a mid-attempt operator step the guide never mentions, and `RELAY-SETUP.md`'s mechanism (paste a `famp peer export` blob) is forbidden by FOLLOWER-SETUP's own preamble and by the accuracy test's `FORBIDDEN_LITERALS` | `famp-relay/src/http.rs:137-140,213-215`; issue #39 | OPEN |
-| D11 | The invite artifact prints `famp pair redeem --from <url>` with no `--trust-cert`, so a self-signed inviter cert fails as `Could not reach {url}` — misreporting a TLS-trust failure as gateway-down | `pair/invite.rs`, `pair/redeem.rs` client build | OPEN |
-| D12 | The follower must be named exactly `dana` for the inviter's current routing, but the guide's `<follower-name>` implies free choice | deployed unit; `build_route_map` path 2 | OPEN (record; real DOC-06 gap for 20-03) |
+| D7 | §5/§6 say `famp register --name <name>`; the flag does not exist — it is positional `<NAME>` | `cli/register.rs:54`; shipped binary exits 2 | FIXED `a1887b8` |
+| D8 | `famp register` is a long-lived blocking foreground process, printed as line 1 of a sequential block. Ctrl-C it and every later command fails `NotRegistered` | `register.rs` doc comment; `broker/identity.rs` `resolve_op_identity` | FIXED `a1887b8` |
+| D9 | §4's `famp daemon restart` restarts **famp-broker only** — never a gateway. §4 exists to reload pinned keyrings, which load at *gateway* start, so it exits 0 having reloaded nothing | `cli/daemon/restart.rs:11`; no `gateway` anywhere in `cli/daemon/` | FIXED `a1887b8` then REPAIRED `88d4111` |
+| D10 | Onboarding `follower.famp.dev` at the relay is a mid-attempt operator step the guide never mentions, and `RELAY-SETUP.md`'s mechanism (paste a `famp peer export` blob) is forbidden by FOLLOWER-SETUP's own preamble and by the accuracy test's `FORBIDDEN_LITERALS` | `famp-relay/src/http.rs:137-140,213-215`; issue #39 | FIXED `84304fc` |
+| D11 | The invite artifact prints `famp pair redeem --from <url>` with no `--trust-cert`, so a self-signed inviter cert fails as `Could not reach {url}` — misreporting a TLS-trust failure as gateway-down | `pair/invite.rs`, `pair/redeem.rs` client build | FIXED `a1887b8` |
+| D12 | The follower must be named exactly `dana` for the inviter's current routing, but the guide's `<follower-name>` implies free choice | deployed unit; `build_route_map` path 2 | RECORDED — the rehearsal uses `dana`; still a real DOC-06 gap for 20-03 |
 
 ## G — gate defects (why none of the above was caught)
 
 | id | defect | state |
 |---|---|---|
-| G1 | `follower_setup_doc_accuracy` executes only §1's fenced block (`classify_section1_commands` takes the first block containing `famp-installer.sh`). §2–§7 get string-anchor assertions only, and `famp register` is in no anchor. This is the D1 hole recurring one section down | OPEN — generalize to every fenced block |
-| G2 | No test pairs and then delivers. `e2e_relay_bidirectional` bootstraps via `peer_export --as ALICE` ("for the AGENT identities") and never invokes `famp pair`; `pairing_e2e` asserts the pins land and never sends an envelope. Both halves green, seam untested — this is exactly how P1 shipped | OPEN — the regression test that should gate P1's fix |
-| G3 | `phase20-evidence-check.sh`'s `require()` rejects any field still holding `<REQUIRED>`, so an honest `product_or_guide_failure` or `invalid` record cannot validate — and 20-02 Task 2's verify runs that script. The most likely outcome of any attempt is unrecordable by the plan's own gate | issue #40 — pre-launch blocker, not a deferred nicety |
+| G1 | `follower_setup_doc_accuracy` executes only §1's fenced block (`classify_section1_commands` takes the first block containing `famp-installer.sh`). §2–§7 get string-anchor assertions only, and `famp register` is in no anchor. This is the D1 hole recurring one section down | FIXED `0b080c5`, plus two further holes closed in `88d4111` |
+| G2 | No test pairs and then delivers. `e2e_relay_bidirectional` bootstraps via `peer_export --as ALICE` ("for the AGENT identities") and never invokes `famp pair`; `pairing_e2e` asserts the pins land and never sends an envelope. Both halves green, seam untested — this is exactly how P1 shipped | FIXED `4e377af` — red path reproduced independently, control held |
+| G3 | `phase20-evidence-check.sh`'s `require()` rejects any field still holding `<REQUIRED>`, so an honest `product_or_guide_failure` or `invalid` record cannot validate — and 20-02 Task 2's verify runs that script. The most likely outcome of any attempt is unrecordable by the plan's own gate | FIXED `d49df10`, issue #40 closed |
 
 ## R — refuted / corrected
 
