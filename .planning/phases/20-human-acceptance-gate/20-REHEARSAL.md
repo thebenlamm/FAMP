@@ -8,13 +8,13 @@ until Task 2 is performed on a genuine untouched supported host.
 Frozen repository candidate:
 
 ```text
-guide_commit=84304fc231f43c27874bce5063630a53df3c3b1c
-guide_digest=b818d2f8ccd6129db987e4ff798aa69c2dda4c87d4ede98e20939ed6df477c33
+guide_commit=6ffd0d905e18d313b136eb6a77fdc6b8177f2c7c
+guide_digest=3436cdb329402e56cae4b29188d44c15b19f32721dc197f84027f9bf24bfe799
 ```
 
-Re-frozen 2026-08-08 (final) at `84304fc`, after every row of
+Re-frozen 2026-08-09 at `6ffd0d9`, after every row of
 `20-BLOCKER-LEDGER.md` was closed. This is the freeze the attempt runs
-against; the three earlier freezes tonight (`f848c9e`, `f3210a0`, `aaac461`)
+against; the four earlier freezes (`f848c9e`, `f3210a0`, `aaac461`, `84304fc`)
 were each superseded within hours by the next defect and must not be used to
 attest anything.
 
@@ -33,10 +33,16 @@ Readiness suite green against this freeze: `follower_setup_doc_accuracy` (7),
 (5), `pair_then_deliver_e2e` (1), `e2e_relay_bidirectional` (1).
 `git diff --exit-code -- docs/FOLLOWER-SETUP.md` is clean at this commit.
 
-**This freeze is still not sufficient to start.** `v1.1.0-rc.1` carries no
-`famp pair` command, and the guide installs from `releases/latest`. The attempt
-cannot begin until rc.2 is published and section 1's installers deliver a
-binary that has the subcommands section 3 calls.
+The `84304fc` freeze was superseded by one line: it described the missing-keyring
+behavior as belonging to "the released `v1.1.0-rc.1` gateway", which stops being
+true for the reader the moment rc.2 is what section 1 installs. The behavior is
+unchanged (issue #42 is still open); only the label was going stale, and it is
+now phrased without a version.
+
+**Still not sufficient to start until rc.2 is published.** `v1.1.0-rc.1` carries
+no `famp pair` command and the guide installs from `releases/latest`, so the
+attempt cannot begin until that URL serves a binary with the subcommands
+section 3 calls -- verified by downloading it, not by a green release run.
 
 Readiness suite re-run green against this freeze: `follower_setup_doc_accuracy`
 (4), `phase20_clean_box_preflight`, `phase20_evidence_schema` (4), `pair_cli`,
