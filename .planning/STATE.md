@@ -5,10 +5,10 @@ milestone_name: Open-Internet Federation
 current_phase: 20
 current_phase_name: Human Acceptance Gate
 status: in_progress
-stopped_at: Plan 20-02 Task 2 — execution-plan steps 1-4 done (CI green, relay + inviter serving, guide re-frozen); next is step 5, the clean follower box
-last_updated: "2026-08-09T01:10:00.000Z"
+stopped_at: Plan 20-02 Task 2 — v1.1.0-rc.2 published and verified from releases/latest; next is the DIRTY throwaway-box rehearsal against the published binaries, then the clean host
+last_updated: "2026-08-09T04:20:00.000Z"
 last_activity: 2026-08-08
-last_activity_desc: Inviter gateway now actually serving (verified externally, TLS verify 0); guide re-frozen at aaac461 after two defects found on the shipped rc — missing linger step, and issue #42's missing-peer-keyring hard exit
+last_activity_desc: Two-reviewer adversarial pass found rc.1 ships no `famp pair` at all; 13-row blocker ledger opened and fully closed; v1.1.0-rc.2 tagged, published, marked latest, and verified by downloading what releases/latest actually serves
 progress:
   total_phases: 7
   completed_phases: 3
@@ -39,9 +39,9 @@ Last activity: 2026-08-08 — steps 1-3 complete; pre-attempt review found the r
 ## Session Continuity
 
 Last session: 2026-08-08 (resume)
-Stopped at: Execution-plan step 5 — launch the clean follower EC2, run `scripts/phase20-clean-box-preflight.sh` BEFORE installing anything
+Stopped at: rc.2 is published. Next is a DIRTY throwaway-box walkthrough of the frozen guide against the published binaries (no evidence ceremony), because every defect found so far came from running it, not reading it. Clean-host attempt only after that
 Resume file: `.planning/phases/20-human-acceptance-gate/20-REHEARSAL-EXECUTION-PLAN.md` (supersedes `.continue-here.md` and the stale `.planning/HANDOFF.json`)
-Frozen guide: `docs/FOLLOWER-SETUP.md` @ `aaac461ed099249d45fbb16e490d74eb78776b82`, SHA-256 `1cdefccb4e8466eaaba003c6cac7e42033d0e450cdd9d2af58ed25c984c7ab3b` — re-freeze again if the guide changes before the attempt
+Frozen guide: `docs/FOLLOWER-SETUP.md` @ `6ffd0d905e18d313b136eb6a77fdc6b8177f2c7c`, SHA-256 `3436cdb329402e56cae4b29188d44c15b19f32721dc197f84027f9bf24bfe799` — the fifth and current freeze; re-freeze again if the guide changes before the attempt
 Live infra: relay `relay.famp.dev` → 44.219.73.36 (Lightsail, LE cert exp. 2026-11-06, root, systemd); inviter `ben.famp.dev` → 44.204.243.222 (EC2 `i-0c63694b9fa161da3`, t3.small, `Purpose=FAMP-DOC-07`), gateway serving on 8443 under `/etc/systemd/system/famp-gateway.service`, verified from outside AWS as HTTP 404 / TLS verify 0
 Rehearsal identities (pre-committed, wired into the inviter unit): inviter `agent:ben.famp.dev/ben`, follower `agent:follower.famp.dev/dana`. AWS profile `benlamm-projects` (account 559846026666); SSH keys `~/.ssh/famp-phase20-key.pem` (inviter) and `~/.ssh/famp-relay-key.pem` (relay)
 Before step 5's first send: restart the relay with `--domain follower.famp.dev=<follower gateway pubkey>` added — the relay only accepts posts for configured domains, and adding one needs a restart (issue #39)
