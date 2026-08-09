@@ -38,6 +38,8 @@ redacted evidence, result. Replace every `<REQUIRED>` value; do not edit keys.
 
 ```text
 outcome=unresolved
+failure_stage=<REQUIRED>
+failure_detail=<REQUIRED>
 redaction_review=<REQUIRED>
 redaction_findings=<REQUIRED>
 clean_preflight=<REQUIRED>

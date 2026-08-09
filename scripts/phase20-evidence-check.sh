@@ -22,9 +22,30 @@ OUTCOMES=$(grep -c '^outcome=' "$RECORD" || true)
 OUTCOME=$(grep '^outcome=' "$RECORD" 2>/dev/null | sed 's/^outcome=//' || true)
 case "$OUTCOME" in pass|product_or_guide_failure|invalid) ;; *) echo "unknown outcome" >&2; FAIL=1 ;; esac
 
-for key in redaction_review redaction_findings task_a_id task_a_owner task_a_utc task_a_state task_b_id task_b_owner task_b_utc task_b_state; do require "$key"; done
+# Redaction is checked for EVERY outcome: a run that failed or was
+# invalidated still produced notes, and those can leak just as easily as a
+# passing record's.
+for key in redaction_review redaction_findings; do require "$key"; done
 [ "$(grep '^redaction_review=' "$RECORD" | sed 's/.*=//' || true)" = pass ] || FAIL=1
 [ "$(grep '^redaction_findings=' "$RECORD" | sed 's/.*=//' || true)" = none ] || FAIL=1
+
+# Everything below this point describes a run that got far enough to produce
+# it. Demanding it of a `product_or_guide_failure` or `invalid` record made
+# the two most likely outcomes of any attempt literally unrecordable: the
+# run dies at the step that failed, so every later field is honestly still
+# `<REQUIRED>`, and `require` rejected exactly that. A failed attempt instead
+# has to say where it died and what happened -- which is the evidence that
+# matters for those outcomes.
+if [ "$OUTCOME" != pass ]; then
+    for key in failure_stage failure_detail; do require "$key"; done
+    if [ "$FAIL" -eq 0 ]; then
+        echo "EVIDENCE RECORD: VALID $MODE $OUTCOME"
+        exit 0
+    fi
+    exit 1
+fi
+
+for key in task_a_id task_a_owner task_a_utc task_a_state task_b_id task_b_owner task_b_utc task_b_state; do require "$key"; done
 
 TASK_A=$(grep '^task_a_id=' "$RECORD" | sed 's/.*=//' || true)
 TASK_B=$(grep '^task_b_id=' "$RECORD" | sed 's/.*=//' || true)

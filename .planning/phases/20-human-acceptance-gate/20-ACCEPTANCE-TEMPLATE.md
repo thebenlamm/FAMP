@@ -11,6 +11,8 @@ timestamp, redacted evidence, and result. Replace every `<REQUIRED>` value.
 
 ```text
 outcome=unresolved
+failure_stage=<REQUIRED>
+failure_detail=<REQUIRED>
 redaction_review=<REQUIRED>
 redaction_findings=<REQUIRED>
 independent_machines=<REQUIRED>
