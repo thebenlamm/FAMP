@@ -5,10 +5,10 @@ milestone_name: Open-Internet Federation
 current_phase: 20
 current_phase_name: Human Acceptance Gate
 status: in_progress
-stopped_at: Plan 20-02 Task 2 — execution-plan steps 1-3 done (CI green, relay + inviter live); next is re-freezing the guide, then the clean follower box
-last_updated: "2026-08-08T23:00:00.000Z"
+stopped_at: Plan 20-02 Task 2 — execution-plan steps 1-4 done (CI green, relay + inviter serving, guide re-frozen); next is step 5, the clean follower box
+last_updated: "2026-08-09T01:10:00.000Z"
 last_activity: 2026-08-08
-last_activity_desc: Relay deployed on Lightsail (relay.famp.dev, LE cert), inviter EC2 up (ben.famp.dev), RELAY-SETUP R1/R4/R5/R6 closed, R2/R3 filed as issue #41
+last_activity_desc: Inviter gateway now actually serving (verified externally, TLS verify 0); guide re-frozen at aaac461 after two defects found on the shipped rc — missing linger step, and issue #42's missing-peer-keyring hard exit
 progress:
   total_phases: 7
   completed_phases: 3
@@ -39,10 +39,12 @@ Last activity: 2026-08-08 — steps 1-3 of the execution plan complete
 ## Session Continuity
 
 Last session: 2026-08-08 (resume)
-Stopped at: Execution-plan step 4 — re-freeze the guide (recompute `guide_commit`/`guide_digest`), then step 5 launch the clean follower EC2 box
+Stopped at: Execution-plan step 5 — launch the clean follower EC2, run `scripts/phase20-clean-box-preflight.sh` BEFORE installing anything
 Resume file: `.planning/phases/20-human-acceptance-gate/20-REHEARSAL-EXECUTION-PLAN.md` (supersedes `.continue-here.md` and the stale `.planning/HANDOFF.json`)
-Frozen guide: **STALE** — `f848c9e…` / SHA-256 `43f7931…` predate `de5aa1f`; must be recomputed at step 4
-Live infra: relay `relay.famp.dev` → 44.219.73.36 (Lightsail, LE cert exp. 2026-11-06, root, systemd); inviter `ben.famp.dev` → 44.204.243.222 (EC2 `i-0c63694b9fa161da3`, t3.small, `Purpose=FAMP-DOC-07`)
+Frozen guide: `docs/FOLLOWER-SETUP.md` @ `aaac461ed099249d45fbb16e490d74eb78776b82`, SHA-256 `1cdefccb4e8466eaaba003c6cac7e42033d0e450cdd9d2af58ed25c984c7ab3b` — re-freeze again if the guide changes before the attempt
+Live infra: relay `relay.famp.dev` → 44.219.73.36 (Lightsail, LE cert exp. 2026-11-06, root, systemd); inviter `ben.famp.dev` → 44.204.243.222 (EC2 `i-0c63694b9fa161da3`, t3.small, `Purpose=FAMP-DOC-07`), gateway serving on 8443 under `/etc/systemd/system/famp-gateway.service`, verified from outside AWS as HTTP 404 / TLS verify 0
+Rehearsal identities (pre-committed, wired into the inviter unit): inviter `agent:ben.famp.dev/ben`, follower `agent:follower.famp.dev/dana`. AWS profile `benlamm-projects` (account 559846026666); SSH keys `~/.ssh/famp-phase20-key.pem` (inviter) and `~/.ssh/famp-relay-key.pem` (relay)
+Before step 5's first send: restart the relay with `--domain follower.famp.dev=<follower gateway pubkey>` added — the relay only accepts posts for configured domains, and adding one needs a restart (issue #39)
 
 ## v1.1 Phase Map
 

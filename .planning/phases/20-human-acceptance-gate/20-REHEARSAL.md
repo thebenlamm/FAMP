@@ -8,12 +8,17 @@ until Task 2 is performed on a genuine untouched supported host.
 Frozen repository candidate:
 
 ```text
-guide_commit=f3210a009083fc6dcb07063073dea55927bd6935
-guide_digest=b1019294330f49c2c224f94c70584e761a267cd855da467730a7ce08a7c0567e
+guide_commit=aaac461ed099249d45fbb16e490d74eb78776b82
+guide_digest=1cdefccb4e8466eaaba003c6cac7e42033d0e450cdd9d2af58ed25c984c7ab3b
 ```
 
-Re-frozen 2026-08-08 after `de5aa1f` (D1/D2 repairs) and `f3210a0` (the headless
-Linux linger step). The superseded values were
+Re-frozen 2026-08-08 after `de5aa1f` (D1/D2 repairs), `f3210a0` (the headless
+Linux linger step), and `aaac461` (the empty-peer-keyring step, issue #42 —
+found on the shipped rc binary while standing up the inviter). An intermediate
+freeze at `f3210a0` /
+`b1019294330f49c2c224f94c70584e761a267cd855da467730a7ce08a7c0567e` was
+superseded within the same session and never used to attest a run. The original
+values were
 `f848c9e747ad769a162408249a8dd084f34e2350` /
 `43f793114a9e51cf2a94c86dea47077cc1b800c2b344d81fa0bcc04eb6e1a01c`; they
 described a guide that no longer exists and must not be used to attest a run.

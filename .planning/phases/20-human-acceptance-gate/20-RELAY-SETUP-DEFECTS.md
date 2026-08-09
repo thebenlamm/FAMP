@@ -123,3 +123,39 @@ hand-written unit and so will the inviter gateway.
 **Access note:** the only SSH key that authenticates to the inviter is
 `famp-phase20-key.pem`, and it currently lives *only* in an ephemeral session
 scratchpad under `/private/tmp`. Copy it somewhere durable before relying on it.
+*(Done — now also at `~/.ssh/famp-phase20-key.pem`, alongside
+`~/.ssh/famp-relay-key.pem`.)*
+
+### Resolved the same evening — the inviter now serves
+
+```text
+from outside AWS, public trust store, no -k:
+  ben.famp.dev:8443 -> HTTP 404, TLS verify result 0
+  subject=CN=ben.famp.dev  issuer=Let's Encrypt CN=YE1  notAfter=Nov 6 2026
+on the box:
+  famp-gateway: ready, backing 1 principal(s): dana
+  ss -tln -> LISTEN 0.0.0.0:8443
+```
+
+The security group needed no change: `sg-01efdc59ae5768de5` already allowed
+tcp/8443 from `0.0.0.0/0` and `::/0`, so the earlier refusals were purely the
+missing listener. Verified the inviter's gateway pubkey
+(`famp peer export --as agent:ben.famp.dev/ben`) byte-matches the relay unit's
+`--domain ben.famp.dev=` value — checked at both ends rather than assumed.
+
+Two things were needed that no document mentioned:
+
+1. **A systemd unit** (R3 again, second host) at
+   `/etc/systemd/system/famp-gateway.service`, `User=ubuntu` with explicit
+   `Environment=HOME=/home/ubuntu`, `FAMP_HOME`, and `FAMP_OWN_DOMAIN`. Unlike
+   `famp-relay`, which takes everything as flags, the gateway resolves its
+   own-domain, identity, and broker socket from the environment — a unit without
+   those starts and fails opaquely. Certs were copied to `/etc/famp/` owned by
+   `ubuntu` (`0600` on the key) so the gateway runs **non-root**, the posture
+   issue #41 wants for the relay. Renewal will not refresh those copies; a
+   certbot deploy hook is the durable answer, and the cert is good to November.
+2. **`touch ~/.famp/gateway/peers.keyring`** — see issue #42. The shipped
+   `v1.1.0-rc.1` gateway hard-exits on a missing keyring, so a first-run gateway
+   cannot start before its first pairing. `docs/FOLLOWER-SETUP.md` §2 gained the
+   step in `aaac461`, since the follower installs the released binary and a code
+   fix would not reach them without a new release.
