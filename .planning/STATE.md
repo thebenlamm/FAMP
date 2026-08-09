@@ -5,10 +5,10 @@ milestone_name: Open-Internet Federation
 current_phase: 20
 current_phase_name: Human Acceptance Gate
 status: in_progress
-stopped_at: Plan 20-02 Task 2 — dirty walkthrough COMPLETE on rc.2 (both task directions COMPLETED, receiver-owned, sig_verified); next is the genuine clean-host rehearsal on a fresh box
-last_updated: "2026-08-09T05:30:00.000Z"
-last_activity: 2026-08-08
-last_activity_desc: rc.2 published and verified; dirty walkthrough on a throwaway EC2 drove the frozen guide end to end and found #45 (sections 5/6 skipped the FSM Commit step, so their own pass criterion was unreachable) — fixed, and both task directions then reached COMPLETED
+stopped_at: Plan 20-02 COMPLETE — clean-host rehearsal ran and is classified pass; DOC-07 closed. Next is Plan 20-03 (UAT-02 + PAIR-05), which needs a genuine uncoached second person
+last_updated: "2026-08-09T13:30:00.000Z"
+last_activity: 2026-08-09
+last_activity_desc: clean-host rehearsal executed on a fresh EC2 against published rc.2 and classified pass (EVIDENCE RECORD: VALID rehearsal pass); inviter and relay reset to pre-pairing state first; found and fixed a gate defect where the evidence templates' own redaction warning made any pass record unvalidatable
 progress:
   total_phases: 7
   completed_phases: 3
@@ -33,14 +33,14 @@ See: .planning/PROJECT.md — **v1.0 Federation Profile — Gateway Core shipped
 
 Phase: 20 — Human Acceptance Gate
 Plan: 20-02, Task 2 of 2
-Status: **BLOCKED — do not launch the clean host.** The published `v1.1.0-rc.1` release contains NO `famp pair` command. The tag `7f0af24` was cut 2026-08-03 08:51; `crates/famp/src/cli/pair/redeem.rs` was added at `4312f90` on 2026-08-03 20:43, ~12h later. `git ls-tree -r --name-only v1.1.0-rc.1 | grep pair` returns EMPTY and the tag's `cli/mod.rs` has zero `Pair` occurrences. `docs/FOLLOWER-SETUP.md` §1 installs from `releases/latest` (which serves rc.1, marked `prerelease=false`) and forbids source builds, then §3 instructs `famp pair invite` / `famp pair redeem`. Those subcommands do not exist in the binary the guide installs, so the attempt dies at §3 with an unrecognized-subcommand error regardless of every other defect. Phase 20 is gated on **publishing rc.2**, not on any doc freeze. Prior smoke-testing never caught this because it stopped after §1's `famp daemon install`.
-Last activity: 2026-08-08 — steps 1-3 complete; pre-attempt review found the rc.1 blocker above plus 3 BLOCKS-ATTEMPT guide defects (`famp register --name` is not a flag — it is positional; `famp register` is a long-lived blocking process the guide runs inline; `famp daemon restart` restarts only the broker, never the gateway, so §4's re-read of pinned keyrings never happens). Quick task 260808-uq0 fixed the underlying pair-principal mismatch.
+Status: **Plan 20-02 COMPLETE.** `20-REHEARSAL.md` is populated and classified `pass`; `scripts/phase20-evidence-check.sh rehearsal` reports `EVIDENCE RECORD: VALID rehearsal pass`. **DOC-07 is closed.** The attempt ran the frozen guide verbatim on a fresh Linux/x86_64 EC2 against published rc.2: preflight PASS before installation, first pin into an empty keyring with no key-change guard, §4a's grep returning exactly one line, relay 404s to zero, and both tasks `REQUESTED → COMMITTED → COMPLETED` with `sig_verified=true` on receiver-owned captures. The inviter and relay were reset to pre-pairing state first — chosen over renaming the follower so the attempt replayed the topology the dirty walkthrough validated. **UAT-02 and PAIR-05 remain OPEN**: no second person participated, §7 was not performed, and no comprehension claim is made. Next is Plan 20-03.
+Last activity: 2026-08-09 — clean-host attempt executed and attested. Ben made the provenance call that agent-driven-over-SSH execution satisfies DOC-07's external operator, since independent-person judgment is UAT-02's job. Populating the record exposed a gate defect (the templates' own redaction warning spelled out two literals the validator greps for, so no pass record could validate — G3's shape mirrored onto the success outcome); both templates reworded and a test added that validates the real template text.
 
 ## Session Continuity
 
-Last session: 2026-08-08 (resume)
-Stopped at: The dirty walkthrough is done and the guide now survives a real run. Next is the genuine clean-host rehearsal (20-02 Task 2) on a FRESH box — preflight before anything is installed, then the frozen guide verbatim, then owner-attributed evidence in 20-REHEARSAL.md. Open non-blocking: #46 (binary points at the wrong restart command), #47 (guide never says the gateway must stay running), #42, #44
-Resume file: `.planning/phases/20-human-acceptance-gate/20-REHEARSAL-EXECUTION-PLAN.md` (supersedes `.continue-here.md` and the stale `.planning/HANDOFF.json`)
+Last session: 2026-08-09 (resume)
+Stopped at: Plan 20-02 is COMPLETE and summarised in `20-02-SUMMARY.md`. Next is Plan 20-03 — the genuine second-person, different-network, no-VPN/no-key-copy UAT plus the seven uncoached PAIR-05 paraphrases. Carried forward: D12 (the guide implies a free follower name while the inviter hardcodes `dana` in three places — a real DOC-06 gap a second person WILL hit), #46 (binary points at the wrong restart command, reproduced again on rc.2), #47 (guide never says the gateway must stay running), #42, #44. The inviter and relay are live and currently hold the clean run's pin/domain — reset them again before 20-03.
+Resume file: none — `.planning/HANDOFF.json` and `.continue-here.md` were stale (they cited the dead `f848c9e` freeze) and have been removed.
 Frozen guide: `docs/FOLLOWER-SETUP.md` @ `6bfed8003ff2e79119aa6f40644d3aec33b1884f`, SHA-256 `f1262fc674e584e97f668f0f8940c5342079696c9b734577e0370e36ab223268` — the sixth freeze, and the first taken AFTER the guide was executed end to end rather than only read. Re-freeze again if the guide changes
 Live infra: relay `relay.famp.dev` → 44.219.73.36 (Lightsail, LE cert exp. 2026-11-06, root, systemd); inviter `ben.famp.dev` → 44.204.243.222 (EC2 `i-0c63694b9fa161da3`, t3.small, `Purpose=FAMP-DOC-07`), gateway serving on 8443 under `/etc/systemd/system/famp-gateway.service`, verified from outside AWS as HTTP 404 / TLS verify 0
 Rehearsal identities (pre-committed, wired into the inviter unit): inviter `agent:ben.famp.dev/ben`, follower `agent:follower.famp.dev/dana`. AWS profile `benlamm-projects` (account 559846026666); SSH keys `~/.ssh/famp-phase20-key.pem` (inviter) and `~/.ssh/famp-relay-key.pem` (relay)
