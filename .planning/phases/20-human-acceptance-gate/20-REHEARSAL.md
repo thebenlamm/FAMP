@@ -58,7 +58,7 @@ Each row represents: criterion, owner, capture command/attestation, UTC time,
 redacted evidence, result. Replace every `<REQUIRED>` value; do not edit keys.
 
 ```text
-outcome=unresolved
+outcome=pass
 failure_stage=none
 failure_detail=none
 redaction_review=pass
@@ -80,10 +80,9 @@ task_b_utc=2026-08-09T13:25:02Z
 task_b_state=COMPLETED
 ```
 
-**`outcome` is deliberately still `unresolved`.** Every other field above is
-factual and captured. The classification is withheld pending the provenance
-attestation below, because the one question this record cannot answer for
-itself is who counts as the operator.
+`outcome=pass` was set only after the provenance attestation below was made by
+Ben on 2026-08-09. Every other field was captured before that call and did not
+depend on it.
 
 Exactly one final outcome is permitted: `pass`, `product_or_guide_failure`, or
 `invalid`. This candidate deliberately defaults to none of them.
@@ -334,4 +333,13 @@ judgment only Ben can make. Two readings are honestly available:
   this is a second dirty run, however clean the host was, and DOC-07 stays
   open until a person repeats it.
 
-No `pass` is claimed here. Set `outcome` only after that call is made.
+**Ben's call, 2026-08-09: `pass`.** Rationale as recorded at the time: DOC-07's
+stated criteria are an untouched supported clean host, the frozen guide followed
+exactly, and owner-attributed receiver evidence; all three hold, and
+independent-person judgment is UAT-02's job, which Plan 20-03 still gates. The
+dirty walkthrough was excluded for being a ceremony-less defect hunt, not for
+being SSH-driven.
+
+**UAT-02 remains open.** Nothing here substitutes for the genuine second
+person, different network, no-coaching run, and no comprehension claim is made
+— §7 was not performed.
