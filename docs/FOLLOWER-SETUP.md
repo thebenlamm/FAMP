@@ -91,10 +91,12 @@ redeemer and runs the artifact's command:
 > these two machines.
 
 ```sh
-famp pair redeem --from https://<ben-gateway>
+famp pair redeem --from https://<ben-gateway> --as <follower-name>
 ```
 
-The follower types the five-word code only at the prompt. Ben, still the
+The follower types the five-word code only at the prompt.
+
+**If you see "Could not reach {url}":** this usually means Ben's gateway is not running or not reachable. But if it IS running and the error persists, it might be a TLS trust issue — Ben's certificate might be self-signed or issued by a CA your machine does not trust. In that case, Ben can provide you with the certificate file, and you re-run with `--trust-cert <path-to-cert>`. Ben, still the
 inviter, then observes the redeemer identity before accepting the pin:
 
 ```sh
@@ -105,35 +107,51 @@ Ben confirms the displayed follower principal and key identifier. Pairing is
 asymmetric: redemption pins Ben on the follower machine, while Ben's `status`
 confirmation pins the follower on Ben's machine.
 
-## 4. Restart after pinning and wait for fresh readiness
+## 4. Restart the gateway after pinning and wait for fresh readiness
 
 Pinned keyrings load once at gateway startup. Both owners restart their gateway
 after the pins are written, then each waits for a fresh ready signal. Do not
 send either task using a readiness line emitted before pairing.
 
+**Restart the gateway itself, not the broker.** `famp daemon restart` restarts only the broker — it does NOT restart the gateway, so the gateway will keep its pre-pairing empty keyring. Stop and start your `famp-gateway` process by hand:
+
 ```sh
-famp daemon restart
+# On macOS: kill and restart the LaunchAgent for famp-gateway
+# On Linux: stop and start the systemd user service for famp-gateway
+# See [Gateway Setup](GATEWAY-SETUP.md) for details on your platform
 ```
 
-If the gateway is not service-managed, each owner stops and starts their own
+If the gateway is not service-managed (running as a background process), each owner stops and starts their own
 `famp-gateway` process instead. Troubleshoot startup or reachability in
 [Gateway Setup](GATEWAY-SETUP.md); do not replace this path with a shared VPN.
 
 ## 5. Task A: Ben sends, follower receives and closes
 
-Ben registers his local identity and sends a new task to the follower:
+Ben registers his local identity in a separate terminal (or backgrounded). **Keep that terminal or background process running through section 6.** If you Ctrl-C it, every later `--as` command will fail `NotRegistered` because the broker requires a live canonical holder:
 
 ```sh
-famp register --name <ben-name>
+famp register <ben-name>
+```
+
+In a different terminal (on the same machine), send a new task to the follower:
+
+```sh
 famp send --as <ben-name> --to agent:<follower-domain>/<follower-name> --new-task "phase20-ben-to-follower" --body "Reply with the requested result"
 ```
 
 Ben records the returned task ID as `<ben-to-follower-task-id>`. The zero exit
 status is local acceptance only. Because remote-origin traffic intentionally
-does not auto-wake `famp await`, the follower explicitly lists the Inbox:
+does not auto-wake `famp await`, the follower explicitly lists the Inbox.
+
+The follower also registers in a separate terminal and keeps it running:
 
 ```sh
-famp register --name <follower-name>
+famp register <follower-name>
+```
+
+In a different terminal, the follower checks the Inbox:
+
+```sh
 famp inbox list --as <follower-name>
 famp send --as <follower-name> --to agent:<ben-domain>/<ben-name> --task <ben-to-follower-task-id> --body <result> --terminal
 famp inspect tasks --id <ben-to-follower-task-id> --json
