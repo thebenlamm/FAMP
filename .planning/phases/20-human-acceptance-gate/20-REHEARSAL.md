@@ -8,13 +8,13 @@ until Task 2 is performed on a genuine untouched supported host.
 Frozen repository candidate:
 
 ```text
-guide_commit=6ffd0d905e18d313b136eb6a77fdc6b8177f2c7c
-guide_digest=3436cdb329402e56cae4b29188d44c15b19f32721dc197f84027f9bf24bfe799
+guide_commit=6bfed8003ff2e79119aa6f40644d3aec33b1884f
+guide_digest=f1262fc674e584e97f668f0f8940c5342079696c9b734577e0370e36ab223268
 ```
 
-Re-frozen 2026-08-09 at `6ffd0d9`, after every row of
+Re-frozen 2026-08-09 at `6bfed80`, after the dirty walkthrough, and after every row of
 `20-BLOCKER-LEDGER.md` was closed. This is the freeze the attempt runs
-against; the four earlier freezes (`f848c9e`, `f3210a0`, `aaac461`, `84304fc`)
+against; the five earlier freezes (`f848c9e`, `f3210a0`, `aaac461`, `84304fc`, `6ffd0d9`)
 were each superseded within hours by the next defect and must not be used to
 attest anything.
 
@@ -82,3 +82,41 @@ task_b_state=<REQUIRED>
 
 Exactly one final outcome is permitted: `pass`, `product_or_guide_failure`, or
 `invalid`. This candidate deliberately defaults to none of them.
+
+
+## Dirty walkthrough result (2026-08-09, throwaway EC2 -> inviter, relay-mediated)
+
+Not DOC-07 evidence: the follower host was a throwaway box driven over SSH by
+the same operator, and no evidence ceremony was performed. Its purpose was to
+find defects by running the guide rather than reading it, and it did.
+
+Confirmed working against the PUBLISHED rc.2 binaries, in order:
+
+- section 1 clean; `famp daemon install` printed the linger note exactly as the
+  guide describes, and `famp daemon status` then reported `linger=yes`
+- issue #42 reproduced exactly -- the gateway refused to start without
+  `peers.keyring`, so section 2's step is load-bearing, not defensive
+- pairing succeeded both directions; the inviter pinned
+  `agent:follower.famp.dev/dana`, the AGENT principal, confirming #43's fix on
+  real hosts rather than only in a test
+- section 4a worked as written: the operator read the key from their own
+  keyring, the follower sent and pasted nothing, and the relay's
+  `follower.famp.dev` 404s went to zero after registration
+- inbound arrived wrapped in the FAMP-QUARANTINE boundary, origin=gateway
+- both task directions reached COMPLETED with `sig_verified=true` on every
+  envelope, captured by the receiving owner
+
+Defects it found, both since fixed:
+
+1. Sections 5 and 6 skipped the FSM's Commit step, making their own pass
+   criterion unreachable (#45, fixed in `6bfed80`). Reading the guide could not
+   have surfaced this; only running it did.
+2. `pair redeem` and `pair status` both tell the operator to run
+   `famp daemon restart` to load the new pin. That command restarts the broker
+   and never a gateway -- the same defect the guide's section 4 was corrected
+   for, still present inside the shipped binary. Product-side, does not block
+   the attempt.
+
+Also observed: a gateway started over SSH dies at disconnect unless detached
+with `setsid`. The guide warns that `famp register` must keep running but says
+nothing equivalent for `famp-gateway`.

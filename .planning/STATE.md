@@ -5,10 +5,10 @@ milestone_name: Open-Internet Federation
 current_phase: 20
 current_phase_name: Human Acceptance Gate
 status: in_progress
-stopped_at: Plan 20-02 Task 2 — v1.1.0-rc.2 published and verified from releases/latest; next is the DIRTY throwaway-box rehearsal against the published binaries, then the clean host
-last_updated: "2026-08-09T04:20:00.000Z"
+stopped_at: Plan 20-02 Task 2 — dirty walkthrough COMPLETE on rc.2 (both task directions COMPLETED, receiver-owned, sig_verified); next is the genuine clean-host rehearsal on a fresh box
+last_updated: "2026-08-09T05:30:00.000Z"
 last_activity: 2026-08-08
-last_activity_desc: Two-reviewer adversarial pass found rc.1 ships no `famp pair` at all; 13-row blocker ledger opened and fully closed; v1.1.0-rc.2 tagged, published, marked latest, and verified by downloading what releases/latest actually serves
+last_activity_desc: rc.2 published and verified; dirty walkthrough on a throwaway EC2 drove the frozen guide end to end and found #45 (sections 5/6 skipped the FSM Commit step, so their own pass criterion was unreachable) — fixed, and both task directions then reached COMPLETED
 progress:
   total_phases: 7
   completed_phases: 3
@@ -39,9 +39,9 @@ Last activity: 2026-08-08 — steps 1-3 complete; pre-attempt review found the r
 ## Session Continuity
 
 Last session: 2026-08-08 (resume)
-Stopped at: rc.2 is published. Next is a DIRTY throwaway-box walkthrough of the frozen guide against the published binaries (no evidence ceremony), because every defect found so far came from running it, not reading it. Clean-host attempt only after that
+Stopped at: The dirty walkthrough is done and the guide now survives a real run. Next is the genuine clean-host rehearsal (20-02 Task 2) on a FRESH box — preflight before anything is installed, then the frozen guide verbatim, then owner-attributed evidence in 20-REHEARSAL.md. Open non-blocking: #46 (binary points at the wrong restart command), #47 (guide never says the gateway must stay running), #42, #44
 Resume file: `.planning/phases/20-human-acceptance-gate/20-REHEARSAL-EXECUTION-PLAN.md` (supersedes `.continue-here.md` and the stale `.planning/HANDOFF.json`)
-Frozen guide: `docs/FOLLOWER-SETUP.md` @ `6ffd0d905e18d313b136eb6a77fdc6b8177f2c7c`, SHA-256 `3436cdb329402e56cae4b29188d44c15b19f32721dc197f84027f9bf24bfe799` — the fifth and current freeze; re-freeze again if the guide changes before the attempt
+Frozen guide: `docs/FOLLOWER-SETUP.md` @ `6bfed8003ff2e79119aa6f40644d3aec33b1884f`, SHA-256 `f1262fc674e584e97f668f0f8940c5342079696c9b734577e0370e36ab223268` — the sixth freeze, and the first taken AFTER the guide was executed end to end rather than only read. Re-freeze again if the guide changes
 Live infra: relay `relay.famp.dev` → 44.219.73.36 (Lightsail, LE cert exp. 2026-11-06, root, systemd); inviter `ben.famp.dev` → 44.204.243.222 (EC2 `i-0c63694b9fa161da3`, t3.small, `Purpose=FAMP-DOC-07`), gateway serving on 8443 under `/etc/systemd/system/famp-gateway.service`, verified from outside AWS as HTTP 404 / TLS verify 0
 Rehearsal identities (pre-committed, wired into the inviter unit): inviter `agent:ben.famp.dev/ben`, follower `agent:follower.famp.dev/dana`. AWS profile `benlamm-projects` (account 559846026666); SSH keys `~/.ssh/famp-phase20-key.pem` (inviter) and `~/.ssh/famp-relay-key.pem` (relay)
 Before step 5's first send: restart the relay with `--domain follower.famp.dev=<follower gateway pubkey>` added — the relay only accepts posts for configured domains, and adding one needs a restart (issue #39)
