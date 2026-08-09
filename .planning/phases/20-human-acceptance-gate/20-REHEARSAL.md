@@ -8,20 +8,35 @@ until Task 2 is performed on a genuine untouched supported host.
 Frozen repository candidate:
 
 ```text
-guide_commit=aaac461ed099249d45fbb16e490d74eb78776b82
-guide_digest=1cdefccb4e8466eaaba003c6cac7e42033d0e450cdd9d2af58ed25c984c7ab3b
+guide_commit=84304fc231f43c27874bce5063630a53df3c3b1c
+guide_digest=b818d2f8ccd6129db987e4ff798aa69c2dda4c87d4ede98e20939ed6df477c33
 ```
 
-Re-frozen 2026-08-08 after `de5aa1f` (D1/D2 repairs), `f3210a0` (the headless
-Linux linger step), and `aaac461` (the empty-peer-keyring step, issue #42 —
-found on the shipped rc binary while standing up the inviter). An intermediate
-freeze at `f3210a0` /
-`b1019294330f49c2c224f94c70584e761a267cd855da467730a7ce08a7c0567e` was
-superseded within the same session and never used to attest a run. The original
-values were
-`f848c9e747ad769a162408249a8dd084f34e2350` /
-`43f793114a9e51cf2a94c86dea47077cc1b800c2b344d81fa0bcc04eb6e1a01c`; they
-described a guide that no longer exists and must not be used to attest a run.
+Re-frozen 2026-08-08 (final) at `84304fc`, after every row of
+`20-BLOCKER-LEDGER.md` was closed. This is the freeze the attempt runs
+against; the three earlier freezes tonight (`f848c9e`, `f3210a0`, `aaac461`)
+were each superseded within hours by the next defect and must not be used to
+attest anything.
+
+That churn is the reason this one waited: the guide is frozen once, after the
+catalog was emptied, rather than after each point-fix. Between the first freeze
+and this one the guide gained a headless-Linux linger step, an empty-keyring
+step (#42), a corrected `famp register` invocation, an unmissable warning that
+register blocks, a section 4 that restarts the gateway rather than the broker,
+TLS-trust guidance, and a new section 4a sequencing relay domain registration.
+None of that was visible from reading the guide; all of it came from running
+the commands or the code.
+
+Readiness suite green against this freeze: `follower_setup_doc_accuracy` (7),
+`phase20_clean_box_preflight` (1), `phase20_evidence_schema` (3), `pair_cli`
+(18), `gateway_setup_doc_accuracy` (4), and on the gateway side `pairing_e2e`
+(5), `pair_then_deliver_e2e` (1), `e2e_relay_bidirectional` (1).
+`git diff --exit-code -- docs/FOLLOWER-SETUP.md` is clean at this commit.
+
+**This freeze is still not sufficient to start.** `v1.1.0-rc.1` carries no
+`famp pair` command, and the guide installs from `releases/latest`. The attempt
+cannot begin until rc.2 is published and section 1's installers deliver a
+binary that has the subcommands section 3 calls.
 
 Readiness suite re-run green against this freeze: `follower_setup_doc_accuracy`
 (4), `phase20_clean_box_preflight`, `phase20_evidence_schema` (4), `pair_cli`,
