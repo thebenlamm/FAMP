@@ -8,17 +8,16 @@
 //! operator sees who is about to be trusted before the trust write
 //! happens, not just after. [`pin_redeemed_record`] makes that ordering
 //! STRUCTURAL rather than incidental: it writes and flushes the identity
-//! line via [`observe_line`] in one call, then calls [`pin`] — which
-//! contains 100% of this module's filesystem mutation — only afterward.
+//! line via [`observe_line`] in one call, then calls the shared hardened
+//! keyring write helper only afterward.
 //! A test can wrap the `out` writer to snapshot the keyring file the
-//! moment the identity line's bytes land, before `pin` has run.
+//! moment the identity line's bytes land, before the keyring write has run.
 
 use std::io::Write;
 use std::path::Path;
 
 use famp_core::Principal;
 use famp_crypto::TrustedVerifyingKey;
-use famp_keyring::{KeyLookupOutcome, Keyring};
 
 use crate::cli::error::CliError;
 use crate::cli::home;
@@ -148,8 +147,8 @@ const RESTART_NOTICE: &str = "NOTE: famp-gateway loads its keyring once at start
 /// `too_many_lines` line budget (see `crates/famp-gateway/src/main.rs`
 /// for the same extract-a-helper precedent). Structurally
 /// observe-before-pin (PAIR-07): writes and flushes [`observe_line`]'s
-/// bytes to `out` FIRST, then calls [`pin`] — the only place in this
-/// module that touches the keyring file — second. On success, mutates
+/// bytes to `out` FIRST, then calls the shared
+/// `super::rotate_to_with_validation` helper second. On success, mutates
 /// `record.state` to `Pinned`; on any failure it leaves `record.state`
 /// untouched (still `Redeemed`) so a re-run of `famp pair status` can
 /// retry.
@@ -203,7 +202,7 @@ fn pin_redeemed_record(
         }
     };
 
-    if pin(keyring_path, &redeemer_principal, vk, now)? {
+    if super::rotate_to_with_validation(keyring_path, &redeemer_principal, vk, now, true)? {
         record.state = InviteState::Pinned {
             at: now.to_string(),
         };
@@ -231,91 +230,6 @@ fn pin_redeemed_record(
         })?;
         Ok(PinOutcome::Failed)
     }
-}
-
-/// Mutate `keyring_path` on disk: load-or-create, `rotate_to`, write to a
-/// same-directory temp file, reload-confirm the pin from THAT temp file,
-/// and only then rename it over `keyring_path`. Returns `Ok(true)` once
-/// the reload confirms `redeemer_principal` is `Active`; on `Ok(false)`
-/// the temp file is removed and `keyring_path` is left byte-identical to
-/// before this call.
-///
-/// This function contains ALL of this module's filesystem mutation. It is
-/// called only AFTER [`pin_redeemed_record`] has already written and
-/// flushed the observe line — that call ordering, not review discipline,
-/// is what makes observe-before-pin structural (PAIR-07).
-///
-/// Validate-before-save (Task 3, this fix): the previous version called
-/// `save_to_file` on `keyring_path` directly, THEN reload-validated it —
-/// so a pin that failed validation had already overwritten the last-good
-/// keyring on disk with one that (by definition of the failed validation)
-/// `Keyring::load_from_file` may refuse to load, bricking the gateway at
-/// its next start. Writing to a `.tmp-pin` sibling and renaming only on a
-/// validated reload keeps a failed pin from ever touching the real file.
-/// The rename is same-directory (`std::fs::rename`, not copy+delete), so
-/// it is atomic on the filesystems this repo targets — the deliberate,
-/// idempotent mitigation for `Keyring::save_to_file`'s inherited
-/// non-atomic write (T-Keyring-non-atomic, Phase 15 pre-existing gap, not
-/// fixed here — see this plan's `18-PATTERNS.md`).
-fn pin(
-    keyring_path: &Path,
-    redeemer_principal: &Principal,
-    vk: TrustedVerifyingKey,
-    now: &str,
-) -> Result<bool, CliError> {
-    let mut keyring = if keyring_path.exists() {
-        Keyring::load_from_file(keyring_path).map_err(|e| {
-            CliError::Generic(format!(
-                "failed to load peer keyring at {}: {e}",
-                keyring_path.display()
-            ))
-        })?
-    } else {
-        Keyring::new()
-    };
-    keyring
-        .rotate_to(redeemer_principal.clone(), vk, now, None, true)
-        .map_err(|e| CliError::Generic(e.to_string()))?;
-    if let Some(parent) = keyring_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| CliError::Io {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-
-    let tmp_path = std::path::PathBuf::from(format!("{}.tmp-pin", keyring_path.display()));
-    keyring.save_to_file(&tmp_path).map_err(|e| {
-        CliError::Generic(format!(
-            "failed to save peer keyring at {}: {e}",
-            tmp_path.display()
-        ))
-    })?;
-
-    let reloaded = Keyring::load_from_file(&tmp_path).map_err(|e| {
-        CliError::Generic(format!(
-            "failed to reload peer keyring at {}: {e}",
-            tmp_path.display()
-        ))
-    })?;
-    let validated = matches!(
-        reloaded.active_key(redeemer_principal, now),
-        KeyLookupOutcome::Active(_)
-    );
-
-    if validated {
-        std::fs::rename(&tmp_path, keyring_path).map_err(|e| CliError::Io {
-            path: keyring_path.to_path_buf(),
-            source: e,
-        })?;
-    } else {
-        // Best-effort cleanup: the temp file never becomes the real
-        // keyring either way, so a failed removal here does not leave
-        // `keyring_path` in a bad state -- it only leaves a stray
-        // `.tmp-pin` sibling, which the next `pin()` call overwrites.
-        let _ = std::fs::remove_file(&tmp_path);
-    }
-
-    Ok(validated)
 }
 
 // Takes `PairingError` by value so it can be passed as a bare fn pointer

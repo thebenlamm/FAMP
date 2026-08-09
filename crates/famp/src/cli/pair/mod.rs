@@ -20,7 +20,12 @@
 //! `block_on_async` at the top-level `cli::run` match (`Commands::Pair`),
 //! not here.
 
+use std::path::Path;
+
 use clap::{Args, Subcommand};
+use famp_core::Principal;
+use famp_crypto::TrustedVerifyingKey;
+use famp_keyring::{KeyLookupOutcome, Keyring};
 
 use crate::cli::error::CliError;
 
@@ -97,4 +102,83 @@ pub fn now_canonical_utc() -> String {
         now.minute(),
         now.second(),
     )
+}
+
+/// Mutate `keyring_path` on disk: load-or-create, `rotate_to`, write to a
+/// same-directory temp file, reload-confirm the pin from THAT temp file,
+/// and only then rename it over `keyring_path`. Returns `Ok(true)` once
+/// the reload confirms `principal` is `Active`; on `Ok(false)`
+/// the temp file is removed and `keyring_path` is left byte-identical to
+/// before this call.
+///
+/// This function contains the hardened filesystem mutation pattern for
+/// pinning keys to the peer keyring. Both `redeem` and `status` use this
+/// shared implementation to ensure consistent durability guarantees.
+///
+/// Validate-before-save: the function writes to a `.tmp-pin` sibling and
+/// renames only on a validated reload. A pin that failed validation never
+/// touches the real file — keeping the gateway from starting with a
+/// corrupted keyring.
+/// The rename is same-directory (`std::fs::rename`, not copy+delete), so
+/// it is atomic on the filesystems this repo targets.
+fn rotate_to_with_validation(
+    keyring_path: &Path,
+    principal: &Principal,
+    vk: TrustedVerifyingKey,
+    now: &str,
+    confirmed: bool,
+) -> Result<bool, CliError> {
+    let mut keyring = if keyring_path.exists() {
+        Keyring::load_from_file(keyring_path).map_err(|e| {
+            CliError::Generic(format!(
+                "failed to load peer keyring at {}: {e}",
+                keyring_path.display()
+            ))
+        })?
+    } else {
+        Keyring::new()
+    };
+    keyring
+        .rotate_to(principal.clone(), vk, now, None, confirmed)
+        .map_err(|e| CliError::Generic(e.to_string()))?;
+    if let Some(parent) = keyring_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| CliError::Io {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+
+    let tmp_path = std::path::PathBuf::from(format!("{}.tmp-pin", keyring_path.display()));
+    keyring.save_to_file(&tmp_path).map_err(|e| {
+        CliError::Generic(format!(
+            "failed to save peer keyring at {}: {e}",
+            tmp_path.display()
+        ))
+    })?;
+
+    let reloaded = Keyring::load_from_file(&tmp_path).map_err(|e| {
+        CliError::Generic(format!(
+            "failed to reload peer keyring at {}: {e}",
+            tmp_path.display()
+        ))
+    })?;
+    let validated = matches!(
+        reloaded.active_key(principal, now),
+        KeyLookupOutcome::Active(_)
+    );
+
+    if validated {
+        std::fs::rename(&tmp_path, keyring_path).map_err(|e| CliError::Io {
+            path: keyring_path.to_path_buf(),
+            source: e,
+        })?;
+    } else {
+        // Best-effort cleanup: the temp file never becomes the real
+        // keyring either way, so a failed removal here does not leave
+        // `keyring_path` in a bad state -- it only leaves a stray
+        // `.tmp-pin` sibling, which the next `rotate_to_with_validation()` call overwrites.
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    Ok(validated)
 }

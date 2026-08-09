@@ -14,7 +14,6 @@ use std::path::Path;
 
 use famp_core::Principal;
 use famp_crypto::{FampSigningKey, TrustedVerifyingKey};
-use famp_keyring::Keyring;
 
 use crate::cli::error::CliError;
 use crate::cli::home;
@@ -175,31 +174,15 @@ pub async fn run_at(
         })?;
 
     let keyring_path = gateway_peers_keyring_path(home);
-    let mut keyring = if keyring_path.exists() {
-        Keyring::load_from_file(&keyring_path).map_err(|e| {
-            CliError::Generic(format!(
-                "failed to load peer keyring at {}: {e}",
-                keyring_path.display()
-            ))
-        })?
-    } else {
-        Keyring::new()
-    };
-    keyring
-        .rotate_to(inviter_principal.clone(), inviter_vk, now, None, true)
-        .map_err(|e| CliError::Generic(e.to_string()))?;
-    if let Some(parent) = keyring_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| CliError::Io {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-    keyring.save_to_file(&keyring_path).map_err(|e| {
-        CliError::Generic(format!(
-            "failed to save peer keyring at {}: {e}",
+    if !super::rotate_to_with_validation(&keyring_path, &inviter_principal, inviter_vk, &now, true)?
+    {
+        eprintln!(
+            "pin did not verify on reload at {} — pin failed. \
+             The inviter's key was not saved to the keyring.",
             keyring_path.display()
-        ))
-    })?;
+        );
+        return Err(CliError::Exit(1));
+    }
 
     // One-sentence done-signal (PAIR-07: "not FSM JSON", naming the peer
     // in plain words, nothing else is needed on this side).
