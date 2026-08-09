@@ -177,4 +177,50 @@ itself a clean run. Read from the live boxes, not from notes:
 Consequence: §3 would re-pair over an existing pin rather than pin into an empty
 keyring, and §4a would be a no-op rather than the add-from-nothing step whose
 404s-to-zero the dirty run observed. Both are first-run paths under test.
-Resolution is pending Ben's go; see the reset proposal in the session record.
+
+
+## Pre-attempt reset of the inviter and relay (2026-08-09, approved)
+
+Decision: reset both boxes to their pre-pairing state rather than rename the
+follower. The dirty walkthrough validated exactly one topology — `dana`,
+`follower.famp.dev`, this inviter unit, this relay unit. A rename would put an
+unrehearsed variant on the expensive human-gated attempt, which is what the
+rehearsal existed to prevent. It also saves nothing: the relay pins the dead
+box's key either way, and the inviter names the follower in three places.
+
+**Correction to the plan as first proposed.** The inviter's gateway is not a
+hand-started foreground process. It is a system unit,
+`famp-gateway.service` ("FAMP Federation Gateway (inviter, ben.famp.dev)"),
+`Type=simple`, `User=ubuntu`, `Restart=always`, `RestartSec=5`, carrying the
+full flag set including `FAMP_OWN_DOMAIN=ben.famp.dev`. The proposed
+"kill the pid and relaunch under `setsid`" would have raced systemd's own
+restart. `sudo systemctl restart famp-gateway` is the correct operation. This
+is the "deployed unit" D12 refers to; the gateway has been up since
+06:01:00 UTC with `NRestarts=0`.
+
+Also note `famp register ben` on the inviter is a bare unsupervised process
+(pid 4540), not a unit. It survives only until something kills it, and §5
+depends on it.
+
+State changes applied (neither required root):
+
+- Inviter `~/.famp/gateway/peers.keyring` truncated from 110 bytes to 0.
+  Backed up to `peers.keyring.dirtyrun.bak`. An empty file is the valid
+  pre-pairing state §2 describes; the file must exist, because issue #42 makes
+  an absent one startup-fatal.
+- Relay unit `--domain follower.famp.dev=<dead key>` removed, keeping
+  `ben.famp.dev`. Backed up to `~/famp-relay.service.dirtyrun.bak`.
+
+Both take effect only on restart, which is left to the operator:
+
+```sh
+ssh -i ~/.ssh/famp-phase20-key.pem ubuntu@44.204.243.222 \
+  'sudo systemctl restart famp-gateway'
+ssh -i ~/.ssh/famp-relay-key.pem ubuntu@relay.famp.dev \
+  'sudo systemctl daemon-reload && sudo systemctl restart famp-relay'
+```
+
+Expected after restart: the gateway logs `ready, backing 1 principal(s): dana`
+with an empty keyring, and the relay logs
+`serving domain(s): ben.famp.dev (1 key(s))`. Do not launch the clean box until
+both are confirmed.
