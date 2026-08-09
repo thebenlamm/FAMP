@@ -177,7 +177,13 @@ fn build_artifact(args: &PairInviteArgs, code: &PairingCode, principal: &Princip
     buf.push('\n');
 
     buf.push_str("Step 2 -- on that same machine, run:\n");
-    let _ = writeln!(buf, "  famp pair redeem --from {from_value}");
+    // `--as <your-agent-name>` is a marked placeholder (D4): `redeem`
+    // requires `--as` and the inviter cannot know the follower's chosen
+    // name, so the printed command names the flag without a value.
+    let _ = writeln!(
+        buf,
+        "  famp pair redeem --from {from_value} --as <your-agent-name>"
+    );
     buf.push('\n');
 
     buf.push_str(

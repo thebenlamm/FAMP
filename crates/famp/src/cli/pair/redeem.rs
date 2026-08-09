@@ -36,6 +36,15 @@ pub struct PairRedeemArgs {
     /// artifact), e.g. `https://gateway.inviter.test:8443`.
     #[arg(long)]
     pub from: String,
+    /// Required: the identity this machine will send as (a bare leaf like
+    /// `alice`, or a full `agent:<authority>/<name>` principal whose
+    /// authority must equal this machine's own-domain). Pinned under this
+    /// exact value so it matches the `from` `famp send` later builds for
+    /// the SAME identity (`send/mod.rs:679`) — see this module's doc
+    /// comment. Required, not optional-with-default: defaulting to a fixed
+    /// name would silently preserve the mismatch for anyone who omits it.
+    #[arg(long = "as")]
+    pub as_identity: String,
     /// Optional pinned CA/leaf certificate for the outbound TLS
     /// connection — same flag shape as `famp-gateway --trust-cert`.
     #[arg(long)]
@@ -93,17 +102,15 @@ pub async fn run_at(
     let sk: FampSigningKey = load_or_generate(&identity_path)?;
     let vk = sk.verifying_key();
 
-    // The redeemer's own principal: this gateway's own identity,
-    // `agent:<own_domain>/gateway` — the same fixed-name convention
-    // `famp peer export`/`import` already establish for a machine's own
-    // gateway-level trust (see `peer_roundtrip.rs`/`peer_rotate_cli.rs`
-    // fixtures, both of which use `agent:<host>/gateway`).
+    // The redeemer's own principal: it MUST equal the `from` principal
+    // `famp send`'s (private) `build_remote_envelope_value` builds for the
+    // SAME identity (`send/mod.rs:679`: `agent:{own_domain}/{identity}`),
+    // or the inviter pins a principal no envelope this redeemer later
+    // sends will ever carry, and every follower→inviter message is
+    // rejected `UnpinnedKey`. `--as` (D2) supplies that identity — see
+    // this module's doc comment.
     let own_domain = own_domain::resolve_own_domain(None, home)?;
-    let own_principal: Principal = format!("agent:{own_domain}/gateway").parse().map_err(|e| {
-        CliError::Generic(format!(
-            "resolved own-domain '{own_domain}' does not form a valid principal: {e}"
-        ))
-    })?;
+    let own_principal = resolve_as_principal(&args.as_identity, &own_domain)?;
 
     let request = RedemptionRequest {
         code: code.as_str().to_string(),
@@ -226,4 +233,33 @@ fn build_client(trust_cert: Option<&Path>) -> Result<reqwest::Client, CliError> 
 #[allow(clippy::needless_pass_by_value)]
 fn pairing_err_to_cli(e: PairingError) -> CliError {
     CliError::Generic(e.to_string())
+}
+
+/// Resolve `--as` into the principal this redeemer pins itself under (D2).
+///
+/// A bare leaf (e.g. `alice`, no `agent:` scheme) is combined with the
+/// resolved own-domain: `agent:{own_domain}/{as_identity}`. A full
+/// `agent:<authority>/<name>` principal is accepted as-is ONLY if its
+/// authority byte-equals `own_domain` — a different authority would pin a
+/// principal `famp send` never builds `from` for on this machine, so it is
+/// rejected with a `CliError` naming both values rather than silently
+/// honored. Both forms are accepted deliberately: the invite artifact
+/// shows the bare-leaf form, but a follower may instead paste the full
+/// principal from the inviter's own `--as` example.
+fn resolve_as_principal(as_identity: &str, own_domain: &str) -> Result<Principal, CliError> {
+    if let Ok(full) = as_identity.parse::<Principal>() {
+        if full.authority() == own_domain {
+            return Ok(full);
+        }
+        return Err(CliError::Generic(format!(
+            "--as '{as_identity}' has authority '{}' but this machine's own-domain is \
+             '{own_domain}'; famp send will build envelopes from agent:{own_domain}/<name>, so a \
+             pin under a different authority would never match",
+            full.authority()
+        )));
+    }
+
+    format!("agent:{own_domain}/{as_identity}")
+        .parse()
+        .map_err(|e| CliError::Generic(format!("invalid --as identity '{as_identity}': {e}")))
 }

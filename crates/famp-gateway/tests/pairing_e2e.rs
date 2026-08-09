@@ -135,6 +135,7 @@ async fn happy_path_pins_both_sides_mutually() {
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
             from: base_url,
+            as_identity: "gateway".to_string(),
             trust_cert: None,
         },
         &mut reader,

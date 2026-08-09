@@ -516,10 +516,12 @@ async fn redeem_pins_principal_matching_send_from_for_same_identity() {
 
     let client = stub_client();
     let mut reader = Cursor::new(format!("{code}\n").into_bytes());
+    let identity = "alice";
     redeem::run_at(
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
             from: base_url,
+            as_identity: identity.to_string(),
             trust_cert: None,
         },
         &mut reader,
@@ -541,7 +543,6 @@ async fn redeem_pins_principal_matching_send_from_for_same_identity() {
 
     // `send/mod.rs:679`'s exact construction, copied verbatim as the
     // source of truth this test pins against.
-    let identity = "alice";
     let expected_send_from = format!("agent:{own_domain}/{identity}");
 
     assert_eq!(
@@ -564,6 +565,7 @@ async fn redeem_malformed_code_rejected_before_network_call() {
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
             from: "http://127.0.0.1:1".to_string(),
+            as_identity: "redeemer".to_string(),
             trust_cert: None,
         },
         &mut reader,
@@ -591,6 +593,7 @@ async fn redeem_gateway_unreachable_message_interpolates_url() {
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
             from: from.clone(),
+            as_identity: "redeemer".to_string(),
             trust_cert: None,
         },
         &mut reader,
@@ -632,6 +635,7 @@ async fn two_home_mutual_pin_via_cli() {
         redeemer_home.path(),
         &redeem::PairRedeemArgs {
             from: base_url,
+            as_identity: "gateway".to_string(),
             trust_cert: None,
         },
         &mut reader,
@@ -692,6 +696,8 @@ async fn redeem_success_done_signal_is_single_sentence_no_brace() {
         .arg("redeem")
         .arg("--from")
         .arg(&base_url)
+        .arg("--as")
+        .arg("redeemer2")
         .write_stdin(format!("{code}\n"))
         .assert();
     let output = assert.get_output();
