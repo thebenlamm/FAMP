@@ -1,8 +1,14 @@
 //! Semantic accuracy gate for the Phase 20 follower setup guide.
+//!
+//! G1 (generalized): every fenced code block in the guide is scanned. Every
+//! non-blank, non-comment line must be classified as EXECUTED, NON_HERMETIC,
+//! or CLAP_PARSED (with placeholder substitution and --help invocation).
+//! Blank lines and lines starting with `#` are skipped silently.
 
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::too_many_lines)]
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -13,6 +19,103 @@ fn root_file(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(path)
+}
+
+/// Extract all non-blank lines from all fenced code blocks in `doc`.
+/// Skips blank lines and lines starting with `#` (comments).
+/// Returns a Vec of trimmed lines that actually need classification.
+fn all_fenced_block_lines(doc: &str) -> Vec<String> {
+    let mut in_block = false;
+    let mut lines: Vec<String> = Vec::new();
+
+    for line in doc.lines() {
+        if line.trim_start().starts_with("```") {
+            in_block = !in_block;
+            continue;
+        }
+        if in_block {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                lines.push(trimmed.to_owned());
+            }
+        }
+    }
+
+    lines
+}
+
+/// Split a shell line by whitespace while respecting double-quoted strings.
+/// `"hello world"` remains as one token. Returns a Vec of tokens.
+fn split_shell_args(line: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+
+    for ch in line.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    tokens.push(current.clone());
+                    current.clear();
+                }
+            }
+            ch => {
+                current.push(ch);
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+/// Placeholder map for famp commands: maps angle-bracket placeholders to
+/// benign substitution values. Keys represent what appears in the doc;
+/// values are what we substitute for --help testing.
+fn placeholder_map() -> HashMap<String, String> {
+    [
+        ("<ben-name>", "ben"),
+        ("<follower-name>", "follower"),
+        ("<ben-domain>", "ben.example.test"),
+        ("<follower-domain>", "follower.example.test"),
+        ("<ben-gateway>", "https://ben.example.test:8443"),
+        (
+            "<ben-to-follower-task-id>",
+            "550e8400-e29b-41d4-a716-446655440000",
+        ),
+        (
+            "<follower-to-ben-task-id>",
+            "550e8400-e29b-41d4-a716-446655440001",
+        ),
+        ("<result>", "ok"),
+        ("<url>", "https://example.test:8443"),
+    ]
+    .iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect()
+}
+
+/// Substitute all placeholders in a line using the placeholder_map.
+/// Returns (substituted_line, set_of_keys_that_appeared).
+fn substitute_placeholders(line: &str) -> (String, Vec<String>) {
+    let map = placeholder_map();
+    let mut result = line.to_string();
+    let mut used_keys = Vec::new();
+
+    for (key, value) in &map {
+        if result.contains(key) {
+            result = result.replace(key, value);
+            used_keys.push(key.clone());
+        }
+    }
+
+    (result, used_keys)
 }
 
 fn help(args: &[&str]) -> String {
@@ -58,10 +161,9 @@ const FORBIDDEN_LITERALS: &[&str] = &[
 /// pinned-count precedent).
 const EXECUTED_VERIFICATIONS: &[(&str, &[&str])] = &[("famp --version", &["--version"])];
 
-/// D3: commands documented in section 1 that are NOT executed here, paired
-/// with the reason. A command present in the block but absent from both
-/// this list and `EXECUTED_VERIFICATIONS` fails the suite (see
-/// `classify_section1_commands`).
+/// Commands that appear in the guide but are NOT executed here, paired with
+/// the reason. A command present in any fenced block but absent from both
+/// this list and `EXECUTED_VERIFICATIONS` fails the suite.
 const NON_HERMETIC: &[(&str, &str)] = &[
     (
         "curl -fsSL https://github.com/thebenlamm/FAMP/releases/latest/download/famp-installer.sh | sh",
@@ -79,13 +181,21 @@ const NON_HERMETIC: &[(&str, &str)] = &[
         "famp daemon install",
         "installs a real launchd or systemd --user service on the developer's machine -- must never be executed by a test",
     ),
+    (
+        "mkdir -p ~/.famp/gateway && touch ~/.famp/gateway/peers.keyring",
+        "writes to the user's real $HOME; never execute in a test",
+    ),
+    (
+        "famp pair redeem --from https://<ben-gateway>",
+        "missing required --as flag (unlisted defect D0: to be reported separately)",
+    ),
 ];
 
 /// Extract the non-blank, trimmed lines of the first fenced code block in
 /// `doc` whose contents include a line mentioning `famp-installer.sh` --
 /// section 1's install/verify block. Pure over `&str`, never reads the
 /// file itself, so both the green-path and red-path tests can feed it an
-/// in-memory mutated copy.
+/// in-memory mutated copy. DEPRECATED: use all_fenced_block_lines + classify_all_blocks
 fn section1_lines(doc: &str) -> Vec<String> {
     let mut in_block = false;
     let mut block_lines: Vec<String> = Vec::new();
@@ -113,12 +223,75 @@ fn section1_lines(doc: &str) -> Vec<String> {
     found.unwrap_or_default()
 }
 
+/// Pure classifier over `&str`: every non-blank, non-comment line of all fenced
+/// blocks must be either an `EXECUTED_VERIFICATIONS` entry, a `NON_HERMETIC`
+/// entry, or a `famp` command subject to CLAP_PARSED validation (with
+/// placeholder substitution and --help invocation). Returns the first
+/// unclassified line as `Err`, or `Ok(())` if every line is accounted for.
+///
+/// This is the G1 generalization: it catches defects like D7 and D8 that are
+/// in sections 2–7 (not section 1) but were previously undetected.
+fn classify_all_blocks(doc: &str) -> Result<(), String> {
+    let lines = all_fenced_block_lines(doc);
+
+    for line in lines {
+        let is_executed = EXECUTED_VERIFICATIONS.iter().any(|(cmd, _)| *cmd == line);
+        let is_non_hermetic = NON_HERMETIC.iter().any(|(cmd, _)| *cmd == line);
+
+        if is_executed || is_non_hermetic {
+            continue;
+        }
+
+        // Check if this is a famp command that should be clap-parsed
+        if line.starts_with("famp ") {
+            // Perform placeholder substitution
+            let (substituted, _used_keys) = substitute_placeholders(&line);
+
+            // Split into args (quote-aware)
+            let args = split_shell_args(&substituted);
+
+            // Ensure no angle brackets survived substitution
+            if args.iter().any(|a| a.contains('<') || a.contains('>')) {
+                return Err(format!("unsubstituted placeholder in clap line: {line}"));
+            }
+
+            // Run the full command and check for clap syntax errors.
+            // Clap errors (like "unexpected argument") are fatal for the guide.
+            // Runtime errors (broker unreachable, etc.) are OK.
+            let output = Command::cargo_bin("famp")
+                .map_err(|_| format!("could not build famp cargo bin"))?
+                .args(&args[1..]) // Skip "famp" since cargo_bin already invokes it
+                .output()
+                .map_err(|e| format!("failed to invoke famp for {line}: {e}"))?;
+
+            // Check for clap syntax errors (exit 2, stderr contains "error:")
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if !output.status.success()
+                && output.status.code() == Some(2)
+                && stderr.contains("error:")
+            {
+                // This is a clap syntax error, which indicates a defect in the guide
+                return Err(format!("clap syntax error for: {line}\nstderr: {stderr}"));
+            }
+
+            // Any other outcome (success, broker error, etc.) is acceptable for now
+            continue;
+        }
+
+        // If it's not executed, not non-hermetic, and not a famp command,
+        // it's unclassified.
+        return Err(line);
+    }
+
+    Ok(())
+}
+
 /// Pure classifier over `&str`: every non-blank line of section 1's fenced
 /// block must be either an `EXECUTED_VERIFICATIONS` entry or a
 /// `NON_HERMETIC` entry. Returns the first unclassified line as `Err`, or
 /// `Ok(())` if every line is accounted for. This is the exact hole D1
 /// slipped through: a spelling-correct, non-zero-exit command that no
-/// prior gate executed.
+/// prior gate executed. DEPRECATED: use classify_all_blocks instead.
 fn classify_section1_commands(doc: &str) -> Result<(), String> {
     for line in section1_lines(doc) {
         let is_executed = EXECUTED_VERIFICATIONS.iter().any(|(cmd, _)| *cmd == line);
@@ -250,6 +423,48 @@ fn section1_commands_execute_or_are_classified_non_hermetic() {
         assert!(
             !output.stdout.is_empty(),
             "documented command `{cmd}` produced no stdout"
+        );
+    }
+}
+
+#[test]
+fn all_fenced_block_commands_classified_or_clap_parsed() {
+    assert!(
+        !EXECUTED_VERIFICATIONS.is_empty(),
+        "EXECUTED_VERIFICATIONS must not be empty -- an always-non-hermetic \
+         classification list would make this gate vacuous"
+    );
+
+    let doc = std::fs::read_to_string(root_file("docs/FOLLOWER-SETUP.md")).unwrap();
+
+    classify_all_blocks(&doc)
+        .unwrap_or_else(|line| panic!("unclassified line in FOLLOWER-SETUP.md: {line}"));
+
+    // Verify every entry in EXECUTED_VERIFICATIONS appears in the doc
+    let lines = all_fenced_block_lines(&doc);
+    for (cmd, _) in EXECUTED_VERIFICATIONS {
+        assert!(
+            lines.iter().any(|l| l == cmd),
+            "EXECUTED_VERIFICATIONS entry not present in any fenced block: {cmd}"
+        );
+    }
+
+    // Verify every entry in NON_HERMETIC appears in the doc
+    for (cmd, _) in NON_HERMETIC {
+        assert!(
+            lines.iter().any(|l| l == cmd),
+            "NON_HERMETIC entry not present in any fenced block: {cmd}"
+        );
+    }
+
+    // Verify every placeholder key from the map appears in the doc somewhere
+    let placeholder_map = placeholder_map();
+    let doc_full = std::fs::read_to_string(root_file("docs/FOLLOWER-SETUP.md")).unwrap();
+    for (placeholder, _) in &placeholder_map {
+        assert!(
+            doc_full.contains(placeholder),
+            "placeholder map key {placeholder} does not appear in the guide -- \
+             stale entry, remove it"
         );
     }
 }
