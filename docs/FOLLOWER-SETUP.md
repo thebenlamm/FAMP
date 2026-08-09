@@ -29,6 +29,16 @@ path. If an installer reports that `~/.cargo/bin` is missing from `PATH`, apply
 its printed shell-profile instruction, open a new shell, and rerun the `famp
 --version` and `command -v famp-gateway` checks.
 
+**Linux only — keep the broker alive after you log out.** `famp daemon install`
+installs a systemd `--user` service, and systemd stops user services when your
+last session ends. On a machine you reach only over SSH that means the broker
+dies the moment you disconnect, and the later sections fail with no obvious
+cause. `famp daemon install` detects this and prints the exact remedy without
+running it: if it reports that linger is not enabled, run the
+`loginctl enable-linger <user>` command it printed, then confirm with
+`famp daemon status` that the reported state includes `linger=yes`. macOS has
+no equivalent step — its launchd LaunchAgent needs nothing extra.
+
 ## 2. Start reachable gateways
 
 The follower's pairing redemption in section 3 (`crates/famp/src/cli/pair/redeem.rs`)
