@@ -233,18 +233,30 @@ fn pin_redeemed_record(
     }
 }
 
-/// Mutate `keyring_path` on disk: load-or-create, `rotate_to`, save, and
-/// reload-confirm the pin actually landed. Returns `Ok(true)` once the
-/// reload confirms `redeemer_principal` is `Active`.
+/// Mutate `keyring_path` on disk: load-or-create, `rotate_to`, write to a
+/// same-directory temp file, reload-confirm the pin from THAT temp file,
+/// and only then rename it over `keyring_path`. Returns `Ok(true)` once
+/// the reload confirms `redeemer_principal` is `Active`; on `Ok(false)`
+/// the temp file is removed and `keyring_path` is left byte-identical to
+/// before this call.
 ///
 /// This function contains ALL of this module's filesystem mutation. It is
 /// called only AFTER [`pin_redeemed_record`] has already written and
 /// flushed the observe line — that call ordering, not review discipline,
-/// is what makes observe-before-pin structural (PAIR-07). The
-/// reload-confirm step is the deliberate, idempotent mitigation for
-/// `Keyring::save_to_file`'s inherited non-atomic write
-/// (T-Keyring-non-atomic, Phase 15 pre-existing gap, not fixed here — see
-/// this plan's `18-PATTERNS.md`).
+/// is what makes observe-before-pin structural (PAIR-07).
+///
+/// Validate-before-save (Task 3, this fix): the previous version called
+/// `save_to_file` on `keyring_path` directly, THEN reload-validated it —
+/// so a pin that failed validation had already overwritten the last-good
+/// keyring on disk with one that (by definition of the failed validation)
+/// `Keyring::load_from_file` may refuse to load, bricking the gateway at
+/// its next start. Writing to a `.tmp-pin` sibling and renaming only on a
+/// validated reload keeps a failed pin from ever touching the real file.
+/// The rename is same-directory (`std::fs::rename`, not copy+delete), so
+/// it is atomic on the filesystems this repo targets — the deliberate,
+/// idempotent mitigation for `Keyring::save_to_file`'s inherited
+/// non-atomic write (T-Keyring-non-atomic, Phase 15 pre-existing gap, not
+/// fixed here — see this plan's `18-PATTERNS.md`).
 fn pin(
     keyring_path: &Path,
     redeemer_principal: &Principal,
@@ -270,23 +282,40 @@ fn pin(
             source: e,
         })?;
     }
-    keyring.save_to_file(keyring_path).map_err(|e| {
+
+    let tmp_path = std::path::PathBuf::from(format!("{}.tmp-pin", keyring_path.display()));
+    keyring.save_to_file(&tmp_path).map_err(|e| {
         CliError::Generic(format!(
             "failed to save peer keyring at {}: {e}",
-            keyring_path.display()
+            tmp_path.display()
         ))
     })?;
 
-    let reloaded = Keyring::load_from_file(keyring_path).map_err(|e| {
+    let reloaded = Keyring::load_from_file(&tmp_path).map_err(|e| {
         CliError::Generic(format!(
             "failed to reload peer keyring at {}: {e}",
-            keyring_path.display()
+            tmp_path.display()
         ))
     })?;
-    Ok(matches!(
+    let validated = matches!(
         reloaded.active_key(redeemer_principal, now),
         KeyLookupOutcome::Active(_)
-    ))
+    );
+
+    if validated {
+        std::fs::rename(&tmp_path, keyring_path).map_err(|e| CliError::Io {
+            path: keyring_path.to_path_buf(),
+            source: e,
+        })?;
+    } else {
+        // Best-effort cleanup: the temp file never becomes the real
+        // keyring either way, so a failed removal here does not leave
+        // `keyring_path` in a bad state -- it only leaves a stray
+        // `.tmp-pin` sibling, which the next `pin()` call overwrites.
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    Ok(validated)
 }
 
 // Takes `PairingError` by value so it can be passed as a bare fn pointer
