@@ -202,10 +202,17 @@ const NON_HERMETIC: &[(&str, &str)] = &[
 /// Commands in section 2 and later that are NOT executed (to exclude from the
 /// global scope of NON_HERMETIC, which must only contain section-1 commands for
 /// backward compatibility with the old test).
-const NON_HERMETIC_OTHER_SECTIONS: &[(&str, &str)] = &[(
-    "mkdir -p ~/.famp/gateway && touch ~/.famp/gateway/peers.keyring",
-    "writes to the user's real $HOME; never execute in a test",
-)];
+const NON_HERMETIC_OTHER_SECTIONS: &[(&str, &str)] = &[
+    (
+        "mkdir -p ~/.famp/gateway && touch ~/.famp/gateway/peers.keyring",
+        "writes to the user's real $HOME; never execute in a test",
+    ),
+    (
+        "grep \"<follower-domain>\" ~/.famp/gateway/peers.keyring",
+        "reads the developer's real $HOME keyring; the file format it depends on \
+         is covered by famp-keyring's own file_format tests",
+    ),
+];
 
 /// Extract the non-blank, trimmed lines of the first fenced code block in
 /// `doc` whose contents include a line mentioning `famp-installer.sh` --

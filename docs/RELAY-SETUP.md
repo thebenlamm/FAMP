@@ -139,7 +139,25 @@ fetch audience mismatch: expected '<expected>', presented '<presented>'
 
 ### Obtain each gateway's public key
 
-On each participating gateway host, set its own-domain and export the gateway
+There are two ways, and which one is correct depends on who the participants
+are.
+
+**If the participants paired with `famp pair` (two different people).** Do NOT
+ask them to export and send you anything. Pairing already put each peer's
+gateway key into the other's keyring, so the operator reads it locally:
+
+```bash
+grep "<participant-domain>" ~/.famp/gateway/peers.keyring
+```
+
+The second whitespace-separated field on that line is the b64url key `--domain`
+wants. This matters beyond convenience: a setup guide that forbids moving key
+material by hand — as `FOLLOWER-SETUP.md` does — is contradicted the moment the
+relay procedure asks a participant to paste a key blob, and the participant is
+left with no way to satisfy both documents. Note that the relay operator can
+only do this for domains they themselves have paired with.
+
+**If you operate every participating host yourself.** Export the gateway
 identity under a real sender agent principal. For example, on A:
 
 ```bash

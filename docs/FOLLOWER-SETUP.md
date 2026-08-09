@@ -55,6 +55,13 @@ Sections 5 and 6 additionally need message transport in both directions:
 either both gateways inbound-reachable to each other, or both pointed at a
 relay — see [Relay Setup](RELAY-SETUP.md) for that procedure.
 
+**If you are using a relay, it will not carry the follower's traffic yet.** A
+relay serves only the domains its operator configured, and rejects both
+enqueue and fetch for any other domain. The follower's domain cannot be
+configured before section 3, because the key it needs does not exist until the
+follower's machine has an identity. Section 4 handles this at the right moment
+— do not go looking for a step to do here.
+
 [Gateway Setup](GATEWAY-SETUP.md) is still the reference for the mechanical
 parts: its section 1 TLS certificate recipe and macOS inbound-firewall step,
 its section 4 flag surface and ready signal, and its section 5 own-domain
@@ -107,11 +114,38 @@ Ben confirms the displayed follower principal and key identifier. Pairing is
 asymmetric: redemption pins Ben on the follower machine, while Ben's `status`
 confirmation pins the follower on Ben's machine.
 
-## 4. Restart the gateway after pinning and wait for fresh readiness
+## 4. Restart after pinning and wait for fresh readiness
 
 Pinned keyrings load once at gateway startup. Both owners restart their gateway
 after the pins are written, then each waits for a fresh ready signal. Do not
 send either task using a readiness line emitted before pairing.
+
+### 4a. Relay users only: register the follower's domain
+
+Skip this if both gateways reach each other directly.
+
+A relay serves only the domains its operator configured and rejects everything
+else, so the follower's messages cannot flow until their domain is registered.
+Do this now rather than earlier: section 3 is the first moment the follower's
+gateway public key exists anywhere on the inviter's machine.
+
+**The follower sends nothing and pastes nothing.** Pairing already delivered
+their gateway key to the inviter, so the relay operator reads it out of their
+own keyring — one line per pinned principal, the second field being the
+b64url key the relay's `--domain` flag wants:
+
+```sh
+grep "<follower-domain>" ~/.famp/gateway/peers.keyring
+```
+
+The operator then adds `--domain <follower-domain>=<that-key>` alongside the
+existing ones and restarts the relay, per [Relay Setup](RELAY-SETUP.md).
+
+Two things to know before doing it. Adding a domain requires a relay restart,
+and a restart drops any messages already queued for **every** domain — so do
+this before section 5 sends anything, not after something goes wrong. And the
+relay must keep every domain it already served: dropping one to add another
+silently strands that participant.
 
 **Restart the gateway itself, not the broker.** `famp daemon restart` restarts
 only the broker; it does **not** restart a gateway, and there is no
