@@ -483,6 +483,75 @@ fn consent_warning_matches_quarantine_doc() {
     );
 }
 
+// ── Invariant: pinned principal == send's `from` for the same identity ──
+
+/// The real defect this fixes: `redeem::run_at` proposes a principal for
+/// pinning that must equal the `from` principal `cli::send`'s (private)
+/// `build_remote_envelope_value` (`send/mod.rs:679`) constructs for the
+/// SAME identity -- `agent:{own_domain}/{identity}` -- or the follower's
+/// later `famp send` never matches what the inviter pinned and every
+/// follower-to-inviter envelope is rejected `UnpinnedKey`.
+///
+/// `build_remote_envelope_value` is private to `cli::send::mod`, so this
+/// asserts against its exact construction (copied verbatim below) rather
+/// than calling it -- a future divergence in that construction must be
+/// caught here, not silently untested.
+#[tokio::test]
+async fn redeem_pins_principal_matching_send_from_for_same_identity() {
+    let inviter_home = TempDir::new().unwrap();
+    let redeemer_home = TempDir::new().unwrap();
+    let own_domain = "alice-host.test";
+    set_own_domain(redeemer_home.path(), own_domain);
+
+    let (artifact, _id) = create_invite(
+        inviter_home.path(),
+        "agent:inviter-invariant.test/gateway",
+        None,
+        "2030-08-03T00:00:00Z",
+        42,
+    );
+    let code = code_line(&artifact);
+    let base_url =
+        spawn_mock_inviter(inviter_home.path(), "agent:inviter-invariant.test/gateway").await;
+
+    let client = stub_client();
+    let mut reader = Cursor::new(format!("{code}\n").into_bytes());
+    redeem::run_at(
+        redeemer_home.path(),
+        &redeem::PairRedeemArgs {
+            from: base_url,
+            trust_cert: None,
+        },
+        &mut reader,
+        &client,
+        "2030-08-03T00:05:00Z",
+    )
+    .await
+    .expect("redeem::run_at must succeed against the mock inviter");
+
+    // What the redeemer actually submitted as its own principal --
+    // captured by `MockInviter` into the invite record's `by` field, the
+    // same value `redeem::run_at` will pin the inviter under once
+    // `status::run_at` runs.
+    let store = InviteStore::load(&pairing_store_path(inviter_home.path())).unwrap();
+    let submitted_principal = match &store.invites[0].state {
+        InviteState::Redeemed { by, .. } => by.clone(),
+        other => panic!("expected Redeemed state, got {other:?}"),
+    };
+
+    // `send/mod.rs:679`'s exact construction, copied verbatim as the
+    // source of truth this test pins against.
+    let identity = "alice";
+    let expected_send_from = format!("agent:{own_domain}/{identity}");
+
+    assert_eq!(
+        submitted_principal, expected_send_from,
+        "pair redeem must submit the SAME principal `famp send`'s \
+         build_remote_envelope_value (send/mod.rs:679) uses as `from` for identity \
+         '{identity}': pinned='{submitted_principal}' expected='{expected_send_from}'"
+    );
+}
+
 // ── PAIR-05: redeem-path failure mapping ────────────────────────────────
 
 #[tokio::test]
