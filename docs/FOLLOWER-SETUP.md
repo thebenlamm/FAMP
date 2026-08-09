@@ -62,6 +62,16 @@ configuration. Skip its section 3 out-of-band key exchange entirely — `famp
 pair` in section 3 below replaces it, and this run must not move key
 material by hand.
 
+**Create the empty peer keyring before the first gateway start.** On a machine
+that has never pinned a peer the file does not exist yet, and the released
+`v1.1.0-rc.1` gateway exits with `failed to load peers keyring … No such file
+or directory` instead of starting (issue #42). An empty file is a valid
+keyring — it pins nobody, which is the correct state before pairing:
+
+```sh
+mkdir -p ~/.famp/gateway && touch ~/.famp/gateway/peers.keyring
+```
+
 Do not continue until each owner sees the gateway's ready signal for their
 own endpoint.
 
