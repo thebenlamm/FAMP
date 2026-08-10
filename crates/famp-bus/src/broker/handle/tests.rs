@@ -3707,6 +3707,50 @@ fn first_row_wake_addr(outs: &[Out]) -> Option<String> {
     })
 }
 
+/// Assert `outs` carries NO error reply and EXACTLY ONE `SendOk`
+/// delivery row, then return that row's `wake_addr`.
+///
+/// [`first_row_wake_addr`] alone is not sufficient for a `== None`
+/// assertion. Its `find_map` yields `None` in two very different cases:
+/// "the row exists and has no address" (the thing under test) and "there
+/// is no `SendOk` reply at all" (the send was rejected and produced
+/// nothing). A test asserting only `== None` therefore passes when the
+/// delivery never happened — it cannot distinguish the suppression it
+/// claims to prove from a broken fixture. The sibling
+/// [`all_rows_lack_wake_addr`] already guards `!delivered.is_empty()` for
+/// exactly this reason; this helper applies the same guard to the
+/// single-row DM cases.
+fn sole_delivery_row_wake_addr(outs: &[Out]) -> Option<String> {
+    let errors: Vec<String> = outs
+        .iter()
+        .filter_map(|o| match o {
+            Out::Reply(_, BusReply::Err { kind, message }) => Some(format!("{kind:?}: {message}")),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "expected a clean delivery, got error replies: {errors:?}"
+    );
+    let mut rows = outs.iter().filter_map(|o| match o {
+        Out::Reply(_, BusReply::SendOk { delivered, .. }) => Some(delivered),
+        _ => None,
+    });
+    let delivered = rows
+        .next()
+        .expect("expected exactly one SendOk reply, found none");
+    assert!(
+        rows.next().is_none(),
+        "expected exactly one SendOk reply, found more than one"
+    );
+    assert_eq!(
+        delivered.len(),
+        1,
+        "expected exactly one delivery row on the SendOk"
+    );
+    delivered.first().and_then(|row| row.wake_addr.clone())
+}
+
 /// True iff EVERY delivery row on the `SendOk` reply omits a wake
 /// address. Used for the channel fan-out case, where any row carrying
 /// one would be a leak.
@@ -3800,8 +3844,10 @@ fn dm_from_a_non_local_sender_never_returns_a_wake_address() {
         register_with_origin(&mut broker, 2, "remote", 200, origin, now);
 
         let outs = dm(&mut broker, 2, "remote", "alice", now);
+        // `sole_delivery_row_wake_addr`, not `first_row_wake_addr`: a bare
+        // `== None` would also pass if the send produced no SendOk at all.
         assert_eq!(
-            first_row_wake_addr(&outs),
+            sole_delivery_row_wake_addr(&outs),
             None,
             "a {origin:?}-origin sender must never learn a local wake address"
         );
@@ -3828,7 +3874,7 @@ fn dm_to_a_recipient_with_listen_off_returns_no_wake_address() {
     register(&mut broker, 2, "bob", 200, now);
     let outs = dm(&mut broker, 2, "bob", "alice", now);
     assert_eq!(
-        first_row_wake_addr(&outs),
+        sole_delivery_row_wake_addr(&outs),
         None,
         "listen_mode off must suppress the address even though one is stored"
     );
@@ -3852,7 +3898,7 @@ fn dm_to_a_listening_recipient_with_no_stored_address_returns_none() {
     register(&mut broker, 2, "bob", 200, now);
 
     let outs = dm(&mut broker, 2, "bob", "alice", now);
-    assert_eq!(first_row_wake_addr(&outs), None);
+    assert_eq!(sole_delivery_row_wake_addr(&outs), None);
 }
 
 #[test]
