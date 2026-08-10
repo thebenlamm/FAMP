@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use crate::broker::awaiting::{await_envelope, await_reply_for_mailbox, waiting_clients_for_name};
+use crate::broker::awaiting::{
+    await_envelope, await_reply_for_mailbox, waiting_clients_for_name,
+    woken_waiter_is_canonical_holder,
+};
 use crate::broker::drain_walk::{is_self_authored, walk, DrainCap, DrainPolicy};
 use crate::broker::identity::{canonical_holder_id, proxy_holder_alive, resolve_op_identity};
 use crate::broker::state::ClientState;
@@ -549,15 +552,25 @@ fn send_agent<E: BrokerEnv>(
     let origin = client_origin(broker, sender);
     let waiters = waiting_clients_for_name(broker, &name, envelope, origin);
     let woken = !waiters.is_empty();
+    // Review round 2, finding A (260810-hac): the suppression below is
+    // keyed on THIS, not on `woken`. `woken` is true whenever ANY client
+    // bound to `name` was unparked — including a `bind_as` proxy, which is
+    // what an orphaned `famp-await.sh` or a human's `famp await --as <name>`
+    // in a second terminal looks like. A proxy wake does NOT wake the
+    // recipient's window, so keying suppression on `woken` disabled the ping
+    // in exactly the case it is most needed. `woken` itself is left alone: it
+    // is on the wire and other consumers read it.
+    // See `awaiting::woken_waiter_is_canonical_holder`.
+    let woken_canonical_holder = woken_waiter_is_canonical_holder(broker, &name, &waiters);
     // D2 (260810-hac): resolve the recipient's wake address for the
     // SENDER's reply. Gated on THREE conditions, not any one:
-    //   - the recipient was NOT already woken by this very send. A window
-    //     parked on `Await` is the Stop hook's steady state, so this is
-    //     the COMMON path, not an edge case. We just woke it; a second
-    //     `SendMessage` ping buys nothing and lands squarely in the
-    //     double-wake quadrant the design spec marks UNTESTED. Suppressing
-    //     here means the implementation avoids that quadrant by
-    //     construction (fix round, 260810-hac);
+    //   - the recipient's OWN canonical holder was NOT the client this very
+    //     send unparked. A window parked on `Await` is the Stop hook's steady
+    //     state, so this is the COMMON path, not an edge case. When we just
+    //     woke that window ourselves, a second `SendMessage` ping buys
+    //     nothing and lands squarely in the double-wake quadrant the design
+    //     spec marks UNTESTED. A proxy waiter does NOT satisfy this gate —
+    //     see the comment above (fix round + review round 2, 260810-hac);
     //   - the recipient's listen flag, because a window that opted out of
     //     auto-wake must not be pinged; and
     //   - the SENDING client's declared origin being Local (T-hac-04),
@@ -565,7 +578,7 @@ fn send_agent<E: BrokerEnv>(
     //     `SendMessage` anyway and must never learn a local socket path.
     // Resolved BEFORE the mutations below, alongside `origin`, so the
     // borrow is immutable and short-lived.
-    let wake_addr = if woken {
+    let wake_addr = if woken_canonical_holder {
         None
     } else {
         recipient_wake_addr(broker, &name, origin)
@@ -631,10 +644,11 @@ fn send_agent<E: BrokerEnv>(
 /// and that holder has listen mode ON with a validated address stored.
 ///
 /// The caller applies a FOURTH gate this function deliberately does not
-/// see: it is not called at all when the send already woke a parked
-/// awaiter. Keeping that check at the call site keeps this function a
-/// pure question about the RECIPIENT's stored state, with the
-/// send-outcome condition next to the `woken` value it depends on.
+/// see: it is not called at all when the send unparked the recipient's OWN
+/// canonical holder (a proxy `bind_as` waiter does not count — review round
+/// 2, finding A). Keeping that check at the call site keeps this function a
+/// pure question about the RECIPIENT's stored state, with the send-outcome
+/// condition next to the waiter set it depends on.
 fn recipient_wake_addr<E: BrokerEnv>(
     broker: &Broker<E>,
     name: &str,

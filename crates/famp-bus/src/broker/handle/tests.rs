@@ -3991,11 +3991,161 @@ fn a_recipient_already_woken_by_the_stop_hook_returns_no_wake_address() {
         "precondition: the parked await must actually have been woken — \
          without this the suppression below would be trivially satisfied"
     );
+    // Review round 2, finding H: `woken == true` alone is NOT enough of a
+    // precondition. `await_reply_for_mailbox` can select a waiter (setting
+    // `woken`) and still hand it `AwaitTimeout` when an earlier unmatched
+    // envelope blocks the drain (the 999.1 boundary), in which case NOTHING
+    // was delivered and suppressing the ping would drop the only remaining
+    // wake. Pin the actual `AwaitOk`, and pin that it carried the envelope.
+    let (envelopes, _) = await_ok(&outs, 1).expect(
+        "precondition: alice's canonical holder must have received AwaitOk, \
+         not AwaitTimeout — the suppression is only justified by a real wake",
+    );
+    assert_eq!(
+        envelopes.len(),
+        1,
+        "the wake must have delivered the triggering envelope, not an empty batch"
+    );
     assert_eq!(
         sole_delivery_row_wake_addr(&outs),
         None,
         "a recipient the broker just woke via its parked await must not \
          also be handed to the sender for a SendMessage ping"
+    );
+}
+
+/// Park a `bind_as` proxy on `name`'s mailbox and assert it is genuinely
+/// parked. This is the shape of BOTH an orphaned pre-D5 `famp-await.sh` and a
+/// human running `famp await --as <name>` in a second terminal: a connection
+/// bound to the recipient's name that is NOT the recipient's window.
+fn park_proxy_waiter(broker: &mut Broker<TestEnv>, client: u64, bound: &str, now: Instant) {
+    let hello = hello_proxy(broker, client, bound, now);
+    assert!(
+        hello
+            .iter()
+            .any(|o| matches!(o, Out::Reply(_, BusReply::HelloOk { .. }))),
+        "precondition: the proxy bind_as must be accepted"
+    );
+    let parked_outs = await_now(broker, client, now);
+    assert!(
+        parked(&parked_outs),
+        "precondition: the proxy must be PARKED, not immediately satisfied"
+    );
+}
+
+#[test]
+fn a_proxy_waiter_does_not_suppress_the_wake_address() {
+    // Review round 2, finding A. THE REGRESSION TEST. Before the narrowing
+    // this failed: `woken = !waiters.is_empty()` was true for a proxy match,
+    // so the ping was suppressed for a window that was never woken at all.
+    //
+    // Scenario 2 of the catalog, and it needs no exotic state: a human runs
+    // `famp await --as alice` in a second terminal while alice's own Claude
+    // Code window is mid-turn. The proxy eats the `AwaitOk` — and, because
+    // await cursors are stored on the CANONICAL holder, it advances alice's
+    // own offsets past the record — while alice's window learns nothing. The
+    // ping is the only fast path left, so suppressing it is backwards.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+    // alice's OWN holder is listening but NOT parked; only the proxy is.
+    park_proxy_waiter(&mut broker, 3, "alice", now);
+
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert!(
+        await_ok(&outs, 3).is_some(),
+        "precondition: the PROXY is the client that got woken"
+    );
+    assert!(
+        await_ok(&outs, 1).is_none(),
+        "precondition: alice's own canonical holder was never woken — that is \
+         the whole point of this case"
+    );
+    assert_eq!(
+        sole_delivery_row_wake_addr(&outs),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string()),
+        "a wake consumed by a proxy (orphaned hook, or a second terminal) must \
+         NOT suppress the ping — alice's window was not woken"
+    );
+}
+
+#[test]
+fn an_orphan_shaped_proxy_wake_leaves_woken_true_but_still_pings() {
+    // Review round 2, finding A, scenario 1 — and the reason `woken` itself
+    // was deliberately left alone rather than narrowed in place.
+    //
+    // An orphaned pre-D5 `famp-await.sh` parked on `famp await --as alice` is
+    // a proxy `ClientState` built with `pid: None`, so the liveness sweep
+    // (`let pid = state.pid?`) NEVER reaps it — it survives until its socket
+    // closes. Meanwhile alice's window has restarted, is the live canonical
+    // holder, is listening, and is not parked.
+    //
+    // `woken` stays TRUE on the wire (a client bound to alice really was
+    // unparked, and other consumers read that field), while the ping is
+    // emitted anyway. The two signals answer different questions and this
+    // test pins that they are now allowed to disagree.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+    park_proxy_waiter(&mut broker, 3, "alice", now);
+    assert_eq!(
+        broker
+            .state
+            .clients
+            .get(&ClientId::from(3_u64))
+            .and_then(|s| s.pid),
+        None,
+        "precondition: the proxy carries no pid, so liveness can never reap it"
+    );
+
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert_eq!(
+        first_row_woken(&outs),
+        Some(true),
+        "`woken` must still report that SOME bound client was unparked"
+    );
+    assert_eq!(
+        sole_delivery_row_wake_addr(&outs),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string()),
+        "an orphan consuming the wake must not cost the live window its ping"
+    );
+}
+
+#[test]
+fn a_canonical_holder_woken_alongside_a_proxy_still_suppresses() {
+    // CONTROL against over-narrowing. The predicate is "is the canonical
+    // holder AMONG the woken waiters", not "is it the ONLY one". With both
+    // parked, alice's own window really was woken, so the ping must stay
+    // suppressed even though a proxy was woken too.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+    park_proxy_waiter(&mut broker, 3, "alice", now);
+    let parked_holder = await_now(&mut broker, 1, now);
+    assert!(
+        parked(&parked_holder),
+        "precondition: alice's own holder must be parked too"
+    );
+
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert!(
+        await_ok(&outs, 1).is_some(),
+        "precondition: alice's own holder was woken"
+    );
+    assert_eq!(
+        sole_delivery_row_wake_addr(&outs),
+        None,
+        "the recipient's own window was woken; a proxy alongside it does not \
+         re-enable the ping"
     );
 }
 

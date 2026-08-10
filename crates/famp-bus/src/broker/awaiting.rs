@@ -324,6 +324,47 @@ fn drain_await_batch<E: BrokerEnv>(
     })
 }
 
+/// True when the wake a send just produced landed on `name`'s OWN canonical
+/// holder, as opposed to a proxy (`bind_as`) waiter bound to the same name.
+///
+/// Review round 2, finding A (260810-hac). `waiting_clients_for_name` below
+/// matches the canonical holder **OR any proxy** whose `bind_as == name`, and
+/// proxy `ClientState`s carry `pid: None` so the liveness sweep (`let pid =
+/// state.pid?`) never reaps them. `!waiters.is_empty()` therefore means "some
+/// client bound to this name was unparked" — NOT "the recipient's own window
+/// was woken". Two reachable cases separate the two: an orphaned pre-D5
+/// `famp-await.sh` still parked on `famp await --as <name>`, and a human
+/// running the same command in a second terminal. In both the proxy consumes
+/// the `AwaitOk` (advancing the CANONICAL holder's `await_offsets` past the
+/// record) while the live session is never woken at all — precisely when the
+/// `SendMessage` ping is the only remaining fast path, so suppressing it there
+/// is backwards.
+///
+/// Resolution goes through [`resolve_await_owner`] — the same function `Await`
+/// itself uses to decide whose cursors a wake advances — rather than
+/// re-inlining a canonical-holder lookup, so the two answers cannot drift. A
+/// waiter whose resolved owner is ITSELF is the canonical holder; a proxy
+/// resolves to the holder's `ClientId`, which is never its own.
+///
+/// Scope, stated plainly: this narrows the suppression to the case it was
+/// meant for. It does not address the `AwaitTimeout` case, where the canonical
+/// holder IS selected as a waiter but `drain_await_batch` stalls behind an
+/// earlier unmatched envelope (the documented 999.1 boundary above) and
+/// nothing is actually delivered. That waiter is still the canonical holder,
+/// so the ping is still suppressed.
+pub(super) fn woken_waiter_is_canonical_holder<E: BrokerEnv>(
+    broker: &Broker<E>,
+    name: &str,
+    waiters: &[ClientId],
+) -> bool {
+    waiters.iter().any(|waiting| {
+        matches!(
+            resolve_await_owner(broker, *waiting),
+            Ok((identity, owner)) if identity == name && owner == *waiting
+        )
+    })
+}
+
 pub(super) fn waiting_clients_for_name<E: BrokerEnv>(
     broker: &Broker<E>,
     name: &str,
