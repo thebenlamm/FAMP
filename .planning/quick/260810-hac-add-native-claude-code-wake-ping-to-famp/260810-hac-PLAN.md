@@ -147,10 +147,14 @@ hours. Sixty orphans once turned a 1.4s test into 302s.
   call `SendMessage` to that address.
 - **D3. SECURITY INVARIANT -- the ping is CONTENT-FREE.** Peer-controlled message bytes NEVER
   appear in the SendMessage payload. This mirrors the existing rule on the Stop hook's `reason`
-  field. The ping text is exactly: New FAMP message from <sender>, call famp_inbox to read it --
-  with an em dash before "call", matching the hook's phrasing. The sender slot is validated against
-  the same charset regex the hook uses, `^[A-Za-z0-9@._:/-]{1,128}$`; on failure the literal
-  `unknown` is substituted.
+  field. The ping text is exactly, character for character including the em dash and the trailing
+  period:
+
+  `New FAMP message from <sender> — call famp_inbox to read it.`
+
+  Do not re-punctuate this to match the Stop hook's `reason` text, which is worded differently.
+  The sender slot is validated against the same charset regex the hook uses,
+  `^[A-Za-z0-9@._:/-]{1,128}$`; on failure the literal `unknown` is substituted.
 - **D4. ADDITIVE ONLY -- do not remove or weaken the Stop hook.** Codex senders and
   gateway-delivered remote messages cannot call `SendMessage`, so the hook remains the
   authoritative wake path. The ping is a latency optimization layered on top.
@@ -268,7 +272,7 @@ Do not interleave into existing regions -- that file's line numbers are pinned b
 `.quarantine-surfaces.allow`. Cover every bullet in the behavior block above.
   </action>
   <verify>
-    <automated>cargo test -p famp-bus 2>&1 | tail -25; cargo test -p famp --lib mcp::tools::register 2>&1 | tail -10; just lint; just check-quarantine-surfaces</automated>
+    <automated>bash -c 'set -o pipefail; cargo test -p famp-bus 2>&1 | tail -25 && cargo test -p famp --lib mcp::tools::register 2>&1 | tail -10 && just lint && just check-quarantine-surfaces'</automated>
   </verify>
   <done>`cargo test -p famp-bus` is green with a NON-ZERO reported test count that includes the new
 SetWakeAddr cases -- state the count in the SUMMARY, since a filtered run exits 0 on zero matches.
@@ -339,7 +343,7 @@ re-register; mailboxes are durable per name, so nothing queued is lost. Record t
 commands you ran in the SUMMARY so the user can repeat them.
   </action>
   <verify>
-    <automated>cargo test -p famp-bus 2>&1 | tail -25; cargo test -p famp --lib mcp::tools::send 2>&1 | tail -10; cargo test --workspace 2>&1 | tail -40; just lint; just check-quarantine-surfaces</automated>
+    <automated>bash -c 'set -o pipefail; cargo test -p famp-bus 2>&1 | tail -25 && cargo test -p famp --lib mcp::tools::send 2>&1 | tail -10 && cargo test --workspace 2>&1 | tail -40 && just lint && just check-quarantine-surfaces'</automated>
   </verify>
   <done>All behavior bullets have a passing test, with the reported counts stated in the SUMMARY
 rather than inferred from exit status. `cargo test --workspace` is green apart from the five known
@@ -347,7 +351,9 @@ codex install/uninstall relink flakes, which are re-run in isolation with
 `cargo test -p famp --lib codex` and confirmed passing there. `just lint` is clean.
 `just check-quarantine-surfaces` passes. `just install` has run and `~/.cargo/bin/famp` is newer
 than the edited sources. The broker has been restarted and this window re-registered successfully
-against the proto-3 daemon. Committed as
+against the proto-3 daemon. After the restart, one REAL `famp_send` has been issued between two
+registered listen-mode windows and the resulting wake-ping object is pasted verbatim into the
+SUMMARY -- the generator must not be the only thing that has seen its own output. Committed as
 `feat(quick-260810-hac): hand the sending model a content-free wake ping`.</done>
 </task>
 
@@ -397,7 +403,7 @@ hook-wiring step the installer performs -- plus a one-line note that already-orp
 before this fix must be killed by hand, and the command to count them.
   </action>
   <verify>
-    <automated>cargo test -p famp --test hook_runner_await 2>&1 | tail -25; just check-shellcheck</automated>
+    <automated>bash -c 'set -o pipefail; cargo test -p famp --test hook_runner_await 2>&1 | tail -25 && just check-shellcheck'</automated>
   </verify>
   <done>Both arms pass: the kill-parent arm aborts within roughly two poll intervals, and the
 control arm stays parked. The reported test count is non-zero and stated in the SUMMARY.
