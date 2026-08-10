@@ -155,9 +155,23 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
 
     // D1 (260810-hac): record this window's Claude Code host address for
     // the native `SendMessage` wake ping, on a SEPARATE frame issued only
-    // after the Register succeeded. Best-effort; see `record_wake_addr`.
-    if matches!(reply, BusReply::RegisterOk { .. }) {
-        record_wake_addr(bus).await;
+    // after the Register succeeded. See `record_wake_addr`.
+    let wake_outcome = if matches!(reply, BusReply::RegisterOk { .. }) {
+        record_wake_addr(bus).await
+    } else {
+        WakeAddrOutcome::Stored
+    };
+    // Fix round, 260810-hac. A poisoned connection must not stay cached:
+    // `session::ensure_bus` returns early whenever `guard.bus.is_some()`,
+    // so without this the untrustworthy client serves every subsequent
+    // tool call on this session. Failing the registration is the honest
+    // consequence — the registration lives on the connection we are
+    // discarding, so it no longer holds. Same-name re-register is
+    // idempotent and mailboxes are durable per name.
+    if let WakeAddrOutcome::ConnectionPoisoned(detail) = wake_outcome {
+        guard.bus = None;
+        drop(guard);
+        return Err(poisoned_connection_error(&detail));
     }
 
     let result = match reply {
@@ -244,6 +258,93 @@ fn rebind_rejection(active: Option<&str>, requested: &str, rebind: bool) -> Opti
     ))
 }
 
+/// The error returned when the cached bus connection had to be discarded
+/// after the registration itself had already reached the broker. Names the
+/// remedy, because the remedy is cheap and total: same-name re-register is
+/// idempotent and mailboxes are durable per name.
+fn poisoned_connection_error(detail: &str) -> ToolError {
+    ToolError::new(
+        BusErrorKind::BrokerUnreachable,
+        format!(
+            "registration reached the broker, but the bus connection failed \
+             immediately afterwards and cannot be reused ({detail}). The \
+             connection has been discarded; call famp_register again with the \
+             same identity — re-register is idempotent and your mailbox is \
+             durable, so nothing queued is lost."
+        ),
+    )
+}
+
+/// Verdict on the cached bus connection after a `SetWakeAddr` round-trip.
+#[derive(Debug, PartialEq, Eq)]
+enum WakeAddrOutcome {
+    /// The address was stored (or there was none to store). The cached
+    /// connection is in sync and stays installed.
+    Stored,
+    /// Nothing was stored, but the stream consumed exactly one well-formed
+    /// frame, so it is still aligned. Log and carry on — the only cost is
+    /// no wake ping for this window; the Stop hook remains authoritative
+    /// (D4). Carries the line to log.
+    NotStored(String),
+    /// The round-trip failed mid-frame. The connection may be dead, or
+    /// desynced by a partially-consumed frame, and MUST NOT be reused.
+    /// Carries the detail to surface to the caller.
+    ConnectionPoisoned(String),
+}
+
+/// Classify a `SetWakeAddr` round-trip. Pure so the connection verdict —
+/// the part that is genuinely hard to reason about — is unit-testable
+/// without a live broker.
+///
+/// `transport_err` is the already-formatted `{e:?}` of a `send_recv`
+/// error, or `None` when `send_recv` returned `Ok`.
+///
+/// ## Why `Ok(unexpected)` is NOT a poisoned connection
+///
+/// `codec::read_frame` reads the length prefix, then `read_exact`s the
+/// whole body, then deserializes. Any `Ok` return therefore means one
+/// COMPLETE frame was consumed and the stream is aligned on the next
+/// frame boundary — regardless of which variant came back. An unexpected
+/// variant is a broker protocol oddity worth logging, not a reason to
+/// throw away a working connection.
+///
+/// An `Err` is the opposite. Two of its causes leave the stream desynced
+/// rather than merely dead: `FrameTooLarge` consumes the length prefix
+/// but not the body, and an `Io` error on the body `read_exact` consumes
+/// part of it. A subsequent read on that stream starts mid-body. There is
+/// no timeout path in `send_recv`, so we cannot distinguish those from a
+/// dead broker at this layer — and every one of them is a connection we
+/// must not keep.
+fn classify_set_wake_addr(
+    sent: &str,
+    reply: Option<&BusReply>,
+    transport_err: Option<&str>,
+) -> WakeAddrOutcome {
+    if let Some(detail) = transport_err {
+        return WakeAddrOutcome::ConnectionPoisoned(detail.to_string());
+    }
+    match reply {
+        Some(BusReply::SetWakeAddrOk {
+            wake_addr: Some(echoed),
+        }) if echoed == sent => WakeAddrOutcome::Stored,
+        // proto.rs documents the echo precisely so a client can observe
+        // that a malformed address stored nothing. Fail-open by design —
+        // but say so rather than treating it as success.
+        Some(BusReply::SetWakeAddrOk { wake_addr: echoed }) => WakeAddrOutcome::NotStored(format!(
+            "famp mcp: broker did not store wake address {sent:?} (echoed {echoed:?}) \
+                 — no wake ping for this session; the Stop hook is unaffected"
+        )),
+        Some(other) => WakeAddrOutcome::NotStored(format!(
+            "famp mcp: SetWakeAddr got {} — no wake ping for this session; \
+             the Stop hook is unaffected",
+            other.variant_name()
+        )),
+        None => WakeAddrOutcome::ConnectionPoisoned(
+            "send_recv returned neither a reply nor an error".to_string(),
+        ),
+    }
+}
+
 /// D1 (260810-hac): issue the `SetWakeAddr` frame for this window, if it
 /// has one.
 ///
@@ -252,34 +353,49 @@ fn rebind_rejection(active: Option<&str>, requested: &str, rebind: bool) -> Opti
 /// session's child (verified fact 1 of the spike: parent pid == session
 /// pid == cc-socks basename, 4 of 4).
 ///
-/// Every path here is best-effort and MUST NOT be able to fail
-/// registration. No socket on disk — the normal case for a non-Claude host
-/// or a session without one (verified fact 4) — sends no frame at all. A
-/// transport error or an unexpected reply is logged to stderr and
-/// swallowed. The only consequence of failure is that this window gets no
-/// wake ping; the Stop hook remains its authoritative wake path (D4).
-async fn record_wake_addr(bus: &mut crate::bus_client::BusClient) {
+/// No socket on disk — the normal case for a non-Claude host or a session
+/// without one (verified fact 4) — sends no frame at all and returns
+/// [`WakeAddrOutcome::Stored`].
+///
+/// ## This is no longer "swallow everything" (fix round, 260810-hac)
+///
+/// As first shipped this function swallowed transport errors outright, on
+/// the stated rule that it "MUST NOT be able to fail registration". That
+/// rule rested on a premise that does not hold: it assumed a failed
+/// round-trip leaves a REUSABLE connection. It does not — see
+/// [`classify_set_wake_addr`] — and `session::ensure_bus` never clears
+/// `guard.bus`, so the untrustworthy client stayed installed for every
+/// later tool call on the session.
+///
+/// The caller now drops the cached connection and fails the registration
+/// on [`WakeAddrOutcome::ConnectionPoisoned`]. That is not a regression in
+/// robustness: the registration LIVES on that connection, so once it is
+/// dropped the registration genuinely no longer holds and reporting
+/// success would be a lie the Stop hook would then act on. Same-name
+/// re-register is idempotent and mailboxes are durable per name, so the
+/// remedy is one retry with nothing lost.
+async fn record_wake_addr(bus: &mut crate::bus_client::BusClient) -> WakeAddrOutcome {
     let Some(wake_addr) = wake_addr_for_pid(
         std::os::unix::process::parent_id(),
         std::path::Path::new(CC_SOCKS_DIR),
     ) else {
-        return;
+        return WakeAddrOutcome::Stored;
     };
-    match bus
+    let outcome = match bus
         .send_recv(BusMessage::SetWakeAddr {
-            wake_addr: Some(wake_addr),
+            wake_addr: Some(wake_addr.clone()),
         })
         .await
     {
-        Ok(BusReply::SetWakeAddrOk { .. }) => {}
-        Ok(unexpected) => eprintln!(
-            "famp mcp: SetWakeAddr got {} — wake ping disabled for this session",
-            unexpected.variant_name()
-        ),
-        Err(_) => eprintln!(
-            "famp mcp: SetWakeAddr round-trip failed — wake ping disabled for this session"
-        ),
+        Ok(reply) => classify_set_wake_addr(&wake_addr, Some(&reply), None),
+        // Log the actual cause, never a bare string — a swallowed error
+        // context is a swallowed error.
+        Err(e) => classify_set_wake_addr(&wake_addr, None, Some(&format!("{e:?}"))),
+    };
+    if let WakeAddrOutcome::NotStored(line) = &outcome {
+        eprintln!("{line}");
     }
+    outcome
 }
 
 /// Default directory Claude Code exposes its per-session cross-session
@@ -341,7 +457,85 @@ fn validate_identity_name(name: &str) -> Result<(), ToolError> {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{wake_addr_for_pid, CC_SOCKS_DIR};
+    use super::{classify_set_wake_addr, wake_addr_for_pid, WakeAddrOutcome, CC_SOCKS_DIR};
+    use famp_bus::BusReply;
+
+    const SENT: &str = "uds:/tmp/cc-socks/8091.sock";
+
+    #[test]
+    fn an_echoed_address_matching_what_we_sent_is_stored() {
+        assert_eq!(
+            classify_set_wake_addr(
+                SENT,
+                Some(&BusReply::SetWakeAddrOk {
+                    wake_addr: Some(SENT.to_string()),
+                }),
+                None,
+            ),
+            WakeAddrOutcome::Stored
+        );
+    }
+
+    #[test]
+    fn a_none_echo_is_reported_not_silently_treated_as_stored() {
+        // proto.rs documents the echo precisely so a client can observe
+        // that a malformed address stored nothing. The pre-fix code
+        // matched `SetWakeAddrOk { .. }` and could not tell the two apart.
+        let outcome = classify_set_wake_addr(
+            SENT,
+            Some(&BusReply::SetWakeAddrOk { wake_addr: None }),
+            None,
+        );
+        match outcome {
+            WakeAddrOutcome::NotStored(line) => {
+                assert!(
+                    line.contains(SENT),
+                    "the log must name what we sent: {line}"
+                );
+                assert!(
+                    line.contains("Stop hook"),
+                    "the log must say what still works: {line}"
+                );
+            }
+            other => panic!("a None echo must be NotStored, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_unexpected_but_well_formed_reply_keeps_the_connection() {
+        // DISAGREEMENT WITH THE REVIEW, with evidence. `codec::read_frame`
+        // reads the length prefix, `read_exact`s the whole body, then
+        // deserializes — so ANY `Ok` return consumed exactly one complete
+        // frame and the stream is aligned on the next boundary. An
+        // unexpected variant is a broker oddity to log, not a reason to
+        // discard a working connection and fail the registration.
+        let outcome = classify_set_wake_addr(
+            SENT,
+            Some(&BusReply::SetListenOk { listen_mode: true }),
+            None,
+        );
+        assert!(
+            matches!(outcome, WakeAddrOutcome::NotStored(_)),
+            "a well-formed unexpected reply must NOT poison the connection, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn a_transport_error_poisons_the_connection_and_carries_the_cause() {
+        // `FrameTooLarge` consumes the length prefix but not the body, and
+        // an Io error on the body `read_exact` consumes part of it — both
+        // leave the stream desynced, and `send_recv` has no timeout path
+        // that would let us tell them from a dead broker. Every Err is a
+        // connection we must not keep.
+        let outcome = classify_set_wake_addr(SENT, None, Some("Io(Custom { kind: BrokenPipe })"));
+        match outcome {
+            WakeAddrOutcome::ConnectionPoisoned(detail) => assert!(
+                detail.contains("BrokenPipe"),
+                "the actual cause must survive, not a bare string: {detail}"
+            ),
+            other => panic!("a transport error must poison the connection, got {other:?}"),
+        }
+    }
 
     #[test]
     fn wake_addr_is_none_when_the_socket_does_not_exist() {
