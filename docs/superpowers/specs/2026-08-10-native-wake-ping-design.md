@@ -171,6 +171,23 @@ Decisions taken during planning, recorded so they are not re-litigated.
   open to no-ping. Rationale: any bus client can send this frame; only the broker sees all
   of them. This is D3's invariant applied to the other peer-controlled string, not a new
   decision.
+
+  **KNOWN GAP — shape, not ownership.** Nothing ties `<pid>` to the registering client, so
+  any local process on the bus can point a name's wake address at a different session's
+  socket. Blast radius is same-host/same-user, and the consequence is a misdirected ping —
+  **latency, not loss** — since the mailbox is durable and the Stop hook stays
+  authoritative. Tracked as **[issue #48](https://github.com/thebenlamm/FAMP/issues/48)**,
+  which also records why the obvious broker-side existence check is not cheap here:
+  `BrokerEnv` is `MailboxRead + LivenessProbe` with no filesystem seam, and the broker regex
+  pins the literal `/tmp/cc-socks` rather than being parameterized on a base directory, so
+  the check would either reach into the real global `/tmp` from the pure `Out`-vector unit
+  tests or require extending the trait.
+
+  The client-side half WAS tightened in the fix round: `wake_addr_for_pid` now uses
+  `symlink_metadata` + `FileTypeExt::is_socket` rather than `Path::exists()`, which followed
+  symlinks and asserted nothing about file type — the original unit test demonstrated the
+  hole by creating a **regular file** and getting an address back. That is an advisory shape
+  check on one client, not an enforcement point.
 - **The ping payload is composed in Rust and handed to the model whole.** The model relays
   it; it does not compose it. If the model composed the text, D3 would be unenforceable.
   The builder's *signature* takes only the target address — no sender, no envelope, no

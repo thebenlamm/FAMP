@@ -405,7 +405,7 @@ async fn record_wake_addr(bus: &mut crate::bus_client::BusClient) -> WakeAddrOut
 const CC_SOCKS_DIR: &str = "/tmp/cc-socks";
 
 /// D1: build the wake address for `pid` under `base_dir`, returning `None`
-/// unless the socket actually exists on disk.
+/// unless a UNIX SOCKET actually exists at that path.
 ///
 /// Pure and parameterized on `base_dir` (in the style of
 /// [`rebind_rejection`]) so the path-building and existence-gating logic
@@ -414,9 +414,24 @@ const CC_SOCKS_DIR: &str = "/tmp/cc-socks";
 /// Verified fact 4: not every claude session has a sock, and not every
 /// session runs `famp mcp`. `None` is the normal, silent outcome — the
 /// caller must treat it as "no ping for this window", never as an error.
+///
+/// ## Why `symlink_metadata` + `is_socket`, not `Path::exists`
+///
+/// Fix round, 260810-hac. `Path::exists()` follows symlinks and asserts
+/// nothing about the file TYPE — a plain regular file at
+/// `/tmp/cc-socks/<pid>.sock` yielded an address, which the original unit
+/// test demonstrated by creating exactly that. `/tmp` is world-writable,
+/// so anything that can create a file there could make this function
+/// advertise a wake address no `SendMessage` can ever reach. This does
+/// NOT close the ownership gap (see the `set_wake_addr` follow-up issue
+/// referenced from the design spec) — it only stops the shape check from
+/// being satisfied by a non-socket. `symlink_metadata` also refuses to
+/// traverse a symlink pointing at a real socket elsewhere.
 fn wake_addr_for_pid(pid: u32, base_dir: &std::path::Path) -> Option<String> {
+    use std::os::unix::fs::FileTypeExt as _;
+
     let sock = base_dir.join(format!("{pid}.sock"));
-    if !sock.exists() {
+    if !std::fs::symlink_metadata(&sock).is_ok_and(|m| m.file_type().is_socket()) {
         return None;
     }
     Some(format!("uds:{}", sock.display()))
@@ -544,10 +559,15 @@ mod tests {
     }
 
     #[test]
-    fn wake_addr_is_some_when_the_socket_exists() {
+    fn wake_addr_is_some_when_a_real_socket_exists() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("8091.sock"), b"").expect("create sock placeholder");
-        let addr = wake_addr_for_pid(8091, dir.path()).expect("existing sock yields an address");
+        // A REAL unix socket, not a placeholder file. Binding a
+        // `UnixListener` is the cheapest way to produce one; the bound
+        // listener is held for the duration of the test so the socket
+        // stays on disk.
+        let _listener = std::os::unix::net::UnixListener::bind(dir.path().join("8091.sock"))
+            .expect("bind a real unix socket");
+        let addr = wake_addr_for_pid(8091, dir.path()).expect("a real socket yields an address");
         assert!(
             addr.starts_with("uds:"),
             "address must carry the uds: scheme"
@@ -557,8 +577,39 @@ mod tests {
             "address must name the pid's socket"
         );
         // A DIFFERENT pid in the same dir must still be absent — the
-        // existence check is per-pid, not per-directory.
+        // check is per-pid, not per-directory.
         assert_eq!(wake_addr_for_pid(9999, dir.path()), None);
+    }
+
+    #[test]
+    fn wake_addr_rejects_a_regular_file_wearing_the_sock_name() {
+        // This case USED TO PASS, and the old test asserted it: a plain
+        // regular file at `<pid>.sock` yielded an address, because
+        // `Path::exists()` says nothing about the file type. `/tmp` is
+        // world-writable, so anything able to create a file there could
+        // make this helper advertise an address no `SendMessage` can
+        // reach. The test that once demonstrated the hole now pins it shut.
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("8091.sock"), b"").expect("create a regular file");
+        assert_eq!(
+            wake_addr_for_pid(8091, dir.path()),
+            None,
+            "a regular file must not be mistaken for a session socket"
+        );
+    }
+
+    #[test]
+    fn wake_addr_does_not_follow_a_symlink_to_a_socket_elsewhere() {
+        // `symlink_metadata`, not `metadata`: a symlink at the expected
+        // path pointing at a real socket somewhere else is not this
+        // session's socket, whatever it resolves to.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let elsewhere = dir.path().join("real.sock");
+        let _listener =
+            std::os::unix::net::UnixListener::bind(&elsewhere).expect("bind a real unix socket");
+        std::os::unix::fs::symlink(&elsewhere, dir.path().join("8091.sock"))
+            .expect("create symlink");
+        assert_eq!(wake_addr_for_pid(8091, dir.path()), None);
     }
 
     #[test]
