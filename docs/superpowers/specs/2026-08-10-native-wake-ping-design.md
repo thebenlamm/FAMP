@@ -1,0 +1,193 @@
+# Native Claude Code Wake Ping — Design Spec
+
+**Date:** 2026-08-10
+**Status:** Accepted (implemented by quick task `260810-hac`)
+**Scope:** `famp-bus` proto + broker, `famp` MCP tools (`famp_register`, `famp_send`),
+`crates/famp/assets/famp-await.sh`
+
+---
+
+## Problem
+
+FAMP listen mode wakes an agent through a blocking Stop hook. After every turn,
+`~/.claude/hooks/famp-await.sh` parks on `famp await --timeout 23h`; an inbound message
+unblocks it and the host re-enters the turn.
+
+That mechanism works, and it is the only mechanism. It carries two costs.
+
+1. **Latency.** A message that arrives while the agent is mid-turn is not seen until the
+   agent finishes the turn and the Stop hook parks again. Nothing wakes an *idle*
+   session that has already parked — the park itself is the wake, so an idle session sees
+   the message promptly, but a busy one does not, and every listening window holds one
+   permanently-blocked bash process for up to 23 hours.
+2. **Orphans.** When a Claude Code session dies, its Stop hook does not die with it. The
+   hook reparents to pid 1 and keeps running its 23h park, plus its polling watcher
+   subshell. These accumulate. Sixty orphaned hooks on this box once turned a 1.4s test
+   into 302s and are the best available explanation for a gateway E2E timeout that looked
+   like a code regression.
+
+---
+
+## Verified facts (spike, 2026-08-10)
+
+1. **The `famp mcp` parent pid equals the Claude Code session pid, which equals the
+   basename of `/tmp/cc-socks/<pid>.sock`.** Confirmed 4 of 4 on this box:
+   8194 → 8091, 5518 → 5393, 21046 → 21026, 72819 → 72782.
+2. **`uds:/tmp/cc-socks/<pid>.sock` is a supported `to:` address for Claude Code's
+   `SendMessage` tool.** It is the literal `from` attribute carried on inbound
+   cross-session messages.
+3. **`SendMessage` wakes an idle Claude Code session.** A probe to an idle peer returned
+   `ack idle`; a busy-peer control returned `ack busy`. Both arms fired, so the rig was
+   sound and the positive result is not a false positive.
+4. **Not every claude session has a sock, and not every session runs `famp mcp`.** The
+   feature must degrade silently when the socket is absent.
+
+---
+
+## Design
+
+### D1 — record the host wake address at register time
+
+On `famp_register`, the MCP server computes a wake address of the form
+`uds:/tmp/cc-socks/<parent-pid>.sock` and stores it on the holder — **only if that socket
+path exists on disk**. If it is absent, nothing is stored and everything else behaves
+exactly as today.
+
+### D2 — hand the sending model the recipient's wake address
+
+The `famp_send` tool result includes the recipient's wake address when the recipient has
+listen mode ON and has one stored, plus a short instruction line telling the sending model
+to call `SendMessage` to that address.
+
+### D3 — SECURITY INVARIANT: the ping is CONTENT-FREE
+
+**Peer-controlled message bytes NEVER appear in the SendMessage payload.** This mirrors the
+existing rule on the Stop hook's `reason` field. The ping text is exactly, character for
+character including the em dash and the trailing period:
+
+```
+New FAMP message from <sender> — call famp_inbox to read it.
+```
+
+Do not re-punctuate this to match the Stop hook's `reason` text, which is worded
+differently. The sender slot is validated against the same charset regex the hook uses,
+`^[A-Za-z0-9@._:/-]{1,128}$`; on failure the literal `unknown` is substituted.
+
+### D4 — ADDITIVE ONLY: do not remove or weaken the Stop hook
+
+Codex senders and gateway-delivered remote messages cannot call `SendMessage`, so the hook
+remains the authoritative wake path. The ping is a latency optimization layered on top.
+
+### D5 — orphan fix
+
+The Stop hook must exit when its owning Claude Code session dies.
+
+---
+
+## Reliability story
+
+The ping is **best-effort and model-mediated** — the sending model has to actually make the
+`SendMessage` call. Nothing forces it to. The mailbox is durable. A missed ping means the
+message waits for the next hook wake or an explicit `famp_inbox` read.
+
+**The failure mode is LATENCY, NEVER LOSS.**
+
+---
+
+## REJECTED — do not re-propose
+
+**Having the `famp-bus` broker, or any FAMP process, connect to `/tmp/cc-socks/<pid>.sock`
+directly and speak that protocol.**
+
+It is an unversioned private IPC protocol owned by the `claude` binary — currently 2.1.226,
+which ships updates weekly. There is no compatibility contract, no version negotiation, and
+no notice when the shape changes. This is the same landmine class as the GATEWAY-SETUP TLS
+double-bind: a dependency on undocumented behavior of software we do not control, where the
+breakage surfaces as a silent functional failure rather than a build error.
+
+FAMP only ever **stores and hands back a string**. Delivery always goes through the
+documented `SendMessage` tool inside a live session.
+
+---
+
+## Implementation notes
+
+Decisions taken during planning, recorded so they are not re-litigated.
+
+- **The wake address travels on a NEW `BusMessage::SetWakeAddr` frame issued right after a
+  successful `Register`**, mirroring the existing `SetListen` / `SetListenOk` pair — NOT as
+  a new field on the `Register` variant. Rationale: the `Register` variant has 48
+  construction sites across 27 files including the gateway's remote-principal registration,
+  so a new field would create a slot the gateway path must remember never to populate; a
+  separate frame means only the MCP register tool can ever send one. It also leaves the
+  line-number pins in `.quarantine-surfaces.allow` intact. D1 is satisfied literally: it
+  constrains *when* the value is computed and that it lands on the holder, not which frame
+  carries it.
+- **The wake address is validated BROKER-SIDE**, inside the `SetWakeAddr` handler, against
+  `^uds:/tmp/cc-socks/[0-9]{1,10}\.sock$`. A non-matching value stores nothing, failing
+  open to no-ping. Rationale: any bus client can send this frame; only the broker sees all
+  of them. This is D3's invariant applied to the other peer-controlled string, not a new
+  decision.
+- **The ping payload is composed in Rust and handed to the model whole.** The model relays
+  it; it does not compose it. If the model composed the text, D3 would be unenforceable.
+  The builder's *signature* takes only the sender name and the target address — there is no
+  envelope, title, or body parameter to pass, so the invariant is enforced by the type
+  system rather than by discipline.
+- **`BUS_PROTO_VERSION` bumps 2 → 3.** A new message variant is a wire frame change per the
+  mandate in that constant's own doc comment. Consequence: after `just install` the daemon
+  must be restarted and every live window re-registers, because proto-2 and proto-3 peers
+  reject each other at Hello by design. Mailboxes are durable per name, so nothing queued
+  is lost.
+- **The `SetWakeAddr` frame is excluded from the pre-dispatch `touch_activity` call**, the
+  same way `SetListen` is (Fix 5, 2026-05-12). The handler rejects proxy callers, so a
+  rejected proxy frame must not refresh the canonical holder's `last_activity`; the handler
+  stamps it explicitly on the accepted path instead.
+- **`Delivered`'s new field must not leak into `SendOutcome.delivered`.** That field is
+  `format!("{delivered:?}")` over `Vec<Delivered>`; a derived `Debug` would print
+  `wake_addr: None` on every channel row and every no-address DM, changing a string that is
+  supposed to be byte-identical to today's. `Delivered` therefore carries a hand-written
+  `Debug` impl that omits the field when it is `None`.
+- **D5 rides the existing issue-#21 cancellation seam**, not a second mechanism. The seam
+  arms a fifo on fd 9 and a polling watcher subshell; a byte on fd 9 makes
+  `famp await --abort-on-fd 9` return exit 3, which the hook already maps to a clean exit 0.
+  The owner-liveness predicate is evaluated in that same polling loop.
+  **Consequence, stated plainly: when the fifo seam fails to arm** (`mktemp` or `mkfifo`
+  fails), there is no watcher, therefore no orphan fix, and the hook runs a plain
+  uncancellable await exactly as it does today. That is the correct fail-open behavior —
+  the alternative is a second, independent kill path that could fire while the owner is
+  alive — but it means D5 is a best-effort mitigation, not a guarantee.
+- **Reparent detection is the primary liveness signal, not a bare `kill(pid, 0)` probe.**
+  If the hook's current parent pid differs from the value captured at hook start, the owner
+  is gone. This cannot be fooled by pid reuse, which a liveness probe on a captured pid can
+  be.
+
+---
+
+## SUPERSEDE — FAMP issue #21, "listen mode MUST block the turn"
+
+That decision was settled on the premise that **no external input-injection into an idle
+Claude Code session existed** — so the blocked Stop hook was the only possible wake
+mechanism.
+
+Verified fact 3 falsifies that premise with live evidence: `SendMessage` demonstrably wakes
+an idle session, and the busy-peer control arm proves the rig could tell the difference.
+
+**Scope the supersede to the PREMISE only.** Per D4 the blocking Stop hook remains installed
+and authoritative, and the `--abort-on-fd` cancellation seam that issue #21 produced is
+load-bearing for D5 — the orphan fix is built directly on it. Nothing about the issue's
+*conclusion* is being reversed here; only the factual claim it rested on.
+
+**Note to the user:** do NOT close issue #21 on the strength of this spec. Whether the issue
+stays open, gets amended, or gets closed is your call. This section exists so the premise is
+not quietly re-asserted later as though it were still true.
+
+---
+
+## OPEN QUESTIONS
+
+- **Does `SendMessage` wake a session that is currently PARKED IN THE STOP HOOK, as opposed
+  to idle-at-prompt?** UNTESTED. The spike probed an idle-at-prompt peer and a busy peer;
+  neither arm was parked in a `famp await`. This matters for double-wake interaction — if a
+  parked hook and a `SendMessage` both fire, the session could be woken twice, or the ping
+  could be swallowed. **No claim is made in either direction.** Anyone relying on the
+  parked-in-hook behavior must test it first.
