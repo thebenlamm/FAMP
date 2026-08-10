@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-- The local bus protocol version moved from `BUS_PROTO_VERSION` 1 to 2 (QUAR-10).
+- The local bus protocol version moved, **twice** during v1.1: 1 → 2 for provenance stamping (QUAR-10, Phase 14), then 2 → 3 for the `SetWakeAddr` frame (native wake ping). Read the shipping value from `BUS_PROTO_VERSION` in `crates/famp-bus/src/proto.rs`, never from this bullet — see "What breaks, and what does not" below.
 - Every `famp` binary must be **reinstalled** (`just install`, or `cargo install --path crates/famp` from a contributor checkout) and the daemon must be **restarted** (`famp daemon restart`).
 - A v1.0 client talking to a v1.1 broker (or vice versa) **fails loudly by design**. This is not a bug and it is not silently degraded — it is the fail-closed security decision the quarantine boundary depends on.
 

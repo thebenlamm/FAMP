@@ -10,7 +10,9 @@
 //! the integration-level counterpart D-11 asks for, over real sockets,
 //! covering the D-03/D-14 fail-closed DISJUNCTION end to end:
 //!
-//! With `BUS_PROTO_VERSION` at 2, an actual old gateway binary is
+//! With `BUS_PROTO_VERSION` past 1 (it was 2 when this was written and
+//! has since moved again — read the constant, not this comment), an
+//! actual old gateway binary is
 //! rejected at Hello and never delivers anything — it cannot produce an
 //! unmarked record even in principle. The honest fail-closed assertion
 //! is therefore a disjunction: an unstamped record either (a) never
