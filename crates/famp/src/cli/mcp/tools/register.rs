@@ -129,7 +129,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
     let cwd = std::env::current_dir()
         .ok()
         .map(|path| path.display().to_string());
-    let reply = bus
+    let round_trip = bus
         .send_recv(BusMessage::Register {
             name: name.clone(),
             pid,
@@ -145,13 +145,36 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // local-to-local traffic to render unwrapped.
             origin: Some(famp_bus::Origin::Local),
         })
-        .await
-        .map_err(|e| {
-            ToolError::new(
-                BusErrorKind::BrokerUnreachable,
-                format!("broker round-trip failed: {e:?}"),
-            )
-        })?;
+        .await;
+    let reply = match round_trip {
+        Ok(reply) => reply,
+        Err(e) => {
+            // Review round 2, finding C (260810-hac). This arm used to be
+            // a bare `.map_err(...)?`, which left the DEAD stream cached in
+            // `guard.bus`. `session::ensure_bus` returns early whenever
+            // `guard.bus.is_some()` and `send_recv` never reconnects, so
+            // retrying could not recover: the window stayed wedged until its
+            // whole MCP process restarted.
+            //
+            // Same reasoning as the `ConnectionPoisoned` arm below, and the
+            // same remedy — but this is the LIKELIER path of the two, and it
+            // got likelier still with this task: `BUS_PROTO_VERSION` 2 → 3
+            // FORCES every live window through `Register` after the daemon
+            // restart, which is exactly when a mid-flight restart can kill
+            // the round-trip. CLAUDE.md's deploy text asserts "Every live
+            // window then re-registers"; that sentence depends on this path
+            // being retryable.
+            //
+            // An `Err` from `send_recv` may also have left the stream
+            // DESYNCED rather than merely dead — `FrameTooLarge` consumes
+            // the length prefix but not the body, and an `Io` error on the
+            // body `read_exact` consumes part of it. See
+            // `classify_set_wake_addr` for the full argument.
+            guard.bus = None;
+            drop(guard);
+            return Err(register_round_trip_error(&format!("{e:?}")));
+        }
+    };
 
     // D1 (260810-hac): record this window's Claude Code host address for
     // the native `SendMessage` wake ping, on a SEPARATE frame issued only
@@ -191,29 +214,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // `set_active_identity`.
             guard.inbox_offset = None;
             guard.listen_mode = Some(listen);
-            // Listen intent is broker state, not proof that a host Stop hook is
-            // installed and loaded. Keep registration successful, but make the
-            // cross-layer uncertainty explicit. Do NOT advertise a
-            // `famp listen-wake --follow`
-            // monitor here: in the Stop-hook deployment nothing writes the
-            // `.wake` file, so `--follow` blocks forever, and arming
-            // `--daemon` opens a second bus waiter that steals messages from
-            // the Stop await (the exact race the comment at drop(guard) below
-            // avoids internally). The orphaned monitor surface must not be
-            // handed to users.
-            let mut body = serde_json::json!({
-                "active": &active,
-                "drained": drained.len(),
-                "peers": peers,
-            });
-            if listen {
-                body["listen_mode"] = serde_json::json!(true);
-                body["wake_readiness"] = serde_json::json!("unknown");
-                body["warning"] = serde_json::json!(
-                    "listen mode requires an installed and loaded host Stop hook; for Codex run `famp inspect wake --identity <name>` to verify end-to-end readiness"
-                );
-            }
-            Ok(body)
+            Ok(register_ok_body(&active, drained.len(), &peers, listen))
         }
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         // `BusReply` is open-coded with many ok-shaped variants. A non-Err,
@@ -256,6 +257,58 @@ fn rebind_rejection(active: Option<&str>, requested: &str, rebind: bool) -> Opti
          hijack the parent window's identity. Subagents must NOT call \
          famp_register.)"
     ))
+}
+
+/// Build the `RegisterOk` tool-result body.
+///
+/// Pure, in the style of [`rebind_rejection`], and extracted from `call()`
+/// only because clippy's pedantic `too_many_lines` (`-D warnings`) rejects
+/// the function otherwise — the same pressure that produced
+/// [`record_wake_addr`]. Behavior is unchanged.
+///
+/// Listen intent is broker state, not proof that a host Stop hook is
+/// installed and loaded. Registration still succeeds, but the cross-layer
+/// uncertainty is made explicit. Do NOT advertise a `famp listen-wake
+/// --follow` monitor here: in the Stop-hook deployment nothing writes the
+/// `.wake` file, so `--follow` blocks forever, and arming `--daemon` opens a
+/// second bus waiter that steals messages from the Stop await. The orphaned
+/// monitor surface must not be handed to users.
+fn register_ok_body(active: &str, drained: usize, peers: &[String], listen: bool) -> Value {
+    let mut body = serde_json::json!({
+        "active": active,
+        "drained": drained,
+        "peers": peers,
+    });
+    if listen {
+        body["listen_mode"] = serde_json::json!(true);
+        body["wake_readiness"] = serde_json::json!("unknown");
+        body["warning"] = serde_json::json!(
+            "listen mode requires an installed and loaded host Stop hook; for Codex run `famp inspect wake --identity <name>` to verify end-to-end readiness"
+        );
+    }
+    body
+}
+
+/// The error returned when the `Register` round-trip ITSELF failed at the
+/// transport layer (review round 2, finding C).
+///
+/// Deliberately worded differently from [`poisoned_connection_error`]: there
+/// the registration had already reached the broker and only the follow-up
+/// frame failed, so the holder may exist broker-side. Here we genuinely do
+/// not know whether the frame arrived, so the message must not claim it did.
+/// Either way the discarded connection is replaced on the next call and
+/// same-name re-register is idempotent, so one retry is the whole remedy.
+fn register_round_trip_error(detail: &str) -> ToolError {
+    ToolError::new(
+        BusErrorKind::BrokerUnreachable,
+        format!(
+            "broker round-trip failed: {detail}. The bus connection has been \
+             discarded (it may be dead or frame-desynced) and will be \
+             reopened on the next call; call famp_register again with the \
+             same identity — re-register is idempotent and your mailbox is \
+             durable, so nothing queued is lost."
+        ),
+    )
 }
 
 /// The error returned when the cached bus connection had to be discarded
