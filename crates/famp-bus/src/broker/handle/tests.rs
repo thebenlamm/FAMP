@@ -3948,3 +3948,81 @@ fn channel_fanout_rows_never_carry_a_wake_address() {
          matching the adjacent woken=false precedent"
     );
 }
+
+/// The `woken` flag on the FIRST delivery row of a `SendOk` reply.
+fn first_row_woken(outs: &[Out]) -> Option<bool> {
+    outs.iter().find_map(|o| match o {
+        Out::Reply(_, BusReply::SendOk { delivered, .. }) => delivered.first().map(|row| row.woken),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_recipient_already_woken_by_the_stop_hook_returns_no_wake_address() {
+    // Fix round, 260810-hac. `woken` and `wake_addr` were computed from
+    // independent state with nothing gating one on the other, so a
+    // recipient PARKED IN THE STOP HOOK — which is the steady state of a
+    // listening window, not an edge case — got both an `AwaitOk` wake AND
+    // a wake address handed to the sender to ping again.
+    //
+    // That double-wake quadrant is exactly the one the design spec's OPEN
+    // QUESTIONS section marks UNTESTED, with "No claim is made in either
+    // direction." Shipping into it bought nothing: a parked session is
+    // already woken by the hook. So the address is suppressed when the
+    // broker knows it just woke the recipient itself.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+
+    // Park alice on an Await — the Stop hook's steady state.
+    let parked = await_now(&mut broker, 1, now);
+    assert!(
+        await_ok(&parked, 1).is_none(),
+        "precondition: alice must be PARKED, not immediately satisfied"
+    );
+
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert_eq!(
+        first_row_woken(&outs),
+        Some(true),
+        "precondition: the parked await must actually have been woken — \
+         without this the suppression below would be trivially satisfied"
+    );
+    assert_eq!(
+        sole_delivery_row_wake_addr(&outs),
+        None,
+        "a recipient the broker just woke via its parked await must not \
+         also be handed to the sender for a SendMessage ping"
+    );
+}
+
+#[test]
+fn a_listening_recipient_that_is_not_parked_still_returns_the_wake_address() {
+    // CONTROL for the test above. Without it, `wake_addr: None` for every
+    // DM would pass — the suppression must be conditional on `woken`, not
+    // unconditional. This is the whole point of the wake ping: the
+    // recipient is mid-turn or otherwise not parked, so the hook will not
+    // deliver for a while and the ping is the fast path.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+
+    // alice is listening and has an address, but is NOT parked on Await.
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert_eq!(
+        first_row_woken(&outs),
+        Some(false),
+        "precondition: nothing was parked, so nothing was woken"
+    );
+    assert_eq!(
+        sole_delivery_row_wake_addr(&outs),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string()),
+        "an unparked listening recipient is exactly the case the ping exists for"
+    );
+}

@@ -59,6 +59,15 @@ The `famp_send` tool result includes the recipient's wake address when the recip
 listen mode ON and has one stored, plus a short instruction line telling the sending model
 to call `SendMessage` to that address.
 
+**D2 AMENDMENT (fix round, 2026-08-10): suppressed when the send already woke the
+recipient.** The broker returns no wake address when the same send unparked a waiting
+`Await` — i.e. when the delivery row's `woken` is true. As first shipped, `woken` and
+`wake_addr` were computed from independent state with nothing gating one on the other, so
+a recipient parked in its Stop hook received both an `AwaitOk` wake and a `SendMessage`
+ping. A parked window is the Stop hook's **steady state**, so that was the common path,
+not an edge case, and it landed squarely in the double-wake quadrant OPEN QUESTIONS marks
+untested — for zero benefit, since a parked session is already woken by the hook.
+
 ### D3 — SECURITY INVARIANT: the ping is CONTENT-FREE
 
 **No peer-influenced byte appears in the SendMessage payload.** The ping text is exactly,
@@ -222,7 +231,12 @@ not quietly re-asserted later as though it were still true.
 
 - **Does `SendMessage` wake a session that is currently PARKED IN THE STOP HOOK, as opposed
   to idle-at-prompt?** UNTESTED. The spike probed an idle-at-prompt peer and a busy peer;
-  neither arm was parked in a `famp await`. This matters for double-wake interaction — if a
-  parked hook and a `SendMessage` both fire, the session could be woken twice, or the ping
-  could be swallowed. **No claim is made in either direction.** Anyone relying on the
-  parked-in-hook behavior must test it first.
+  neither arm was parked in a `famp await`. **No claim is made in either direction.**
+
+  **NO LONGER LOAD-BEARING (fix round, 2026-08-10).** Per the D2 amendment, the broker now
+  suppresses the wake address whenever the same send woke a parked awaiter, so the
+  implementation never enters this quadrant by construction: a session parked in the hook
+  is woken by the hook and receives no `SendMessage` ping. The question stays recorded
+  because it is genuinely unanswered — anyone who later wants to *remove* that suppression
+  (for instance to cover a parked hook whose `famp await` has silently died) must test the
+  parked-in-hook case first rather than assume it.

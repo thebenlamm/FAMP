@@ -550,7 +550,14 @@ fn send_agent<E: BrokerEnv>(
     let waiters = waiting_clients_for_name(broker, &name, envelope, origin);
     let woken = !waiters.is_empty();
     // D2 (260810-hac): resolve the recipient's wake address for the
-    // SENDER's reply. Gated on BOTH conditions, not either:
+    // SENDER's reply. Gated on THREE conditions, not any one:
+    //   - the recipient was NOT already woken by this very send. A window
+    //     parked on `Await` is the Stop hook's steady state, so this is
+    //     the COMMON path, not an edge case. We just woke it; a second
+    //     `SendMessage` ping buys nothing and lands squarely in the
+    //     double-wake quadrant the design spec marks UNTESTED. Suppressing
+    //     here means the implementation avoids that quadrant by
+    //     construction (fix round, 260810-hac);
     //   - the recipient's listen flag, because a window that opted out of
     //     auto-wake must not be pinged; and
     //   - the SENDING client's declared origin being Local (T-hac-04),
@@ -558,7 +565,11 @@ fn send_agent<E: BrokerEnv>(
     //     `SendMessage` anyway and must never learn a local socket path.
     // Resolved BEFORE the mutations below, alongside `origin`, so the
     // borrow is immutable and short-lived.
-    let wake_addr = recipient_wake_addr(broker, &name, origin);
+    let wake_addr = if woken {
+        None
+    } else {
+        recipient_wake_addr(broker, &name, origin)
+    };
     // The executor persists the provenance wrapper, not the inner canonical
     // envelope. Await's folded trigger offset must therefore use the exact
     // stamped record length or its cursor lands before the real JSONL EOF.
@@ -618,6 +629,12 @@ fn send_agent<E: BrokerEnv>(
 /// `Local` (T-hac-04 — a remote principal proxied by the gateway must
 /// never learn a local socket path); a canonical holder for `name` exists;
 /// and that holder has listen mode ON with a validated address stored.
+///
+/// The caller applies a FOURTH gate this function deliberately does not
+/// see: it is not called at all when the send already woke a parked
+/// awaiter. Keeping that check at the call site keeps this function a
+/// pure question about the RECIPIENT's stored state, with the
+/// send-outcome condition next to the `woken` value it depends on.
 fn recipient_wake_addr<E: BrokerEnv>(
     broker: &Broker<E>,
     name: &str,
