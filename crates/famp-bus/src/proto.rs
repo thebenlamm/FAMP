@@ -26,13 +26,48 @@ use crate::{BusErrorKind, MailboxName};
 /// to a client blind to it, which is exactly the fail-open hole QUAR-09
 /// exists to close. See `hello()` in `broker/handle.rs` for the reject
 /// path and its actionable error message.
-pub const BUS_PROTO_VERSION: u32 = 2;
+///
+/// Bumped 2 -> 3 in quick task 260810-hac (D1, native wake ping) for the
+/// new `BusMessage::SetWakeAddr` / `BusReply::SetWakeAddrOk` frame pair,
+/// which records the Claude Code host session's `SendMessage` address on
+/// the canonical holder. A new message variant is a wire frame change per
+/// the mandate above. Proto-2 clients are rejected at Hello BY DESIGN —
+/// `deny_unknown_fields` on `BusMessage` means a proto-2 peer cannot even
+/// parse the new frame, so serving it would produce a decode error at an
+/// arbitrary later point instead of an actionable handshake refusal. After
+/// `just install`, restart the daemon; every live window re-registers.
+/// Mailboxes are durable per name, so nothing queued is lost.
+pub const BUS_PROTO_VERSION: u32 = 3;
 
 const CHANNEL_PATTERN: &str = "^#[a-z0-9][a-z0-9_-]{0,31}$";
 static CHANNEL_RE: LazyLock<Regex> = LazyLock::new(|| match Regex::new(CHANNEL_PATTERN) {
     Ok(regex) => regex,
     Err(err) => panic!("channel regex failed to compile: {err}"),
 });
+
+/// Wake-address shape accepted by the broker's `SetWakeAddr` handler.
+///
+/// D1/D3 (spec `2026-08-10-native-wake-ping-design.md`): the value is a
+/// peer-controlled string — ANY bus client can send this frame — so it is
+/// pinned to the exact Claude Code cross-session socket shape and nothing
+/// else. Anchored at both ends; `regex` has no implicit multiline mode, so
+/// `^`/`$` match string start/end and an embedded newline cannot smuggle a
+/// second value past the check.
+const WAKE_ADDR_PATTERN: &str = r"^uds:/tmp/cc-socks/[0-9]{1,10}\.sock$";
+static WAKE_ADDR_RE: LazyLock<Regex> = LazyLock::new(|| match Regex::new(WAKE_ADDR_PATTERN) {
+    Ok(regex) => regex,
+    Err(err) => panic!("wake addr regex failed to compile: {err}"),
+});
+
+/// True iff `candidate` matches [`WAKE_ADDR_PATTERN`].
+///
+/// Exposed so the broker's `SetWakeAddr` handler validates through the
+/// same single definition the wire type documents. Validation is
+/// BROKER-side on purpose: only the broker sees every client's frames.
+#[must_use]
+pub fn wake_addr_valid(candidate: &str) -> bool {
+    WAKE_ADDR_RE.is_match(candidate)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ClientId(pub u64);
@@ -219,6 +254,29 @@ pub enum BusMessage {
     SetListen {
         listen: bool,
     },
+    /// D1 (260810-hac): record the Claude Code host session's
+    /// `SendMessage` address on the canonical holder. Issued by the
+    /// `famp_register` MCP tool immediately after a successful
+    /// `Register`, and ONLY when the computed socket path exists on
+    /// disk. Reply is `BusReply::SetWakeAddrOk`.
+    ///
+    /// Carried as a separate frame rather than a `Register` field on
+    /// purpose: `Register` has ~48 construction sites including the
+    /// gateway's remote-principal registration, and a field there would
+    /// create a slot the gateway path must remember never to populate.
+    /// A distinct frame means only the MCP register tool ever sends one.
+    ///
+    /// Proxy (`bind_as`) connections MUST NOT issue `SetWakeAddr` — slot
+    /// ownership is canonical-holder-only, mirroring the `SetListen`
+    /// rejection. Broker replies `Err{NotRegistered}`.
+    ///
+    /// `wake_addr` is peer-controlled and validated BROKER-side against
+    /// [`wake_addr_valid`]; a non-matching value stores nothing and the
+    /// reply echoes `None` (fail-open to no-ping, never an error that
+    /// would break registration).
+    SetWakeAddr {
+        wake_addr: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,6 +354,12 @@ pub enum BusReply {
     SetListenOk {
         listen_mode: bool,
     },
+    /// Reply to `BusMessage::SetWakeAddr`. Echoes the POST-VALIDATION
+    /// stored value, so a client can observe that a malformed address
+    /// stored nothing without inspecting broker internals.
+    SetWakeAddrOk {
+        wake_addr: Option<String>,
+    },
     Err {
         kind: BusErrorKind,
         message: String,
@@ -329,6 +393,7 @@ impl BusReply {
             Self::WhoamiOk { .. } => "WhoamiOk",
             Self::InspectOk { .. } => "InspectOk",
             Self::SetListenOk { .. } => "SetListenOk",
+            Self::SetWakeAddrOk { .. } => "SetWakeAddrOk",
             Self::Err { .. } => "Err",
         }
     }
@@ -575,6 +640,51 @@ mod tests {
             let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
             assert_eq!(v, decoded);
         }
+    }
+
+    #[test]
+    fn roundtrip_set_wake_addr_message() {
+        for wake_addr in [None, Some("uds:/tmp/cc-socks/8091.sock".to_string())] {
+            let v = BusMessage::SetWakeAddr { wake_addr };
+            let bytes = famp_canonical::canonicalize(&v).unwrap();
+            let decoded: BusMessage = famp_canonical::from_slice_strict(&bytes).unwrap();
+            assert_eq!(v, decoded);
+        }
+    }
+
+    #[test]
+    fn roundtrip_set_wake_addr_reply() {
+        for wake_addr in [None, Some("uds:/tmp/cc-socks/8091.sock".to_string())] {
+            let v = BusReply::SetWakeAddrOk { wake_addr };
+            let bytes = famp_canonical::canonicalize(&v).unwrap();
+            let decoded: BusReply = famp_canonical::from_slice_strict(&bytes).unwrap();
+            assert_eq!(v, decoded);
+        }
+    }
+
+    #[test]
+    fn wake_addr_regex_accepts_only_cc_socks_shape() {
+        assert!(super::wake_addr_valid("uds:/tmp/cc-socks/8091.sock"));
+        assert!(super::wake_addr_valid("uds:/tmp/cc-socks/1.sock"));
+        // Rejects: wrong scheme, wrong dir, traversal, non-numeric pid,
+        // trailing junk, embedded newline, over-long pid.
+        for bad in [
+            "/tmp/cc-socks/8091.sock",
+            "uds:/tmp/other/8091.sock",
+            "uds:/tmp/cc-socks/../../etc/passwd.sock",
+            "uds:/tmp/cc-socks/abc.sock",
+            "uds:/tmp/cc-socks/8091.sock.evil",
+            "uds:/tmp/cc-socks/8091.sock\nuds:/tmp/cc-socks/1.sock",
+            "uds:/tmp/cc-socks/12345678901.sock",
+            "",
+        ] {
+            assert!(!super::wake_addr_valid(bad), "should reject {bad:?}");
+        }
+    }
+
+    #[test]
+    fn bus_proto_version_is_three() {
+        assert_eq!(super::BUS_PROTO_VERSION, 3);
     }
 
     #[test]

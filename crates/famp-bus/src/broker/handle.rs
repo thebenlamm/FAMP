@@ -60,9 +60,18 @@ fn handle_wire<E: BrokerEnv>(
     // `set_listen` still stamps `state.last_activity` explicitly
     // (handle.rs `set_listen` body), so canonical-holder activity
     // tracking is preserved for accepted calls only.
+    //
+    // 260810-hac: `SetWakeAddr` joins the exclusion for the identical
+    // reason — `set_wake_addr` also rejects proxy callers, so letting the
+    // pre-dispatch `touch_activity` run first would let a rejected proxy
+    // frame refresh the canonical holder's `last_activity`. Its success
+    // path stamps `last_activity` explicitly, same as `set_listen`.
     if !matches!(
         msg,
-        BusMessage::Hello { .. } | BusMessage::Register { .. } | BusMessage::SetListen { .. }
+        BusMessage::Hello { .. }
+            | BusMessage::Register { .. }
+            | BusMessage::SetListen { .. }
+            | BusMessage::SetWakeAddr { .. }
     ) {
         touch_activity(broker, client);
     }
@@ -101,6 +110,7 @@ fn handle_wire<E: BrokerEnv>(
             vec![Out::InspectRequest { client, kind }]
         }
         BusMessage::SetListen { listen } => set_listen(broker, client, listen),
+        BusMessage::SetWakeAddr { wake_addr } => set_wake_addr(broker, client, wake_addr),
     }
 }
 
@@ -150,6 +160,70 @@ fn set_listen<E: BrokerEnv>(broker: &mut Broker<E>, client: ClientId, listen: bo
         BusReply::SetListenOk {
             listen_mode: listen,
         },
+    )]
+}
+
+/// D1 (260810-hac, spec `2026-08-10-native-wake-ping-design.md`): record
+/// the canonical holder's Claude Code host `SendMessage` address so a
+/// later DM to this holder can hand the SENDING model a content-free wake
+/// ping. Issued by the `famp_register` MCP tool right after `RegisterOk`.
+///
+/// Proxy (`bind_as`) connections are rejected with `NotRegistered`,
+/// reusing `set_listen`'s canonical-holder guard verbatim — slot ownership
+/// is canonical-holder-only (T-hac-02).
+///
+/// `wake_addr` is peer-controlled: ANY bus client can send this frame, and
+/// only the broker sees them all, so the shape check lives HERE rather
+/// than in the MCP tool that normally produces the value (T-hac-03). A
+/// value that fails [`famp_bus::wake_addr_valid`] stores `None` and the
+/// reply echoes `None` — fail-open to no-ping, NEVER an `Err` (an error
+/// here would surface as a registration failure for a purely optional
+/// latency optimization).
+///
+/// Deliberately independent of `listen_mode`: storage is unconditional,
+/// and the listen flag is consulted at DELIVERY time instead, so a holder
+/// that later calls `famp_set_listen(true)` becomes ping-eligible without
+/// re-registering.
+fn set_wake_addr<E: BrokerEnv>(
+    broker: &mut Broker<E>,
+    client: ClientId,
+    wake_addr: Option<String>,
+) -> Vec<Out> {
+    let Some(state) = broker.state.clients.get_mut(&client) else {
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "client is not registered",
+        )];
+    };
+    if !state.connected {
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "client is not registered",
+        )];
+    }
+    if state.bind_as.is_some() && state.name.is_none() {
+        // Proxy connection: refuse to mutate the canonical holder's slot.
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "proxy (bind_as) connection cannot set_wake_addr",
+        )];
+    }
+    if state.name.is_none() {
+        return vec![err(
+            client,
+            BusErrorKind::NotRegistered,
+            "client is not registered",
+        )];
+    }
+    let stored = wake_addr.filter(|candidate| crate::wake_addr_valid(candidate));
+    state.wake_addr.clone_from(&stored);
+    state.last_activity = std::time::SystemTime::now();
+    vec![Out::Reply(
+        client,
+        BusReply::SetWakeAddrOk { wake_addr: stored },
     )]
 }
 
@@ -222,6 +296,7 @@ fn hello<E: BrokerEnv>(
                 bind_as: Some(name),
                 cwd: None,
                 listen_mode: false,
+                wake_addr: None,
                 // D-01/D-02: Hello never carries an origin; only Register
                 // declares one. `Origin::Unknown` here is the fail-closed
                 // default, not a special case for the proxy path.
@@ -250,6 +325,7 @@ fn hello<E: BrokerEnv>(
             bind_as: None,
             cwd: None,
             listen_mode: false,
+            wake_addr: None,
             // D-01/D-02: Hello never carries an origin; only Register
             // declares one.
             origin: Origin::Unknown,

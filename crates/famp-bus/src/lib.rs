@@ -66,6 +66,6 @@ pub use mailbox::{
 };
 pub use origin::{split_stamped, stamp_line, Origin, StampedEnvelope};
 pub use proto::{
-    AwaitFilter, BusMessage, BusReply, ClientId, Delivered, MemberInfo, SessionRow, Target,
-    BUS_PROTO_VERSION,
+    wake_addr_valid, AwaitFilter, BusMessage, BusReply, ClientId, Delivered, MemberInfo,
+    SessionRow, Target, BUS_PROTO_VERSION,
 };

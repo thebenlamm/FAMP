@@ -153,6 +153,13 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             )
         })?;
 
+    // D1 (260810-hac): record this window's Claude Code host address for
+    // the native `SendMessage` wake ping, on a SEPARATE frame issued only
+    // after the Register succeeded. Best-effort; see `record_wake_addr`.
+    if matches!(reply, BusReply::RegisterOk { .. }) {
+        record_wake_addr(bus).await;
+    }
+
     let result = match reply {
         BusReply::RegisterOk {
             active,
@@ -237,6 +244,68 @@ fn rebind_rejection(active: Option<&str>, requested: &str, rebind: bool) -> Opti
     ))
 }
 
+/// D1 (260810-hac): issue the `SetWakeAddr` frame for this window, if it
+/// has one.
+///
+/// Uses `parent_id()` — NOT `std::process::id()` — because the address
+/// must name the CLAUDE CODE SESSION, and the `famp mcp` server is that
+/// session's child (verified fact 1 of the spike: parent pid == session
+/// pid == cc-socks basename, 4 of 4).
+///
+/// Every path here is best-effort and MUST NOT be able to fail
+/// registration. No socket on disk — the normal case for a non-Claude host
+/// or a session without one (verified fact 4) — sends no frame at all. A
+/// transport error or an unexpected reply is logged to stderr and
+/// swallowed. The only consequence of failure is that this window gets no
+/// wake ping; the Stop hook remains its authoritative wake path (D4).
+async fn record_wake_addr(bus: &mut crate::bus_client::BusClient) {
+    let Some(wake_addr) = wake_addr_for_pid(
+        std::os::unix::process::parent_id(),
+        std::path::Path::new(CC_SOCKS_DIR),
+    ) else {
+        return;
+    };
+    match bus
+        .send_recv(BusMessage::SetWakeAddr {
+            wake_addr: Some(wake_addr),
+        })
+        .await
+    {
+        Ok(BusReply::SetWakeAddrOk { .. }) => {}
+        Ok(unexpected) => eprintln!(
+            "famp mcp: SetWakeAddr got {} — wake ping disabled for this session",
+            unexpected.variant_name()
+        ),
+        Err(_) => eprintln!(
+            "famp mcp: SetWakeAddr round-trip failed — wake ping disabled for this session"
+        ),
+    }
+}
+
+/// Default directory Claude Code exposes its per-session cross-session
+/// messaging sockets in. Verified fact 1 of the 260810-hac spike: the
+/// basename is the Claude Code session pid, and the `famp mcp` process's
+/// PARENT pid is that same session pid (4 of 4 on the spike box).
+const CC_SOCKS_DIR: &str = "/tmp/cc-socks";
+
+/// D1: build the wake address for `pid` under `base_dir`, returning `None`
+/// unless the socket actually exists on disk.
+///
+/// Pure and parameterized on `base_dir` (in the style of
+/// [`rebind_rejection`]) so the path-building and existence-gating logic
+/// is unit-testable without a live Claude Code host.
+///
+/// Verified fact 4: not every claude session has a sock, and not every
+/// session runs `famp mcp`. `None` is the normal, silent outcome — the
+/// caller must treat it as "no ping for this window", never as an error.
+fn wake_addr_for_pid(pid: u32, base_dir: &std::path::Path) -> Option<String> {
+    let sock = base_dir.join(format!("{pid}.sock"));
+    if !sock.exists() {
+        return None;
+    }
+    Some(format!("uds:{}", sock.display()))
+}
+
 /// Validate the identity name. Mirrors the bash regex AND length cap from
 /// `scripts/famp-local cmd_register`: `^[A-Za-z0-9._-]+$`, ≤64 bytes.
 ///
@@ -266,4 +335,48 @@ fn validate_identity_name(name: &str) -> Result<(), ToolError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used)]
+
+    use super::{wake_addr_for_pid, CC_SOCKS_DIR};
+
+    #[test]
+    fn wake_addr_is_none_when_the_socket_does_not_exist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(wake_addr_for_pid(8091, dir.path()), None);
+    }
+
+    #[test]
+    fn wake_addr_is_some_when_the_socket_exists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("8091.sock"), b"").expect("create sock placeholder");
+        let addr = wake_addr_for_pid(8091, dir.path()).expect("existing sock yields an address");
+        assert!(
+            addr.starts_with("uds:"),
+            "address must carry the uds: scheme"
+        );
+        assert!(
+            addr.ends_with("/8091.sock"),
+            "address must name the pid's socket"
+        );
+        // A DIFFERENT pid in the same dir must still be absent — the
+        // existence check is per-pid, not per-directory.
+        assert_eq!(wake_addr_for_pid(9999, dir.path()), None);
+    }
+
+    #[test]
+    fn wake_addr_under_the_real_cc_socks_dir_passes_broker_validation() {
+        // Guards the seam between this helper's output shape and the
+        // broker-side regex (`famp_bus::wake_addr_valid`). If either side
+        // drifts, every ping silently stops being stored — a failure that
+        // is invisible from this crate's tests alone.
+        let synthetic = format!("uds:{CC_SOCKS_DIR}/8091.sock");
+        assert!(
+            famp_bus::wake_addr_valid(&synthetic),
+            "helper output shape must satisfy the broker's shape check"
+        );
+    }
 }

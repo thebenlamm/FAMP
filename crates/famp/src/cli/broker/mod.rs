@@ -784,6 +784,7 @@ mod tests {
                         bind_as: None,
                         cwd: None,
                         listen_mode: false,
+                        wake_addr: None,
                         registered_at: SystemTime::now(),
                         last_activity: SystemTime::now(),
                         joined: vec![],

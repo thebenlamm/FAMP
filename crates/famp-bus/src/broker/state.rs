@@ -30,6 +30,19 @@ pub(super) struct ClientState {
     /// pre-v0.10 senders that didn't include the field. Surfaced
     /// in `famp inspect identities` rows (INSP-IDENT-01).
     pub(super) listen_mode: bool,
+    /// D1 (260810-hac): this holder's Claude Code host session address
+    /// for the native `SendMessage` wake ping, e.g.
+    /// `uds:/tmp/cc-socks/8091.sock`.
+    ///
+    /// `None` unless the holder issued a `BusMessage::SetWakeAddr` whose
+    /// value passed the broker-side shape check (`proto::wake_addr_valid`)
+    /// — a malformed value stores `None`, never the raw string. Set only
+    /// by the canonical holder; a proxy (`bind_as`) frame is rejected
+    /// before reaching this field. Independent of `listen_mode`: the
+    /// address is stored whatever the flag says, and the flag is consulted
+    /// at DELIVERY time instead, so `famp_set_listen(true)` needs no
+    /// re-register to become ping-eligible.
+    pub(super) wake_addr: Option<String>,
     /// D-01/D-02 (Phase 14): declared provenance for this connection.
     /// Set from `BusMessage::Register.origin` via `.unwrap_or_default()`
     /// in `register()` — `Origin::default()` is `Unknown`, so a Register
@@ -128,6 +141,7 @@ impl BrokerState {
                 bind_as: c.bind_as.clone(),
                 cwd: c.cwd.clone(),
                 listen_mode: c.listen_mode,
+                wake_addr: c.wake_addr.clone(),
                 registered_at: c.registered_at,
                 last_activity: c.last_activity,
                 joined: c.joined.iter().cloned().collect(),
@@ -245,6 +259,9 @@ pub struct ClientStateView {
     pub bind_as: Option<String>,
     pub cwd: Option<String>,
     pub listen_mode: bool,
+    /// D1 (260810-hac): validated Claude Code `SendMessage` wake address,
+    /// or `None` when this holder never supplied a well-formed one.
+    pub wake_addr: Option<String>,
     pub registered_at: SystemTime,
     pub last_activity: SystemTime,
     pub joined: Vec<String>,

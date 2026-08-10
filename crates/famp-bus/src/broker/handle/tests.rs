@@ -3363,3 +3363,329 @@ fn live01_shared_pid_clients_survive_sweep_and_reap_together() {
         "bob must be gone after the dead-pid sweep — no orphan holder"
     );
 }
+
+// --- set_wake_addr tests (quick-260810-hac, D1) ---------------------
+//
+// APPENDED AT END OF FILE ON PURPOSE. `.quarantine-surfaces.allow` pins
+// LINE NUMBERS in this file (8 reply-debug records); interleaving new
+// tests into earlier regions would shift them and break
+// `just check-quarantine-surfaces` while every other gate stayed green.
+//
+// None of the assertions below Debug-format a binding named `reply` /
+// `other` / `stamped` / `envelope` / `envelopes` / `resp` — those are the
+// exact tokens the reply-debug family greps for, and adding one here
+// would register a NEW unallowlisted record. `{outs:?}` is not a trigger
+// token and is used freely by the existing tests above.
+
+/// True iff a `SetWakeAddrOk` reply is present at all. Split from
+/// [`echoed_wake_addr`] rather than returning `Option<Option<String>>`,
+/// which trips `clippy::option_option` under the workspace's pedantic
+/// gate — and reads ambiguously besides ("no reply" vs "reply echoing
+/// nothing" are genuinely different outcomes here).
+fn has_set_wake_addr_ok(outs: &[Out]) -> bool {
+    outs.iter()
+        .any(|o| matches!(o, Out::Reply(_, BusReply::SetWakeAddrOk { .. })))
+}
+
+/// The address echoed by a `SetWakeAddrOk` reply, if one is present and
+/// carries a value. `None` covers both "no reply" and "reply echoed
+/// nothing"; pair with [`has_set_wake_addr_ok`] when the distinction
+/// matters.
+fn echoed_wake_addr(outs: &[Out]) -> Option<String> {
+    outs.iter().find_map(|o| match o {
+        Out::Reply(_, BusReply::SetWakeAddrOk { wake_addr }) => wake_addr.clone(),
+        _ => None,
+    })
+}
+
+fn stored_wake_addr(broker: &Broker<TestEnv>, name: &str) -> Option<String> {
+    broker
+        .view()
+        .clients
+        .iter()
+        .find(|c| c.name == name)
+        .expect("client should be registered")
+        .wake_addr
+        .clone()
+}
+
+fn set_wake_addr(
+    broker: &mut Broker<TestEnv>,
+    client: u64,
+    wake_addr: Option<&str>,
+    now: Instant,
+) -> Vec<Out> {
+    broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(client),
+            msg: BusMessage::SetWakeAddr {
+                wake_addr: wake_addr.map(str::to_string),
+            },
+        },
+        now,
+    )
+}
+
+#[test]
+fn set_wake_addr_stores_valid_address_and_reply_echoes_it() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 999, now);
+    assert_eq!(
+        stored_wake_addr(&broker, "alice"),
+        None,
+        "no address stored before any SetWakeAddr"
+    );
+
+    let outs = set_wake_addr(&mut broker, 1, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert_eq!(
+        echoed_wake_addr(&outs),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string()),
+        "reply must echo the post-validation stored value"
+    );
+    assert_eq!(
+        stored_wake_addr(&broker, "alice"),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string())
+    );
+}
+
+#[test]
+fn set_wake_addr_rejects_malformed_address_fail_open_storing_nothing() {
+    // T-hac-03: the value is peer-controlled. A non-matching value stores
+    // NOTHING and still replies Ok with `None` — fail-open to no-ping,
+    // never an Err that would break the caller's registration flow.
+    for bad in [
+        "/tmp/cc-socks/8091.sock",                               // no scheme
+        "uds:/tmp/other/8091.sock",                              // wrong dir
+        "uds:/tmp/cc-socks/../../../etc/passwd.sock",            // traversal
+        "uds:/tmp/cc-socks/notapid.sock",                        // non-numeric
+        "uds:/tmp/cc-socks/8091.sock ; rm -rf /",                // trailing junk
+        "uds:/tmp/cc-socks/8091.sock\nuds:/tmp/cc-socks/1.sock", // newline smuggle
+        "",
+    ] {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        hello_canonical(&mut broker, 1, "alice", now);
+        register(&mut broker, 1, "alice", 999, now);
+
+        let outs = set_wake_addr(&mut broker, 1, Some(bad), now);
+        assert!(
+            has_set_wake_addr_ok(&outs),
+            "malformed address {bad:?} must still get an Ok reply"
+        );
+        assert_eq!(
+            echoed_wake_addr(&outs),
+            None,
+            "malformed address {bad:?} must echo nothing, not the raw value"
+        );
+        assert_eq!(
+            find_err_kind(&outs),
+            None,
+            "malformed address {bad:?} must not produce an Err reply"
+        );
+        assert_eq!(
+            stored_wake_addr(&broker, "alice"),
+            None,
+            "malformed address {bad:?} must store nothing"
+        );
+    }
+}
+
+#[test]
+fn set_wake_addr_none_clears_a_previously_stored_address() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 999, now);
+    let _ = set_wake_addr(&mut broker, 1, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert!(stored_wake_addr(&broker, "alice").is_some());
+
+    let outs = set_wake_addr(&mut broker, 1, None, now);
+    assert!(has_set_wake_addr_ok(&outs));
+    assert_eq!(echoed_wake_addr(&outs), None);
+    assert_eq!(stored_wake_addr(&broker, "alice"), None);
+}
+
+#[test]
+fn set_wake_addr_from_proxy_returns_not_registered() {
+    // T-hac-02: a proxy (bind_as) connection must not be able to set
+    // another slot's wake address. Mirrors set_listen exactly.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice-holder", now);
+    register(&mut broker, 1, "alice", 999, now);
+    let _ = hello_proxy(&mut broker, 2, "alice", now);
+
+    let outs = set_wake_addr(&mut broker, 2, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert_eq!(find_err_kind(&outs), Some(BusErrorKind::NotRegistered));
+    assert!(!has_set_wake_addr_ok(&outs));
+    assert_eq!(
+        stored_wake_addr(&broker, "alice"),
+        None,
+        "the canonical holder's slot must be untouched by a proxy frame"
+    );
+}
+
+#[test]
+fn set_wake_addr_before_register_returns_not_registered() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    // No Register before SetWakeAddr.
+    let outs = set_wake_addr(&mut broker, 1, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert_eq!(find_err_kind(&outs), Some(BusErrorKind::NotRegistered));
+    assert!(!has_set_wake_addr_ok(&outs));
+}
+
+#[test]
+fn set_wake_addr_is_independent_of_the_listen_flag() {
+    // A holder registered with listen OFF still stores its address, so a
+    // later `famp_set_listen(true)` needs no re-register to become
+    // ping-eligible. (The `register` helper registers with listen=false.)
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 999, now);
+    assert!(
+        !broker
+            .view()
+            .clients
+            .iter()
+            .find(|c| c.name == "alice")
+            .unwrap()
+            .listen_mode,
+        "precondition: registered with listen off"
+    );
+
+    let outs = set_wake_addr(&mut broker, 1, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert_eq!(
+        echoed_wake_addr(&outs),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string())
+    );
+    assert_eq!(
+        stored_wake_addr(&broker, "alice"),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string()),
+        "storage must not be gated on listen_mode"
+    );
+
+    // Flipping listen on later does not disturb the stored address.
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::SetListen { listen: true },
+        },
+        now,
+    );
+    assert_eq!(
+        stored_wake_addr(&broker, "alice"),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string())
+    );
+}
+
+#[test]
+fn set_wake_addr_from_proxy_does_not_touch_canonical_last_activity() {
+    // Same Fix-5 hazard as SetListen: the pre-dispatch `touch_activity`
+    // maps a proxy connection onto its canonical holder, so a frame the
+    // handler is going to REJECT must be excluded from that call or a
+    // misbehaving proxy can make a dead-quiet holder look active.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice-holder", now);
+    register(&mut broker, 1, "alice", 999, now);
+    let _ = hello_proxy(&mut broker, 2, "alice", now);
+
+    let baseline = broker
+        .view()
+        .clients
+        .iter()
+        .find(|c| c.name == "alice")
+        .unwrap()
+        .last_activity;
+    std::thread::sleep(std::time::Duration::from_millis(2));
+
+    let outs = set_wake_addr(&mut broker, 2, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert_eq!(find_err_kind(&outs), Some(BusErrorKind::NotRegistered));
+
+    let after = broker
+        .view()
+        .clients
+        .iter()
+        .find(|c| c.name == "alice")
+        .unwrap()
+        .last_activity;
+    assert_eq!(
+        after, baseline,
+        "rejected proxy SetWakeAddr must not advance canonical holder's last_activity"
+    );
+}
+
+#[test]
+fn set_wake_addr_accepted_call_still_advances_last_activity() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 999, now);
+
+    let baseline = broker
+        .view()
+        .clients
+        .iter()
+        .find(|c| c.name == "alice")
+        .unwrap()
+        .last_activity;
+    std::thread::sleep(std::time::Duration::from_millis(2));
+
+    let outs = set_wake_addr(&mut broker, 1, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert!(has_set_wake_addr_ok(&outs));
+
+    let after = broker
+        .view()
+        .clients
+        .iter()
+        .find(|c| c.name == "alice")
+        .unwrap()
+        .last_activity;
+    assert!(
+        after > baseline,
+        "an accepted SetWakeAddr from the canonical holder must advance last_activity"
+    );
+}
+
+#[test]
+fn hello_proto_2_client_is_rejected_by_the_proto_3_broker() {
+    // The 2 -> 3 bump must actually block a proto-2 client at Hello
+    // rather than degrade silently. Pinned to the literal 2 (not
+    // `BUS_PROTO_VERSION - 1`) so a future bump to 4 leaves this
+    // assertion meaningful about proto 2 specifically.
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Hello {
+                bus_proto: 2,
+                client: "proto-2-client".into(),
+                bind_as: None,
+            },
+        },
+        now,
+    );
+    assert_eq!(
+        outs.iter().find_map(|o| match o {
+            Out::Reply(_, BusReply::HelloErr { kind, .. }) => Some(*kind),
+            _ => None,
+        }),
+        Some(BusErrorKind::BrokerProtoMismatch),
+        "a proto-2 Hello must be refused by the proto-3 broker"
+    );
+}
