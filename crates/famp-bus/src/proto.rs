@@ -410,9 +410,18 @@ impl BusReply {
 ///   a future `Inbox`/`Await` from the recipient (offline /
 ///   crashed / not currently listening).
 ///
+/// - `wake_addr` — D2 (260810-hac): the recipient's Claude Code
+///   `SendMessage` address, present ONLY when the recipient has listen
+///   mode on, has a validated address stored, AND the SENDING client's
+///   declared origin is `Local`. Absent on every channel fan-out row.
+///   The sending model relays a content-free ping to it; see
+///   `docs/superpowers/specs/2026-08-10-native-wake-ping-design.md`.
+///
 /// Wire compat: `woken` is `#[serde(default)]` so frames produced
-/// by pre-`woken` peers deserialize with `woken = false`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// by pre-`woken` peers deserialize with `woken = false`. `wake_addr`
+/// follows the same pattern plus `skip_serializing_if` so an absent
+/// address serializes to the exact pre-260810-hac JSON.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Delivered {
     // woken field is serde-defaulted for wire compatibility.
@@ -420,6 +429,32 @@ pub struct Delivered {
     pub ok: bool,
     #[serde(default)]
     pub woken: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wake_addr: Option<String>,
+}
+
+/// Hand-written to keep `Debug` output byte-identical to the pre-
+/// `wake_addr` derive when no address is present.
+///
+/// This is NOT cosmetic. `cli::send::SendOutcome.delivered` is literally
+/// `format!("{delivered:?}")` over a `Vec<Delivered>`, and that string is
+/// surfaced on the `famp send` JSON line and the `famp_send` MCP tool
+/// result. A derived `Debug` would print `wake_addr: None` on every
+/// channel row and every no-address DM, silently changing an output
+/// contract that this change is supposed to leave untouched — and the
+/// serde round-trip tests would not catch it, because they check JSON,
+/// not `Debug`.
+impl fmt::Debug for Delivered {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = f.debug_struct("Delivered");
+        s.field("to", &self.to)
+            .field("ok", &self.ok)
+            .field("woken", &self.woken);
+        if let Some(addr) = &self.wake_addr {
+            s.field("wake_addr", addr);
+        }
+        s.finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -683,6 +718,83 @@ mod tests {
     }
 
     #[test]
+    fn delivered_without_wake_addr_serializes_byte_identically_to_pre_change_form() {
+        // The additive field must be invisible on the wire when absent.
+        let v = Delivered {
+            to: Target::Agent {
+                name: "alice".into(),
+            },
+            ok: true,
+            woken: false,
+            wake_addr: None,
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            r#"{"ok":true,"to":{"kind":"agent","name":"alice"},"woken":false}"#
+        );
+    }
+
+    #[test]
+    fn delivered_from_a_peer_omitting_wake_addr_deserializes_with_it_absent() {
+        let bytes = br#"{"ok":true,"to":{"kind":"agent","name":"alice"},"woken":true}"#;
+        let decoded: Delivered = famp_canonical::from_slice_strict(bytes).unwrap();
+        assert_eq!(decoded.wake_addr, None);
+        assert!(decoded.woken);
+    }
+
+    #[test]
+    fn delivered_with_wake_addr_round_trips() {
+        let v = Delivered {
+            to: Target::Agent {
+                name: "alice".into(),
+            },
+            ok: true,
+            woken: false,
+            wake_addr: Some("uds:/tmp/cc-socks/8091.sock".into()),
+        };
+        let bytes = famp_canonical::canonicalize(&v).unwrap();
+        let decoded: Delivered = famp_canonical::from_slice_strict(&bytes).unwrap();
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn delivered_debug_omits_wake_addr_when_absent() {
+        // Guards `cli::send::SendOutcome.delivered`, which is a Debug
+        // string on a public output surface. A derived Debug would emit
+        // `wake_addr: None` here and change that contract.
+        let v = Delivered {
+            to: Target::Agent {
+                name: "alice".into(),
+            },
+            ok: true,
+            woken: false,
+            wake_addr: None,
+        };
+        assert_eq!(
+            format!("{v:?}"),
+            r#"Delivered { to: Agent { name: "alice" }, ok: true, woken: false }"#
+        );
+    }
+
+    #[test]
+    fn delivered_debug_includes_wake_addr_when_present() {
+        let v = Delivered {
+            to: Target::Agent {
+                name: "alice".into(),
+            },
+            ok: true,
+            woken: true,
+            wake_addr: Some("uds:/tmp/cc-socks/8091.sock".into()),
+        };
+        let rendered = format!("{v:?}");
+        assert!(
+            rendered.contains(r#"wake_addr: "uds:/tmp/cc-socks/8091.sock""#),
+            "present address must be visible in Debug output; got: {rendered}"
+        );
+    }
+
+    #[test]
     fn bus_proto_version_is_three() {
         assert_eq!(super::BUS_PROTO_VERSION, 3);
     }
@@ -697,6 +809,7 @@ mod tests {
                 },
                 ok: true,
                 woken: false,
+                wake_addr: None,
             }],
         };
         let bytes = famp_canonical::canonicalize(&v).unwrap();
@@ -717,6 +830,7 @@ mod tests {
                 },
                 ok: true,
                 woken: false,
+                wake_addr: None,
             }
         );
     }
@@ -729,6 +843,7 @@ mod tests {
             },
             ok: true,
             woken: true,
+            wake_addr: None,
         };
         let bytes = famp_canonical::canonicalize(&delivered).unwrap();
         assert_eq!(

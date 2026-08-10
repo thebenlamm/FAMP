@@ -149,6 +149,15 @@ pub struct DeliveredRow {
     pub to_name: String,
     pub ok: bool,
     pub woken: bool,
+    /// D2 (260810-hac): the recipient's Claude Code `SendMessage` address,
+    /// when the broker judged this delivery ping-eligible (recipient
+    /// listening with a stored address, and this sender's origin Local).
+    ///
+    /// `skip_serializing_if` keeps the JSON row byte-identical to its
+    /// pre-260810-hac shape whenever no address is present — which is
+    /// every channel row and every DM to a non-listening recipient.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wake_addr: Option<String>,
 }
 
 /// Production entry — resolves the broker socket via
@@ -382,6 +391,7 @@ pub async fn run_at_structured(sock: &Path, args: SendArgs) -> Result<SendOutcom
                         to_name,
                         ok: d.ok,
                         woken: d.woken,
+                        wake_addr: d.wake_addr.clone(),
                     }
                 })
                 .collect();

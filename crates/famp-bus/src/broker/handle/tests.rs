@@ -3689,3 +3689,216 @@ fn hello_proto_2_client_is_rejected_by_the_proto_3_broker() {
         "a proto-2 Hello must be refused by the proto-3 broker"
     );
 }
+
+// --- wake-ping delivery-row tests (quick-260810-hac, D2) ------------
+//
+// Appended for the same `.quarantine-surfaces.allow` line-pin reason
+// documented above the set_wake_addr block, and under the same rule
+// about never Debug-formatting a `reply`/`other`/`stamped`/`envelope`/
+// `envelopes`/`resp` binding.
+
+/// The `wake_addr` on the FIRST delivery row of a `SendOk` reply.
+fn first_row_wake_addr(outs: &[Out]) -> Option<String> {
+    outs.iter().find_map(|o| match o {
+        Out::Reply(_, BusReply::SendOk { delivered, .. }) => {
+            delivered.first().and_then(|row| row.wake_addr.clone())
+        }
+        _ => None,
+    })
+}
+
+/// True iff EVERY delivery row on the `SendOk` reply omits a wake
+/// address. Used for the channel fan-out case, where any row carrying
+/// one would be a leak.
+fn all_rows_lack_wake_addr(outs: &[Out]) -> bool {
+    outs.iter().any(|o| match o {
+        Out::Reply(_, BusReply::SendOk { delivered, .. }) => {
+            !delivered.is_empty() && delivered.iter().all(|row| row.wake_addr.is_none())
+        }
+        _ => false,
+    })
+}
+
+/// Stand up `recipient` as a listen-mode holder with a stored wake
+/// address, ready to receive a DM.
+fn arm_wake_recipient(
+    broker: &mut Broker<TestEnv>,
+    client: u64,
+    name: &str,
+    pid: u32,
+    now: Instant,
+) {
+    hello_canonical(broker, client, name, now);
+    register(broker, client, name, pid, now);
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(client),
+            msg: BusMessage::SetListen { listen: true },
+        },
+        now,
+    );
+    let _ = set_wake_addr(broker, client, Some("uds:/tmp/cc-socks/8091.sock"), now);
+}
+
+/// Send a DM from `from` (registered as `from_name`) to `to`.
+///
+/// `from_name` is not redundant with `from`: the broker rejects any
+/// envelope whose `from` field does not match the authenticated identity,
+/// so the envelope must be built with the SENDER's registered name.
+fn dm(
+    broker: &mut Broker<TestEnv>,
+    from: u64,
+    from_name: &str,
+    to: &str,
+    now: Instant,
+) -> Vec<Out> {
+    broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(from),
+            msg: BusMessage::Send {
+                to: Target::Agent {
+                    name: to.to_string(),
+                },
+                envelope: audit_log_envelope(1, from_name),
+            },
+        },
+        now,
+    )
+}
+
+#[test]
+fn dm_to_listening_recipient_from_local_sender_returns_the_wake_address() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+    // `register` declares Origin::Local for the sender.
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert_eq!(
+        first_row_wake_addr(&outs),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string()),
+        "a Local sender must receive the listening recipient's wake address"
+    );
+}
+
+#[test]
+fn dm_from_a_non_local_sender_never_returns_a_wake_address() {
+    // T-hac-04: a gateway-relayed remote sender cannot call SendMessage
+    // and must not learn a local sock path. Both non-Local origins are
+    // exercised — a single Gateway case would not prove Unknown is also
+    // covered, and Unknown is the fail-closed default every undeclared
+    // connection lands on.
+    for origin in [Origin::Gateway, Origin::Unknown] {
+        let env = TestEnv::default();
+        let mut broker = Broker::new(env);
+        let now = Instant::now();
+        arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+        hello_canonical(&mut broker, 2, "remote", now);
+        register_with_origin(&mut broker, 2, "remote", 200, origin, now);
+
+        let outs = dm(&mut broker, 2, "remote", "alice", now);
+        assert_eq!(
+            first_row_wake_addr(&outs),
+            None,
+            "a {origin:?}-origin sender must never learn a local wake address"
+        );
+    }
+}
+
+#[test]
+fn dm_to_a_recipient_with_listen_off_returns_no_wake_address() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    // Store an address but leave listen OFF (the `register` helper
+    // registers with listen=false and we do not flip it).
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    let _ = set_wake_addr(&mut broker, 1, Some("uds:/tmp/cc-socks/8091.sock"), now);
+    assert_eq!(
+        stored_wake_addr(&broker, "alice"),
+        Some("uds:/tmp/cc-socks/8091.sock".to_string()),
+        "precondition: the address IS stored"
+    );
+
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert_eq!(
+        first_row_wake_addr(&outs),
+        None,
+        "listen_mode off must suppress the address even though one is stored"
+    );
+}
+
+#[test]
+fn dm_to_a_listening_recipient_with_no_stored_address_returns_none() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    hello_canonical(&mut broker, 1, "alice", now);
+    register(&mut broker, 1, "alice", 100, now);
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::SetListen { listen: true },
+        },
+        now,
+    );
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+
+    let outs = dm(&mut broker, 2, "bob", "alice", now);
+    assert_eq!(first_row_wake_addr(&outs), None);
+}
+
+#[test]
+fn channel_fanout_rows_never_carry_a_wake_address() {
+    let env = TestEnv::default();
+    let mut broker = Broker::new(env);
+    let now = Instant::now();
+    arm_wake_recipient(&mut broker, 1, "alice", 100, now);
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(1_u64),
+            msg: BusMessage::Join {
+                channel: "#room".into(),
+                role: None,
+            },
+        },
+        now,
+    );
+    hello_canonical(&mut broker, 2, "bob", now);
+    register(&mut broker, 2, "bob", 200, now);
+    let _ = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Join {
+                channel: "#room".into(),
+                role: None,
+            },
+        },
+        now,
+    );
+
+    let outs = broker.handle(
+        BrokerInput::Wire {
+            client: ClientId::from(2_u64),
+            msg: BusMessage::Send {
+                to: Target::Channel {
+                    name: "#room".into(),
+                },
+                envelope: audit_log_envelope(1, "bob"),
+            },
+        },
+        now,
+    );
+    assert!(
+        all_rows_lack_wake_addr(&outs),
+        "channel fan-out rows must omit the wake address entirely, \
+         matching the adjacent woken=false precedent"
+    );
+}

@@ -549,6 +549,16 @@ fn send_agent<E: BrokerEnv>(
     let origin = client_origin(broker, sender);
     let waiters = waiting_clients_for_name(broker, &name, envelope, origin);
     let woken = !waiters.is_empty();
+    // D2 (260810-hac): resolve the recipient's wake address for the
+    // SENDER's reply. Gated on BOTH conditions, not either:
+    //   - the recipient's listen flag, because a window that opted out of
+    //     auto-wake must not be pinged; and
+    //   - the SENDING client's declared origin being Local (T-hac-04),
+    //     because a gateway-relayed remote sender cannot call
+    //     `SendMessage` anyway and must never learn a local socket path.
+    // Resolved BEFORE the mutations below, alongside `origin`, so the
+    // borrow is immutable and short-lived.
+    let wake_addr = recipient_wake_addr(broker, &name, origin);
     // The executor persists the provenance wrapper, not the inner canonical
     // envelope. Await's folded trigger offset must therefore use the exact
     // stamped record length or its cursor lands before the real JSONL EOF.
@@ -596,8 +606,32 @@ fn send_agent<E: BrokerEnv>(
         Target::Agent { name },
         true,
         woken,
+        wake_addr,
     ));
     out
+}
+
+/// D2 (260810-hac): the wake address to hand back to a DM's SENDER, or
+/// `None` when no ping is warranted.
+///
+/// Returns `None` unless all three hold: the sender's declared origin is
+/// `Local` (T-hac-04 — a remote principal proxied by the gateway must
+/// never learn a local socket path); a canonical holder for `name` exists;
+/// and that holder has listen mode ON with a validated address stored.
+fn recipient_wake_addr<E: BrokerEnv>(
+    broker: &Broker<E>,
+    name: &str,
+    sender_origin: Origin,
+) -> Option<String> {
+    if sender_origin != Origin::Local {
+        return None;
+    }
+    let holder = canonical_holder_id(&broker.state, name)?;
+    let state = broker.state.clients.get(&holder)?;
+    if !state.listen_mode {
+        return None;
+    }
+    state.wake_addr.clone()
 }
 
 fn send_channel<E: BrokerEnv>(
@@ -680,6 +714,14 @@ fn send_channel<E: BrokerEnv>(
                     to: Target::Agent { name: member },
                     ok: true,
                     woken: false,
+                    // D2 (260810-hac): wake_addr is intentionally absent
+                    // on channel rows, for the same reason `woken` is
+                    // false above — per-member state is not resolved on
+                    // the fan-out path. Leaving it absent is also the
+                    // conservative choice: a channel post would otherwise
+                    // hand the sender every listening member's socket
+                    // path in one reply.
+                    wake_addr: None,
                 })
                 .collect(),
         },
@@ -1366,12 +1408,24 @@ pub(super) fn decode_line(line: &[u8]) -> Result<(crate::Origin, serde_json::Val
     Ok((origin, inner.clone()))
 }
 
-fn send_ok(client: ClientId, task_id: uuid::Uuid, to: Target, ok: bool, woken: bool) -> Out {
+fn send_ok(
+    client: ClientId,
+    task_id: uuid::Uuid,
+    to: Target,
+    ok: bool,
+    woken: bool,
+    wake_addr: Option<String>,
+) -> Out {
     Out::Reply(
         client,
         BusReply::SendOk {
             task_id,
-            delivered: vec![Delivered { to, ok, woken }],
+            delivered: vec![Delivered {
+                to,
+                ok,
+                woken,
+                wake_addr,
+            }],
         },
     )
 }
