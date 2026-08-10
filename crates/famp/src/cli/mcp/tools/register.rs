@@ -214,7 +214,7 @@ pub async fn call(input: &Value) -> Result<Value, ToolError> {
             // `set_active_identity`.
             guard.inbox_offset = None;
             guard.listen_mode = Some(listen);
-            Ok(register_ok_body(&active, drained.len(), &peers, listen))
+            Ok(register_ok_body(&active, &drained, &peers, listen))
         }
         BusReply::Err { kind, message } => Err(ToolError::new(kind, message)),
         // `BusReply` is open-coded with many ok-shaped variants. A non-Err,
@@ -273,10 +273,22 @@ fn rebind_rejection(active: Option<&str>, requested: &str, rebind: bool) -> Opti
 /// `.wake` file, so `--follow` blocks forever, and arming `--daemon` opens a
 /// second bus waiter that steals messages from the Stop await. The orphaned
 /// monitor surface must not be handed to users.
-fn register_ok_body(active: &str, drained: usize, peers: &[String], listen: bool) -> Value {
+fn register_ok_body(
+    active: &str,
+    drained: &[famp_bus::StampedEnvelope],
+    peers: &[String],
+    listen: bool,
+) -> Value {
+    // `drained.len()` stays INLINE at the JSON site, not hoisted into a
+    // `usize` parameter. QUAR-05's mechanical query (`scripts/
+    // quarantine-surfaces.sh`, the `envelopes-field` family) flags any
+    // `"drained":` output site whose value is not a bare `.len()` count,
+    // precisely so an envelope COUNT cannot drift into envelope VALUES
+    // unnoticed. A pre-counted parameter reads identically to a leak from
+    // outside this function, and the gate correctly said so.
     let mut body = serde_json::json!({
         "active": active,
-        "drained": drained,
+        "drained": drained.len(),
         "peers": peers,
     });
     if listen {
