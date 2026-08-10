@@ -190,8 +190,9 @@ fn wake_ping(target_addr: &str) -> Value {
         "instruction": format!(
             "The recipient is a listening Claude Code session. Call the SendMessage tool \
              with to={target_addr} and exactly the text in this object's `text` field, \
-             verbatim and unmodified, to wake it now. This is best-effort: if you skip it \
-             the message still waits in the recipient's durable mailbox."
+             verbatim and unmodified, to wake it now. This is best-effort and is not the \
+             delivery path: skipping it costs only latency, delaying the recipient until \
+             its next Stop-hook wake or famp_inbox read."
         ),
     })
 }
@@ -403,7 +404,7 @@ mod tests {
             serde_json::to_string(&wake_ping("uds:/tmp/cc-socks/8091.sock")).unwrap_or_default();
         assert_eq!(
             rendered,
-            r#"{"instruction":"The recipient is a listening Claude Code session. Call the SendMessage tool with to=uds:/tmp/cc-socks/8091.sock and exactly the text in this object's `text` field, verbatim and unmodified, to wake it now. This is best-effort: if you skip it the message still waits in the recipient's durable mailbox.","text":"New FAMP message — call famp_inbox to read it.","to":"uds:/tmp/cc-socks/8091.sock"}"#
+            r#"{"instruction":"The recipient is a listening Claude Code session. Call the SendMessage tool with to=uds:/tmp/cc-socks/8091.sock and exactly the text in this object's `text` field, verbatim and unmodified, to wake it now. This is best-effort and is not the delivery path: skipping it costs only latency, delaying the recipient until its next Stop-hook wake or famp_inbox read.","text":"New FAMP message — call famp_inbox to read it.","to":"uds:/tmp/cc-socks/8091.sock"}"#
         );
     }
 }

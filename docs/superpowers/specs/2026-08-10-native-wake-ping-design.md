@@ -92,9 +92,9 @@ an expected combination, and it means a proxy ate the wake.
 suppressed because the waiter genuinely was the canonical holder. Latency, not loss: the
 message is in the mailbox and the next await or `famp_inbox` reaches it.
 
-### D3 — SECURITY INVARIANT: the ping is CONTENT-FREE
+### D3 — SECURITY INVARIANT: the ping TEXT is CONTENT-FREE
 
-**No peer-influenced byte appears in the SendMessage payload.** The ping text is exactly,
+**No peer-influenced byte appears in the SendMessage TEXT.** The ping text is exactly,
 character for character including the em dash and the trailing period:
 
 ```
@@ -133,7 +133,29 @@ never receives the Phase-14 `{"origin","envelope"}` provenance stamp that
 `wake_ping`'s signature reduced to `fn wake_ping(target_addr: &str) -> Value` — there is no
 sender parameter left to pass. Nothing is lost: the recipient must call `famp_inbox`
 regardless, and that path IS provenance-stamped, so the name carries no information the
-recipient cannot obtain safely. "Content-free by construction" is now literally true.
+recipient cannot obtain safely.
+
+#### Precisely what is and is not guaranteed (review round 2, finding G)
+
+This section said "**no** peer-influenced byte appears in the SendMessage payload" and that
+content-freedom is "literally true". Split that into the two claims it conflates, because
+one is structural and the other is not:
+
+- **The `text` field carries no peer-influenced byte. Structurally enforced, true as
+  stated.** `wake_ping` takes only `target_addr`; there is no parameter through which a
+  peer-authored string could reach the text, and `the_ping_payload_is_byte_exact` pins the
+  whole rendering, so reintroducing a slot means deleting a test rather than forgetting a
+  rule.
+- **`target_addr` is peer-CHOSEN, and it appears in `to` and inside the `instruction`
+  sentence.** It is shape-constrained — the broker validates it against
+  `^uds:/tmp/cc-socks/[0-9]{1,10}\.sock$` before it can reach a `Delivered` row — but
+  shape-constrained is not the same as not-peer-influenced. Nothing ties `<pid>` to the
+  registering client, so a local process can point a name's wake address at another
+  session's socket; that is the ownership gap tracked as
+  [issue #48](https://github.com/thebenlamm/FAMP/issues/48). The residual influence is one
+  bounded numeric field, not free text, and the worst outcome is a misdirected content-free
+  ping — but the correct statement is "the payload's only peer-influenced component is a
+  regex-bounded socket path", not "no peer-influenced byte".
 
 **Out of scope, recorded here so it is not lost:** the same register-legal
 instruction-shaped name also passes the Stop hook's own `reason` regex. That is a
@@ -154,10 +176,24 @@ The Stop hook must exit when its owning Claude Code session dies.
 ## Reliability story
 
 The ping is **best-effort and model-mediated** — the sending model has to actually make the
-`SendMessage` call. Nothing forces it to. The mailbox is durable. A missed ping means the
-message waits for the next hook wake or an explicit `famp_inbox` read.
+`SendMessage` call. Nothing forces it to. A missed ping means the message waits for the next
+hook wake or an explicit `famp_inbox` read.
 
-**The failure mode is LATENCY, NEVER LOSS.**
+**THE PING PATH's failure mode is LATENCY, NEVER LOSS.** That is a structural property of
+the ping, not an aspiration: the ping carries no message content and is not a delivery
+path, so skipping, dropping, or misdirecting it changes nothing about what is in the
+mailbox.
+
+**Scope this claim carefully — it is NOT an end-to-end delivery guarantee, and it was
+written as one (review round 2, finding B).** Mailbox durability is a separate, PRE-EXISTING
+gap that this feature neither introduced nor fixed: `crates/famp/src/cli/broker/mod.rs`
+executes `Out::AppendMailbox` and, on `env.append` failure, logs one line and continues,
+while the broker has already replied `SendOk` with a hardcoded `ok: true`. Alice is
+listening with no parked waiter and her mailbox filesystem is full; Bob sends; the append
+fails; **Bob is told it succeeded** and Alice's `famp_inbox` never shows the message. That
+is loss, not latency. Tracked as
+**[issue #49](https://github.com/thebenlamm/FAMP/issues/49)** — deliberately not fixed here
+because it changes the send reply contract.
 
 ---
 
@@ -199,8 +235,9 @@ Decisions taken during planning, recorded so they are not re-litigated.
   **KNOWN GAP — shape, not ownership.** Nothing ties `<pid>` to the registering client, so
   any local process on the bus can point a name's wake address at a different session's
   socket. Blast radius is same-host/same-user, and the consequence is a misdirected ping —
-  **latency, not loss** — since the mailbox is durable and the Stop hook stays
-  authoritative. Tracked as **[issue #48](https://github.com/thebenlamm/FAMP/issues/48)**,
+  **latency, not loss**, because the ping is not a delivery path and the Stop hook stays
+  authoritative. (Same scoping as the reliability section above: that says nothing about
+  mailbox durability, which is [issue #49](https://github.com/thebenlamm/FAMP/issues/49).) Tracked as **[issue #48](https://github.com/thebenlamm/FAMP/issues/48)**,
   which also records why the obvious broker-side existence check is not cheap here:
   `BrokerEnv` is `MailboxRead + LivenessProbe` with no filesystem seam, and the broker regex
   pins the literal `/tmp/cc-socks` rather than being parameterized on a base directory, so
