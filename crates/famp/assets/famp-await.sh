@@ -481,6 +481,41 @@ QWATCH_FIFO=""
 QWATCH_PY=""
 QWATCH_PID=""
 
+# --- D5 (260810-hac): owner-liveness guard ----------------------------
+# A Stop hook does NOT die with the session that spawned it. When a Claude
+# Code session goes away, its hook reparents to init and keeps running its
+# 23h park, plus this watcher subshell. They accumulate: sixty orphans once
+# turned a 1.4s test into 302s.
+#
+# Fix rides the SAME fd-9 seam above rather than adding a second kill path
+# — one abort mechanism, one place to reason about false positives.
+#
+# Signal is REPARENT DETECTION, not a `kill -0` liveness probe on the
+# captured pid. If the hook's current parent pid differs from the value
+# captured here, the owner is gone. Reparenting cannot be fooled by pid
+# reuse, which a bare liveness probe can be. A `kill -0` secondary was
+# considered and deliberately left out: it adds no detection reparenting
+# misses, and its failure direction (a recycled pid looking alive) is the
+# safe one anyway.
+#
+# FAIL-OPEN, like everything else in this seam. If the parent pid cannot
+# be read, or is already 0/1, the predicate is not armed at all and every
+# other behavior is untouched. A FALSE abort is worse than the orphan it
+# would fix — it silently disables listen mode for the rest of the session
+# — so we never abort on uncertainty.
+#
+# Note: bash does not reset `$$` inside a subshell, so the watcher below
+# reads the hook's CURRENT parent the same way this capture does.
+owner_ppid_now() { ps -o ppid= -p "$$" 2>/dev/null | tr -d ' '; }
+OWNER_PPID="$(owner_ppid_now)"
+case "$OWNER_PPID" in
+    '' | 0 | 1)
+        log "owner-liveness guard NOT armed (ppid='${OWNER_PPID}'); orphan detection disabled"
+        OWNER_PPID=""
+        ;;
+    *) log "owner-liveness guard armed (owner ppid=$OWNER_PPID)" ;;
+esac
+
 # fd 9 opened read-write (<>): opening neither blocks for a peer nor reports
 # spurious EOF, and bash does not set CLOEXEC on exec-redirected fds, so
 # the pinned await with `--abort-on-fd 9` inherits it.
@@ -560,6 +595,18 @@ QPYEOF
         # writing (fail-open). Reaped when the pinned await returns regardless.
         (
             while : ; do
+                # D5: owner-liveness predicate, evaluated in the SAME loop
+                # as the queue predicate. Armed only when OWNER_PPID is a
+                # real captured pid. A momentarily unreadable current ppid
+                # is treated as "unknown", never as "gone".
+                if [ -n "$OWNER_PPID" ]; then
+                    _now_ppid="$(owner_ppid_now)"
+                    if [ -n "$_now_ppid" ] && [ "$_now_ppid" != "$OWNER_PPID" ]; then
+                        printf 'owner-gone' > "$QWATCH_DIR/abort-reason" 2>/dev/null || true
+                        printf 'x' >&9 2>/dev/null || true
+                        break
+                    fi
+                fi
                 if python3 "$QWATCH_PY" "$TRANSCRIPT" 2>/dev/null ; then
                     printf 'x' >&9 2>/dev/null || true
                     break
@@ -609,16 +656,24 @@ fi
 if [ -n "$ABORT_FD_READY" ]; then
     exec 9>&- 2>/dev/null || true
 fi
+# Read the watcher's reason BEFORE the scratch dir is removed.
+ABORT_REASON=""
 if [ -n "$QWATCH_DIR" ]; then
+    ABORT_REASON="$(cat "$QWATCH_DIR/abort-reason" 2>/dev/null || true)"
     rm -rf "$QWATCH_DIR" 2>/dev/null || true
 fi
 
-# --- Abort path (issue #21): host queue has pending input -------------
-# Pinned await exited 3 => a queued host notification is waiting. Exit 0
-# with NO block decision so the turn ends and the host drains its queue.
-# The `{"aborted":true}` sentinel on stdout is NOT forwarded to the host.
+# --- Abort path (issue #21 / D5) --------------------------------------
+# Pinned await exited 3 => the watcher fired. Either a queued host
+# notification is waiting (#21), or this hook's owning session died and
+# the hook is now an orphan (D5). Exit 0 with NO block decision either
+# way. The `{"aborted":true}` sentinel on stdout is NOT forwarded.
 if [ "$STATUS" -eq 3 ]; then
-    log "aborted: host queue has pending input; fail-open exit 0 so host drains"
+    if [ "$ABORT_REASON" = "owner-gone" ]; then
+        log "aborted: owning session is gone (orphaned hook); exiting 0"
+    else
+        log "aborted: host queue has pending input; fail-open exit 0 so host drains"
+    fi
     exit 0
 fi
 

@@ -1530,3 +1530,194 @@ exit "$STATUS"
         await_hook_log(&xdg)
     );
 }
+
+// ── D5 (260810-hac): owner-liveness / orphan-hook tests ────────────────────
+//
+// A Stop hook does not die with its session; it reparents to init and keeps
+// running for hours. These tests drive the ASSET hook under an intermediate
+// parent shell so the test can kill the "owner" and observe reparenting.
+//
+// WRITTEN AS A MATCHED SET. The kill arm alone is worthless — a hook that
+// aborted unconditionally would pass it. The control arm (owner stays alive
+// => stays parked) is the one that matters, because a false abort silently
+// disables listen mode for the rest of a real session, which is a worse
+// outcome than the orphan it fixes. The third arm proves the fail-open
+// branch: with the ppid unreadable the guard never arms, so even a dead
+// owner leaves the hook parked.
+
+const OWNER_GONE_LOG_LINE: &str = "aborted: owning session is gone";
+const GUARD_ARMED_LOG_LINE: &str = "owner-liveness guard armed";
+const GUARD_NOT_ARMED_LOG_LINE: &str = "owner-liveness guard NOT armed";
+
+/// Spawn the ASSET hook underneath an intermediate `bash` that acts as the
+/// "owning session": the hook runs as its CHILD, so killing the wrapper
+/// makes the hook reparent exactly as an orphaned Stop hook does.
+///
+/// Returns the wrapper `Child`. The hook's own pid is not needed — the
+/// assertions read the hook's log.
+fn spawn_asset_hook_under_owner(
+    transcript: &Path,
+    bin_dir: &Path,
+    xdg: &Path,
+    dir: &Path,
+) -> std::process::Child {
+    let hook = rendered_hook(bin_dir.parent().unwrap());
+    let stop_json = format!(
+        r#"{{"transcript_path":"{}","hook_event_name":"Stop"}}"#,
+        transcript.display()
+    );
+    let stdin_file = dir.join("stop.json");
+    std::fs::write(&stdin_file, &stop_json).unwrap();
+    let host_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{host_path}", bin_dir.display());
+    // `wait` (not `exec`) keeps the wrapper alive as the hook's parent for
+    // the whole run, which is what makes it a stand-in for the session.
+    let script = format!(
+        "'{}' < '{}' > /dev/null 2>&1 & wait",
+        hook.display(),
+        stdin_file.display()
+    );
+    Command::new("bash")
+        .arg("-c")
+        .arg(script)
+        .env("PATH", &new_path)
+        .env("XDG_STATE_HOME", xdg)
+        .env("FAMP_QWATCH_INTERVAL", "1")
+        .env("FAMP_DISABLE_PID_FALLBACK", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+/// A transcript whose queue is DRAINED, so the #21 queue predicate never
+/// fires. Any abort observed in these tests is therefore attributable to
+/// the owner-liveness predicate and nothing else.
+fn write_drained_listen_transcript(path: &Path) {
+    write_listen_transcript(
+        path,
+        "dk",
+        "{\"type\":\"queue-operation\",\"operation\":\"enqueue\",\"content\":\"old\"}\n{\"type\":\"queue-operation\",\"operation\":\"dequeue\"}",
+    );
+}
+
+/// Poll the hook log until `needle` appears or `budget` elapses.
+fn wait_for_log(xdg: &Path, needle: &str, budget: Duration) -> bool {
+    let deadline = std::time::Instant::now() + budget;
+    loop {
+        if await_hook_log(xdg).contains(needle) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// KILL ARM: the owning session dies while the hook is parked. The hook
+/// must notice within roughly two poll intervals and exit cleanly.
+#[test]
+fn hook_aborts_when_its_owning_session_dies() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_drained_listen_transcript(&transcript);
+
+    let mut owner = spawn_asset_hook_under_owner(&transcript, &bin_dir, &xdg, dir.path());
+    // Wait until the guard is actually armed before killing, so the test
+    // cannot pass by racing ahead of the capture.
+    assert!(
+        wait_for_log(&xdg, GUARD_ARMED_LOG_LINE, Duration::from_secs(10)),
+        "precondition: the owner-liveness guard must arm; log:\n{}",
+        await_hook_log(&xdg)
+    );
+    let _ = owner.kill();
+    let _ = owner.wait();
+
+    assert!(
+        wait_for_log(&xdg, OWNER_GONE_LOG_LINE, Duration::from_secs(10)),
+        "orphaned hook must abort once its owner dies; log:\n{}",
+        await_hook_log(&xdg)
+    );
+}
+
+/// CONTROL ARM: the owner stays alive for several poll intervals. The hook
+/// must NOT abort. This is the arm that matters — without it, an
+/// unconditionally-aborting hook would pass the kill arm above and ship a
+/// silent listen-mode kill switch.
+#[test]
+fn hook_stays_parked_while_its_owning_session_lives() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    let transcript = dir.path().join("t.jsonl");
+    write_drained_listen_transcript(&transcript);
+
+    let mut owner = spawn_asset_hook_under_owner(&transcript, &bin_dir, &xdg, dir.path());
+    assert!(
+        wait_for_log(&xdg, GUARD_ARMED_LOG_LINE, Duration::from_secs(10)),
+        "precondition: the owner-liveness guard must arm; log:\n{}",
+        await_hook_log(&xdg)
+    );
+    // The mock `famp await` times out after 3s; the watcher interval is 1s,
+    // so this window covers several poll rounds with the owner alive.
+    let _ = owner.wait();
+
+    let log = await_hook_log(&xdg);
+    assert!(
+        !log.contains(OWNER_GONE_LOG_LINE),
+        "a live owner must NEVER trigger the orphan abort; log:\n{log}"
+    );
+    assert!(
+        !log.contains(ABORT_LOG_LINE),
+        "a drained queue must not trigger the #21 abort either; log:\n{log}"
+    );
+    assert!(
+        log.contains("await returned status=0"),
+        "the hook must have run its await to a normal (timeout) completion; log:\n{log}"
+    );
+}
+
+/// FAIL-OPEN ARM: with the parent pid unreadable at capture time the guard
+/// must not arm at all, and the hook must behave exactly as it did before
+/// this change — even when the owner subsequently dies.
+///
+/// `ps` is shadowed by a failing stub on the hook's PATH. That is the same
+/// mechanism the hook itself uses to read a ppid, so this genuinely
+/// exercises the unreadable branch rather than simulating it.
+#[test]
+fn hook_does_not_arm_the_guard_when_the_parent_pid_is_unreadable() {
+    let dir = tempfile::tempdir().unwrap();
+    let xdg = dir.path().join("xdg");
+    let bin_dir = dir.path().join("bin");
+    stage_abort_mock_famp(&bin_dir);
+    // Shadow `ps` with a stub that produces nothing and fails.
+    let ps = bin_dir.join("ps");
+    std::fs::write(&ps, "#!/usr/bin/env bash\nexit 1\n").unwrap();
+    std::fs::set_permissions(&ps, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let transcript = dir.path().join("t.jsonl");
+    write_drained_listen_transcript(&transcript);
+
+    let mut owner = spawn_asset_hook_under_owner(&transcript, &bin_dir, &xdg, dir.path());
+    assert!(
+        wait_for_log(&xdg, GUARD_NOT_ARMED_LOG_LINE, Duration::from_secs(10)),
+        "guard must refuse to arm when the ppid is unreadable; log:\n{}",
+        await_hook_log(&xdg)
+    );
+    let _ = owner.kill();
+    let _ = owner.wait();
+    // Give the watcher several intervals to (wrongly) fire.
+    std::thread::sleep(Duration::from_secs(4));
+
+    let log = await_hook_log(&xdg);
+    assert!(
+        !log.contains(OWNER_GONE_LOG_LINE),
+        "an unarmed guard must never abort, even for a genuinely dead owner; log:\n{log}"
+    );
+}
