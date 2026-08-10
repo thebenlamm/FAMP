@@ -506,6 +506,15 @@ QWATCH_PID=""
 #
 # Note: bash does not reset `$$` inside a subshell, so the watcher below
 # reads the hook's CURRENT parent the same way this capture does.
+#
+# The capture happens HERE, before the fifo seam is built, because the
+# watcher subshell needs the value. But the guard is not ARMED until the
+# watcher actually spawns — the predicate has no way to signal an abort
+# without fd 9. So this block only ever logs a *failure* to capture; the
+# "armed" line is emitted inside the watcher-spawned branch below, and the
+# fail-open branches say "disarmed" explicitly. Anyone grepping a log on a
+# degraded box must be able to tell "guard running" from "guard never
+# started" — that box is precisely the one this guard exists for.
 owner_ppid_now() { ps -o ppid= -p "$$" 2>/dev/null | tr -d ' '; }
 OWNER_PPID="$(owner_ppid_now)"
 case "$OWNER_PPID" in
@@ -513,7 +522,7 @@ case "$OWNER_PPID" in
         log "owner-liveness guard NOT armed (ppid='${OWNER_PPID}'); orphan detection disabled"
         OWNER_PPID=""
         ;;
-    *) log "owner-liveness guard armed (owner ppid=$OWNER_PPID)" ;;
+    *) : ;;
 esac
 
 # fd 9 opened read-write (<>): opening neither blocks for a peer nor reports
@@ -617,11 +626,20 @@ QPYEOF
         QWATCH_PID=$!
         ABORT_FD_READY=1
         log "cancellation watcher armed (pid=$QWATCH_PID)"
+        if [ -n "$OWNER_PPID" ]; then
+            log "owner-liveness guard armed (owner ppid=$OWNER_PPID)"
+        fi
     else
         log "abort fifo setup failed; running plain await (fail-open)"
+        if [ -n "$OWNER_PPID" ]; then
+            log "owner-liveness guard DISARMED (no abort seam); orphan detection disabled"
+        fi
     fi
 else
     log "abort fifo mktemp failed; running plain await (fail-open)"
+    if [ -n "$OWNER_PPID" ]; then
+        log "owner-liveness guard DISARMED (no abort seam); orphan detection disabled"
+    fi
 fi
 
 # Run the pinned await, arming --abort-on-fd 9 only when the watcher is up.
