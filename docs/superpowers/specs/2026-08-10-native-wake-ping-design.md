@@ -250,6 +250,12 @@ not quietly re-asserted later as though it were still true.
   to idle-at-prompt?** UNTESTED. The spike probed an idle-at-prompt peer and a busy peer;
   neither arm was parked in a `famp await`. **No claim is made in either direction.**
 
+  **NO LONGER LOAD-BEARING (2026-08-10, post-review).** The implementation now suppresses the
+  wake address whenever the send already woke the recipient, so the ping is never emitted into
+  the parked-in-hook quadrant. Answering this question is no longer a prerequisite for trusting
+  the feature — it becomes load-bearing again only if that suppression is ever removed. Do not
+  delete this entry: it is the reason the suppression exists.
+
   **NO LONGER LOAD-BEARING (fix round, 2026-08-10).** Per the D2 amendment, the broker now
   suppresses the wake address whenever the same send woke a parked awaiter, so the
   implementation never enters this quadrant by construction: a session parked in the hook
