@@ -349,6 +349,12 @@ enum WakeAddrOutcome {
 /// the part that is genuinely hard to reason about — is unit-testable
 /// without a live broker.
 ///
+/// `sent` is the value this registration put on the wire, which is `None`
+/// when no cc-socks socket was detected — a CLEAR, not a no-op (review
+/// round 2, finding D). The broker echoes the post-validation stored value,
+/// so `echoed == sent` is the success condition in both directions; a `None`
+/// send echoing `None` is `Stored`, not a warning.
+///
 /// `transport_err` is the already-formatted `{e:?}` of a `send_recv`
 /// error, or `None` when `send_recv` returned `Ok`.
 ///
@@ -369,7 +375,7 @@ enum WakeAddrOutcome {
 /// dead broker at this layer — and every one of them is a connection we
 /// must not keep.
 fn classify_set_wake_addr(
-    sent: &str,
+    sent: Option<&str>,
     reply: Option<&BusReply>,
     transport_err: Option<&str>,
 ) -> WakeAddrOutcome {
@@ -377,9 +383,9 @@ fn classify_set_wake_addr(
         return WakeAddrOutcome::ConnectionPoisoned(detail.to_string());
     }
     match reply {
-        Some(BusReply::SetWakeAddrOk {
-            wake_addr: Some(echoed),
-        }) if echoed == sent => WakeAddrOutcome::Stored,
+        Some(BusReply::SetWakeAddrOk { wake_addr: echoed }) if echoed.as_deref() == sent => {
+            WakeAddrOutcome::Stored
+        }
         // proto.rs documents the echo precisely so a client can observe
         // that a malformed address stored nothing. Fail-open by design —
         // but say so rather than treating it as success.
@@ -398,17 +404,31 @@ fn classify_set_wake_addr(
     }
 }
 
-/// D1 (260810-hac): issue the `SetWakeAddr` frame for this window, if it
-/// has one.
+/// D1 (260810-hac): issue the `SetWakeAddr` frame for this window.
 ///
 /// Uses `parent_id()` — NOT `std::process::id()` — because the address
 /// must name the CLAUDE CODE SESSION, and the `famp mcp` server is that
 /// session's child (verified fact 1 of the spike: parent pid == session
 /// pid == cc-socks basename, 4 of 4).
 ///
-/// No socket on disk — the normal case for a non-Claude host or a session
-/// without one (verified fact 4) — sends no frame at all and returns
-/// [`WakeAddrOutcome::Stored`].
+/// ## Re-registration is AUTHORITATIVE (review round 2, finding D)
+///
+/// The frame is sent UNCONDITIONALLY, carrying whatever detection returned —
+/// including `None`. It used to return early and send nothing when no socket
+/// was found, which was a silent no-op rather than the clear it needed to be:
+/// the broker's idempotent `Register` handler does not touch `wake_addr`, and
+/// `famp_register` reuses the session's cached connection (so the same
+/// `ClientState`). A socket removed or replaced between two registrations of
+/// the same window therefore left the broker handing out a STALE address —
+/// pings to a dead socket, or to a reused one belonging to a different
+/// session. The broker could always clear (`set_wake_addr` stores
+/// `wake_addr.filter(valid)`, and there is a unit test for the `None` case);
+/// this path just never asked.
+///
+/// A `None` send is a normal, silent outcome on any non-Claude host and any
+/// session without a socket (verified fact 4). The broker echoes `None`, so
+/// [`classify_set_wake_addr`] reports [`WakeAddrOutcome::Stored`] and nothing
+/// is logged.
 ///
 /// ## This is no longer "swallow everything" (fix round, 260810-hac)
 ///
@@ -428,22 +448,20 @@ fn classify_set_wake_addr(
 /// re-register is idempotent and mailboxes are durable per name, so the
 /// remedy is one retry with nothing lost.
 async fn record_wake_addr(bus: &mut crate::bus_client::BusClient) -> WakeAddrOutcome {
-    let Some(wake_addr) = wake_addr_for_pid(
+    let wake_addr = wake_addr_for_pid(
         std::os::unix::process::parent_id(),
         std::path::Path::new(CC_SOCKS_DIR),
-    ) else {
-        return WakeAddrOutcome::Stored;
-    };
+    );
     let outcome = match bus
         .send_recv(BusMessage::SetWakeAddr {
-            wake_addr: Some(wake_addr.clone()),
+            wake_addr: wake_addr.clone(),
         })
         .await
     {
-        Ok(reply) => classify_set_wake_addr(&wake_addr, Some(&reply), None),
+        Ok(reply) => classify_set_wake_addr(wake_addr.as_deref(), Some(&reply), None),
         // Log the actual cause, never a bare string — a swallowed error
         // context is a swallowed error.
-        Err(e) => classify_set_wake_addr(&wake_addr, None, Some(&format!("{e:?}"))),
+        Err(e) => classify_set_wake_addr(wake_addr.as_deref(), None, Some(&format!("{e:?}"))),
     };
     if let WakeAddrOutcome::NotStored(line) = &outcome {
         eprintln!("{line}");
@@ -534,7 +552,7 @@ mod tests {
     fn an_echoed_address_matching_what_we_sent_is_stored() {
         assert_eq!(
             classify_set_wake_addr(
-                SENT,
+                Some(SENT),
                 Some(&BusReply::SetWakeAddrOk {
                     wake_addr: Some(SENT.to_string()),
                 }),
@@ -550,7 +568,7 @@ mod tests {
         // that a malformed address stored nothing. The pre-fix code
         // matched `SetWakeAddrOk { .. }` and could not tell the two apart.
         let outcome = classify_set_wake_addr(
-            SENT,
+            Some(SENT),
             Some(&BusReply::SetWakeAddrOk { wake_addr: None }),
             None,
         );
@@ -570,6 +588,42 @@ mod tests {
     }
 
     #[test]
+    fn a_clear_echoed_as_none_is_stored_and_logs_nothing() {
+        // Review round 2, finding D. A window with no cc-socks socket now
+        // sends `SetWakeAddr(None)` on every register so re-registration is
+        // authoritative and cannot leave a stale address behind. The broker
+        // echoes `None`, which is the CORRECT outcome — not the "did not
+        // store" warning the `Some`-only classifier would have produced on
+        // every register on every non-Claude host.
+        assert_eq!(
+            classify_set_wake_addr(
+                None,
+                Some(&BusReply::SetWakeAddrOk { wake_addr: None }),
+                None,
+            ),
+            WakeAddrOutcome::Stored
+        );
+    }
+
+    #[test]
+    fn a_clear_that_echoes_an_address_back_is_reported() {
+        // The other direction of the same equality: we asked to clear and
+        // the broker claims it stored something. That is a broker bug, and
+        // silence would hide it.
+        let outcome = classify_set_wake_addr(
+            None,
+            Some(&BusReply::SetWakeAddrOk {
+                wake_addr: Some(SENT.to_string()),
+            }),
+            None,
+        );
+        assert!(
+            matches!(outcome, WakeAddrOutcome::NotStored(_)),
+            "a clear that echoes an address must be reported, got {outcome:?}"
+        );
+    }
+
+    #[test]
     fn an_unexpected_but_well_formed_reply_keeps_the_connection() {
         // DISAGREEMENT WITH THE REVIEW, with evidence. `codec::read_frame`
         // reads the length prefix, `read_exact`s the whole body, then
@@ -578,7 +632,7 @@ mod tests {
         // unexpected variant is a broker oddity to log, not a reason to
         // discard a working connection and fail the registration.
         let outcome = classify_set_wake_addr(
-            SENT,
+            Some(SENT),
             Some(&BusReply::SetListenOk { listen_mode: true }),
             None,
         );
@@ -595,7 +649,8 @@ mod tests {
         // leave the stream desynced, and `send_recv` has no timeout path
         // that would let us tell them from a dead broker. Every Err is a
         // connection we must not keep.
-        let outcome = classify_set_wake_addr(SENT, None, Some("Io(Custom { kind: BrokenPipe })"));
+        let outcome =
+            classify_set_wake_addr(Some(SENT), None, Some("Io(Custom { kind: BrokenPipe })"));
         match outcome {
             WakeAddrOutcome::ConnectionPoisoned(detail) => assert!(
                 detail.contains("BrokenPipe"),
