@@ -432,8 +432,20 @@ impl BusReply {
 ///
 /// - `wake_addr` — D2 (260810-hac): the recipient's Claude Code
 ///   `SendMessage` address, present ONLY when the recipient has listen
-///   mode on, has a validated address stored, AND the SENDING client's
-///   declared origin is `Local`. Absent on every channel fan-out row.
+///   mode on, has a validated address stored, the SENDING client's
+///   declared origin is `Local`, AND this send did not just unpark the
+///   recipient's OWN canonical holder (which is already awake, so a
+///   second ping would only enter the untested double-wake case).
+///   Absent on every channel fan-out row.
+///
+///   That last gate is narrower than `woken` above, deliberately (review
+///   round 2, finding A): `woken` is true when ANY client bound to the
+///   name was unparked, including a `bind_as` proxy — an orphaned
+///   `famp-await.sh`, or a human's `famp await --as <name>` in another
+///   terminal. A proxy wake does NOT wake the recipient's window, so it
+///   does not suppress the address. Expect `woken: true` alongside a
+///   present `wake_addr` in exactly that case.
+///
 ///   The sending model relays a content-free ping to it; see
 ///   `docs/superpowers/specs/2026-08-10-native-wake-ping-design.md`.
 ///

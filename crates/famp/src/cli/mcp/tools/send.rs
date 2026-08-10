@@ -22,9 +22,22 @@
 //! ```
 //!
 //! `wake_ping` (D2, 260810-hac) is present ONLY when exactly one delivery
-//! row carries a wake address — i.e. a DM from a Local sender to a
-//! listening recipient that has one stored. When it is absent the result
-//! is byte-identical to its pre-260810-hac shape. Its `text` is a FIXED
+//! row carries a wake address. The broker attaches an address on FOUR
+//! gates, all of which must hold: the send is a DM (channel fan-out rows
+//! never carry one); the sending client's declared origin is `Local`; the
+//! recipient has listen mode on with a validated address stored; and the
+//! send did NOT just unpark the recipient's OWN canonical holder — that
+//! window is already awake, so a second ping only enters the double-wake
+//! case the design spec marks untested.
+//!
+//! The fourth gate is deliberately narrow (review round 2, finding A). A
+//! `bind_as` PROXY waiter — an orphaned `famp-await.sh`, or a human running
+//! `famp await --as <name>` in a second terminal — consumes the wake
+//! WITHOUT waking the recipient's window, so it does not suppress the ping;
+//! that is precisely the case where the ping is the only fast path left.
+//!
+//! When `wake_ping` is absent the result is byte-identical to its
+//! pre-260810-hac shape. Its `text` is a FIXED
 //! STRING — the sender name was removed in the 260810-hac fix round
 //! because a register-legal name can read as an instruction. See
 //! [`wake_ping`] and the spec at

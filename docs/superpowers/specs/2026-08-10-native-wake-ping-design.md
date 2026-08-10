@@ -61,12 +61,36 @@ to call `SendMessage` to that address.
 
 **D2 AMENDMENT (fix round, 2026-08-10): suppressed when the send already woke the
 recipient.** The broker returns no wake address when the same send unparked a waiting
-`Await` — i.e. when the delivery row's `woken` is true. As first shipped, `woken` and
-`wake_addr` were computed from independent state with nothing gating one on the other, so
-a recipient parked in its Stop hook received both an `AwaitOk` wake and a `SendMessage`
-ping. A parked window is the Stop hook's **steady state**, so that was the common path,
-not an edge case, and it landed squarely in the double-wake quadrant OPEN QUESTIONS marks
-untested — for zero benefit, since a parked session is already woken by the hook.
+`Await`. As first shipped, the suppression condition and `wake_addr` were computed from
+independent state with nothing gating one on the other, so a recipient parked in its Stop
+hook received both an `AwaitOk` wake and a `SendMessage` ping. A parked window is the Stop
+hook's **steady state**, so that was the common path, not an edge case, and it landed
+squarely in the double-wake quadrant OPEN QUESTIONS marks untested — for zero benefit,
+since a parked session is already woken by the hook.
+
+**D2 AMENDMENT 2 (review round 2, 2026-08-10): the suppression is keyed on the
+RECIPIENT'S OWN canonical holder, not on `woken`.** Amendment 1 keyed it on the delivery
+row's `woken` flag, which is `!waiters.is_empty()`. `waiting_clients_for_name` matches the
+canonical holder **or any `bind_as` proxy** bound to the same name, and proxy client
+states carry `pid: None` so the broker's liveness sweep never reaps them. So `woken` means
+"some client bound to this name was unparked", **not** "the recipient's window was woken".
+Two reachable cases separate the two: an orphaned pre-D5 `famp-await.sh` still parked on
+`famp await --as <name>` (the exact 60-orphan condition D5 exists to fix), and a human
+running that same command in a second terminal. In both, the proxy consumes the `AwaitOk`
+— and, because await cursors are stored on the canonical holder, advances the recipient's
+own offsets past the record — while the recipient's window learns nothing. That is
+precisely when the ping is the only remaining fast path, so amendment 1 disabled it in the
+case that needed it most. The predicate is now "the recipient's own canonical holder is
+among the woken waiters", resolved through the same `resolve_await_owner` that `Await`
+uses to decide whose cursors a wake advances. `woken` itself is unchanged — it is on the
+wire and other consumers read it — so `woken: true` alongside a present `wake_addr` is now
+an expected combination, and it means a proxy ate the wake.
+
+**Known residue, not closed:** when the canonical holder IS the woken waiter but
+`drain_await_batch` stalls behind an earlier filter-mismatched envelope (the documented
+999.1 boundary), it receives `AwaitTimeout` — nothing was delivered, yet the ping is still
+suppressed because the waiter genuinely was the canonical holder. Latency, not loss: the
+message is in the mailbox and the next await or `famp_inbox` reaches it.
 
 ### D3 — SECURITY INVARIANT: the ping is CONTENT-FREE
 
@@ -250,16 +274,19 @@ not quietly re-asserted later as though it were still true.
   to idle-at-prompt?** UNTESTED. The spike probed an idle-at-prompt peer and a busy peer;
   neither arm was parked in a `famp await`. **No claim is made in either direction.**
 
-  **NO LONGER LOAD-BEARING (2026-08-10, post-review).** The implementation now suppresses the
-  wake address whenever the send already woke the recipient, so the ping is never emitted into
-  the parked-in-hook quadrant. Answering this question is no longer a prerequisite for trusting
-  the feature — it becomes load-bearing again only if that suppression is ever removed. Do not
-  delete this entry: it is the reason the suppression exists.
+  **MOSTLY NOT LOAD-BEARING (review round 2, 2026-08-10).** This entry previously said
+  twice, in two separate post-review passes, that the implementation "never enters this
+  quadrant **by construction**". That was true only while the suppression was keyed on
+  `woken`, and it was the wrong key — see D2 AMENDMENT 2. State it accurately instead:
 
-  **NO LONGER LOAD-BEARING (fix round, 2026-08-10).** Per the D2 amendment, the broker now
-  suppresses the wake address whenever the same send woke a parked awaiter, so the
-  implementation never enters this quadrant by construction: a session parked in the hook
-  is woken by the hook and receives no `SendMessage` ping. The question stays recorded
-  because it is genuinely unanswered — anyone who later wants to *remove* that suppression
-  (for instance to cover a parked hook whose `famp await` has silently died) must test the
-  parked-in-hook case first rather than assume it.
+  - When the recipient's **own** canonical holder is parked in its Stop hook and this send
+    unparks it, the ping is suppressed and the quadrant is not entered. That is the common
+    path, and it is the reason the suppression exists — do not delete this entry.
+  - When a **proxy** waiter is parked on the recipient's name (an orphaned hook, or a
+    second terminal) the ping IS now emitted, and the recipient's window may well be
+    parked in its own hook while some *other* client held the wake. So the quadrant is
+    reachable again in that narrow case — deliberately, because the alternative is
+    dropping the only wake that window would get.
+  - The unanswered question therefore still matters, but its blast radius is a missed
+    wake in an already-degraded configuration, not the common path. Anyone who wants to
+    widen the ping further must test the parked-in-hook case first rather than assume it.
