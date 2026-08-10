@@ -16,58 +16,16 @@
 //! a peer's `famp_send` result — not broker internals, so the test cannot pass
 //! by agreeing with the implementation about what "stored" means.
 //!
-//! ## Why writing into the real `/tmp/cc-socks` is safe here
-//!
-//! `record_wake_addr` resolves `parent_id()` of the `famp mcp` child, which is
-//! THIS test binary, and `CC_SOCKS_DIR` is a hardcoded const with no seam. So
-//! the only path the test can touch is `/tmp/cc-socks/<our own pid>.sock`. No
-//! live Claude Code session can own that name, because we own that pid. Any
-//! file already there is a leftover from a dead process and is replaced; the
-//! socket is removed at the end and the shared directory is left in place.
+//! The cc-socks socket it binds is `common::cc_sock::CcSock`; see that module
+//! for why writing into the shared `/tmp/cc-socks` is safe.
 
 #![cfg(unix)]
 #![allow(unused_crate_dependencies, clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
 
-use std::os::unix::net::UnixListener;
-use std::path::PathBuf;
-
+use common::cc_sock::CcSock;
 use common::mcp_harness::Harness;
-
-/// RAII cc-socks socket for this process, mirroring what Claude Code exposes.
-struct CcSock {
-    path: PathBuf,
-    listener: Option<UnixListener>,
-}
-
-impl CcSock {
-    fn bind_for_self() -> Self {
-        let dir = PathBuf::from("/tmp/cc-socks");
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(format!("{}.sock", std::process::id()));
-        // Safe per the module doc: this name is derived from OUR pid.
-        let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path).unwrap();
-        Self {
-            path,
-            listener: Some(listener),
-        }
-    }
-
-    /// Remove the socket, simulating the session's socket going away between
-    /// two registrations of the same window.
-    fn remove(&mut self) {
-        drop(self.listener.take());
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-impl Drop for CcSock {
-    fn drop(&mut self) {
-        self.remove();
-    }
-}
 
 /// The `wake_ping.to` on a `famp_send` result, or `None` when the broker
 /// handed back no address.
@@ -86,7 +44,7 @@ fn re_registering_without_a_socket_clears_the_stored_wake_address() {
         std::fs::create_dir_all(dir.path().join("agents").join(agent)).unwrap();
     }
     let mut sock = CcSock::bind_for_self();
-    let expected_addr = format!("uds:{}", sock.path.display());
+    let expected_addr = sock.wake_addr();
 
     // Two MCP windows on one bus: alice is the listening recipient, bob is
     // the Local sender whose tool result carries the ping.

@@ -1720,4 +1720,18 @@ fn hook_does_not_arm_the_guard_when_the_parent_pid_is_unreadable() {
         !log.contains(OWNER_GONE_LOG_LINE),
         "an unarmed guard must never abort, even for a genuinely dead owner; log:\n{log}"
     );
+    // Review round 2, finding H. The negative assertion above is not
+    // sufficient on its own: a regression that logged "guard NOT armed" and
+    // then exited immediately would satisfy it perfectly while silently
+    // disabling listen mode — which is the exact failure this fail-open arm
+    // exists to rule out. FAIL-OPEN means "behaves exactly as it did before
+    // the guard existed", so assert the hook actually PARKED and ran its
+    // await to a normal completion, the same positive evidence the live-owner
+    // control arm uses.
+    assert!(
+        wait_for_log(&xdg, "await returned status=0", Duration::from_secs(10)),
+        "an unarmed guard must still run the plain await to completion, not \
+         exit early; log:\n{}",
+        await_hook_log(&xdg)
+    );
 }

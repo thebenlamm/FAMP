@@ -28,4 +28,5 @@
     clippy::missing_panics_doc
 )]
 
+pub mod cc_sock;
 pub mod mcp_harness;
