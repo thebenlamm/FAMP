@@ -49,7 +49,7 @@ use famp::{FampSigningKey, Principal, TrustedVerifyingKey};
 use famp_gateway::egress::run_egress;
 use famp_gateway::ingress::run_ingress;
 use famp_gateway::GatewayRegistry;
-use famp_keyring::Keyring;
+use famp_keyring::{Keyring, KeyringError};
 use famp_transport_http::HttpTransport;
 use tokio::sync::Mutex;
 use url::Url;
@@ -521,6 +521,17 @@ fn build_pairing_router_for(
     famp_gateway::pairing_ingress::build_pairing_router(pairing_state)
 }
 
+/// Load the gateway peers keyring. A missing file is an empty keyring
+/// (issue #42): nothing is pinned, so every inbound peer is rejected
+/// exactly as with a zero-byte file. Corrupt, unreadable, or
+/// grammar-invalid files stay startup-fatal.
+fn load_peers_keyring(path: &std::path::Path) -> Result<Keyring, KeyringError> {
+    match Keyring::load_from_file(path) {
+        Err(KeyringError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(Keyring::new()),
+        other => other,
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = match parse_args(std::env::args()) {
@@ -572,7 +583,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let keyring = match Keyring::load_from_file(&peers_path) {
+    let keyring = match load_peers_keyring(&peers_path) {
         Ok(k) => Arc::new(k),
         Err(e) => {
             eprintln!(

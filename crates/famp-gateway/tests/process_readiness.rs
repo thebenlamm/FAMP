@@ -6,13 +6,11 @@
 //! this plan (a premature "ready" that masked an unloaded keyring: a false
 //! success signal, T-11-21's Repudiation entry).
 //!
-//! This spawns a real `famp-gateway` subprocess against a `FAMP_HOME`
-//! whose `gateway/peers.keyring` file is deliberately absent —
-//! `Keyring::load_from_file` fails on a missing file (`File::open`
-//! returns `NotFound`) — and asserts the process exits non-zero WITHOUT
-//! ever printing "ready" to stdout. A regression that moved (or removed)
-//! the ordering fix would make this fail by printing "ready" before the
-//! keyring load is even attempted.
+//! A missing `peers.keyring` is a legal empty keyring (issue #42). The
+//! fail-closed ready-ordering proof therefore uses a *corrupt* keyring
+//! file: load must fail, the process must exit non-zero, and "ready"
+//! must never print. A separate test pins the first-run missing-file
+//! path: the process stays up and prints ready.
 
 #![allow(unused_crate_dependencies)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -22,8 +20,11 @@
 /// See crates/famp-gateway/tests/common/gateway_harness.rs::STARTUP_DEADLINE.
 const STARTUP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use assert_cmd::cargo::CommandCargoExt;
@@ -81,6 +82,94 @@ fn cross_machine_fixture_dir() -> PathBuf {
         .join("cross_machine")
 }
 
+fn gateway_cmd(sock: &Path, home: &Path) -> Command {
+    let fixtures = cross_machine_fixture_dir();
+    let mut cmd = Command::cargo_bin("famp-gateway").unwrap();
+    cmd.arg("--socket")
+        .arg(sock)
+        .arg("--listen")
+        .arg("127.0.0.1:0")
+        .arg("--tls-cert")
+        .arg(fixtures.join("alice.crt"))
+        .arg("--tls-key")
+        .arg(fixtures.join("alice.key"))
+        .env("FAMP_HOME", home)
+        .env("FAMP_OWN_DOMAIN", "hosta.test")
+        .arg("alice")
+        .stdin(Stdio::null());
+    cmd
+}
+
+#[test]
+fn missing_peers_keyring_is_empty_and_prints_ready() {
+    ensure_famp_bin_built();
+
+    let broker_tmp = tempfile::TempDir::new().unwrap();
+    let sock = broker_tmp.path().join("bus.sock");
+    let _broker = spawn_broker_subprocess(&sock);
+    wait_for_broker_socket(&sock, STARTUP_DEADLINE);
+
+    // Fresh FAMP_HOME: no gateway/ directory, no peers.keyring. Signing-key
+    // load_or_generate creates gateway/; the missing keyring must then
+    // load as empty (issue #42), not exit 1.
+    let home_tmp = tempfile::TempDir::new().unwrap();
+    let mut child = gateway_cmd(&sock, home_tmp.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("famp-gateway must be runnable as a subprocess");
+    let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+    let mut guard = ChildGuard::new(child);
+
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if line.contains("famp-gateway: ready,") {
+                let _ = tx.send(line);
+                break;
+            }
+        }
+    });
+
+    // Watcher, not a drain-to-EOF: collecting all of stderr would block
+    // until the still-running gateway exits.
+    let (etx, erx) = mpsc::channel();
+    thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if line.contains("failed to load peers keyring") {
+                let _ = etx.send(line);
+                break;
+            }
+        }
+    });
+
+    let ready = rx.recv_timeout(STARTUP_DEADLINE).unwrap_or_else(|_| {
+        panic!("missing peers.keyring must print ready within {STARTUP_DEADLINE:?}")
+    });
+    assert!(
+        ready.contains("famp-gateway: ready,"),
+        "expected a ready line, got {ready:?}"
+    );
+
+    // Ready prints before ingress bind. A sub-millisecond try_wait would
+    // miss a gateway that printed ready and then died.
+    thread::sleep(Duration::from_millis(500));
+    assert!(
+        guard
+            .as_mut()
+            .expect("child still held")
+            .try_wait()
+            .unwrap()
+            .is_none(),
+        "gateway must stay up after loading a missing peers.keyring as empty"
+    );
+    assert!(
+        erx.try_recv().is_err(),
+        "missing keyring must not emit a peers-keyring load failure"
+    );
+}
+
 #[test]
 fn ready_line_is_never_printed_when_peers_keyring_load_fails() {
     ensure_famp_bin_built();
@@ -90,38 +179,21 @@ fn ready_line_is_never_printed_when_peers_keyring_load_fails() {
     let _broker = spawn_broker_subprocess(&sock);
     wait_for_broker_socket(&sock, STARTUP_DEADLINE);
 
-    // Deliberately fresh `FAMP_HOME`: no `gateway/` directory, no
-    // `peers.keyring` file. `load_or_generate` (signing key) creates
-    // `gateway/` and succeeds; `Keyring::load_from_file` then fails on
-    // the still-absent `peers.keyring` — this is the exact ordering the
-    // "ready" line must land after.
+    // Corrupt file, not a missing one: T-11-21's ready-ordering proof
+    // needs a load that actually fails. Grammar-invalid content is
+    // MalformedEntry, which stays startup-fatal.
     let home_tmp = tempfile::TempDir::new().unwrap();
-    let fixtures = cross_machine_fixture_dir();
+    let gateway_dir = home_tmp.path().join("gateway");
+    std::fs::create_dir_all(&gateway_dir).unwrap();
+    std::fs::write(gateway_dir.join("peers.keyring"), "this is not a keyring\n").unwrap();
 
-    let out = Command::cargo_bin("famp-gateway")
-        .unwrap()
-        .arg("--socket")
-        .arg(&sock)
-        .arg("--listen")
-        .arg("127.0.0.1:0")
-        .arg("--tls-cert")
-        .arg(fixtures.join("alice.crt"))
-        .arg("--tls-key")
-        .arg(fixtures.join("alice.key"))
-        .env("FAMP_HOME", home_tmp.path())
-        // 17-03/D-30: own-domain is now REQUIRED (own-domain-unset is
-        // UNCONDITIONALLY startup-fatal) -- must resolve BEFORE this
-        // test's own target failure (the missing peers.keyring) or the
-        // process would exit for the wrong reason.
-        .env("FAMP_OWN_DOMAIN", "hosta.test")
-        .arg("alice")
-        .stdin(Stdio::null())
+    let out = gateway_cmd(&sock, home_tmp.path())
         .output()
         .expect("famp-gateway must be runnable as a subprocess");
 
     assert!(
         !out.status.success(),
-        "a missing peers.keyring must be startup-fatal; got status {:?}, stdout={:?}, stderr={:?}",
+        "a corrupt peers.keyring must be startup-fatal; got status {:?}, stdout={:?}, stderr={:?}",
         out.status,
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
@@ -129,7 +201,7 @@ fn ready_line_is_never_printed_when_peers_keyring_load_fails() {
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        !stdout.contains("ready"),
+        !stdout.contains("famp-gateway: ready,"),
         "'ready' must NOT print before a fatal peers-keyring load failure; got stdout:\n{stdout}"
     );
 
