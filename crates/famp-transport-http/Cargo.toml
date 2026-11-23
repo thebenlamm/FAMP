@@ -21,13 +21,14 @@ famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.2" }
 
 axum                     = "0.8"
 axum-server              = { version = "0.8", features = ["tls-rustls-no-provider"] }
+hyper-util               = { version = "0.1", features = ["tokio"] }
 tower                    = "0.5"
 tower-http               = { version = "0.6", features = ["limit"] }
 reqwest                  = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls                   = "0.23"
 rustls-platform-verifier = "0.5"
 rustls-pemfile           = "2"
-tokio                    = { workspace = true, features = ["rt", "sync", "macros", "net"] }
+tokio                    = { workspace = true, features = ["rt", "sync", "macros", "net", "time", "io-util"] }
 thiserror                = { workspace = true }
 serde                    = { workspace = true, features = ["derive"] }
 serde_json               = { workspace = true }
@@ -35,6 +36,7 @@ url                      = "2"
 futures-util             = "0.3"
 
 [dev-dependencies]
+tempfile       = "3"
 famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.2" }
 tower          = { version = "0.5", features = ["util"] }
-tokio          = { workspace = true, features = ["macros", "rt"] }
+tokio          = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

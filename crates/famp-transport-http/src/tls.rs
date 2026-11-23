@@ -14,8 +14,11 @@
 use std::{fs::File, io::BufReader, path::Path, sync::Arc};
 
 use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
-    ClientConfig, ServerConfig,
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    client::WebPkiServerVerifier,
+    pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime},
+    CertificateError, ClientConfig, DigitallySignedStruct, RootCertStore, ServerConfig,
+    SignatureScheme,
 };
 use rustls_platform_verifier::Verifier;
 
@@ -95,6 +98,96 @@ pub fn build_client_config(trust_cert_path: Option<&Path>) -> Result<ClientConfi
     Ok(ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth())
+}
+
+/// Accepts a server only if it presents EXACTLY one of the pinned certificates
+/// (byte-for-byte), then runs full webpki validation (name, validity, signature)
+/// against a root store holding only those certificates.
+///
+/// Byte-equality matters: a trust anchor keeps only subject, key and name
+/// constraints, not `CA:FALSE`, so with webpki alone any pinned peer could use
+/// its own key to mint a certificate for another peer's address that chains to
+/// its own pinned certificate.
+#[derive(Debug)]
+struct PinnedVerifier {
+    inner: Arc<WebPkiServerVerifier>,
+    pinned: Vec<CertificateDer<'static>>,
+}
+
+impl ServerCertVerifier for PinnedVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        if !self
+            .pinned
+            .iter()
+            .any(|pinned| pinned.as_ref() == end_entity.as_ref())
+        {
+            return Err(rustls::Error::InvalidCertificate(
+                CertificateError::ApplicationVerificationFailure,
+            ));
+        }
+        self.inner
+            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+}
+
+/// Build a client config that trusts ONLY the certificate(s) in `pinned_path`.
+///
+/// No OS root store, no other CA. Unlike [`build_client_config`], a publicly
+/// trusted certificate for the same name is rejected unless it is the pinned one.
+///
+/// Only a presented certificate whose bytes equal a certificate in the file is
+/// accepted. Self-signed certificates (what `famp setup` issues) pin themselves;
+/// to pin a CA-issued certificate, put it in the file together with its issuer.
+///
+/// # Errors
+///
+/// Returns [`TlsError`] if the PEM cannot be read or holds no certificate, or
+/// the verifier cannot be built.
+pub fn build_pinned_client_config(pinned_path: &Path) -> Result<ClientConfig, TlsError> {
+    install_default_provider();
+    let pinned = load_pem_cert(pinned_path)?;
+    let mut roots = RootCertStore::empty();
+    for cert in &pinned {
+        roots
+            .add(cert.clone())
+            .map_err(|e| TlsError::Verifier(format!("{e:?}")))?;
+    }
+    let inner = WebPkiServerVerifier::builder(Arc::new(roots))
+        .build()
+        .map_err(|e| TlsError::Verifier(format!("{e:?}")))?;
+    Ok(ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(PinnedVerifier { inner, pinned }))
         .with_no_client_auth())
 }
 

@@ -59,6 +59,22 @@ impl HttpTransport {
     pub fn new_client_only(trust_cert_path: Option<&Path>) -> Result<Self, HttpTransportError> {
         let tls = build_client_config(trust_cert_path)
             .map_err(|e| HttpTransportError::TlsConfig(format!("{e:?}")))?;
+        Self::with_tls(tls)
+    }
+
+    /// Like [`Self::new_client_only`] but trusting ONLY the certificate(s) in
+    /// `pinned_path` (no OS roots). See [`crate::tls::build_pinned_client_config`].
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Self::new_client_only`].
+    pub fn new_client_only_pinned(pinned_path: &Path) -> Result<Self, HttpTransportError> {
+        let tls = crate::tls::build_pinned_client_config(pinned_path)
+            .map_err(|e| HttpTransportError::TlsConfig(format!("{e:?}")))?;
+        Self::with_tls(tls)
+    }
+
+    fn with_tls(tls: rustls::ClientConfig) -> Result<Self, HttpTransportError> {
         let client = reqwest::Client::builder()
             .use_preconfigured_tls(tls)
             .timeout(Duration::from_secs(10))
