@@ -25,13 +25,14 @@ famp-transport-http = { path = "../famp-transport-http", version = "1.1.0-rc.2" 
 # form, and normalize_audience) -- retyping any of them here instead of
 # importing them is exactly how the client and the relay would drift.
 famp-relay          = { path = "../famp-relay", version = "1.1.0-rc.2" }
-tokio      = { workspace = true, features = ["rt", "sync", "macros", "net", "signal"] }
+tokio      = { workspace = true, features = ["rt", "sync", "macros", "net", "signal", "time", "fs", "io-util"] }
 thiserror  = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 uuid       = { workspace = true }
 base64     = { workspace = true }
 axum       = "0.8"
+http-body-util = "0.1"
 tower      = "0.5"
 tower-http = { version = "0.6", features = ["limit"] }
 url        = "2"
@@ -46,6 +47,7 @@ time       = { version = "0.3", features = ["formatting", "parsing"] }
 reqwest    = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 
 [dev-dependencies]
+futures-util = "0.3"
 assert_cmd = "2.0"
 tempfile = "3"
 famp-inspect-proto = { path = "../famp-inspect-proto", version = "1.1.0-rc.2" }

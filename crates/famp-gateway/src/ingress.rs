@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use axum::{
     body::Bytes,
-    extract::{Path, State},
+    extract::{ConnectInfo, Extension, Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::post,
@@ -47,7 +47,7 @@ use tokio::sync::Mutex;
 use tower::ServiceBuilder;
 
 use crate::error::RejectReason;
-use crate::ingress_guard::{self, GuardInput, GuardReject, IngressGuard};
+use crate::ingress_guard::{self, GuardInput, GuardReject, IngressGuard, Source};
 use crate::registry::GatewayRegistry;
 use crate::verify::verify_inbound_any;
 
@@ -91,6 +91,10 @@ pub struct GatewayIngressState {
     /// call per request, mirroring the registry lock's short-hold
     /// contract below.
     guard: Arc<Mutex<IngressGuard>>,
+    /// W0: when set, a verified message is delivered only to a recipient name
+    /// listed in this file (default deny; read on every delivery). `None` keeps
+    /// the v1.0 behavior of delivering to any name the sender addresses.
+    recipient_allowlist: Option<Arc<std::path::PathBuf>>,
 }
 
 impl GatewayIngressState {
@@ -111,7 +115,15 @@ impl GatewayIngressState {
             keyring,
             own_domain,
             guard,
+            recipient_allowlist: None,
         }
+    }
+
+    /// Enforce the W0 recipient allowlist at `path` (see `recipient_allowlist`).
+    #[must_use]
+    pub fn with_recipient_allowlist(mut self, path: Option<std::path::PathBuf>) -> Self {
+        self.recipient_allowlist = path.map(Arc::new);
+        self
     }
 }
 
@@ -150,7 +162,46 @@ pub fn build_gateway_router(
     guard: Arc<Mutex<IngressGuard>>,
     pairing_router: Option<Router>,
 ) -> Router {
-    let state = GatewayIngressState::new(registry, keyring, own_domain, guard);
+    build_gateway_router_with(
+        registry,
+        keyring,
+        own_domain,
+        guard,
+        pairing_router,
+        RouterOptions::default(),
+    )
+}
+
+/// Optional behavior for [`build_gateway_router_with`].
+#[derive(Clone, Debug)]
+pub struct RouterOptions {
+    /// Overall time allowed to receive a request body.
+    pub body_timeout: std::time::Duration,
+    /// W0 recipient allowlist file; `None` disables the check.
+    pub recipient_allowlist: Option<std::path::PathBuf>,
+}
+
+impl Default for RouterOptions {
+    fn default() -> Self {
+        Self {
+            body_timeout: BODY_READ_TIMEOUT,
+            recipient_allowlist: None,
+        }
+    }
+}
+
+/// [`build_gateway_router`] with explicit [`RouterOptions`].
+pub fn build_gateway_router_with(
+    registry: Arc<Mutex<GatewayRegistry>>,
+    keyring: Arc<Keyring>,
+    own_domain: Arc<str>,
+    guard: Arc<Mutex<IngressGuard>>,
+    pairing_router: Option<Router>,
+    options: RouterOptions,
+) -> Router {
+    let body_timeout = options.body_timeout;
+    let state = GatewayIngressState::new(registry, keyring, own_domain, guard)
+        .with_recipient_allowlist(options.recipient_allowlist);
     let router = Router::new()
         .route(INBOX_ROUTE, post(inbox_handler))
         .with_state(state);
@@ -159,7 +210,68 @@ pub fn build_gateway_router(
         None => router,
     };
     router
+        .layer(axum::middleware::from_fn(move |req, next| {
+            bound_body_read(body_timeout, req, next)
+        }))
         .layer(ServiceBuilder::new().layer(tower_http::limit::RequestBodyLimitLayer::new(ONE_MIB)))
+}
+
+/// True when `e` (or a source of it) is the body-limit layer's overflow error,
+/// which the body-limit layer reports as 413 when a handler's extractor reads it.
+fn is_length_limit(e: &(dyn std::error::Error + 'static)) -> bool {
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(e);
+    while let Some(err) = cur {
+        if err
+            .downcast_ref::<http_body_util::LengthLimitError>()
+            .is_some()
+        {
+            return true;
+        }
+        cur = err.source();
+    }
+    false
+}
+
+/// Overall time allowed to receive a request body. A client that drips bytes
+/// (so no per-read inactivity timer ever fires) is cut off here.
+pub const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Collect the whole body under a deadline BEFORE any handler runs.
+///
+/// Deliberately NOT a `TimeoutLayer` around the handler: `deliver` writes a
+/// frame on a shared per-principal bus connection and then reads the reply, so
+/// cancelling it between the two would leave an unread reply for the next
+/// delivery. Only the body read is bounded; the handler is never cancelled.
+async fn bound_body_read(
+    timeout: std::time::Duration,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let (parts, body) = req.into_parts();
+    match tokio::time::timeout(timeout, axum::body::to_bytes(body, ONE_MIB)).await {
+        Ok(Ok(bytes)) => {
+            next.run(axum::extract::Request::from_parts(
+                parts,
+                axum::body::Body::from(bytes),
+            ))
+            .await
+        }
+        Ok(Err(e)) if is_length_limit(&e) => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(serde_json::json!({ "error": "payload_too_large", "detail": "request body exceeds the size limit" })),
+        )
+            .into_response(),
+        Ok(Err(_)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "bad_request", "detail": "request body could not be read" })),
+        )
+            .into_response(),
+        Err(_) => (
+            StatusCode::REQUEST_TIMEOUT,
+            Json(serde_json::json!({ "error": "request_timeout", "detail": "request body not received in time" })),
+        )
+            .into_response(),
+    }
 }
 
 /// `envelope_sender` mirrors the 6-arm match in
@@ -263,6 +375,10 @@ pub(crate) enum IngressError {
     RevokedKey { principal: Principal },
     #[error("verified sender is not backed by this gateway")]
     SenderNotBacked,
+    /// W0: the recipient name is not on this box's allowlist (or the allowlist
+    /// could not be read). One fixed external response for every cause.
+    #[error("recipient is not accepting messages")]
+    RecipientNotAllowed,
     /// T-11-23: the envelope's signed `to` does not match the URL-path
     /// recipient — the sender addressed someone else and the path must
     /// not override the signature. Distinct from `ForeignDomain` (below)
@@ -336,29 +452,90 @@ pub(crate) enum IngressError {
 }
 
 impl IntoResponse for IngressError {
+    /// External responses carry a fixed slug and fixed text: never the claimed
+    /// principal, a key's validity window, or this host's clock, so an
+    /// unauthenticated caller learns nothing beyond the status. The three
+    /// key-state failures (no pin, expired, revoked) share ONE slug so the
+    /// response does not reveal whether a key exists. The specifics go to the
+    /// operator log only. The payload is never echoed.
     fn into_response(self) -> Response {
-        let (code, slug) = match &self {
-            Self::BadPrincipal => (StatusCode::BAD_REQUEST, "bad_principal"),
-            Self::InvalidSignature => (StatusCode::BAD_REQUEST, "invalid_signature"),
-            Self::UnpinnedKey { .. } => (StatusCode::FORBIDDEN, "unpinned_key"),
-            Self::ExpiredKey { .. } => (StatusCode::FORBIDDEN, "expired_key"),
-            Self::RevokedKey { .. } => (StatusCode::FORBIDDEN, "revoked_key"),
-            Self::SenderNotBacked => (StatusCode::BAD_GATEWAY, "sender_not_backed"),
-            Self::MisaddressedRecipient { .. } => {
-                (StatusCode::BAD_REQUEST, "misaddressed_recipient")
+        let (code, slug, detail) = match &self {
+            Self::BadPrincipal => (
+                StatusCode::BAD_REQUEST,
+                "bad_principal",
+                "invalid recipient",
+            ),
+            Self::InvalidSignature => (
+                StatusCode::BAD_REQUEST,
+                "invalid_signature",
+                "signature verification failed",
+            ),
+            Self::UnpinnedKey { .. } | Self::ExpiredKey { .. } | Self::RevokedKey { .. } => {
+                // Operator log only; see the doc comment above.
+                eprintln!("famp-gateway: ingress: rejected — {self}");
+                (
+                    StatusCode::FORBIDDEN,
+                    "unpinned_key",
+                    "sender is not trusted",
+                )
             }
-            Self::ForeignDomain { .. } => (StatusCode::FORBIDDEN, "foreign_domain"),
-            Self::MalformedFederationFields => {
-                (StatusCode::BAD_REQUEST, "malformed_federation_fields")
-            }
-            Self::BadEnvelopeShape => (StatusCode::BAD_REQUEST, "bad_envelope_shape"),
-            Self::StaleTimestamp { .. } => (StatusCode::BAD_REQUEST, "stale_timestamp"),
-            Self::ReplayedNonce { .. } => (StatusCode::BAD_REQUEST, "replayed_nonce"),
-            Self::MissingNonce { .. } => (StatusCode::BAD_REQUEST, "missing_nonce"),
-            Self::RateLimited { .. } => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
-            Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+            Self::SenderNotBacked => (
+                StatusCode::BAD_GATEWAY,
+                "sender_not_backed",
+                "sender is not served by this gateway",
+            ),
+            Self::RecipientNotAllowed => (
+                StatusCode::FORBIDDEN,
+                "recipient_not_allowed",
+                "recipient is not accepting messages",
+            ),
+            Self::MisaddressedRecipient { .. } => (
+                StatusCode::BAD_REQUEST,
+                "misaddressed_recipient",
+                "recipient does not match the signed envelope",
+            ),
+            Self::ForeignDomain { .. } => (
+                StatusCode::FORBIDDEN,
+                "foreign_domain",
+                "recipient domain is not served here",
+            ),
+            Self::MalformedFederationFields => (
+                StatusCode::BAD_REQUEST,
+                "malformed_federation_fields",
+                "federation fields are malformed",
+            ),
+            Self::BadEnvelopeShape => (
+                StatusCode::BAD_REQUEST,
+                "bad_envelope_shape",
+                "envelope is malformed",
+            ),
+            Self::StaleTimestamp { .. } => (
+                StatusCode::BAD_REQUEST,
+                "stale_timestamp",
+                "envelope timestamp is outside the accepted window",
+            ),
+            Self::ReplayedNonce { .. } => (
+                StatusCode::BAD_REQUEST,
+                "replayed_nonce",
+                "envelope was already received",
+            ),
+            Self::MissingNonce { .. } => (
+                StatusCode::BAD_REQUEST,
+                "missing_nonce",
+                "envelope has no nonce",
+            ),
+            Self::RateLimited { .. } => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "too many requests",
+            ),
+            Self::Internal => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "internal error",
+            ),
         };
-        let body = serde_json::json!({ "error": slug, "detail": self.to_string() });
+        let body = serde_json::json!({ "error": slug, "detail": detail });
         (code, Json(body)).into_response()
     }
 }
@@ -441,16 +618,27 @@ fn ingress_error_for_guard(reject: GuardReject) -> IngressError {
 async fn inbox_handler(
     Path(principal_str): Path<String>,
     State(state): State<GatewayIngressState>,
+    connect: Option<Extension<ConnectInfo<SocketAddr>>>,
     body: Bytes,
 ) -> impl IntoResponse {
     let Ok(recipient) = Principal::from_str(&principal_str) else {
         return IngressError::BadPrincipal.into_response();
     };
+    // `serve_std_listener` always supplies the peer address; `Unknown` only
+    // happens when the router is driven without a socket (unit tests).
+    let source = source_of(connect);
 
-    match ingest_inbound(&recipient, &body, &state).await {
+    match ingest_inbound_from(&recipient, &body, &state, &source).await {
         Ok(()) => StatusCode::ACCEPTED.into_response(),
         Err(e) => e.into_response(),
     }
+}
+
+/// The request's [`Source`]: its peer address when the server supplied one.
+fn source_of(connect: Option<Extension<ConnectInfo<SocketAddr>>>) -> Source {
+    connect.map_or(Source::Unknown, |Extension(ConnectInfo(addr))| {
+        Source::Ip(addr.ip())
+    })
 }
 
 /// THE single ingest core (Task 1, INGR-01/INGR-05): wire bytes in,
@@ -472,8 +660,18 @@ pub(crate) async fn ingest_inbound(
     body: &[u8],
     state: &GatewayIngressState,
 ) -> Result<(), IngressError> {
+    ingest_inbound_from(recipient, body, state, &Source::Relay).await
+}
+
+/// [`ingest_inbound`] for a request whose [`Source`] is known (the HTTP handler).
+pub(crate) async fn ingest_inbound_from(
+    recipient: &Principal,
+    body: &[u8],
+    state: &GatewayIngressState,
+    source: &Source,
+) -> Result<(), IngressError> {
     let now = crate::clock::now_canonical_utc();
-    ingest_inbound_at(recipient, body, state, &now).await
+    ingest_inbound_at(recipient, body, state, &now, source).await
 }
 
 /// `now`-injected core of [`ingest_inbound`] (T-15-10 convention: `now`
@@ -490,7 +688,18 @@ async fn ingest_inbound_at(
     body: &[u8],
     state: &GatewayIngressState,
     now: &str,
+    source: &Source,
 ) -> Result<(), IngressError> {
+    // The only budget charged before verification, and before the body is even
+    // parsed: per SOURCE, never per claimed sender name.
+    {
+        let mut guard = state.guard.lock().await;
+        ingress_guard::admit_source(&mut guard, source, now).map_err(|reject| {
+            log_reject(&reject);
+            ingress_error_for_guard(reject)
+        })?;
+    }
+
     let peeked = ingress_guard::peek_guard_fields(body).map_err(|reject| {
         eprintln!(
             "famp-gateway: ingress: rejected — pre-verify peek failed (malformed envelope shape)"
@@ -514,51 +723,7 @@ async fn ingest_inbound_at(
     {
         let mut guard = state.guard.lock().await;
         ingress_guard::run_cheap_gates(&guard_input, &mut guard).map_err(|reject| {
-            match &reject {
-                GuardReject::StaleTimestamp {
-                    ts,
-                    now: guard_now,
-                    skew_secs,
-                } => {
-                    eprintln!(
-                        "famp-gateway: ingress: rejected — stale timestamp ts={ts} now={guard_now} \
-                         skew_secs={skew_secs}"
-                    );
-                }
-                GuardReject::ReplayedNonce { principal, nonce } => {
-                    eprintln!(
-                        "famp-gateway: ingress: rejected — replayed nonce '{nonce}' from sender '{principal}'"
-                    );
-                }
-                GuardReject::MissingNonce { principal } => {
-                    eprintln!(
-                        "famp-gateway: ingress: rejected — sender '{principal}' submitted an envelope with no nonce"
-                    );
-                }
-                GuardReject::ForeignDomain { expected, got } => {
-                    eprintln!(
-                        "famp-gateway: ingress: rejected — envelope 'to' domain '{got}' != this \
-                         gateway's own-domain '{expected}' (pre-verify audience check)"
-                    );
-                }
-                GuardReject::SenderNotBacked { principal } => {
-                    eprintln!(
-                        "famp-gateway: ingress: rejected — sender '{principal}' is not backed by \
-                         this gateway (pre-verify audience check)"
-                    );
-                }
-                GuardReject::RateLimited {
-                    principal,
-                    limit,
-                    window_secs,
-                } => {
-                    eprintln!(
-                        "famp-gateway: ingress: rejected — sender '{principal}' exceeded \
-                         {limit} requests per {window_secs}s"
-                    );
-                }
-                GuardReject::BadEnvelopeShape => {}
-            }
+            log_reject(&reject);
             ingress_error_for_guard(reject)
         })?;
     }
@@ -568,10 +733,70 @@ async fn ingest_inbound_at(
     let envelope =
         verify_inbound_any(body, &state.keyring, now).map_err(ingress_error_for_reject)?;
 
+    // The sender is now AUTHENTICATED: only from here may per-sender state
+    // (rate budget, replay record) change. The nonce was proven present above.
+    let nonce = peeked.nonce.as_deref().unwrap_or_default();
+    {
+        let mut guard = state.guard.lock().await;
+        ingress_guard::post_verify_gates(&mut guard, peeked.from.name(), nonce, now).map_err(
+            |reject| {
+                log_reject(&reject);
+                ingress_error_for_guard(reject)
+            },
+        )?;
+    }
+
     check_audience_and_format(&envelope, recipient)?;
+
+    // W0, read BEFORE the registry lock is taken: default deny, fail closed.
+    if let Some(path) = &state.recipient_allowlist {
+        if let Err(denied) = crate::recipient_allowlist::check(path, recipient.name()).await {
+            eprintln!(
+                "famp-gateway: ingress: dropped a verified message for '{}': {denied}",
+                recipient.name()
+            );
+            return Err(IngressError::RecipientNotAllowed);
+        }
+    }
 
     let sender = envelope_sender(&envelope).clone();
     deliver(&sender, recipient, body, &state.registry).await
+}
+
+/// Operator-facing log line for a guard reject (never sent to the caller).
+fn log_reject(reject: &GuardReject) {
+    match reject {
+        GuardReject::StaleTimestamp {
+            ts,
+            now: guard_now,
+            skew_secs,
+        } => eprintln!(
+            "famp-gateway: ingress: rejected — stale timestamp ts={ts} now={guard_now} \
+             skew_secs={skew_secs}"
+        ),
+        GuardReject::ReplayedNonce { principal, nonce } => eprintln!(
+            "famp-gateway: ingress: rejected — replayed nonce '{nonce}' from sender '{principal}'"
+        ),
+        GuardReject::MissingNonce { principal } => eprintln!(
+            "famp-gateway: ingress: rejected — sender '{principal}' submitted an envelope with no nonce"
+        ),
+        GuardReject::ForeignDomain { expected, got } => eprintln!(
+            "famp-gateway: ingress: rejected — envelope 'to' domain '{got}' != this \
+             gateway's own-domain '{expected}' (pre-verify audience check)"
+        ),
+        GuardReject::SenderNotBacked { principal } => eprintln!(
+            "famp-gateway: ingress: rejected — sender '{principal}' is not backed by \
+             this gateway (pre-verify audience check)"
+        ),
+        GuardReject::RateLimited {
+            principal,
+            limit,
+            window_secs,
+        } => eprintln!(
+            "famp-gateway: ingress: rejected — '{principal}' exceeded {limit} requests per {window_secs}s"
+        ),
+        GuardReject::BadEnvelopeShape => {}
+    }
 }
 
 /// F-1 (T-11-23/T-11-24/T-11-26): the gateway is authoritative ONLY for
@@ -736,6 +961,7 @@ pub async fn run_ingress(
     own_domain: Arc<str>,
     guard: Arc<Mutex<IngressGuard>>,
     pairing_router: Option<Router>,
+    recipient_allowlist: Option<std::path::PathBuf>,
 ) -> std::io::Result<()> {
     let cert =
         famp_transport_http::tls::load_pem_cert(tls_cert_path).map_err(std::io::Error::other)?;
@@ -747,7 +973,17 @@ pub async fn run_ingress(
     let listener = std::net::TcpListener::bind(listen_addr)?;
     listener.set_nonblocking(true)?;
 
-    let router = build_gateway_router(registry, keyring, own_domain, guard, pairing_router);
+    let router = build_gateway_router_with(
+        registry,
+        keyring,
+        own_domain,
+        guard,
+        pairing_router,
+        RouterOptions {
+            recipient_allowlist,
+            ..RouterOptions::default()
+        },
+    );
     let handle = famp_transport_http::tls_server::serve_std_listener(
         listener,
         router,
@@ -1121,7 +1357,7 @@ mod tests {
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
             let (state, _broker) = state_with_backed_sender(keyring, "hostb.test", "oscar").await;
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
-            let result = ingest_inbound_at(&to, &bytes, &state, &base_now).await;
+            let result = ingest_inbound_at(&to, &bytes, &state, &base_now, &Source::Unknown).await;
             assert!(
                 result.is_ok(),
                 "delta {delta}s is within the inclusive skew window and, with a real backed \
@@ -1135,7 +1371,7 @@ mod tests {
             keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
             let (state, _broker) = state_with_backed_sender(keyring, "hostb.test", "oscar").await;
             let bytes = ack_bytes_with_ts(&sk, &from, &to, mk_ts(delta));
-            let result = ingest_inbound_at(&to, &bytes, &state, &base_now).await;
+            let result = ingest_inbound_at(&to, &bytes, &state, &base_now, &Source::Unknown).await;
             assert!(
                 matches!(result, Err(IngressError::StaleTimestamp { .. })),
                 "delta {delta}s is one second beyond the inclusive skew window, got {result:?}"
@@ -1260,13 +1496,13 @@ mod tests {
         );
         assert_eq!(registry3.lock().await.names().count(), 0);
 
-        // --- case 4 (17-02, INGR-02): a replay that is ALSO signed with
-        // the wrong key -> replayed_nonce, never invalid_signature. The
-        // first POST records the nonce (replay runs before verify,
-        // regardless of whether verify would ultimately succeed) and
-        // fails on signature as expected; the SECOND, identical POST
-        // must be rejected on the replay gate before signature
-        // verification runs again.
+        // --- case 4 (17-02 INGR-02, REVISED 2026-11-23): an envelope that FAILS
+        // signature verification must NOT be recorded as seen. It used to be
+        // (the nonce was recorded before verify), which let anyone who knew a
+        // real peer's name and a nonce poison it. A second POST of the same
+        // wrong-key bytes therefore surfaces invalid_signature again, never
+        // replayed_nonce. Replay of a VERIFIED envelope is pinned by
+        // `replayed_envelope_is_rejected_on_second_delivery_with_no_extra_registry_mutation`.
         let wrong_sk2 = FampSigningKey::from_bytes([52u8; 32]);
         let mut keyring_wrong2 = Keyring::new();
         keyring_wrong2
@@ -1289,8 +1525,8 @@ mod tests {
         let second_body = to_bytes(second.into_body(), usize::MAX).await.unwrap();
         let second_v: Value = serde_json::from_slice(&second_body).unwrap();
         assert_eq!(
-            second_v["error"], "replayed_nonce",
-            "replayed AND wrong-key case must surface replayed_nonce, never invalid_signature"
+            second_v["error"], "invalid_signature",
+            "a failed-verification envelope must not be recorded: its replay is still just a bad signature"
         );
         assert_eq!(registry4.lock().await.names().count(), 1);
 
@@ -1342,6 +1578,8 @@ mod tests {
         from: &Principal,
         to: &Principal,
     ) {
+        // REVISED 2026-11-23: the pre-verify budget is per SOURCE, not per
+        // claimed sender name (see `RateLimiter`'s supersession note).
         let wrong_sk = FampSigningKey::from_bytes([54u8; 32]);
         let mut keyring_wrong = Keyring::new();
         keyring_wrong
@@ -1349,14 +1587,14 @@ mod tests {
             .unwrap();
         let (router, registry, _broker) =
             router_with_backed_sender(keyring_wrong, "hostb.test", "oscar").await;
-        for i in 0..crate::ingress_guard::RATE_LIMIT_MAX_PER_WINDOW {
+        for i in 0..crate::ingress_guard::SOURCE_RATE_MAX_PER_WINDOW {
             let bytes = ack_bytes(sk, from, to);
             let resp = post_inbox(router.clone(), to, bytes).await;
             let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
             let v: Value = serde_json::from_slice(&body).unwrap();
             assert_eq!(
                 v["error"], "invalid_signature",
-                "request {i} within the rate limit must reach signature verification"
+                "request {i} within the source budget must reach signature verification"
             );
         }
         let over_limit_bytes = ack_bytes(sk, from, to);
@@ -1366,9 +1604,265 @@ mod tests {
         let v: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(
             v["error"], "rate_limited",
-            "over-the-limit-AND-wrong-key case must reject on the CHEAP gate, never invalid_signature"
+            "over-the-source-budget-AND-wrong-key case must reject before signature verification"
         );
         assert_eq!(registry.lock().await.names().count(), 1);
+    }
+
+    // --- W0: recipient allowlist -------------------------------------------
+
+    async fn router_with_allowlist(
+        keyring: Keyring,
+        allowlist: &std::path::Path,
+    ) -> (Router, LiveBroker) {
+        let broker = LiveBroker::spawn().await;
+        let mut registry = GatewayRegistry::default();
+        registry
+            .back(&broker.sock, "oscar".to_owned())
+            .await
+            .expect("back sender on in-process broker");
+        let router = build_gateway_router_with(
+            Arc::new(Mutex::new(registry)),
+            Arc::new(keyring),
+            Arc::from("hostb.test"),
+            Arc::new(Mutex::new(IngressGuard::new())),
+            None,
+            RouterOptions {
+                recipient_allowlist: Some(allowlist.to_path_buf()),
+                ..RouterOptions::default()
+            },
+        );
+        (router, broker)
+    }
+
+    fn write_allowlist(path: &std::path::Path, text: &str, mode: u32) {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::write(path, text).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    async fn status_and_error(resp: Response) -> (StatusCode, Option<String>) {
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let err = serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|v| v["error"].as_str().map(str::to_owned));
+        (status, err)
+    }
+
+    /// W0: listed delivers; unlisted is dropped with one fixed 403 that does not
+    /// say which names exist; an edit takes effect on the very next message with
+    /// no restart; every way the file can be wrong denies.
+    #[tokio::test]
+    async fn recipient_allowlist_default_denies_and_is_read_on_every_delivery() {
+        let sk = FampSigningKey::from_bytes([70u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let peggy: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let mallory: Principal = "agent:hostb.test/mallory".parse().unwrap();
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let list = dir.path().join("recipients.json");
+        let (router, _broker) = router_with_allowlist(keyring, &list).await;
+        let post = |to: &Principal| {
+            let (router, bytes, to) = (router.clone(), ack_bytes(&sk, &from, to), to.clone());
+            async move { status_and_error(post_inbox(router, &to, bytes).await).await }
+        };
+
+        // 1. No allowlist file at all: default deny, even for a verified sender.
+        assert_eq!(
+            post(&peggy).await,
+            (StatusCode::FORBIDDEN, Some("recipient_not_allowed".into()))
+        );
+
+        // 2. Listed name is delivered; an unlisted one is refused identically.
+        write_allowlist(&list, r#"{"version":1,"names":["peggy"]}"#, 0o600);
+        assert_eq!(post(&peggy).await.0, StatusCode::ACCEPTED);
+        let refused = post(&mallory).await;
+        assert_eq!(
+            refused,
+            (StatusCode::FORBIDDEN, Some("recipient_not_allowed".into())),
+            "unlisted names must get the same fixed response as a missing list"
+        );
+
+        // 3. Edits apply without a restart, in both directions.
+        write_allowlist(&list, r#"{"version":1,"names":["mallory"]}"#, 0o600);
+        assert_eq!(post(&mallory).await.0, StatusCode::ACCEPTED);
+        assert_eq!(
+            post(&peggy).await.0,
+            StatusCode::FORBIDDEN,
+            "revoked at once"
+        );
+
+        // 4. A damaged, torn, over-permissive or foreign-format file fails closed.
+        for (text, mode) in [
+            ("{ this is not json", 0o600),
+            (r#"{"version":1,"names":["mallory","gua"#, 0o600),
+            (r#"{"version":1,"names":["mallory"],"extra":true}"#, 0o600),
+            (r#"{"version":1,"names":["mallory"]}"#, 0o666),
+        ] {
+            write_allowlist(&list, text, mode);
+            assert_eq!(
+                post(&mallory).await,
+                (StatusCode::FORBIDDEN, Some("recipient_not_allowed".into())),
+                "must fail closed for {text:?} mode {mode:o}"
+            );
+        }
+        // Control: restoring a good file restores delivery (the denials above were
+        // caused by the file, not by something else broken in the setup).
+        write_allowlist(&list, r#"{"version":1,"names":["mallory"]}"#, 0o600);
+        assert_eq!(post(&mallory).await.0, StatusCode::ACCEPTED);
+    }
+
+    /// External error bodies must not reveal the claimed principal, a key's
+    /// validity window, this host's clock, or whether a key exists: unpinned,
+    /// expired and revoked all look identical to the caller.
+    #[tokio::test]
+    async fn external_errors_reveal_nothing_and_key_states_are_indistinguishable() {
+        let principal: Principal = "agent:secret.test/hunter".parse().unwrap();
+        let cases = [
+            IngressError::UnpinnedKey {
+                principal: principal.clone(),
+            },
+            IngressError::ExpiredKey {
+                principal: principal.clone(),
+                valid_until: "2031-02-03T04:05:06Z".to_owned(),
+            },
+            IngressError::RevokedKey {
+                principal: principal.clone(),
+            },
+        ];
+        let mut seen = Vec::new();
+        for case in cases {
+            let resp = case.into_response();
+            assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+            let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+            let text = String::from_utf8(bytes.to_vec()).unwrap();
+            for secret in ["hunter", "secret.test", "2031-02-03"] {
+                assert!(!text.contains(secret), "{secret} leaked in {text}");
+            }
+            seen.push(text);
+        }
+        assert!(
+            seen.iter().all(|t| *t == seen[0]),
+            "unpinned/expired/revoked must be byte-identical externally: {seen:?}"
+        );
+        assert!(seen[0].contains("\"unpinned_key\""));
+
+        let stale = IngressError::StaleTimestamp {
+            ts: "2020-01-01T00:00:00Z".to_owned(),
+            now: "2026-11-23T12:34:56Z".to_owned(),
+            skew_secs: 300,
+        }
+        .into_response();
+        let text = String::from_utf8(
+            to_bytes(stale.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(!text.contains("2026-11-23"), "server clock leaked: {text}");
+    }
+
+    /// With a peer address the source is that address (what the real server always
+    /// supplies); only a router driven without a socket falls back to `Unknown`.
+    #[test]
+    fn the_source_is_the_peer_address_when_the_server_supplies_one() {
+        let addr: SocketAddr = "100.64.0.5:50000".parse().unwrap();
+        assert_eq!(
+            source_of(Some(Extension(ConnectInfo(addr)))),
+            Source::Ip(addr.ip())
+        );
+        assert_eq!(source_of(None), Source::Unknown);
+    }
+
+    /// A client that sends part of a body and then stalls must be cut off with a
+    /// 408 rather than hold the request open, and the handler must never run.
+    #[tokio::test]
+    async fn a_stalled_request_body_is_cut_off_with_408_before_any_handler_runs() {
+        use futures_util::StreamExt as _;
+        let registry = Arc::new(Mutex::new(GatewayRegistry::default()));
+        let router = build_gateway_router_with(
+            registry.clone(),
+            Arc::new(Keyring::new()),
+            Arc::from("hostb.test"),
+            Arc::new(Mutex::new(IngressGuard::new())),
+            None,
+            RouterOptions {
+                body_timeout: std::time::Duration::from_millis(300),
+                ..RouterOptions::default()
+            },
+        );
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let stalled = futures_util::stream::once(async {
+            Ok::<_, std::convert::Infallible>(Bytes::from_static(b"{\"partial\":"))
+        })
+        .chain(futures_util::stream::pending());
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri(inbox_uri(&to))
+            .body(axum::body::Body::from_stream(stalled))
+            .unwrap();
+        let resp = tokio::time::timeout(std::time::Duration::from_secs(5), router.oneshot(req))
+            .await
+            .expect("the stalled body must be cut off, not wait forever")
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::REQUEST_TIMEOUT);
+        assert_eq!(registry.lock().await.names().count(), 0);
+    }
+
+    /// Guardian requirement (2026-11-23): an unauthenticated caller who merely
+    /// CLAIMS a real peer's name must not be able to (a) burn that peer's
+    /// per-sender budget or (b) pre-record a nonce so the real message is later
+    /// rejected as a replay. Both used to happen: rate and replay were charged
+    /// before signature verification, keyed on the unauthenticated `from`.
+    #[tokio::test]
+    async fn junk_claiming_a_peers_name_cannot_burn_its_budget_or_poison_its_nonce() {
+        let real_sk = FampSigningKey::from_bytes([60u8; 32]);
+        let evil_sk = FampSigningKey::from_bytes([61u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let mut keyring = Keyring::new();
+        keyring
+            .pin_tofu(from.clone(), real_sk.verifying_key())
+            .unwrap();
+        let (router, _registry, _broker) =
+            router_with_backed_sender(keyring, "hostb.test", "oscar").await;
+        let poisoned_nonce = "nonce-the-attacker-learned";
+        let ts = || Timestamp(crate::clock::now_canonical_utc());
+
+        // More junk than the per-sender budget allows, all claiming `oscar`.
+        let junk = usize::try_from(crate::ingress_guard::RATE_LIMIT_MAX_PER_WINDOW).unwrap() + 20;
+        for i in 0..junk {
+            let nonce = if i == 0 {
+                poisoned_nonce.to_owned()
+            } else {
+                format!("junk-{i}")
+            };
+            let bytes = ack_bytes_with_ts_and_nonce(&evil_sk, &from, &to, ts(), &nonce);
+            let resp = post_inbox(router.clone(), &to, bytes).await;
+            let v: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap())
+                    .unwrap();
+            assert_eq!(v["error"], "invalid_signature", "junk {i}");
+        }
+
+        // The real, correctly signed message reusing the attacker's nonce still lands.
+        let real = ack_bytes_with_ts_and_nonce(&real_sk, &from, &to, ts(), poisoned_nonce);
+        let resp = post_inbox(router.clone(), &to, real.clone()).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::ACCEPTED,
+            "junk burned the sender's budget or poisoned its nonce"
+        );
+
+        // Control: a genuine replay of the VERIFIED message is still caught.
+        let again = post_inbox(router, &to, real).await;
+        let v: Value =
+            serde_json::from_slice(&to_bytes(again.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(v["error"], "replayed_nonce");
     }
 
     /// Task 2 (17-02, INGR-02): the same signed envelope POSTed twice is

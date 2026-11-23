@@ -360,6 +360,20 @@ impl ReplayCache {
         }
     }
 
+    /// Read-only: has this `(sender, nonce)` been RECORDED within the TTL?
+    ///
+    /// Used before signature verification to turn away a known replay cheaply
+    /// without mutating anything. Recording happens only after verification
+    /// ([`post_verify_gates`]), so unauthenticated traffic can neither poison
+    /// a real peer's nonces nor evict live entries.
+    #[must_use]
+    pub fn contains(&self, sender: &str, nonce: &str, now: OffsetDateTime) -> bool {
+        self.entries
+            .get(sender)
+            .and_then(|inner| inner.get(nonce))
+            .is_some_and(|recorded_at| (now - *recorded_at).whole_seconds() < REPLAY_CACHE_TTL_SECS)
+    }
+
     /// Record a `(sender, nonce)` sighting at `now`, rejecting a replay.
     ///
     /// - An empty `nonce` is rejected with [`GuardReject::MissingNonce`]
@@ -513,6 +527,19 @@ const _: () = assert!(SHIPPED_BOUNDS_OK);
 ///    rate-limit rejects are observed during REACH-04 acceptance, that
 ///    should be investigated as this exact risk materializing BEFORE the
 ///    threshold is loosened, not treated as a simple false-positive bug.
+///
+/// **SUPERSEDED 2026-11-23 for points 2 and 3 (personal-network release):**
+/// this limiter now runs AFTER signature verification
+/// ([`post_verify_gates`]), keyed on the VERIFIED sender, so the T-17-15
+/// budget-burning risk no longer exists. Pre-verify traffic is instead
+/// charged to its SOURCE ([`SourceLimiter`]). D-10 rejected the source IP as
+/// "attacker-rotatable and NAT-shared"; that reasoning targeted a relay on
+/// the open internet. For a gateway reachable only from a firewalled tailnet
+/// of one operator's computers, source addresses are stable and not
+/// rotatable, so a generous per-source budget is an acceptable pre-verify
+/// guard, bounded in memory, and it keeps D-09 (rate checks precede the
+/// expensive verify) intact. Do NOT restore the pre-verify per-name budget
+/// without re-reading this: it let any caller burn a real peer's allowance.
 pub struct RateLimiter {
     buckets: std::collections::HashMap<String, (OffsetDateTime, u32)>,
 }
@@ -563,6 +590,113 @@ impl Default for RateLimiter {
     }
 }
 
+/// Where a request arrived from, for the pre-verify budget.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// A direct HTTPS client, by connection address.
+    Ip(std::net::IpAddr),
+    /// The relay-fetch loop: unauthenticated enqueue upstream, one shared bucket.
+    Relay,
+    /// No connection address was available (never in production serving).
+    Unknown,
+}
+
+impl Source {
+    /// Bucket key. IPv6 is grouped by /64, IPv4-mapped IPv6 is unmapped.
+    fn key(&self) -> String {
+        match self {
+            Self::Ip(std::net::IpAddr::V4(v4)) => v4.to_string(),
+            Self::Ip(std::net::IpAddr::V6(v6)) => v6.to_ipv4_mapped().map_or_else(
+                || {
+                    let s = v6.segments();
+                    format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
+                },
+                |v4| v4.to_string(),
+            ),
+            Self::Relay => "relay".to_owned(),
+            Self::Unknown => "unknown".to_owned(),
+        }
+    }
+}
+
+/// Per-source requests allowed per [`RATE_LIMIT_WINDOW_SECS`] before verification.
+///
+/// Generous: one pinned peer sends well under the per-sender
+/// [`RATE_LIMIT_MAX_PER_WINDOW`], so a legitimate peer never hits it.
+pub const SOURCE_RATE_MAX_PER_WINDOW: u32 = 300;
+
+/// Hard cap on tracked sources; past it the oldest bucket is evicted, so the
+/// table cannot grow without bound and a flood cannot lock out new peers.
+pub const SOURCE_TABLE_MAX: usize = 4096;
+
+/// Pre-verify budget keyed by [`Source`]. See [`RateLimiter`]'s supersession
+/// note for why this replaces the per-claimed-name budget before verification.
+pub struct SourceLimiter {
+    buckets: std::collections::HashMap<String, (OffsetDateTime, u32)>,
+}
+
+impl SourceLimiter {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            buckets: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn admit(&mut self, source: &Source, now: OffsetDateTime) -> Result<(), GuardReject> {
+        // The relay-fetch loop is NOT charged here. Relay enqueue is
+        // unauthenticated, so one shared bucket would let 300 junk envelopes a
+        // minute starve every real relayed message, and a destructive drain after
+        // downtime would lose any backlog over the budget. That path is already
+        // bounded by the fetch loop's own poll interval and batch size, and every
+        // envelope still pays the per-VERIFIED-sender budget afterwards.
+        if matches!(source, Source::Relay) {
+            return Ok(());
+        }
+        let key = source.key();
+        if !self.buckets.contains_key(&key) && self.buckets.len() >= SOURCE_TABLE_MAX {
+            self.buckets
+                .retain(|_, (start, _)| (now - *start).whole_seconds() < RATE_LIMIT_WINDOW_SECS);
+            if self.buckets.len() >= SOURCE_TABLE_MAX {
+                if let Some(oldest) = self
+                    .buckets
+                    .iter()
+                    .min_by(|a, b| a.1 .0.cmp(&b.1 .0).then_with(|| a.0.cmp(b.0)))
+                    .map(|(k, _)| k.clone())
+                {
+                    self.buckets.remove(&oldest);
+                }
+            }
+        }
+        let bucket = self.buckets.entry(key.clone()).or_insert((now, 0_u32));
+        if (now - bucket.0).whole_seconds() >= RATE_LIMIT_WINDOW_SECS {
+            *bucket = (now, 1);
+            return Ok(());
+        }
+        if bucket.1 < SOURCE_RATE_MAX_PER_WINDOW {
+            bucket.1 += 1;
+            Ok(())
+        } else {
+            Err(GuardReject::RateLimited {
+                principal: format!("source {key}"),
+                limit: SOURCE_RATE_MAX_PER_WINDOW,
+                window_secs: RATE_LIMIT_WINDOW_SECS,
+            })
+        }
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.buckets.len()
+    }
+}
+
+impl Default for SourceLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Process-lifetime pre-verify guard state.
 ///
 /// `started_at` is the anchor for INGR-03's restart-reopened replay-window
@@ -574,6 +708,7 @@ pub struct IngressGuard {
     started_at: OffsetDateTime,
     replay: ReplayCache,
     rate: RateLimiter,
+    source: SourceLimiter,
 }
 
 impl IngressGuard {
@@ -585,6 +720,7 @@ impl IngressGuard {
             started_at: OffsetDateTime::now_utc(),
             replay: ReplayCache::new(),
             rate: RateLimiter::new(),
+            source: SourceLimiter::new(),
         }
     }
 
@@ -653,30 +789,19 @@ pub fn audience_check(input: &GuardInput<'_>) -> Result<(), GuardReject> {
 
 /// The single ordered call site every cheap gate is added to.
 ///
-/// Final order (this plan completes it): [`audience_check`], then
-/// [`freshness_check`], then the replay check ([`ReplayCache::record`] on
-/// `guard.replay`), then the rate limit ([`RateLimiter::admit`] on
-/// `guard.rate`) — matching the order 17-CONTEXT.md's D-08/D-05/D-06/D-10
-/// discuss them. Returns on the FIRST reject; later gates never run once
-/// an earlier one has failed (INGR-05: cheap-before-expensive applies
+/// Final order: [`audience_check`], then [`freshness_check`], then the nonce
+/// must be present and must not already be RECORDED (a read-only
+/// [`ReplayCache::contains`]). Returns on the FIRST reject; later gates never
+/// run once an earlier one has failed (INGR-05: cheap-before-expensive applies
 /// within this chain too, not just relative to signature verification).
 ///
-/// **Rate limiting runs LAST among the cheap gates on purpose.** An
-/// envelope that is foreign-domain, from an unbacked sender, stale, or a
-/// replay should be rejected for THAT reason rather than consuming a
-/// rate-limit slot — only traffic that is otherwise admissible should
-/// count against a peer's budget. Placing the rate check first would let
-/// a flood of malformed/foreign/stale junk exhaust a legitimate peer's
-/// budget before any of those cheaper, more specific rejects even had a
-/// chance to fire.
-///
-/// Replay and rate-limit both key on the PEEKED sender name
-/// (`input.peeked.from`), not a verified identity — consistent with every
-/// other gate in this chain running before `verify_inbound_any` ever
-/// confirms a signature. By the time either gate runs, [`audience_check`]
-/// has already confirmed the peeked sender is backed (see
-/// [`RateLimiter`]'s doc comment for why that ordering is exactly what
-/// makes the rate-limit key non-attacker-mintable).
+/// **Nothing here mutates replay or per-sender rate state.** Those are charged
+/// by [`post_verify_gates`], after the signature has proven who the sender is,
+/// because every field this chain reads is PEEKED and unauthenticated: a
+/// caller who merely claims a real peer's name must not be able to consume
+/// that peer's allowance or poison its nonces. The only pre-verify budget is
+/// per SOURCE ([`admit_source`]), charged before the body is even parsed. See
+/// [`RateLimiter`]'s supersession note for how this reconciles D-09/D-10.
 pub fn run_cheap_gates(
     input: &GuardInput<'_>,
     guard: &mut IngressGuard,
@@ -696,11 +821,45 @@ pub fn run_cheap_gates(
     let parsed_now =
         OffsetDateTime::parse(input.now, &Rfc3339).map_err(|_| GuardReject::BadEnvelopeShape)?;
 
-    guard
+    if guard
         .replay
-        .record(input.peeked.from.name(), nonce, parsed_now)?;
+        .contains(input.peeked.from.name(), nonce, parsed_now)
+    {
+        return Err(GuardReject::ReplayedNonce {
+            principal: input.peeked.from.name().to_string(),
+            nonce: nonce.to_string(),
+        });
+    }
+    Ok(())
+}
 
-    guard.rate.admit(input.peeked.from.name(), parsed_now)
+/// Charge `source` one request, BEFORE the body is parsed or anything else is
+/// read. This is the only pre-verification budget.
+pub fn admit_source(
+    guard: &mut IngressGuard,
+    source: &Source,
+    now: &str,
+) -> Result<(), GuardReject> {
+    let parsed_now =
+        OffsetDateTime::parse(now, &Rfc3339).map_err(|_| GuardReject::BadEnvelopeShape)?;
+    guard.source.admit(source, parsed_now)
+}
+
+/// Gates that mutate state, run ONLY after the signature verified.
+///
+/// `sender` is then the authenticated name: the per-sender rate budget, then the
+/// atomic replay record. Rate precedes record so a rate-limited request does not
+/// consume its nonce. A replay detected here is rejected before delivery.
+pub fn post_verify_gates(
+    guard: &mut IngressGuard,
+    sender: &str,
+    nonce: &str,
+    now: &str,
+) -> Result<(), GuardReject> {
+    let parsed_now =
+        OffsetDateTime::parse(now, &Rfc3339).map_err(|_| GuardReject::BadEnvelopeShape)?;
+    guard.rate.admit(sender, parsed_now)?;
+    guard.replay.record(sender, nonce, parsed_now)
 }
 
 #[cfg(test)]
@@ -1168,6 +1327,44 @@ mod tests {
             ),
             "the request one past RATE_LIMIT_MAX_PER_WINDOW must be rejected"
         );
+    }
+
+    #[test]
+    fn source_limiter_is_per_source_bounded_and_groups_ipv6_by_64() {
+        use std::net::{IpAddr, Ipv6Addr};
+        let now = OffsetDateTime::now_utc();
+        let mut limiter = SourceLimiter::new();
+        let a = Source::Ip(IpAddr::from([100, 64, 0, 1]));
+        let b = Source::Ip(IpAddr::from([100, 64, 0, 2]));
+        for _ in 0..SOURCE_RATE_MAX_PER_WINDOW {
+            assert!(limiter.admit(&a, now).is_ok());
+        }
+        assert!(
+            limiter.admit(&a, now).is_err(),
+            "source A exhausted its budget"
+        );
+        assert!(
+            limiter.admit(&b, now).is_ok(),
+            "source B is unaffected by A"
+        );
+        // Addresses in one IPv6 /64 share a bucket; a different /64 does not.
+        let v6 = |last: u16, net: u16| {
+            Source::Ip(IpAddr::V6(Ipv6Addr::new(
+                0xfd7a, 0x115c, 0xa1e0, net, 0, 0, 0, last,
+            )))
+        };
+        assert_eq!(v6(1, 7).key(), v6(2, 7).key());
+        assert_ne!(v6(1, 7).key(), v6(1, 8).key());
+        // The table cannot grow past its cap, and a flood cannot lock out a new source.
+        for i in 0..(SOURCE_TABLE_MAX + 50) {
+            let n = u32::try_from(i).unwrap();
+            let ip = IpAddr::from([10, (n >> 16) as u8, (n >> 8) as u8, n as u8]);
+            limiter.admit(&Source::Ip(ip), now).unwrap();
+        }
+        assert!(limiter.len() <= SOURCE_TABLE_MAX);
+        assert!(limiter
+            .admit(&Source::Ip(IpAddr::from([100, 64, 9, 9])), now)
+            .is_ok());
     }
 
     #[test]

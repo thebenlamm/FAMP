@@ -98,6 +98,11 @@ use assert_cmd as _;
 use famp_inspect_proto as _;
 #[cfg(test)]
 use tempfile as _;
+// `http_body_util` is used by the lib (body-limit error detection), not this bin.
+use http_body_util as _;
+// `futures_util` is a dev-dependency used only by the lib's unit tests.
+#[cfg(test)]
+use futures_util as _;
 
 // Silencer: `clap`/`rand` (Phase 18, 18-01-PLAN.md Task 2) are
 // dev-dependencies used exclusively by `tests/pairing_e2e.rs`, a separate
@@ -135,6 +140,15 @@ struct GatewayArgs {
     /// fallback instead.
     backs: Vec<Principal>,
     trust_cert: Option<PathBuf>,
+    /// `--pinned-only`: the outbound HTTPS client trusts ONLY the certificate(s)
+    /// in `--trust-cert` (no OS roots), and accepts a server only if it presents
+    /// exactly a pinned certificate. Off by default (v1.0 behavior: OS roots plus
+    /// `--trust-cert`); `famp network serve` always sets it. Requires
+    /// `--trust-cert`; refused with `--relay-fetch`, whose relays use public CAs.
+    pinned_only: bool,
+    /// `--recipient-allowlist <path>` (W0): deliver only to recipient names listed
+    /// in this file (default deny, read on every delivery). Absent = v1.0 behavior.
+    recipient_allowlist: Option<PathBuf>,
     /// D-26/17-CONTEXT.md: plan 05's signed-fetch relay-polling URL.
     /// Parsed here (a related CLI surface addition, unrelated to the
     /// own-domain fatality change below) because it's a natural sibling
@@ -214,7 +228,34 @@ fn parse_backs_flag(raw: &str, backs: &mut Vec<Principal>) -> Result<(), String>
 /// guards: this string names every real flag and none that don't exist.
 const USAGE: &str = "usage: famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
      --tls-key <path> [--peer <domain>=<url>]... [--backs agent:<domain>/<name>]... \
-     [--trust-cert <path>] [--relay-fetch <url>] [--pairing-store <path>] <principal-name>...";
+     [--trust-cert <path>] [--pinned-only] [--relay-fetch <url>] [--pairing-store <path>] \
+     [--recipient-allowlist <path>] <principal-name>...";
+
+/// The value after a path-taking flag, or a usage error.
+fn path_arg(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf, String> {
+    args.next()
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("{flag} requires a path argument"))
+}
+
+/// `--pinned-only` needs certificates to pin and cannot be combined with
+/// `--relay-fetch`. Extracted from `parse_args` solely to satisfy
+/// `clippy::too_many_lines`.
+fn check_pinned_only(
+    pinned_only: bool,
+    trust_cert: Option<&PathBuf>,
+    relay_fetch: Option<&Url>,
+) -> Result<(), String> {
+    if pinned_only && trust_cert.is_none() {
+        return Err(
+            "--pinned-only requires --trust-cert <path> (the certificates to pin)".to_owned(),
+        );
+    }
+    if pinned_only && relay_fetch.is_some() {
+        return Err("--pinned-only cannot be combined with --relay-fetch: relays serve publicly trusted certificates".to_owned());
+    }
+    Ok(())
+}
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, String> {
     let _bin = args.next();
@@ -228,6 +269,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     let mut trust_cert: Option<PathBuf> = None;
     let mut relay_fetch: Option<Url> = None;
     let mut pairing_store: Option<PathBuf> = None;
+    let mut pinned_only = false;
+    let mut recipient_allowlist: Option<PathBuf> = None;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -268,6 +311,10 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
                 let path = args.next().ok_or("--trust-cert requires a path argument")?;
                 trust_cert = Some(PathBuf::from(path));
             }
+            "--pinned-only" => pinned_only = true,
+            "--recipient-allowlist" => {
+                recipient_allowlist = Some(path_arg(&mut args, "--recipient-allowlist")?);
+            }
             "--relay-fetch" => {
                 let raw = args.next().ok_or("--relay-fetch requires a url argument")?;
                 let url = Url::parse(&raw)
@@ -304,6 +351,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     let tls_cert = tls_cert.ok_or("--tls-cert <path> is required")?;
     let tls_key = tls_key.ok_or("--tls-key <path> is required")?;
     let sock = sock.unwrap_or_else(famp::bus_client::resolve_sock_path);
+    check_pinned_only(pinned_only, trust_cert.as_ref(), relay_fetch.as_ref())?;
 
     Ok(GatewayArgs {
         sock,
@@ -314,6 +362,8 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
         peers,
         backs,
         trust_cert,
+        pinned_only,
+        recipient_allowlist,
         relay_fetch,
         pairing_store,
     })
@@ -484,7 +534,9 @@ async fn run_relay_fetch_branch(
         Arc::clone(keyring),
         Arc::clone(ingress_own_domain),
         Arc::clone(ingress_guard),
-    );
+    )
+    // The relay path is a second way in; it must honor the same W0 allowlist.
+    .with_recipient_allowlist(args.recipient_allowlist.clone());
     famp_gateway::relay_fetch::run_relay_fetch(
         relay_url,
         own_domain.to_owned(),
@@ -493,6 +545,23 @@ async fn run_relay_fetch_branch(
         state,
     )
     .await;
+}
+
+/// Build the outbound HTTPS client; exits the process on failure like every
+/// other startup step. Extracted from `main` solely to satisfy
+/// `clippy::too_many_lines`.
+fn build_transport(args: &GatewayArgs) -> Arc<HttpTransport> {
+    let transport = match (args.pinned_only, args.trust_cert.as_deref()) {
+        (true, Some(pinned)) => HttpTransport::new_client_only_pinned(pinned),
+        _ => HttpTransport::new_client_only(args.trust_cert.as_deref()),
+    };
+    match transport {
+        Ok(t) => Arc::new(t),
+        Err(e) => {
+            eprintln!("famp-gateway: failed to build outbound HTTPS client: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Build the 18-01 (PAIR-01, Task 1 Option A) cross-person pairing
@@ -583,13 +652,7 @@ async fn main() {
         }
     };
 
-    let transport = match HttpTransport::new_client_only(args.trust_cert.as_deref()) {
-        Ok(t) => Arc::new(t),
-        Err(e) => {
-            eprintln!("famp-gateway: failed to build outbound HTTPS client: {e}");
-            std::process::exit(1);
-        }
-    };
+    let transport = build_transport(&args);
 
     build_route_map(&args, &backed_names, &transport).await;
 
@@ -656,7 +719,7 @@ async fn main() {
     );
 
     tokio::select! {
-        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), Arc::clone(&ingress_own_domain), Arc::clone(&ingress_guard), Some(pairing_router)) => {
+        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), Arc::clone(&ingress_own_domain), Arc::clone(&ingress_guard), Some(pairing_router), args.recipient_allowlist.clone()) => {
             if let Err(e) = result {
                 eprintln!("famp-gateway: ingress server exited: {e}");
             }
@@ -738,6 +801,42 @@ mod tests {
         ]))
         .expect("repeated --peer must parse");
         assert_eq!(parsed.peers.len(), 2);
+    }
+
+    #[test]
+    fn pinned_only_parses_and_needs_a_cert_to_pin() {
+        let base = [
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+        ];
+        let with = |extra: &[&str]| {
+            let mut v: Vec<&str> = base.to_vec();
+            v.extend_from_slice(extra);
+            v.push("alice");
+            parse_args(args(&v))
+        };
+        let ok = with(&["--trust-cert", "/tmp/p.pem", "--pinned-only"]).unwrap();
+        assert!(ok.pinned_only);
+        assert!(!with(&["--trust-cert", "/tmp/p.pem"]).unwrap().pinned_only);
+        assert!(
+            with(&["--pinned-only"])
+                .unwrap_err()
+                .contains("requires --trust-cert"),
+            "nothing to pin must be an error, never a silent OS-roots fallback"
+        );
+        assert!(with(&[
+            "--trust-cert",
+            "/tmp/p.pem",
+            "--pinned-only",
+            "--relay-fetch",
+            "https://relay.example",
+        ])
+        .unwrap_err()
+        .contains("--relay-fetch"));
     }
 
     #[test]

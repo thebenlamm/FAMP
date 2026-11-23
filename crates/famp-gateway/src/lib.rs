@@ -60,6 +60,7 @@ pub mod ingress;
 pub mod ingress_guard;
 pub mod pairing_ingress;
 pub mod principal;
+pub mod recipient_allowlist;
 pub mod registry;
 pub mod relay_fetch;
 pub mod verify;

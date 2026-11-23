@@ -673,6 +673,51 @@ mod tests {
         value
     }
 
+    /// The Ed25519 signature must cover `nonce`, `ts`, `expiry` and the
+    /// federation domains, not just the body: replay protection is only as
+    /// good as that coverage. Control: the untouched bytes verify, so each
+    /// rejection below is caused by the one field it changed.
+    #[test]
+    fn signature_covers_nonce_ts_expiry_and_domains() {
+        let sk = FampSigningKey::from_bytes([21u8; 32]);
+        let vk = sk.verifying_key();
+        let from: Principal = "agent:hosta.test/alice".parse().unwrap();
+        let to: Principal = "agent:hostb.test/bob".parse().unwrap();
+        let mut value = plain_request_value(&from, &to);
+        sign_federation_fields(&mut value, &from, &to, &sk, &vk).unwrap();
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), vk).unwrap();
+        let now = "2026-07-27T00:00:00Z";
+
+        let signed = serde_json::to_vec(&value).unwrap();
+        assert!(
+            verify_inbound_any(&signed, &keyring, now).is_ok(),
+            "control: untouched bytes must verify"
+        );
+
+        for (field, replacement) in [
+            ("nonce", "tampered-nonce"),
+            ("ts", "2026-07-23T00:00:01Z"),
+            ("expiry", "2099-01-01T00:00:00Z"),
+            ("to_domain", "evil.test"),
+            ("from_domain", "evil.test"),
+        ] {
+            let mut tampered: Value = serde_json::from_slice(&signed).unwrap();
+            assert!(
+                tampered.get(field).is_some(),
+                "{field} must be present in the signed envelope"
+            );
+            assert_ne!(tampered[field], Value::String(replacement.to_string()));
+            tampered[field] = Value::String(replacement.to_string());
+            let bytes = serde_json::to_vec(&tampered).unwrap();
+            let result = verify_inbound_any(&bytes, &keyring, now);
+            assert!(
+                matches!(result, Err(RejectReason::InvalidSignature)),
+                "tampering {field} must fail verification, got {result:?}"
+            );
+        }
+    }
+
     #[test]
     fn sign_federation_fields_round_trips_and_preserves_content() {
         let sk = FampSigningKey::from_bytes([20u8; 32]);
