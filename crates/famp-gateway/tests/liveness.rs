@@ -143,6 +143,8 @@ fn spawn_gateway_subprocess(sock: &Path, home: &Path, names: &[&str]) -> ChildGu
             .arg(fixtures.join("alice.crt"))
             .arg("--tls-key")
             .arg(fixtures.join("alice.key"))
+            .arg("--recipient-allowlist")
+            .arg(home.join("recipients.json"))
             .env("FAMP_HOME", home)
             // 17-03/D-30: own-domain is now REQUIRED (own-domain-unset is
             // UNCONDITIONALLY startup-fatal) -- this test needs the

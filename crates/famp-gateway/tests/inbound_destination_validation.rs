@@ -54,7 +54,7 @@ use famp::bus_client::BusClient;
 use famp::{AuthorityScope, FampSigningKey, MessageId, Principal, Timestamp, UnsignedEnvelope};
 use famp_bus::{BusMessage, BusReply, Origin};
 use famp_envelope::body::ack::{AckBody, AckDisposition};
-use famp_gateway::ingress::build_gateway_router;
+use famp_gateway::ingress::{build_gateway_router_with, RouterOptions};
 use famp_gateway::ingress_guard::IngressGuard;
 use famp_gateway::GatewayRegistry;
 use famp_keyring::Keyring;
@@ -242,12 +242,28 @@ async fn build_harness(own_domain: &str, sk: &FampSigningKey) -> Harness {
     let mut keyring = Keyring::new();
     keyring.pin_tofu(alice, sk.verifying_key()).unwrap();
 
-    let router = build_gateway_router(
+    // A real recipient allowlist (default deny): these tests deliver to alice, bob, carol.
+    let allow_dir = tempfile::TempDir::new().unwrap().keep();
+    let allowlist = allow_dir.join("recipients.json");
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::write(
+            &allowlist,
+            r#"{"version":1,"names":["alice","bob","carol"]}"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&allowlist, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let router = build_gateway_router_with(
         Arc::new(Mutex::new(registry)),
         Arc::new(keyring),
         Arc::from(own_domain),
         Arc::new(Mutex::new(IngressGuard::new())),
         None,
+        RouterOptions {
+            recipient_allowlist: Some(allowlist),
+            ..RouterOptions::default()
+        },
     );
 
     Harness {

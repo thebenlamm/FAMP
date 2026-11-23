@@ -660,7 +660,8 @@ mod tests {
             Arc::new(keyring),
             Arc::from(own_domain),
             Arc::new(Mutex::new(IngressGuard::new())),
-        );
+        )
+        .with_recipient_allowlist(Some(crate::recipient_allowlist::test_allowlist()));
         (state, broker)
     }
 

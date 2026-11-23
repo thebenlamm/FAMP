@@ -148,7 +148,7 @@ struct GatewayArgs {
     pinned_only: bool,
     /// `--recipient-allowlist <path>` (W0): deliver only to recipient names listed
     /// in this file (default deny, read on every delivery). Absent = v1.0 behavior.
-    recipient_allowlist: Option<PathBuf>,
+    recipient_allowlist: PathBuf,
     /// D-26/17-CONTEXT.md: plan 05's signed-fetch relay-polling URL.
     /// Parsed here (a related CLI surface addition, unrelated to the
     /// own-domain fatality change below) because it's a natural sibling
@@ -229,7 +229,7 @@ fn parse_backs_flag(raw: &str, backs: &mut Vec<Principal>) -> Result<(), String>
 const USAGE: &str = "usage: famp-gateway [--socket <path>] --listen <addr> --tls-cert <path> \
      --tls-key <path> [--peer <domain>=<url>]... [--backs agent:<domain>/<name>]... \
      [--trust-cert <path>] [--pinned-only] [--relay-fetch <url>] [--pairing-store <path>] \
-     [--recipient-allowlist <path>] <principal-name>...";
+     --recipient-allowlist <path> <principal-name>...";
 
 /// The value after a path-taking flag, or a usage error.
 fn path_arg(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf, String> {
@@ -255,6 +255,16 @@ fn check_pinned_only(
         return Err("--pinned-only cannot be combined with --relay-fetch: relays serve publicly trusted certificates".to_owned());
     }
     Ok(())
+}
+
+/// Fail closed, startup-fatal (same precedent as own-domain, 17-03/D-30): a gateway
+/// with no recipient allowlist would deliver to ANY name a verified peer addresses.
+/// There is no flag to disable the check. Extracted from `parse_args` solely to
+/// satisfy `clippy::too_many_lines`.
+fn require_allowlist(path: Option<PathBuf>) -> Result<PathBuf, String> {
+    path.ok_or_else(|| {
+        "--recipient-allowlist <path> is required: the gateway delivers only to the names listed in that file (see docs/NETWORK-LIMITS.md)".to_owned()
+    })
 }
 
 fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, String> {
@@ -352,6 +362,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<GatewayArgs, Str
     let tls_key = tls_key.ok_or("--tls-key <path> is required")?;
     let sock = sock.unwrap_or_else(famp::bus_client::resolve_sock_path);
     check_pinned_only(pinned_only, trust_cert.as_ref(), relay_fetch.as_ref())?;
+    let recipient_allowlist = require_allowlist(recipient_allowlist)?;
 
     Ok(GatewayArgs {
         sock,
@@ -536,7 +547,7 @@ async fn run_relay_fetch_branch(
         Arc::clone(ingress_guard),
     )
     // The relay path is a second way in; it must honor the same W0 allowlist.
-    .with_recipient_allowlist(args.recipient_allowlist.clone());
+    .with_recipient_allowlist(Some(args.recipient_allowlist.clone()));
     famp_gateway::relay_fetch::run_relay_fetch(
         relay_url,
         own_domain.to_owned(),
@@ -719,7 +730,7 @@ async fn main() {
     );
 
     tokio::select! {
-        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), Arc::clone(&ingress_own_domain), Arc::clone(&ingress_guard), Some(pairing_router), args.recipient_allowlist.clone()) => {
+        result = run_ingress(args.listen, &args.tls_cert, &args.tls_key, Arc::clone(&registry), Arc::clone(&keyring), Arc::clone(&ingress_own_domain), Arc::clone(&ingress_guard), Some(pairing_router), Some(args.recipient_allowlist.clone())) => {
             if let Err(e) = result {
                 eprintln!("famp-gateway: ingress server exited: {e}");
             }
@@ -743,7 +754,22 @@ async fn main() {
 mod tests {
     use super::*;
 
+    /// Test argv with the mandatory `--recipient-allowlist` supplied unless the test
+    /// passes its own (or uses `args_without_allowlist`).
     fn args<'a>(v: &'a [&'a str]) -> impl Iterator<Item = String> + 'a {
+        let has = v.contains(&"--recipient-allowlist");
+        std::iter::once("famp-gateway".to_owned())
+            .chain(
+                (!has)
+                    .then_some(["--recipient-allowlist", "/tmp/r.json"])
+                    .into_iter()
+                    .flatten()
+                    .map(str::to_owned),
+            )
+            .chain(v.iter().map(|s| (*s).to_owned()))
+    }
+
+    fn args_without_allowlist<'a>(v: &'a [&'a str]) -> impl Iterator<Item = String> + 'a {
         std::iter::once("famp-gateway".to_owned()).chain(v.iter().map(|s| (*s).to_owned()))
     }
 
@@ -801,6 +827,31 @@ mod tests {
         ]))
         .expect("repeated --peer must parse");
         assert_eq!(parsed.peers.len(), 2);
+    }
+
+    #[test]
+    fn the_recipient_allowlist_is_mandatory_and_there_is_no_way_to_switch_it_off() {
+        let argv = [
+            "--listen",
+            "127.0.0.1:8443",
+            "--tls-cert",
+            "/tmp/cert.pem",
+            "--tls-key",
+            "/tmp/key.pem",
+            "alice",
+        ];
+        let err = parse_args(args_without_allowlist(&argv)).unwrap_err();
+        assert!(err.contains("--recipient-allowlist"), "{err}");
+        // A path-less flag is a usage error too, never an implicit "allow everything".
+        let mut dangling = argv.to_vec();
+        dangling.insert(0, "--recipient-allowlist");
+        assert!(parse_args(args_without_allowlist(&dangling)).is_err());
+        let ok = parse_args(args(&argv)).unwrap();
+        assert_eq!(ok.recipient_allowlist, PathBuf::from("/tmp/r.json"));
+        assert!(
+            !USAGE.contains("allow-any"),
+            "there must be no flag that disables the check"
+        );
     }
 
     #[test]

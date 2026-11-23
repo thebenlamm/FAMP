@@ -169,6 +169,8 @@ fn spawn_gateway_with_args(side: &Side, own_domain: &str, args: &[String]) -> Ch
     ChildGuard::new(
         Command::cargo_bin("famp-gateway")
             .unwrap()
+            .arg("--recipient-allowlist")
+            .arg(gateway_harness::allowlist_file(side.home()))
             .args(args)
             .env("FAMP_HOME", side.home())
             .env("FAMP_OWN_DOMAIN", own_domain)

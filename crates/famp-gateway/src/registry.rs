@@ -17,9 +17,24 @@ use crate::principal::ProxiedPrincipal;
 #[derive(Default)]
 pub struct GatewayRegistry {
     principals: HashMap<String, ProxiedPrincipal>,
+    /// Test-only: pretend the local bus is slow by sleeping, lock held, before each
+    /// delivery's bus round trip. Compiled out of every non-test build.
+    #[cfg(test)]
+    test_delivery_delay: Option<std::time::Duration>,
 }
 
 impl GatewayRegistry {
+    /// Test-only: see `test_delivery_delay`.
+    #[cfg(test)]
+    pub(crate) const fn set_test_delivery_delay(&mut self, delay: Option<std::time::Duration>) {
+        self.test_delivery_delay = delay;
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn test_delivery_delay(&self) -> Option<std::time::Duration> {
+        self.test_delivery_delay
+    }
+
     /// Register `name` on the broker at `sock` and back it with a new
     /// `ProxiedPrincipal`. Rejects an already-backed name with
     /// `GatewayError::DuplicatePrincipal` rather than silently replacing

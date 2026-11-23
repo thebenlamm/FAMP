@@ -601,4 +601,138 @@ mod tests {
         .await
         .unwrap();
     }
+
+    /// A throwaway certificate for `sans` (e.g. `IP:127.0.0.1,IP:127.0.0.2`), CA:FALSE.
+    fn cert_with_sans(
+        dir: &std::path::Path,
+        sans: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        let (crt, key) = (dir.join("s.pem"), dir.join("s.key"));
+        let out = std::process::Command::new("openssl")
+            .args([
+                "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2",
+            ])
+            .args(["-subj", "/CN=sans"])
+            .args(["-addext", &format!("subjectAltName={sans}")])
+            .args(["-addext", "basicConstraints=critical,CA:FALSE"])
+            .args(["-addext", "extendedKeyUsage=serverAuth"])
+            .arg("-keyout")
+            .arg(&key)
+            .arg("-out")
+            .arg(&crt)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        (crt, key)
+    }
+
+    /// Dial `addr` but verify the server as if it were `as_name` (what a client does
+    /// when it believes it is talking to a different peer).
+    fn handshake_as(
+        addr: SocketAddr,
+        as_name: std::net::IpAddr,
+        tls: rustls::ClientConfig,
+    ) -> bool {
+        let name = ServerName::IpAddress(as_name.into());
+        let mut conn = rustls::ClientConnection::new(Arc::new(tls), name).unwrap();
+        let mut sock = std::net::TcpStream::connect(addr).unwrap();
+        sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        while conn.is_handshaking() {
+            if conn.complete_io(&mut sock).is_err() {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Peer A's certificate presented on peer B's address must be rejected, even when
+    /// A's certificate is pinned and ALSO lists B's address: a pinned certificate is
+    /// good for exactly the one IP it declares.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_pinned_certificate_is_valid_only_for_its_own_single_address() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = |n: &str| {
+            let d = dir.path().join(n);
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        };
+        let (plain, plain_key) = cert_with_sans(&sub("plain"), "IP:127.0.0.1");
+        let (greedy, greedy_key) = cert_with_sans(&sub("greedy"), "IP:127.0.0.1,IP:127.0.0.2");
+        let addr_plain = serve_cert(&plain, &plain_key);
+        let addr_greedy = serve_cert(&greedy, &greedy_key);
+        let a: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+        let b: std::net::IpAddr = "127.0.0.2".parse().unwrap();
+        tokio::task::spawn_blocking(move || {
+            use crate::tls::{build_client_config, build_pinned_client_config};
+            // Control: A's single-address certificate works on A's own address...
+            assert!(handshake_as(
+                addr_plain,
+                a,
+                build_pinned_client_config(&plain).unwrap()
+            ));
+            // ...and is rejected when presented on B's address.
+            assert!(!handshake_as(
+                addr_plain,
+                b,
+                build_pinned_client_config(&plain).unwrap()
+            ));
+            // A certificate that lists B's address too is rejected on B's address, and
+            // also on its own (it declares more than one address)...
+            assert!(!handshake_as(
+                addr_greedy,
+                b,
+                build_pinned_client_config(&greedy).unwrap()
+            ));
+            assert!(!handshake_as(
+                addr_greedy,
+                a,
+                build_pinned_client_config(&greedy).unwrap()
+            ));
+            // ...although the unrestricted client would have accepted it on B's address
+            // (this is what a flat pin plus webpki alone allowed).
+            assert!(handshake_as(
+                addr_greedy,
+                b,
+                build_client_config(Some(&greedy)).unwrap()
+            ));
+        })
+        .await
+        .unwrap();
+    }
+
+    /// A pinned-only client must never send to a plain `http://` peer: the URL would
+    /// bypass the pinned verifier entirely and the message would travel in clear.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_pinned_client_never_dials_a_plain_http_peer() {
+        use famp_transport::{Transport, TransportMessage};
+        let dir = tempfile::tempdir().unwrap();
+        let (_cfg, crt) = test_server_config(dir.path());
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = url::Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let from: famp_core::Principal = "agent:a.test/alice".parse().unwrap();
+        let to: famp_core::Principal = "agent:b.test/bob".parse().unwrap();
+        let msg = || TransportMessage {
+            sender: from.clone(),
+            recipient: to.clone(),
+            bytes: b"{}".to_vec(),
+        };
+
+        let pinned = crate::transport::HttpTransport::new_client_only_pinned(&crt).unwrap();
+        pinned.add_peer(to.clone(), url.clone()).await;
+        assert!(pinned.send(msg()).await.is_err());
+        assert!(
+            matches!(listener.accept(), Err(e) if e.kind() == io::ErrorKind::WouldBlock),
+            "the pinned client must not even connect to a plain http peer"
+        );
+
+        // Control: the unrestricted client DOES dial it, so the check above can fail.
+        let open = crate::transport::HttpTransport::new_client_only(None).unwrap();
+        open.add_peer(to.clone(), url).await;
+        let _ = tokio::time::timeout(Duration::from_millis(500), open.send(msg())).await;
+        assert!(
+            listener.accept().is_ok(),
+            "control: the open client connects"
+        );
+    }
 }

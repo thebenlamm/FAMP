@@ -133,6 +133,26 @@ impl ServerCertVerifier for PinnedVerifier {
                 CertificateError::ApplicationVerificationFailure,
             ));
         }
+        // Exact SAN, checked HERE, at the point of use, whoever built the trust file:
+        // a pinned certificate is valid only for the single IP it lists. Otherwise a
+        // pinned peer holding a certificate that also lists another peer's address
+        // would be accepted on that other peer's address, because every pinned
+        // certificate is in the root store. Pinned-only therefore needs peers
+        // addressed by IP; a DNS-named endpoint fails closed.
+        let ServerName::IpAddress(ip) = server_name else {
+            return Err(rustls::Error::InvalidCertificate(
+                CertificateError::ApplicationVerificationFailure,
+            ));
+        };
+        let wanted = std::net::IpAddr::from(*ip);
+        match crate::cert_facts::facts_der(end_entity.as_ref()) {
+            Ok(facts) if facts.ips == [wanted] && facts.other_names == 0 => {}
+            _ => {
+                return Err(rustls::Error::InvalidCertificate(
+                    CertificateError::ApplicationVerificationFailure,
+                ))
+            }
+        }
         self.inner
             .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
     }
@@ -166,7 +186,8 @@ impl ServerCertVerifier for PinnedVerifier {
 /// trusted certificate for the same name is rejected unless it is the pinned one.
 ///
 /// Only a presented certificate whose bytes equal a certificate in the file is
-/// accepted. Self-signed certificates (what `famp setup` issues) pin themselves;
+/// accepted, and only on the one IP address it lists (no other SAN entries); peers
+/// must be addressed by IP. Self-signed certificates (what `famp setup` issues) pin themselves;
 /// to pin a CA-issued certificate, put it in the file together with its issuer.
 ///
 /// # Errors

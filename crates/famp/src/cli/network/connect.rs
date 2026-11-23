@@ -2,7 +2,7 @@
 //! never touches authorized_keys, sudoers, or anything outside `~/.famp` and
 //! the user service directory.
 use std::collections::BTreeSet;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -62,20 +62,49 @@ impl Remote for Ssh {
                 .write_all(bytes)
                 .map_err(error)?;
         }
-        let output = child.wait_with_output().map_err(error)?;
-        if !output.status.success() {
-            let said = String::from_utf8_lossy(&output.stdout);
+        // A hostile or broken remote must not make this process buffer without limit.
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| error("SSH stdout unavailable"))?;
+        let (bytes, too_long) = read_capped(&mut stdout, state::MAX_BUNDLE_BYTES).map_err(error)?;
+        if too_long {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error(format!(
+                "{host}: `famp {action}` printed more than {} bytes; refusing to read it",
+                state::MAX_BUNDLE_BYTES
+            )));
+        }
+        let status = child.wait().map_err(error)?;
+        if !status.success() {
+            let said = String::from_utf8_lossy(&bytes);
             let said = said.trim();
             if !said.is_empty() {
                 eprintln!(
                     "{host}: output before failure:\n{}",
-                    &said[..said.len().min(2000)]
+                    first_chars(said, 2000)
                 );
             }
             return Err(error(format!("{host}: `famp {action}` failed. Check `ssh {host}` authentication and matching binaries. Earlier steps may have completed; fix the error and rerun the same connect command (it is idempotent).")));
         }
-        Ok(output.stdout)
+        Ok(bytes)
     }
+}
+
+/// At most the first `n` CHARACTERS of `s`. Never slice by bytes: remote output is
+/// attacker-controlled UTF-8 and a byte offset can fall inside a character.
+fn first_chars(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
+/// Read at most `max` bytes; the flag says the stream had more than that.
+fn read_capped(reader: &mut impl std::io::Read, max: u64) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut buf = Vec::new();
+    reader.take(max + 1).read_to_end(&mut buf)?;
+    let too_long = buf.len() as u64 > max;
+    buf.truncate(usize::try_from(max).unwrap_or(usize::MAX));
+    Ok((buf, too_long))
 }
 
 pub fn ssh_args(host: &str, action: &str) -> Vec<String> {
@@ -323,6 +352,48 @@ mod tests {
         for good in ["air-server", "ben@100.1.2.3", "ben@host.local"] {
             assert!(validate_host(good).is_ok());
         }
+    }
+
+    #[test]
+    fn remote_output_is_cut_by_characters_never_inside_one() {
+        // 1,999 ASCII bytes then a 3-byte character: byte offset 2,000 is mid-character.
+        let said = format!("{}\u{20ac}tail", "a".repeat(1999));
+        let cut = first_chars(&said, 2000);
+        assert_eq!(cut.chars().count(), 2000);
+        assert!(cut.ends_with('\u{20ac}'));
+        assert_eq!(first_chars("short", 2000), "short");
+    }
+
+    #[test]
+    fn remote_output_is_read_with_a_hard_cap() -> std::io::Result<()> {
+        use std::cell::Cell;
+        use std::io::Read;
+        /// Counts how much was actually pulled from the source, which is what bounds
+        /// memory; the returned buffer alone would hide an uncapped read.
+        struct Counting<'a>(std::io::Take<std::io::Repeat>, &'a Cell<u64>);
+        impl Read for Counting<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.0.read(buf)?;
+                self.1.set(self.1.get() + n as u64);
+                Ok(n)
+            }
+        }
+        let pulled = Cell::new(0);
+        // Far more than the cap, from a source that would keep going.
+        let mut endless = Counting(std::io::repeat(b'x').take(50_000_000), &pulled);
+        let (got, too_long) = read_capped(&mut endless, 1024)?;
+        assert!(too_long);
+        assert_eq!(got.len(), 1024);
+        assert!(
+            pulled.get() <= 1024 + 1,
+            "read {} bytes from a source capped at 1024",
+            pulled.get()
+        );
+        // Exactly at the cap is fine; one byte over is not.
+        let (_, at) = read_capped(&mut std::io::Cursor::new(vec![0u8; 1024]), 1024)?;
+        let (_, over) = read_capped(&mut std::io::Cursor::new(vec![0u8; 1025]), 1024)?;
+        assert!(!at && over);
+        Ok(())
     }
 
     #[test]

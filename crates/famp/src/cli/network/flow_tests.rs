@@ -26,6 +26,9 @@ struct Fake {
     /// Fail once when (host, action) matches exactly.
     fail: RefCell<Option<(String, String)>>,
     expect_no_services: Cell<bool>,
+    /// Make a host's `network export` return this card instead of its own (a
+    /// compromised host lying about who it is).
+    export_as: RefCell<BTreeMap<String, Card>>,
 }
 
 fn prepare_home(home: &Path, name: &str, port: u16) {
@@ -72,7 +75,15 @@ impl Remote for Fake {
                 prepare_home(home, host, 7100 + u16::try_from(index).unwrap());
                 Ok(Vec::new())
             }
-            "network export" => Ok(serde_json::to_vec(&state::load(home)?.local).unwrap()),
+            "network export" => {
+                let card = self
+                    .export_as
+                    .borrow()
+                    .get(host)
+                    .cloned()
+                    .unwrap_or(state::load(home)?.local);
+                Ok(serde_json::to_vec(&card).unwrap())
+            }
             a if a.starts_with("network import") => {
                 let cards = state::parse_cards(input.unwrap())?;
                 state::import(
@@ -116,6 +127,7 @@ impl Net {
                 log: RefCell::default(),
                 fail: RefCell::default(),
                 expect_no_services: Cell::new(false),
+                export_as: RefCell::default(),
             },
         }
     }
@@ -568,22 +580,27 @@ fn prune_carries_old_revocation_records_into_the_new_keyring() {
 fn two_cards_cannot_claim_the_same_address_and_port() {
     let net = Net::new(&["alpha", "beta"]);
     net.connect(&net.args(true, false, false)).unwrap();
-    let mut alpha = state::load(&net.fake.homes["alpha"]).unwrap().local;
-    let beta = state::load(&net.fake.homes["beta"]).unwrap().local;
-    // Control: as set up, the endpoints differ and everything was accepted above.
-    assert_ne!((alpha.address, alpha.port), (beta.address, beta.port));
-    // alpha now claims beta's endpoint (same address and port).
-    alpha.port = beta.port;
-    let err = state::import(
-        &net.mac,
-        &[alpha, beta],
-        ImportOpts {
-            check: true,
-            prune: true,
-        },
-    )
-    .unwrap_err()
-    .to_string();
+    let cfg = state::load(&net.mac).unwrap();
+    let (alpha, beta) = (cfg.peers["alpha"].clone(), cfg.peers["beta"].clone());
+    // A NEW computer `gamma` (own name, domain and key), using alpha's certificate
+    // (valid for the shared test address) on a port nobody uses: accepted.
+    let gamma = |port: u16| {
+        let mut g = with_fresh_key(&alpha);
+        g.name = "gamma".into();
+        g.domain = "gamma.famp".into();
+        g.port = port;
+        g
+    };
+    let bundle = |g: Card| vec![cfg.local.clone(), alpha.clone(), beta.clone(), g];
+    let check = ImportOpts {
+        check: true,
+        prune: false,
+    };
+    state::import(&net.mac, &bundle(gamma(7999)), check).expect("control: a free endpoint is fine");
+    // Now gamma claims beta's exact address and port.
+    let err = state::import(&net.mac, &bundle(gamma(beta.port)), check)
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("already uses"), "{err}");
 }
 
@@ -610,4 +627,107 @@ fn a_card_whose_certificate_has_stray_text_around_it_is_refused() {
             "stray text must not reach the gateway's trust file"
         );
     }
+}
+
+/// A pinned peer's card with a different Ed25519 key (a replacement identity).
+fn with_fresh_key(card: &Card) -> Card {
+    let mut replaced = card.clone();
+    replaced.public_key = famp_crypto::FampSigningKey::from_bytes([99u8; 32])
+        .verifying_key()
+        .to_b64url();
+    replaced
+}
+
+/// A listed host that is already trusted tries to replace ANOTHER peer's pin by
+/// presenting a card with that peer's name and a new key. `--prune` must refuse,
+/// exactly as a run without `--prune` does, and the real pin must survive.
+#[test]
+fn prune_refuses_a_listed_host_that_tries_to_replace_another_peers_pin() {
+    let net = Net::new(&["alpha", "beta"]);
+    net.connect(&net.args(true, false, false)).unwrap();
+    let real_beta = state::load(&net.mac).unwrap().peers["beta"].clone();
+    let before = net.pins(&net.mac);
+
+    // alpha now claims to be `beta`, with a key it controls.
+    net.fake
+        .export_as
+        .borrow_mut()
+        .insert("alpha".into(), with_fresh_key(&real_beta));
+    let mut args = net.args(true, false, true);
+    args.hosts = vec!["alpha".into()];
+    let err = net.connect(&args).unwrap_err().to_string();
+    assert!(err.contains("changed its card"), "{err}");
+
+    let after = state::load(&net.mac).unwrap();
+    assert_eq!(
+        after.peers["beta"].public_key, real_beta.public_key,
+        "beta's pinned key must survive the attempt"
+    );
+    assert_eq!(net.pins(&net.mac), before, "no pin may change");
+}
+
+/// The same refusal in the shared import code (`famp network import --prune` and
+/// `connect` both end here), driven directly with the hostile bundle.
+#[test]
+fn network_import_prune_refuses_a_replacement_card_for_a_pinned_peer() {
+    let net = Net::new(&["alpha", "beta"]);
+    net.connect(&net.args(true, false, false)).unwrap();
+    let cfg = state::load(&net.mac).unwrap();
+    let hostile = [
+        cfg.local.clone(),
+        cfg.peers["alpha"].clone(),
+        with_fresh_key(&cfg.peers["beta"]),
+    ];
+    for prune in [false, true] {
+        let err = state::import(&net.mac, &hostile, ImportOpts { check: true, prune })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("changed its card"), "prune={prune}: {err}");
+    }
+    // Control: pruning a peer OUT (dropping it from the set) is still allowed, and
+    // after that the same name can be re-added with a new card.
+    let without_beta = [cfg.local.clone(), cfg.peers["alpha"].clone()];
+    state::import(
+        &net.mac,
+        &without_beta,
+        ImportOpts {
+            check: false,
+            prune: true,
+        },
+    )
+    .unwrap();
+    assert!(!state::load(&net.mac).unwrap().peers.contains_key("beta"));
+    state::import(
+        &net.mac,
+        &[
+            cfg.local,
+            cfg.peers["alpha"].clone(),
+            with_fresh_key(&cfg.peers["beta"]),
+        ],
+        ImportOpts {
+            check: true,
+            prune: true,
+        },
+    )
+    .expect("after pruning beta out, a new card for that name is accepted");
+}
+
+#[test]
+fn doctor_notices_a_missing_or_short_peer_keyring() {
+    let net = Net::new(&["alpha", "beta"]);
+    net.connect(&net.args(true, false, false)).unwrap();
+    let cfg = state::load(&net.mac).unwrap();
+    let ring = net.mac.join("gateway/peers.keyring");
+    assert!(
+        super::doctor::peer_pin_problems(&net.mac, &cfg).is_empty(),
+        "control: a healthy setup reports nothing"
+    );
+    // One pin lost.
+    let text = std::fs::read_to_string(&ring).unwrap();
+    let first_line = text.lines().next().unwrap();
+    std::fs::write(&ring, format!("{first_line}\n")).unwrap();
+    assert_eq!(super::doctor::peer_pin_problems(&net.mac, &cfg).len(), 1);
+    // The whole file gone.
+    std::fs::remove_file(&ring).unwrap();
+    assert_eq!(super::doctor::peer_pin_problems(&net.mac, &cfg).len(), 2);
 }

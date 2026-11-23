@@ -209,7 +209,7 @@ One stable FAMP identity per computer, joined into a mesh over SSH. Read
 **not** do (no TLS client authentication, no auto-wake of remote messages).
 
 ```bash
-famp setup                          # this computer: identity, certificate, config, broker service, host integration (keys never leave it)
+famp setup --host none             # this computer: identity, certificate, config, broker service (keys never leave it)
 famp connect --stage --dry-run host-a host-b   # print the exact ssh commands and files; run nothing
 famp connect --stage host-a host-b  # exchange PUBLIC cards, pin peers, write service files; start nothing
 famp network print-unit             # review what would run
@@ -226,10 +226,14 @@ exactly what the run defines (the old keyring is kept as `peers.keyring.bak`).
 Peers may deliver only to local names on the allowlist: `famp network allow <name>`,
 `deny <name>`, `list` (default deny; changes apply to the next message).
 
+Use `--host none` here: the default `--host auto` also edits your Claude Code / Codex
+configuration, which this workflow does not need (`connect` already passes it on remotes).
+
 ### Build on a box from a git bundle
 
-For computers without a prebuilt binary. Every box builds the same tagged commit
-itself. The plain commands (`scripts/famp-install-from-bundle.sh` is just these, in order):
+For computers without a prebuilt binary. Every box builds the same commit itself.
+Prerequisites: a C toolchain and `cmake` (the build links `aws-lc-sys` through rustls).
+The plain commands (`scripts/famp-install-from-bundle.sh` is just these, in order):
 
 ```bash
 # on a computer that has the repo
@@ -242,6 +246,19 @@ nice -n 19 cargo build --release --locked -j2 -p famp -p famp-gateway
 sha256sum target/release/famp target/release/famp-gateway   # record these
 install -m 0755 target/release/famp target/release/famp-gateway ~/.cargo/bin/
 ```
+
+A bundle that lists prerequisite commits (a range such as `v1.1.0-rc.2..<branch>`) cannot be
+cloned on its own. On a box that already has a checkout containing them:
+
+```bash
+git clone /path/to/existing/checkout ~/famp-build && cd ~/famp-build
+git bundle verify /path/to/famp.bundle
+git fetch /path/to/famp.bundle '+refs/tags/*:refs/tags/*' '+refs/heads/*:refs/remotes/bundle/*'
+git checkout --detach <commit-sha>      # then compare `git rev-parse HEAD` with the published SHA
+# ...and continue with the cargo build line above
+```
+
+The script does the same with `FAMP_LOCAL_REPO=/path/to/existing/checkout`.
 
 ## Upgrading
 

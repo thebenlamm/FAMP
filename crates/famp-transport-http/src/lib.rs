@@ -7,6 +7,7 @@
 use famp_crypto as _;
 use serde_json as _;
 
+pub mod cert_facts;
 pub mod error;
 pub mod middleware;
 pub mod server;

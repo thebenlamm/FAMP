@@ -112,6 +112,8 @@ fn gateway_exits_nonzero_when_own_domain_is_unset() {
         .arg(fixtures.join("alice.crt"))
         .arg("--tls-key")
         .arg(fixtures.join("alice.key"))
+        .arg("--recipient-allowlist")
+        .arg(home_tmp.path().join("recipients.json"))
         .env("FAMP_HOME", home_tmp.path())
         .env_remove("FAMP_OWN_DOMAIN")
         .arg("alice")

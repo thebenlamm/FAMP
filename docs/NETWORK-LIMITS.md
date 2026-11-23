@@ -26,9 +26,14 @@ is a claim about systemd, ufw or pf that nobody has run.
    within 30 days; a peer's lapsed certificate only breaks that peer, but renewal is manual.
 5. **A peer's name is registered on the local broker.** If a local agent already uses a
    peer's name the gateway cannot start (the broker answers `NameTaken`).
-6. **`sender_not_backed` (pre-verification) reveals which sender names this gateway serves.**
-7. **systemd user units:** `IPAddressAllow/Deny`, `PrivateTmp` and `ProtectSystem` may be
-   ignored or may stop the unit starting, depending on the distribution (UNVERIFIED). Check
+6. **Some responses reveal state.** `sender_not_backed` (before verification) reveals which
+   sender names this gateway serves. An unauthenticated caller can also tell whether a
+   candidate principal has an ACTIVE pin (`invalid_signature`) or not (`unpinned_key`); that
+   split is a documented Phase 9 decision. An authenticated peer can tell which recipient
+   names are on the allowlist (403 versus 202).
+7. **systemd user units:** `IPAddressAllow/Deny` and the filesystem directives (`PrivateTmp`,
+   `ProtectSystem`) may be silently ignored in a user manager, or may stop the unit starting,
+   depending on the distribution (UNVERIFIED); do not rely on them as the only control. Check
    `systemctl --user status famp-gateway` and `systemd-analyze --user verify` after staging.
    `After=network-online.target` does not apply to user units; the unit waits for the broker
    and retries (`RestartSec=15`, up to 20 starts in 10 minutes).
@@ -45,8 +50,35 @@ is a claim about systemd, ufw or pf that nobody has run.
 11. **Connection slots group IPv6 by /64**, so every host in one IPv6 /64 shares 16 slots
     (UNVERIFIED for Tailscale's addressing). The default setup binds Tailscale IPv4.
 12. **Agents run with the permissions of the session that reads the inbox.** Nothing here
-   limits what a session does with a message; that includes sessions started with bypass
-   permissions.
+    limits what a session does with a message; that includes sessions started with bypass
+    permissions.
+13. **The gateway's identity key stays under the user account in release 1.**
+    `~/.famp/gateway/identity.ed25519` (mode 0600, in a 0700 directory) is readable by every
+    process that runs as that user, including agent sessions. A different account for the
+    gateway, or for woken sessions, is a release-2 design question.
+14. **Card fields are self-asserted.** A peer's name, domain and address come from its own
+    card. They are checked (exact SAN, one endpoint per computer, no changed card for a pinned
+    peer, `--prune` never replaces a pin) and `connect` reaches each host over ssh with
+    `StrictHostKeyChecking=yes`, but the key itself is only as trustworthy as that channel:
+    compare each `key_id` out of band or pass `--expect`. Revocation is per principal, so a
+    revoked key presented under a NEW principal is not caught.
+15. **`network serve` does not re-check its bind address.** `famp setup` refuses an address
+    other than this computer's Tailscale IP, but the serve path trusts `network.json`. With the
+    firewall default-deny, check the listener after `network enable` (`ss -ltn` on Linux,
+    `lsof -iTCP -sTCP:LISTEN` on macOS).
+16. **`import` is not transactional.** It writes the keyring before `network.json`; a crash
+    between them leaves the keyring ahead of the config. Rerunning the same command converges.
+17. **Allowlist file checks are not complete.** The gateway refuses a symlink, a non-regular
+    file, an oversize or malformed file and one that others can write, and reads it from one
+    open handle, but it does not check who owns the file or its parent directories, and
+    `allow`/`deny` are read-modify-write without a lock (two at once can lose one edit).
+18. **Resource limits are per source and not exhaustive.** The pre-verification request budget
+    is charged after the request body has been read (bounded by 16 connections per source and
+    a 15 s body deadline, in the gateway router only); a declared-oversize and a streamed-
+    oversize body get differently shaped 413 responses.
+19. **A CLI panic or crash is a local denial of service only.** The known one (a multibyte
+    character at the cut of a remote error message) is fixed and tested; remote output is
+    capped at 1 MiB.
 
 ## Behavior changes in this release
 - `famp network serve` starts the gateway with `--pinned-only`, `--recipient-allowlist` and a
@@ -56,7 +88,9 @@ is a claim about systemd, ufw or pf that nobody has run.
   (`serve`, `stage` and `enable` never do), so deleting the file keeps everything denied until
   `famp setup` or `famp network allow` recreates it. To deny everything on purpose, leave the
   list empty with `famp network deny`. **Default is deny.**
-  A `famp-gateway` started without `--recipient-allowlist` behaves as before.
+  `famp-gateway` itself refuses to start without `--recipient-allowlist`, and a router built
+  without one denies every recipient: there is no flag that turns the check off. A gateway
+  that used to run without the flag (a v1.0 deployment) must now be given one.
 - Connection limits in `famp_transport_http::tls_server::serve_std_listener`: HTTP/1 only,
   one request per connection (no keep-alive, so a connection slot cannot be held by
   trickling requests), 10 s header and handshake timeouts, 128 connections and 16 per
@@ -69,10 +103,25 @@ is a claim about systemd, ufw or pf that nobody has run.
   every envelope still pays the per-verified-sender budget). This
   **supersedes D-10/INGR-06** ("an IP is the wrong key") for a firewalled personal network:
   source addresses are stable and not rotatable there. See `RateLimiter`'s doc comment.
-- Error responses carry fixed text (no principal, key window or server clock), and an
-  unpinned, expired or revoked sender all return the same `unpinned_key`.
+- Error responses carry fixed text (no principal, key window or server clock). Unpinned,
+  expired and revoked senders are indistinguishable from each other (all `unpinned_key`); an
+  active pin with a bad signature is still `invalid_signature` (limit 6).
+- A verified delivery runs in its own task and the request waits at most 15 s for it (`504
+  delivery_timeout`). **A 504 does not mean the message failed:** it can still land, and a
+  client that disconnects mid-delivery does not cancel it. Waiting for the sender registry
+  is bounded the same way, so one stuck local bus cannot park every request.
+- Replay and per-sender rate are keyed on the full principal (`agent:<domain>/<name>`), a
+  replay is refused before it is charged, and the signed recipient is checked before any
+  nonce is recorded.
+- `--prune` removes pins that are not in this run's set and keeps old revocation records, but it
+  never replaces a peer that is already pinned: a listed host presenting a card with a pinned
+  peer's name and a new key is refused, with or without `--prune`. To rotate a peer, prune it
+  out in one run and add it back in the next.
 - `--pinned-only` (opt-in, needs `--trust-cert`, refused with `--relay-fetch`): outbound TLS
-  trusts only the pinned certificates, byte-for-byte, never the OS root store.
+  trusts only the pinned certificates, never the OS root store. The presented certificate must
+  be byte-identical to a pinned one, list exactly the IP being dialed (and nothing else), and
+  pass webpki name and validity checks; peers must be addressed by IP, and `http://` peers are
+  refused. Envelopes are additionally signed end to end.
 - A peer card's certificate must list exactly the card's address as its only subjectAltName
   and be an end-entity certificate, must be exactly one clean PEM block that the gateway's own
   loader accepts as a pinned root (so one bad card cannot stop the gateway for everyone), and no
@@ -96,5 +145,7 @@ Design notes from review, so they are not rediscovered:
   gateway conflicts with `service.rs`'s one-user model and must be settled first.
 
 ## Tracked follow-ups
-mTLS or client-certificate pinning at the TLS layer; certificate renewal; dynamic or
-domain-level peer names; wake (above).
+mTLS or client-certificate pinning at the TLS layer; a certificate renewal command;
+transactional `import`; a serve-time bind recheck (plus `doctor`); charging the per-source
+budget before the body is read; owner checks on the allowlist; dynamic or domain-level peer
+names; wake (above).

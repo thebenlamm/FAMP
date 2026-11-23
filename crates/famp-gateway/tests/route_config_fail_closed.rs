@@ -103,6 +103,8 @@ fn run_gateway(sock: &Path, home: &Path, extra_args: &[&str]) -> std::process::O
         .arg(fixtures.join("alice.crt"))
         .arg("--tls-key")
         .arg(fixtures.join("alice.key"))
+        .arg("--recipient-allowlist")
+        .arg(home.join("recipients.json"))
         .env("FAMP_HOME", home)
         // 17-03/D-30: own-domain is now REQUIRED (own-domain-unset is
         // UNCONDITIONALLY startup-fatal) -- must resolve BEFORE the
@@ -243,6 +245,8 @@ fn bare_names_with_exactly_one_peer_still_starts_and_prints_ready() {
         .arg(cross_machine_fixture_dir().join("alice.crt"))
         .arg("--tls-key")
         .arg(cross_machine_fixture_dir().join("alice.key"))
+        .arg("--recipient-allowlist")
+        .arg(home.path().join("recipients.json"))
         .arg("--peer")
         .arg("hostb.test=https://127.0.0.1:9443")
         .env("FAMP_HOME", home.path())

@@ -297,6 +297,21 @@ pub fn peer_import(home: &Path, blob: &str) {
 /// every gateway (not merely relay-reachable ones), so every caller of
 /// this fn must supply a real value — there is no more "leave it unset"
 /// option, even for the loopback/test topology.
+/// The recipient allowlist every gateway now requires (W0): a real file listing the
+/// agent names these tests deliver to, mode 0600, inside `home`.
+pub fn allowlist_file(home: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let path = home.join("recipients.json");
+    std::fs::write(
+        &path,
+        r#"{"version":1,"names":["alice","bob","carol","dave"]}"#,
+    )
+    .expect("write recipient allowlist");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .expect("chmod recipient allowlist");
+    path
+}
+
 pub fn spawn_gateway(
     side: &Side,
     backed_name: &str,
@@ -319,6 +334,8 @@ pub fn spawn_gateway(
             .arg(fixtures.join(format!("{own_cert_stub}.crt")))
             .arg("--tls-key")
             .arg(fixtures.join(format!("{own_cert_stub}.key")))
+            .arg("--recipient-allowlist")
+            .arg(allowlist_file(side.home()))
             .arg("--peer")
             .arg(format!("{peer_domain}=https://127.0.0.1:{peer_port}"))
             .arg("--trust-cert")

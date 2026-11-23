@@ -821,12 +821,13 @@ pub fn run_cheap_gates(
     let parsed_now =
         OffsetDateTime::parse(input.now, &Rfc3339).map_err(|_| GuardReject::BadEnvelopeShape)?;
 
-    if guard
-        .replay
-        .contains(input.peeked.from.name(), nonce, parsed_now)
-    {
+    // Keyed on the FULL principal (`agent:<domain>/<name>`), exactly as the keyring
+    // is: two different computers may each have a sender with the same bare name,
+    // and they must not share a replay cache or a rate budget.
+    let sender_key = input.peeked.from.to_string();
+    if guard.replay.contains(&sender_key, nonce, parsed_now) {
         return Err(GuardReject::ReplayedNonce {
-            principal: input.peeked.from.name().to_string(),
+            principal: sender_key,
             nonce: nonce.to_string(),
         });
     }
@@ -858,6 +859,16 @@ pub fn post_verify_gates(
 ) -> Result<(), GuardReject> {
     let parsed_now =
         OffsetDateTime::parse(now, &Rfc3339).map_err(|_| GuardReject::BadEnvelopeShape)?;
+    // A replay is turned away BEFORE it is charged. The read-only check before
+    // verification cannot stop many copies of one valid envelope that all pass it
+    // at once; without this, each copy would burn the sender's rate budget before
+    // `record` (atomic under this same lock) rejects all but the first.
+    if guard.replay.contains(sender, nonce, parsed_now) {
+        return Err(GuardReject::ReplayedNonce {
+            principal: sender.to_string(),
+            nonce: nonce.to_string(),
+        });
+    }
     guard.rate.admit(sender, parsed_now)?;
     guard.replay.record(sender, nonce, parsed_now)
 }
@@ -1365,6 +1376,33 @@ mod tests {
         assert!(limiter
             .admit(&Source::Ip(IpAddr::from([100, 64, 9, 9])), now)
             .is_ok());
+    }
+
+    #[test]
+    fn a_replay_storm_cannot_burn_the_senders_rate_budget() {
+        let now = to_canonical_rfc3339(OffsetDateTime::now_utc());
+        let sender = "agent:hosta.test/oscar";
+        let mut guard = IngressGuard::new();
+        post_verify_gates(&mut guard, sender, "n-1", &now).unwrap();
+        // Many copies of the same valid envelope, all past the pre-verify check.
+        for _ in 0..(RATE_LIMIT_MAX_PER_WINDOW * 3) {
+            assert!(
+                matches!(
+                    post_verify_gates(&mut guard, sender, "n-1", &now),
+                    Err(GuardReject::ReplayedNonce { .. })
+                ),
+                "a replay must be rejected as a replay, never charged to the budget"
+            );
+        }
+        // The budget is intact: the original plus MAX-1 fresh messages still fit.
+        for i in 0..(RATE_LIMIT_MAX_PER_WINDOW - 1) {
+            post_verify_gates(&mut guard, sender, &format!("fresh-{i}"), &now)
+                .unwrap_or_else(|e| panic!("fresh message {i} was refused after the storm: {e:?}"));
+        }
+        assert!(matches!(
+            post_verify_gates(&mut guard, sender, "fresh-over", &now),
+            Err(GuardReject::RateLimited { .. })
+        ));
     }
 
     #[test]

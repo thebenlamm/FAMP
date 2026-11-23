@@ -208,6 +208,30 @@ fn config_checks(home: &std::path::Path, config: &Config, checks: &mut Vec<Check
         }
         Err(e) => checks.push(check("pin", "error", e.to_string())),
     }
+    for problem in peer_pin_problems(home, config) {
+        checks.push(check("pin", "error", problem));
+    }
+}
+
+/// Configured peers that the gateway would not find in its keyring.
+///
+/// The gateway loads that file at start, so a missing or short one means the next
+/// restart fails or drops a peer even while everything still looks healthy.
+pub fn peer_pin_problems(home: &std::path::Path, config: &Config) -> Vec<String> {
+    let pinned: std::collections::BTreeSet<String> =
+        state::keyring_principals(&home.join("gateway/peers.keyring"))
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+    config
+        .peers
+        .values()
+        .map(Card::principal)
+        .filter(|principal| !pinned.contains(principal))
+        .map(|principal| {
+            format!("{principal} is a configured peer but has no pin in gateway/peers.keyring; rerun `famp connect` or `famp network import`")
+        })
+        .collect()
 }
 
 fn is_tailnet(ip: std::net::IpAddr) -> bool {

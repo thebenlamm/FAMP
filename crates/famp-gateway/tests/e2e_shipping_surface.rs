@@ -133,6 +133,8 @@ fn spawn_gateway_capturing_stderr(
         .arg(fixtures.join(format!("{own_cert_stub}.crt")))
         .arg("--tls-key")
         .arg(fixtures.join(format!("{own_cert_stub}.key")))
+        .arg("--recipient-allowlist")
+        .arg(gateway_harness::allowlist_file(side.home()))
         .arg("--peer")
         .arg(format!("{peer_domain}=https://127.0.0.1:{peer_port}"))
         .arg("--trust-cert")

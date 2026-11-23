@@ -95,6 +95,9 @@ pub struct GatewayIngressState {
     /// listed in this file (default deny; read on every delivery). `None` keeps
     /// the v1.0 behavior of delivering to any name the sender addresses.
     recipient_allowlist: Option<Arc<std::path::PathBuf>>,
+    /// How long a request waits for its delivery before answering 504. The delivery
+    /// itself is never cancelled (see `deliver`).
+    delivery_timeout: std::time::Duration,
 }
 
 impl GatewayIngressState {
@@ -116,7 +119,15 @@ impl GatewayIngressState {
             own_domain,
             guard,
             recipient_allowlist: None,
+            delivery_timeout: DELIVERY_TIMEOUT,
         }
+    }
+
+    /// Override how long a request waits for its delivery (tests shorten it).
+    #[must_use]
+    pub const fn with_delivery_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.delivery_timeout = timeout;
+        self
     }
 
     /// Enforce the W0 recipient allowlist at `path` (see `recipient_allowlist`).
@@ -177,8 +188,11 @@ pub fn build_gateway_router(
 pub struct RouterOptions {
     /// Overall time allowed to receive a request body.
     pub body_timeout: std::time::Duration,
-    /// W0 recipient allowlist file; `None` disables the check.
+    /// W0 recipient allowlist file. `None` means DENY EVERY RECIPIENT (fail closed):
+    /// there is deliberately no way to switch the check off.
     pub recipient_allowlist: Option<std::path::PathBuf>,
+    /// How long a request waits for its delivery before answering 504.
+    pub delivery_timeout: std::time::Duration,
 }
 
 impl Default for RouterOptions {
@@ -186,6 +200,7 @@ impl Default for RouterOptions {
         Self {
             body_timeout: BODY_READ_TIMEOUT,
             recipient_allowlist: None,
+            delivery_timeout: DELIVERY_TIMEOUT,
         }
     }
 }
@@ -201,7 +216,8 @@ pub fn build_gateway_router_with(
 ) -> Router {
     let body_timeout = options.body_timeout;
     let state = GatewayIngressState::new(registry, keyring, own_domain, guard)
-        .with_recipient_allowlist(options.recipient_allowlist);
+        .with_recipient_allowlist(options.recipient_allowlist)
+        .with_delivery_timeout(options.delivery_timeout);
     let router = Router::new()
         .route(INBOX_ROUTE, post(inbox_handler))
         .with_state(state);
@@ -231,6 +247,9 @@ fn is_length_limit(e: &(dyn std::error::Error + 'static)) -> bool {
     }
     false
 }
+
+/// How long a request waits for the local bus to accept a verified message.
+pub const DELIVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Overall time allowed to receive a request body. A client that drips bytes
 /// (so no per-read inactivity timer ever fires) is cut off here.
@@ -379,6 +398,10 @@ pub(crate) enum IngressError {
     /// could not be read). One fixed external response for every cause.
     #[error("recipient is not accepting messages")]
     RecipientNotAllowed,
+    /// The local bus did not accept the message in time. The delivery is NOT
+    /// cancelled and may still complete, so the sender must not assume it failed.
+    #[error("delivery did not finish in time")]
+    DeliveryTimeout,
     /// T-11-23: the envelope's signed `to` does not match the URL-path
     /// recipient — the sender addressed someone else and the path must
     /// not override the signature. Distinct from `ForeignDomain` (below)
@@ -488,6 +511,11 @@ impl IntoResponse for IngressError {
                 StatusCode::FORBIDDEN,
                 "recipient_not_allowed",
                 "recipient is not accepting messages",
+            ),
+            Self::DeliveryTimeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "delivery_timeout",
+                "delivery did not finish in time",
             ),
             Self::MisaddressedRecipient { .. } => (
                 StatusCode::BAD_REQUEST,
@@ -709,8 +737,21 @@ async fn ingest_inbound_at(
 
     // Short-hold: acquire, read, drop — no mutation, mirroring the
     // delivery lock's contract below.
+    //
+    // The registry lock is also held by an in-flight delivery for as long as the
+    // local bus takes to answer, so a stuck bus would otherwise park EVERY request
+    // here, before verification, each holding a connection slot. Waiting for the
+    // lock is cancel-safe, so bound it like a delivery and answer 504.
     let sender_is_backed = {
-        let registry = state.registry.lock().await;
+        let registry = tokio::time::timeout(state.delivery_timeout, state.registry.lock())
+            .await
+            .map_err(|_| {
+                eprintln!(
+                    "famp-gateway: ingress: the sender registry stayed busy for {:?}; answering 504",
+                    state.delivery_timeout
+                );
+                IngressError::DeliveryTimeout
+            })?;
         registry.get(peeked.from.name()).is_some()
     };
 
@@ -733,34 +774,49 @@ async fn ingest_inbound_at(
     let envelope =
         verify_inbound_any(body, &state.keyring, now).map_err(ingress_error_for_reject)?;
 
+    // The signed `to` must match the URL's recipient BEFORE anything is recorded: a
+    // valid envelope posted to the wrong recipient URL must not use up its nonce, or
+    // the correct delivery would then be refused as a replay.
+    check_audience_and_format(&envelope, recipient)?;
+
     // The sender is now AUTHENTICATED: only from here may per-sender state
     // (rate budget, replay record) change. The nonce was proven present above.
     let nonce = peeked.nonce.as_deref().unwrap_or_default();
     {
         let mut guard = state.guard.lock().await;
-        ingress_guard::post_verify_gates(&mut guard, peeked.from.name(), nonce, now).map_err(
-            |reject| {
+        ingress_guard::post_verify_gates(&mut guard, &peeked.from.to_string(), nonce, now)
+            .map_err(|reject| {
                 log_reject(&reject);
                 ingress_error_for_guard(reject)
-            },
-        )?;
+            })?;
     }
 
-    check_audience_and_format(&envelope, recipient)?;
-
-    // W0, read BEFORE the registry lock is taken: default deny, fail closed.
-    if let Some(path) = &state.recipient_allowlist {
-        if let Err(denied) = crate::recipient_allowlist::check(path, recipient.name()).await {
-            eprintln!(
-                "famp-gateway: ingress: dropped a verified message for '{}': {denied}",
-                recipient.name()
-            );
-            return Err(IngressError::RecipientNotAllowed);
-        }
+    // W0, read BEFORE the registry lock is taken: default deny, fail closed. With no
+    // allowlist configured every recipient is refused; there is no off switch.
+    let Some(path) = &state.recipient_allowlist else {
+        eprintln!(
+            "famp-gateway: ingress: dropped a verified message for '{}': no recipient allowlist is configured (default deny)",
+            recipient.name()
+        );
+        return Err(IngressError::RecipientNotAllowed);
+    };
+    if let Err(denied) = crate::recipient_allowlist::check(path, recipient.name()).await {
+        eprintln!(
+            "famp-gateway: ingress: dropped a verified message for '{}': {denied}",
+            recipient.name()
+        );
+        return Err(IngressError::RecipientNotAllowed);
     }
 
     let sender = envelope_sender(&envelope).clone();
-    deliver(&sender, recipient, body, &state.registry).await
+    deliver(
+        &sender,
+        recipient,
+        body,
+        &state.registry,
+        state.delivery_timeout,
+    )
+    .await
 }
 
 /// Operator-facing log line for a guard reject (never sent to the caller).
@@ -853,6 +909,7 @@ async fn deliver(
     recipient: &Principal,
     body: &[u8],
     registry: &Arc<Mutex<GatewayRegistry>>,
+    timeout: std::time::Duration,
 ) -> Result<(), IngressError> {
     // Content-transparent delivery: re-parse the already-verified,
     // already-strict-parsed bytes into a plain `Value` for `Send` — no
@@ -887,7 +944,18 @@ async fn deliver(
     // mirroring 09-02 egress's short-hold shared-connection contract so
     // ingress and egress never starve each other on the same backed
     // principal's connection.
-    let reply = {
+    //
+    // The lock and the bus round trip run in a SPAWNED task, never in the
+    // request's own future. `send_recv` writes a frame and then reads the reply on
+    // a connection shared by every delivery for this sender; if the request
+    // future were dropped between those two steps (a client that disconnects mid-
+    // delivery, which hyper handles by dropping it) the unread reply would be
+    // handed to the NEXT delivery. The request only waits `timeout` for the task;
+    // on expiry it answers 504 and the task keeps running to completion.
+    let registry = Arc::clone(registry);
+    let sender_name = sender.name().to_owned();
+    let recipient_name = recipient.name().to_owned();
+    let task = tokio::spawn(async move {
         let mut guard = registry.lock().await;
         // Task 1 (17-03, INGR-04/D-22): `audience_check` already proved
         // this sender is backed, pre-verify (`GuardReject::SenderNotBacked`)
@@ -896,20 +964,37 @@ async fn deliver(
         // reaching it now would mean the sender was backed when the guard
         // chain ran but was concurrently de-registered before this lock
         // was acquired, a benign race, not an attack surface.
-        let Some(principal) = guard.get_mut(sender.name()) else {
-            drop(guard);
-            return Err(IngressError::SenderNotBacked);
-        };
+        #[cfg(test)]
+        if let Some(delay) = guard.test_delivery_delay() {
+            // Simulates a slow local bus: the lock is held for the whole stall.
+            tokio::time::sleep(delay).await;
+        }
+        let principal = guard.get_mut(&sender_name)?;
         let reply = principal
             .send_recv(BusMessage::Send {
                 to: Target::Agent {
-                    name: recipient.name().to_string(),
+                    name: recipient_name,
                 },
                 envelope: value,
             })
             .await;
         drop(guard);
-        reply
+        Some(reply)
+    });
+    let reply = match tokio::time::timeout(timeout, task).await {
+        Ok(Ok(Some(reply))) => reply,
+        Ok(Ok(None)) => return Err(IngressError::SenderNotBacked),
+        Ok(Err(join_err)) => {
+            eprintln!("famp-gateway: ingress: delivery task failed: {join_err}");
+            return Err(IngressError::Internal);
+        }
+        Err(_) => {
+            eprintln!(
+                "famp-gateway: ingress: delivery to '{}' still pending after {timeout:?}; it keeps running",
+                recipient.name()
+            );
+            return Err(IngressError::DeliveryTimeout);
+        }
     };
 
     match reply {
@@ -1074,12 +1159,16 @@ mod tests {
     ) -> (Router, Arc<Mutex<GatewayRegistry>>) {
         let registry = Arc::new(Mutex::new(GatewayRegistry::default()));
         (
-            build_gateway_router(
+            build_gateway_router_with(
                 registry.clone(),
                 Arc::new(keyring),
                 Arc::from(own_domain),
                 Arc::new(Mutex::new(IngressGuard::new())),
                 None,
+                RouterOptions {
+                    recipient_allowlist: Some(crate::recipient_allowlist::test_allowlist()),
+                    ..RouterOptions::default()
+                },
             ),
             registry,
         )
@@ -1101,7 +1190,7 @@ mod tests {
     /// so `GatewayRegistry::back` can register a REAL backed sender,
     /// letting these tests reach the gate they actually test.
     struct LiveBroker {
-        _tmp: tempfile::TempDir,
+        tmp: tempfile::TempDir,
         _shutdown: tokio::sync::oneshot::Sender<()>,
         _broker: tokio::task::JoinHandle<()>,
         sock: std::path::PathBuf,
@@ -1133,7 +1222,7 @@ mod tests {
             // same in-process entry point).
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             Self {
-                _tmp: tmp,
+                tmp,
                 _shutdown: shutdown_tx,
                 _broker: broker,
                 sock,
@@ -1157,12 +1246,16 @@ mod tests {
             .await
             .expect("back sender on in-process broker");
         let registry = Arc::new(Mutex::new(registry));
-        let router = build_gateway_router(
+        let router = build_gateway_router_with(
             registry.clone(),
             Arc::new(keyring),
             Arc::from(own_domain),
             Arc::new(Mutex::new(IngressGuard::new())),
             None,
+            RouterOptions {
+                recipient_allowlist: Some(crate::recipient_allowlist::test_allowlist()),
+                ..RouterOptions::default()
+            },
         );
         (router, registry, broker)
     }
@@ -1188,7 +1281,8 @@ mod tests {
             Arc::new(keyring),
             Arc::from(own_domain),
             Arc::new(Mutex::new(IngressGuard::new())),
-        );
+        )
+        .with_recipient_allowlist(Some(crate::recipient_allowlist::test_allowlist()));
         (state, broker)
     }
 
@@ -1763,6 +1857,257 @@ mod tests {
         )
         .unwrap();
         assert!(!text.contains("2026-11-23"), "server clock leaked: {text}");
+    }
+
+    // --- Release-1 follow-up: fail closed, full-principal keys, detached delivery ---
+
+    /// A gateway that was never given an allowlist delivers NOTHING. There is no
+    /// switch that turns the check off; unset means deny.
+    #[tokio::test]
+    async fn no_recipient_allowlist_means_deny_every_recipient() {
+        let sk = FampSigningKey::from_bytes([80u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let broker = LiveBroker::spawn().await;
+        let mut registry = GatewayRegistry::default();
+        registry
+            .back(&broker.sock, "oscar".to_owned())
+            .await
+            .unwrap();
+        // Default options: no allowlist configured.
+        let router = build_gateway_router(
+            Arc::new(Mutex::new(registry)),
+            Arc::new(keyring),
+            Arc::from("hostb.test"),
+            Arc::new(Mutex::new(IngressGuard::new())),
+            None,
+        );
+        let resp = post_inbox(router, &to, ack_bytes(&sk, &from, &to)).await;
+        assert_eq!(
+            status_and_error(resp).await,
+            (StatusCode::FORBIDDEN, Some("recipient_not_allowed".into()))
+        );
+    }
+
+    /// Replay and rate state are keyed on the FULL principal, as the keyring is. Two
+    /// computers that each have a sender called `oscar` must not share either.
+    #[tokio::test]
+    async fn same_named_senders_on_different_computers_do_not_share_replay_or_rate_state() {
+        let (sk_a, sk_c) = (
+            FampSigningKey::from_bytes([81u8; 32]),
+            FampSigningKey::from_bytes([82u8; 32]),
+        );
+        let a: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let c: Principal = "agent:hostc.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(a.clone(), sk_a.verifying_key()).unwrap();
+        keyring.pin_tofu(c.clone(), sk_c.verifying_key()).unwrap();
+        let (router, _registry, _broker) =
+            router_with_backed_sender(keyring, "hostb.test", "oscar").await;
+        let ts = || Timestamp(crate::clock::now_canonical_utc());
+
+        // Replay: the same nonce from the other computer's `oscar` is a different sender.
+        let shared = "nonce-seen-from-a";
+        let first = post_inbox(
+            router.clone(),
+            &to,
+            ack_bytes_with_ts_and_nonce(&sk_a, &a, &to, ts(), shared),
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::ACCEPTED);
+        let other = post_inbox(
+            router.clone(),
+            &to,
+            ack_bytes_with_ts_and_nonce(&sk_c, &c, &to, ts(), shared),
+        )
+        .await;
+        assert_eq!(
+            status_and_error(other).await.0,
+            StatusCode::ACCEPTED,
+            "a nonce used by agent:hosta.test/oscar must not block agent:hostc.test/oscar"
+        );
+
+        // Rate: A uses up its whole per-sender budget; C is unaffected.
+        for i in 0..crate::ingress_guard::RATE_LIMIT_MAX_PER_WINDOW {
+            let bytes = ack_bytes_with_ts_and_nonce(&sk_a, &a, &to, ts(), &format!("a-{i}"));
+            let resp = post_inbox(router.clone(), &to, bytes).await;
+            if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+                break;
+            }
+        }
+        let a_over = post_inbox(
+            router.clone(),
+            &to,
+            ack_bytes_with_ts_and_nonce(&sk_a, &a, &to, ts(), "a-over"),
+        )
+        .await;
+        assert_eq!(
+            a_over.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "control: A is limited"
+        );
+        let c_ok = post_inbox(
+            router,
+            &to,
+            ack_bytes_with_ts_and_nonce(&sk_c, &c, &to, ts(), "c-fresh"),
+        )
+        .await;
+        assert_eq!(
+            c_ok.status(),
+            StatusCode::ACCEPTED,
+            "A's rate budget must not limit a different computer's same-named sender"
+        );
+    }
+
+    fn count_in_tree(dir: &std::path::Path, needle: &str) -> usize {
+        let mut n = 0;
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    n += count_in_tree(&path, needle);
+                } else if let Ok(bytes) = std::fs::read(&path) {
+                    n += String::from_utf8_lossy(&bytes).matches(needle).count();
+                }
+            }
+        }
+        n
+    }
+
+    /// A valid envelope posted to the WRONG recipient URL is refused without using up
+    /// its nonce, so the correct delivery of the same envelope still goes through.
+    #[tokio::test]
+    async fn a_misaddressed_post_does_not_poison_the_nonce_of_the_correct_one() {
+        let sk = FampSigningKey::from_bytes([84u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let wrong: Principal = "agent:hostb.test/mallory".parse().unwrap();
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let (router, _registry, _broker) =
+            router_with_backed_sender(keyring, "hostb.test", "oscar").await;
+        let bytes = ack_bytes(&sk, &from, &to);
+        let misrouted = post_inbox(router.clone(), &wrong, bytes.clone()).await;
+        assert_eq!(
+            status_and_error(misrouted).await,
+            (
+                StatusCode::BAD_REQUEST,
+                Some("misaddressed_recipient".into())
+            )
+        );
+        let right = post_inbox(router, &to, bytes).await;
+        assert_eq!(
+            right.status(),
+            StatusCode::ACCEPTED,
+            "the misrouted attempt must not have used up the nonce"
+        );
+    }
+
+    /// A request waits only `delivery_timeout` for the local bus (then 504), but the
+    /// delivery itself is never cancelled: it completes exactly once, also when the
+    /// request future is dropped mid-delivery, and later deliveries are not poisoned.
+    /// A stalled delivery also must not park every other request before verification.
+    #[tokio::test]
+    async fn a_slow_local_bus_gives_504_but_the_delivery_still_lands_once_and_nothing_is_poisoned()
+    {
+        const ID: &str = "01890a3b-2c4d-7e5f-8a1b-0c2d3e4f5a71";
+        let sk = FampSigningKey::from_bytes([83u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let broker = LiveBroker::spawn().await;
+        let mut registry = GatewayRegistry::default();
+        registry
+            .back(&broker.sock, "oscar".to_owned())
+            .await
+            .unwrap();
+        let registry = Arc::new(Mutex::new(registry));
+        let router = build_gateway_router_with(
+            registry.clone(),
+            Arc::new(keyring),
+            Arc::from("hostb.test"),
+            Arc::new(Mutex::new(IngressGuard::new())),
+            None,
+            RouterOptions {
+                recipient_allowlist: Some(crate::recipient_allowlist::test_allowlist()),
+                delivery_timeout: std::time::Duration::from_millis(300),
+                ..RouterOptions::default()
+            },
+        );
+        let tree = broker.tmp.path().to_path_buf();
+        let ts = || Timestamp(crate::clock::now_canonical_utc());
+        let send = |nonce: &'static str| {
+            let bytes = ack_bytes_with_ts_and_nonce(&sk, &from, &to, ts(), nonce);
+            (router.clone(), bytes)
+        };
+        let stall = std::time::Duration::from_millis(900);
+
+        // Baseline: how many times one delivered message shows up in the broker's files.
+        let (r, b) = send("baseline");
+        assert_eq!(post_inbox(r, &to, b).await.status(), StatusCode::ACCEPTED);
+        let one = count_in_tree(&tree, ID);
+        assert!(
+            one >= 1,
+            "control: a delivery must leave a trace in the broker's files"
+        );
+
+        // 1. A slow bus (lock held for 900 ms): the request answers 504 after ~300 ms.
+        registry.lock().await.set_test_delivery_delay(Some(stall));
+        let (r, b) = send("slow-1");
+        let started = std::time::Instant::now();
+        let resp = post_inbox(r, &to, b).await;
+        assert_eq!(
+            status_and_error(resp).await,
+            (StatusCode::GATEWAY_TIMEOUT, Some("delivery_timeout".into()))
+        );
+        assert!(started.elapsed() < std::time::Duration::from_millis(800));
+        // 2. While that delivery still holds the lock, another request does not hang
+        //    before verification: it gives up after the same bound.
+        let (r, b) = send("blocked");
+        let blocked =
+            tokio::time::timeout(std::time::Duration::from_secs(5), post_inbox(r, &to, b))
+                .await
+                .expect("a busy registry must not park requests forever");
+        assert_eq!(
+            status_and_error(blocked).await,
+            (StatusCode::GATEWAY_TIMEOUT, Some("delivery_timeout".into()))
+        );
+        // 3. The first delivery was NOT cancelled: it lands exactly once.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while count_in_tree(&tree, ID) < one * 2 && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert_eq!(
+            count_in_tree(&tree, ID),
+            one * 2,
+            "detached delivery must complete once"
+        );
+
+        // 4. A request future dropped mid-delivery (client disconnect) still delivers.
+        let (r, b) = send("dropped");
+        let dropped =
+            tokio::time::timeout(std::time::Duration::from_millis(100), post_inbox(r, &to, b))
+                .await;
+        assert!(dropped.is_err(), "the request was dropped while waiting");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while count_in_tree(&tree, ID) < one * 3 && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert_eq!(
+            count_in_tree(&tree, ID),
+            one * 3,
+            "a dropped request must not cancel delivery"
+        );
+
+        // 5. The shared bus connection is not poisoned: the next delivery is correct.
+        registry.lock().await.set_test_delivery_delay(None);
+        let (r, b) = send("after");
+        assert_eq!(post_inbox(r, &to, b).await.status(), StatusCode::ACCEPTED);
+        assert_eq!(count_in_tree(&tree, ID), one * 4);
     }
 
     /// With a peer address the source is that address (what the real server always

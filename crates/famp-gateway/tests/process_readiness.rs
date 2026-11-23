@@ -108,6 +108,8 @@ fn ready_line_is_never_printed_when_peers_keyring_load_fails() {
         .arg(fixtures.join("alice.crt"))
         .arg("--tls-key")
         .arg(fixtures.join("alice.key"))
+        .arg("--recipient-allowlist")
+        .arg(home_tmp.path().join("recipients.json"))
         .env("FAMP_HOME", home_tmp.path())
         // 17-03/D-30: own-domain is now REQUIRED (own-domain-unset is
         // UNCONDITIONALLY startup-fatal) -- must resolve BEFORE this

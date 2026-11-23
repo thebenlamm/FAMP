@@ -332,7 +332,11 @@ pub fn import(home: &Path, cards: &[Card], opts: ImportOpts) -> Result<(), CliEr
         if card.domain == config.local.domain {
             return Err(error("Two computers cannot share a federation domain"));
         }
-        if let Some(old) = config.peers.get(&card.name) {
+        // Checked against the peers as they were BEFORE `--prune` emptied the map:
+        // prune removes pins that are not in this run's set, it must never let a
+        // listed host replace the pin of a peer that is already trusted. To rotate a
+        // peer, prune it out in one run and add it back in the next.
+        if let Some(old) = old_peers.get(&card.name) {
             if !old.same_ignoring_version(card) {
                 return Err(error(format!(
                     "Peer {} changed its card. Refusing to replace existing trust automatically.",

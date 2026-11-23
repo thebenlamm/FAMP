@@ -122,6 +122,27 @@ pub async fn check(path: &Path, name: &str) -> Result<(), Denied> {
     }
 }
 
+/// A real allowlist file for unit tests that deliver, listing every recipient name
+/// those tests use. Created once per test process.
+#[cfg(test)]
+pub(crate) fn test_allowlist() -> std::path::PathBuf {
+    use std::sync::OnceLock;
+    static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    let dir = DIR.get_or_init(|| {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recipients.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"names":["alice","bob","carol","eve","mallory","oscar","peggy","quentin"]}"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        dir
+    });
+    dir.path().join("recipients.json")
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
