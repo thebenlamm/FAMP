@@ -202,6 +202,47 @@ just install-hooks
 just ci
 ```
 
+## Personal network (several of your own computers)
+
+One stable FAMP identity per computer, joined into a mesh over SSH. Read
+[docs/NETWORK-LIMITS.md](docs/NETWORK-LIMITS.md) first: it states what this does
+**not** do (no TLS client authentication, no auto-wake of remote messages).
+
+```bash
+famp setup                          # this computer: identity, certificate, config, broker service, host integration (keys never leave it)
+famp connect --stage --dry-run host-a host-b   # print the exact ssh commands and files; run nothing
+famp connect --stage host-a host-b  # exchange PUBLIC cards, pin peers, write service files; start nothing
+famp network print-unit             # review what would run
+famp network firewall               # firewall rules to run BY HAND (FAMP never runs sudo)
+famp network enable                 # only now: start the gateway
+famp doctor                         # read-only checks: broker, config, permissions, certificates, reachability
+```
+
+`connect` prints every peer's `key_id` and then pins them in the same run, so to verify
+BEFORE anything is pinned, learn each key_id first (`famp network export` on that computer
+and read its key) and pass `--expect host-a=<key_id>`; a mismatch aborts before any trust is written. Add `--pairwise` to
+pin only this computer and each host (no mesh), and `--prune` to make each peer set
+exactly what the run defines (the old keyring is kept as `peers.keyring.bak`).
+Peers may deliver only to local names on the allowlist: `famp network allow <name>`,
+`deny <name>`, `list` (default deny; changes apply to the next message).
+
+### Build on a box from a git bundle
+
+For computers without a prebuilt binary. Every box builds the same tagged commit
+itself. The plain commands (`scripts/famp-install-from-bundle.sh` is just these, in order):
+
+```bash
+# on a computer that has the repo
+git bundle create famp.bundle <tag>
+# copy famp.bundle to the box yourself, then on the box:
+git clone famp.bundle ~/famp-build && cd ~/famp-build
+git bundle verify ../famp.bundle     # verify needs a repository, so it runs after the clone
+git checkout --detach <tag> && git rev-parse HEAD     # must equal the published commit SHA
+nice -n 19 cargo build --release --locked -j2 -p famp -p famp-gateway
+sha256sum target/release/famp target/release/famp-gateway   # record these
+install -m 0755 target/release/famp target/release/famp-gateway ~/.cargo/bin/
+```
+
 ## Upgrading
 
 If you installed FAMP previously and want the latest — re-install the binary,
