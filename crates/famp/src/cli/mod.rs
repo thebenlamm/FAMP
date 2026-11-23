@@ -20,6 +20,7 @@ pub mod join;
 pub mod leave;
 pub mod listen_wake;
 pub mod mcp;
+pub mod network;
 pub mod own_domain;
 pub mod pair;
 pub mod paths;
@@ -51,6 +52,14 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Prepare this computer for a personal FAMP network.
+    Setup(network::SetupArgs),
+    /// Connect this computer and SSH hosts into a trusted FAMP mesh.
+    Connect(network::ConnectArgs),
+    /// Check broker, federation transport, and agent attendance (read-only).
+    Doctor(network::DoctorArgs),
+    /// Manage the public cards and gateway behind setup/connect.
+    Network(network::NetworkArgs),
     /// Install Claude Code integration: writes user-scope MCP entry to
     /// `~/.claude.json`, drops 7 slash-command files into
     /// `~/.claude/commands/`, merges a Stop hook into
@@ -207,6 +216,10 @@ where
 /// Top-level CLI dispatcher. Called from `bin/famp.rs`.
 pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
+        Commands::Setup(args) => network::setup::run(&args),
+        Commands::Connect(args) => network::connect::run(&args),
+        Commands::Doctor(args) => block_on_async(network::doctor::run(args)),
+        Commands::Network(args) => network::run(args),
         // Sync arms (no tokio runtime needed).
         Commands::InstallClaudeCode(args) => install::claude_code::run(args),
         Commands::UninstallClaudeCode(args) => uninstall::claude_code::run(args),
