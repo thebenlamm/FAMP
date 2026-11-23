@@ -1,6 +1,6 @@
 # Personal network: what it does, what it does not, and what changed
 
-Applies to the `famp setup` / `famp connect` / `famp doctor` / `famp network` workflow.
+Applies to the `famp network setup` / `famp connect` / `famp doctor` / `famp network` workflow.
 Everything below was checked on macOS only; Linux behavior is marked UNVERIFIED where it
 is a claim about systemd, ufw or pf that nobody has run.
 
@@ -62,7 +62,7 @@ is a claim about systemd, ufw or pf that nobody has run.
     `StrictHostKeyChecking=yes`, but the key itself is only as trustworthy as that channel:
     compare each `key_id` out of band or pass `--expect`. Revocation is per principal, so a
     revoked key presented under a NEW principal is not caught.
-15. **`network serve` does not re-check its bind address.** `famp setup` refuses an address
+15. **`network serve` does not re-check its bind address.** `famp network setup` refuses an address
     other than this computer's Tailscale IP, but the serve path trusts `network.json`. With the
     firewall default-deny, check the listener after `network enable` (`ss -ltn` on Linux,
     `lsof -iTCP -sTCP:LISTEN` on macOS).
@@ -84,9 +84,9 @@ is a claim about systemd, ufw or pf that nobody has run.
 - `famp network serve` starts the gateway with `--pinned-only`, `--recipient-allowlist` and a
   hardened client. A recipient not on `~/.famp/recipients.json` is dropped with one fixed 403,
   and a missing, unreadable, malformed or group/world-writable file denies everything.
-  `famp setup` seeds an absent file with the computer's own name; nothing else creates it
+  `famp network setup` seeds an absent file with the computer's own name; nothing else creates it
   (`serve`, `stage` and `enable` never do), so deleting the file keeps everything denied until
-  `famp setup` or `famp network allow` recreates it. To deny everything on purpose, leave the
+  `famp network setup` or `famp network allow` recreates it. To deny everything on purpose, leave the
   list empty with `famp network deny`. **Default is deny.**
   `famp-gateway` itself refuses to start without `--recipient-allowlist`, and a router built
   without one denies every recipient: there is no flag that turns the check off. A gateway
@@ -127,7 +127,7 @@ is a claim about systemd, ufw or pf that nobody has run.
   loader accepts as a pinned root (so one bad card cannot stop the gateway for everyone), and no
   two computers may claim the same address and port. This is read from the certificate's DER, not from
   `openssl -text` output, which a hostile certificate can make look like anything.
-- `famp setup` refuses to bind anything but this computer's own Tailscale IP unless
+- `famp network setup` refuses to bind anything but this computer's own Tailscale IP unless
   `--allow-non-tailnet` is given.
 
 ## Release 2 (not built): waking agents

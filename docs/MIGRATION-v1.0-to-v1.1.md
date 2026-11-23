@@ -48,14 +48,3 @@ Then restart any open Claude Code (or Codex) windows — they pick up the new bi
 If you skip either half of the upgrade (reinstall the client, or restart the daemon), the mismatch fails loudly rather than silently degrading: `BusClientError::ProtocolMismatch`'s message names both `just install` and `famp daemon restart` explicitly, matching the existing VER-01 error-message convention.
 
 See also: the "Upgrading" section of [`README.md`](../README.md).
-
-## `famp setup` is back, as a different command
-
-Phase 4 removed the TLS-form `famp setup` (replaced by `famp register`; see
-MIGRATION-v0.8-to-v0.9.md). The personal-network release **reintroduces the name for a
-different command**: `famp setup` now prepares ONE computer for a personal network
-(identity, certificate, config, broker service) and is followed by `famp connect` and
-`famp doctor`. It does not accept the old certificate/port/`peers.toml` flags. `famp init`,
-`famp listen` and the old TLS-form `famp send` stay removed; `crates/famp/tests/cli_help_invariant.rs`
-still asserts that and now also pins the new `setup`. Note that the default `--host auto`
-also edits Claude Code / Codex configuration; pass `--host none` to avoid that.

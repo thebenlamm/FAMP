@@ -210,7 +210,7 @@ pub fn checked(cmd: &mut Command) -> Result<Vec<u8>, CliError> {
 pub fn load(home: &Path) -> Result<Config, CliError> {
     let bytes = std::fs::read(home.join("network.json")).map_err(|e| {
         error(format!(
-            "Network is not configured or unreadable: {e}. Run `famp setup`."
+            "Network is not configured or unreadable: {e}. Run `famp network setup`."
         ))
     })?;
     serde_json::from_slice(&bytes).map_err(error)

@@ -65,7 +65,7 @@ impl Remote for Fake {
         let home = &self.homes[host];
         match action {
             "network --help" | "network stage" | "network enable" | "doctor" => Ok(Vec::new()),
-            a if a.starts_with("setup") => {
+            a if a.starts_with("network setup") => {
                 assert_eq!(
                     a.contains("--no-services"),
                     self.expect_no_services.get(),
@@ -322,7 +322,7 @@ fn expect_match_proceeds() {
     let mut args = net.args(true, false, false);
     // Learn alpha's key_id the way a human would: from a prior export.
     net.fake
-        .run("alpha", "setup --host none --no-services", None)
+        .run("alpha", "network setup --host none --no-services", None)
         .unwrap();
     let card: Card =
         serde_json::from_slice(&net.fake.run("alpha", "network export", None).unwrap()).unwrap();
@@ -440,7 +440,7 @@ fn prune_cannot_resurrect_a_revoked_key() {
     let net = Net::new(&["alpha"]);
     net.fake.expect_no_services.set(true);
     net.fake
-        .run("alpha", "setup --host none --no-services", None)
+        .run("alpha", "network setup --host none --no-services", None)
         .unwrap();
     let alpha = state::load(&net.fake.homes["alpha"]).unwrap().local;
     // This computer revoked alpha's key earlier.

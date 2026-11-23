@@ -9,7 +9,7 @@ use crate::cli::error::CliError;
 pub fn default_home_only(home: &Path) -> Result<(), CliError> {
     let user = dirs::home_dir().ok_or_else(|| error("Cannot resolve user home"))?;
     if home != user.join(".famp") || std::env::var_os("FAMP_BUS_SOCKET").is_some() {
-        return Err(error("Managed services require the default ~/.famp and broker socket. Use setup --no-services and network serve for isolated/custom homes."));
+        return Err(error("Managed services require the default ~/.famp and broker socket. Use `network setup --no-services` and `network serve` for isolated/custom homes."));
     }
     Ok(())
 }
@@ -64,7 +64,7 @@ pub fn serve(home: &Path) -> Result<(), CliError> {
     config.local.validate()?;
     super::setup::verify_identity(home, &config.local)?;
     // No seeding here: a deleted allowlist keeps denying everything until an
-    // operator runs `famp setup` (which seeds an absent file) or `famp network allow`.
+    // operator runs `famp network setup` (which seeds an absent file) or `famp network allow`.
     let mut trust = String::new();
     for peer in config.peers.values() {
         // Shape only: one peer's lapsed certificate must not stop the gateway for

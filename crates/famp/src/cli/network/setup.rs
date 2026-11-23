@@ -231,7 +231,7 @@ fn discover_address() -> Result<IpAddr, CliError> {
         .or_else(|_| which::which("/Applications/Tailscale.app/Contents/MacOS/Tailscale"))
         .map_err(|_| {
             error(
-                "Tailscale was not found. Start Tailscale, or for a deliberate LAN/test setup run `famp setup --allow-non-tailnet --address <LAN-IP>`.",
+                "Tailscale was not found. Start Tailscale, or for a deliberate LAN/test setup run `famp network setup --allow-non-tailnet --address <LAN-IP>`.",
             )
         })?;
     let bytes = checked(Command::new(binary).args(["ip", "-4"]))?;

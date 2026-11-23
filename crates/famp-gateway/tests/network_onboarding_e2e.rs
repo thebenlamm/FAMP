@@ -1,6 +1,6 @@
 //! Personal-network onboarding, end to end through the REAL binaries.
 //!
-//! `famp setup` -> `famp network export/import` -> `famp network serve`
+//! `famp network setup` -> `famp network export/import` -> `famp network serve`
 //! (which execs `famp-gateway` from the generated config) on two isolated
 //! homes, then a real signed cross-host delivery via `famp send`, with
 //! `famp doctor` as the readiness probe. Also pins that the gateway identity
@@ -56,6 +56,7 @@ fn setup(side: &Side, name: &str, port: u16) {
         &side.sock(),
         side.home(),
         &[
+            "network",
             "setup",
             "--no-services",
             "--host",
@@ -97,6 +98,7 @@ fn setup_import_serve_delivers_a_signed_message_and_keeps_identity_bytes() {
         &side_a.sock(),
         side_a.home(),
         &[
+            "network",
             "setup",
             "--no-services",
             "--host",

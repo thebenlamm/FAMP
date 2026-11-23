@@ -209,7 +209,7 @@ One stable FAMP identity per computer, joined into a mesh over SSH. Read
 **not** do (no TLS client authentication, no auto-wake of remote messages).
 
 ```bash
-famp setup --host none             # this computer: identity, certificate, config, broker service (keys never leave it)
+famp network setup --host none      # this computer: identity, certificate, config, broker service (keys never leave it)
 famp connect --stage --dry-run host-a host-b   # print the exact ssh commands and files; run nothing
 famp connect --stage host-a host-b  # exchange PUBLIC cards, pin peers, write service files; start nothing
 famp network print-unit             # review what would run

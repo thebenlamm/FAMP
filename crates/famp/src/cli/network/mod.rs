@@ -86,6 +86,8 @@ pub struct NetworkArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum NetworkCommand {
+    /// Prepare this computer for a personal FAMP network (identity, certificate, config).
+    Setup(SetupArgs),
     /// Print this computer's PUBLIC connection card as JSON.
     Export,
     /// Import a JSON array of trusted public cards from a file or stdin.
@@ -121,6 +123,7 @@ pub enum NetworkCommand {
 pub fn run(args: NetworkArgs) -> Result<(), CliError> {
     let home = crate::cli::home::resolve_famp_home()?;
     match args.command {
+        NetworkCommand::Setup(args) => setup::run(&args),
         NetworkCommand::Export => {
             let config = state::load(&home)?;
             println!(

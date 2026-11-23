@@ -52,8 +52,6 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Prepare this computer for a personal FAMP network.
-    Setup(network::SetupArgs),
     /// Connect this computer and SSH hosts into a trusted FAMP mesh.
     Connect(network::ConnectArgs),
     /// Check broker, federation transport, and agent attendance (read-only).
@@ -216,7 +214,6 @@ where
 /// Top-level CLI dispatcher. Called from `bin/famp.rs`.
 pub fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
-        Commands::Setup(args) => network::setup::run(&args),
         Commands::Connect(args) => network::connect::run(&args),
         Commands::Doctor(args) => block_on_async(network::doctor::run(args)),
         Commands::Network(args) => network::run(args),

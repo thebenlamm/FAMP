@@ -133,9 +133,9 @@ const REMOTE_FILES: &str = "the same files as this computer; on first setup also
 
 const fn setup_action(args: &ConnectArgs) -> &'static str {
     if args.stage {
-        "setup --host none --no-services"
+        "network setup --host none --no-services"
     } else {
-        "setup --host none"
+        "network setup --host none"
     }
 }
 

@@ -187,7 +187,7 @@ impl ServerCertVerifier for PinnedVerifier {
 ///
 /// Only a presented certificate whose bytes equal a certificate in the file is
 /// accepted, and only on the one IP address it lists (no other SAN entries); peers
-/// must be addressed by IP. Self-signed certificates (what `famp setup` issues) pin themselves;
+/// must be addressed by IP. Self-signed certificates (what `famp network setup` issues) pin themselves;
 /// to pin a CA-issued certificate, put it in the file together with its issuer.
 ///
 /// # Errors

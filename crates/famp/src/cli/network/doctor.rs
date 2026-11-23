@@ -147,7 +147,10 @@ fn config_checks(home: &std::path::Path, config: &Config, checks: &mut Vec<Check
         checks.push(check(
             "permissions",
             "error",
-            format!("{}. Run `famp setup` to tighten them.", drift.join("; ")),
+            format!(
+                "{}. Run `famp network setup` to tighten them.",
+                drift.join("; ")
+            ),
         ));
     }
     checks.push(cert_expiry_check(home));
