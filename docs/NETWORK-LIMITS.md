@@ -228,6 +228,10 @@ In priority order, from the reviews of the release-1 candidate:
    and wake (below).
 6. Do not mount the pairing route under `famp network serve` unless a pairing is in progress,
    and have `doctor` report a live invite in `gateway/pairing.json` (limit 26).
+7. Move tokio past RUSTSEC-2026-0386 (an "unsound" warning; `cargo audit` reports it but does
+   not fail on it): every patched tokio deprecates `AsyncFd::new`, so `famp await
+   --abort-on-fd` (`crates/famp/src/cli/await_cmd/mod.rs`, `build_abort_fd`) must migrate to
+   the `unsafe` `AsyncFd::register`, as its own reviewed commit.
 
 ## Tracked follow-ups
 mTLS or client-certificate pinning at the TLS layer; a certificate renewal command;

@@ -69,7 +69,7 @@ nix = { version = "0.31", features = ["process", "fs", "signal", "user"] }
 dirs = "5"
 regex = { workspace = true }
 which = "7"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 # famp-keyring is a REAL dependency (not dev-only): `famp peer
 # export`/`import` (Phase 8, TRUST-01) read/write the gateway peer
 # keyring at runtime, not just in tests.
