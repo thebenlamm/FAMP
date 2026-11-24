@@ -116,13 +116,13 @@ behavior is marked UNVERIFIED where it is a claim about systemd, ufw or pf that 
 26. **The pairing route is always served, without authentication.** `famp-gateway` mounts the
     Phase 18 `POST /famp/v1/pair/redeem` route on every start, including under
     `famp network serve`, which reads the default store `~/.famp/gateway/pairing.json`. With no
-    store, or only revoked invites, it answers 404 and writes nothing. With any other invite in
-    the store, pending or expired, anyone who can reach the port can try codes: a wrong code is
-    recorded against the invite's attempt limit (a write to `pairing.json`), and the right code
-    for a pending invite completes the redemption. The route never touches the peer keyring;
-    pinning the redeemer is a separate step on this computer. **Before `famp network enable`,**
-    look at `~/.famp/gateway/pairing.json`; if no pairing is in progress, move it out of
-    `~/.famp/gateway/`.
+    store, or a store with no LIVE invite (only revoked, redeemed, expired, or out-of-attempts
+    invites), every attempt is rejected and nothing is written. With a live invite (pending,
+    unexpired, attempts left), anyone who can reach the port can try codes: a wrong code burns
+    an attempt on every live invite (a write to `pairing.json`), and the right code redeems it.
+    The route never touches the peer keyring; pinning the redeemer is a separate step on this
+    computer. **Before `famp network enable`,** look at `~/.famp/gateway/pairing.json`: it must be
+    absent or hold no live invite; if no pairing is in progress, move it out of `~/.famp/gateway/`.
 
 ## Behavior changes in this release
 - **Restart the broker after installing these binaries.** A new `famp` talking to a broker that
@@ -205,7 +205,7 @@ In priority order, from the reviews of the release-1 candidate:
 5. mTLS, a certificate renewal command, transactional `import`, owner checks on the allowlist,
    and wake (below).
 6. Do not mount the pairing route under `famp network serve` unless a pairing is in progress,
-   and have `doctor` report a non-revoked invite in `gateway/pairing.json` (limit 26).
+   and have `doctor` report a live invite in `gateway/pairing.json` (limit 26).
 
 ## Tracked follow-ups
 mTLS or client-certificate pinning at the TLS layer; a certificate renewal command;
