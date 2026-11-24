@@ -1,8 +1,8 @@
 # Personal network: what it does, what it does not, and what changed
 
 Applies to the `famp network setup` / `famp connect` / `famp doctor` / `famp network` workflow.
-Everything below was checked on macOS only; Linux behavior is marked UNVERIFIED where it
-is a claim about systemd, ufw or pf that nobody has run.
+Everything below was checked on macOS unless it says it was observed on Linux; other Linux
+behavior is marked UNVERIFIED where it is a claim about systemd, ufw or pf that nobody has run.
 
 ## Scope of this release
 - One identity (one Ed25519 key, one principal) per computer. Messages between computers
@@ -31,10 +31,14 @@ is a claim about systemd, ufw or pf that nobody has run.
    candidate principal has an ACTIVE pin (`invalid_signature`) or not (`unpinned_key`); that
    split is a documented Phase 9 decision. An authenticated peer can tell which recipient
    names are on the allowlist (403 versus 202).
-7. **systemd user units:** `IPAddressAllow/Deny` and the filesystem directives (`PrivateTmp`,
-   `ProtectSystem`) may be silently ignored in a user manager, or may stop the unit starting,
-   depending on the distribution (UNVERIFIED); do not rely on them as the only control. Check
-   `systemctl --user status famp-gateway` and `systemd-analyze --user verify` after staging.
+7. **systemd user units do not enforce the unit's IP or filesystem directives.** Observed on two
+   Linux boxes (devhome, devgpu) running the systemd `--user` manager: a test unit with
+   `IPAddressDeny=any` still reached 1.1.1.1, and the manager logs that it is not running as
+   root. `IPAddressAllow/Deny`, `PrivateTmp` and `ProtectSystem` in the generated unit are
+   therefore **not a control** there; only `NoNewPrivileges` and `MemoryMax` were seen to take
+   effect. The controls are the host firewall (`famp network firewall`, ufw), the Tailscale ACL,
+   the pinned peers and the recipient allowlist. Check `systemctl --user status famp-gateway`
+   and `systemd-analyze --user verify` after staging.
    `After=network-online.target` does not apply to user units; the unit waits for the broker
    and retries (`RestartSec=15`, up to 20 starts in 10 minutes).
 8. **The pf anchor and ufw order are templates** to be applied and verified by hand; the pf
@@ -80,7 +84,51 @@ is a claim about systemd, ufw or pf that nobody has run.
     character at the cut of a remote error message) is fixed and tested; remote output is
     capped at 1 MiB.
 
+20. **A delivery that times out is not cancelled and is not bounded.** The request answers
+    `504` after 15 s, but the spawned delivery task keeps waiting for the sender registry and then
+    for the local bus, with no timeout and no cap on how many such tasks exist (no semaphore).
+    While the local bus is stalled, tasks pile up behind the registry mutex, each holding its
+    request body (up to 1 MiB); the only bound is the per-sender rate budget (120 per minute) and
+    the number of pinned peers. Three consequences:
+    (a) the allowlist is checked BEFORE the task is spawned, not inside it, so a message that is
+    already queued still lands after `famp network deny`; (b) a sender that re-sends after a 504
+    under a NEW nonce can be delivered twice, because the first still lands; (c) memory grows
+    with the backlog until the bus answers.
+21. **A nonce is recorded before delivery, so delivery is at-most-once.** The replay record is
+    written after the signature verifies and before the allowlist check and the delivery. If the
+    allowlist refuses or the delivery fails or times out, a retry of the SAME signed envelope is
+    refused as a replay; the sender must sign a new one (see 20b for the duplicate risk).
+22. **The exact-SAN check binds a certificate to an IP address, not to a peer.** A certificate is
+    accepted for the one address it lists and no other, but which computer owns that address is
+    still the self-asserted card (limit 14); the firewall and Tailscale ACLs decide who can
+    actually use it.
+23. **Startup checks only that `--recipient-allowlist` was given, not the file.** A missing,
+    malformed or unsafe file is not an error at start; it makes every delivery fail with `403`.
+    `famp doctor` reports the recipients file, but only the CLI's own checks.
+24. **`doctor` does not validate the keyring the way the gateway loads it.** It reads principal
+    names from the file text and treats an unreadable file as "no pins" (`unwrap_or_default`), so
+    a corrupt but readable keyring can pass `doctor` and still stop the gateway at its next start.
+25. **`connect` has no overall timeout and can deadlock on a hostile remote.** It writes the whole
+    bundle to the remote's stdin before it reads the remote's stdout; a remote that prints more
+    than the pipe buffer before it reads stdin stalls both ends. Output is capped at 1 MiB and
+    nothing is written anywhere until every check has passed, so interrupting it (Ctrl-C) is
+    safe; rerun the same command.
+26. **The pairing route is always served, without authentication.** `famp-gateway` mounts the
+    Phase 18 `POST /famp/v1/pair/redeem` route on every start, including under
+    `famp network serve`, which reads the default store `~/.famp/gateway/pairing.json`. With no
+    store, or only revoked invites, it answers 404 and writes nothing. With any other invite in
+    the store, pending or expired, anyone who can reach the port can try codes: a wrong code is
+    recorded against the invite's attempt limit (a write to `pairing.json`), and the right code
+    for a pending invite completes the redemption. The route never touches the peer keyring;
+    pinning the redeemer is a separate step on this computer. **Before `famp network enable`,**
+    look at `~/.famp/gateway/pairing.json`; if no pairing is in progress, move it out of
+    `~/.famp/gateway/`.
+
 ## Behavior changes in this release
+- **Restart the broker after installing these binaries.** A new `famp` talking to a broker that
+  was started from an older binary gets a Hello error (`possible mixed FAMP binary/protocol`).
+  After installing `famp` and `famp-gateway`, run `famp daemon restart`; open agent windows then
+  re-register, and mailboxes are kept per name.
 - `famp network serve` starts the gateway with `--pinned-only`, `--recipient-allowlist` and a
   hardened client. A recipient not on `~/.famp/recipients.json` is dropped with one fixed 403,
   and a missing, unreadable, malformed or group/world-writable file denies everything.
@@ -143,6 +191,21 @@ Design notes from review, so they are not rediscovered:
 - Sessions enroll explicitly; the default deny-list includes OpenClaw/Jeeves, jeeves/sofer/
   offload, and `guardian-*`. Running wakeable sessions as a different account from the
   gateway conflicts with `service.rs`'s one-user model and must be settled first.
+
+## Release 2 hardening list (not built)
+In priority order, from the reviews of the release-1 candidate:
+1. Bound the detached delivery: a semaphore that answers `503` when full, a timeout INSIDE the
+   task, and an allowlist recheck inside the task (limits 20, 21).
+2. Re-check the bind address at `network serve` start (limit 15).
+3. Key all post-verify state (rate, replay) on the VERIFIED envelope sender
+   (`envelope_sender(&envelope)`) instead of the pre-verification peek, so it cannot disagree
+   with what the signature proved.
+4. Validate the keyring in `doctor` the way the gateway loads it, and give `connect` an overall
+   timeout with the stdin write and stdout read decoupled (limits 24, 25).
+5. mTLS, a certificate renewal command, transactional `import`, owner checks on the allowlist,
+   and wake (below).
+6. Do not mount the pairing route under `famp network serve` unless a pairing is in progress,
+   and have `doctor` report a non-revoked invite in `gateway/pairing.json` (limit 26).
 
 ## Tracked follow-ups
 mTLS or client-certificate pinning at the TLS layer; a certificate renewal command;
