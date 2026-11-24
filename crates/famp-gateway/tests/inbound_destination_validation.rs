@@ -30,7 +30,7 @@
 //!
 //! Uses a real broker subprocess (ChildGuard convention) + a real
 //! `GatewayRegistry` backing the SENDER's bare name (mirroring
-//! `inbox_handler`'s `guard.get_mut(sender.name())` dispatch) — the
+//! `inbox_handler`'s per-sender `registry.principal(sender.name())` dispatch) — the
 //! router itself is exercised in-process via `Router::oneshot`, not a
 //! live TLS listener (`build_gateway_router` needs no TLS to test).
 

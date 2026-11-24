@@ -1,9 +1,21 @@
 //! `GatewayRegistry` — demux table enforcing GW-04 (no cross-talk):
 //! each proxied principal owns its own [`crate::ProxiedPrincipal`], keyed
 //! strictly by name, never sharing a connection.
+//!
+//! Locking: every principal sits behind its OWN mutex, because its one bus
+//! connection is shared by its egress loop (a 1 s `Await` long-poll) and by
+//! ingress deliveries from that peer, and a request and its reply must never
+//! interleave on it. The lock around the whole registry (held by callers as
+//! `Arc<Mutex<GatewayRegistry>>`) is held only for a lookup, never across a bus
+//! round trip, so one peer's long-poll never delays another peer's delivery.
+//! Nobody holds two principal locks at once, and nobody takes the registry lock
+//! while holding a principal lock.
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
 
 use crate::error::GatewayError;
 use crate::principal::ProxiedPrincipal;
@@ -16,9 +28,10 @@ use crate::principal::ProxiedPrincipal;
 /// no shared connection or demux queue across keys.
 #[derive(Default)]
 pub struct GatewayRegistry {
-    principals: HashMap<String, ProxiedPrincipal>,
-    /// Test-only: pretend the local bus is slow by sleeping, lock held, before each
-    /// delivery's bus round trip. Compiled out of every non-test build.
+    principals: HashMap<String, Arc<Mutex<ProxiedPrincipal>>>,
+    /// Test-only: pretend the local bus is slow by sleeping, with the sender's
+    /// connection held, before each delivery's bus round trip. Compiled out of every
+    /// non-test build.
     #[cfg(test)]
     test_delivery_delay: Option<std::time::Duration>,
 }
@@ -45,21 +58,23 @@ impl GatewayRegistry {
             return Err(GatewayError::DuplicatePrincipal(name));
         }
         let principal = ProxiedPrincipal::register(sock, name.clone()).await?;
-        self.principals.insert(name, principal);
+        self.principals
+            .insert(name, Arc::new(Mutex::new(principal)));
         Ok(())
     }
 
-    /// The `ProxiedPrincipal` backing `name`, if this gateway backs it.
+    /// Whether this gateway backs `name`.
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&ProxiedPrincipal> {
-        self.principals.get(name)
+    pub fn backs(&self, name: &str) -> bool {
+        self.principals.contains_key(name)
     }
 
-    /// Mutable access to the `ProxiedPrincipal` backing `name`, if this
-    /// gateway backs it. Phase 9: outbound drain and inbound deliver both
-    /// need `&mut ProxiedPrincipal` to call `send_recv`.
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut ProxiedPrincipal> {
-        self.principals.get_mut(name)
+    /// The `ProxiedPrincipal` backing `name`, behind its own lock, if this gateway
+    /// backs it. Drop the registry lock BEFORE locking the principal (see the module
+    /// doc): outbound drain and inbound deliver both lock it to call `send_recv`.
+    #[must_use]
+    pub fn principal(&self, name: &str) -> Option<Arc<Mutex<ProxiedPrincipal>>> {
+        self.principals.get(name).cloned()
     }
 
     /// Names of every principal currently backed by this gateway.

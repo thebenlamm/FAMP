@@ -14,13 +14,13 @@
 //! The same backed [`crate::ProxiedPrincipal`] connection this module
 //! drains from is ALSO used by 09-03's ingress handler to deliver
 //! inbound envelopes via the same principal's stand-in connection. Both
-//! paths go through the single `Arc<Mutex<GatewayRegistry>>` the gateway
-//! process owns. [`run_egress`] therefore never holds the registry lock
-//! (or a long-lived `&mut ProxiedPrincipal`) across a long-blocking
-//! `Await` — each loop iteration re-acquires the lock, issues a SHORT
-//! (~1s) `Await`, and releases the lock again before signing/POSTing, so
-//! ingress can interleave a `Send` on the same connection without being
-//! starved for longer than one poll interval.
+//! paths lock that principal's OWN mutex (see `registry.rs`); the registry
+//! lock is held only for the lookup. [`run_egress`] never holds the
+//! principal lock across a long-blocking `Await` — each loop iteration
+//! re-acquires it, issues a SHORT (~1s) `Await`, and releases it before
+//! signing/POSTing, so ingress can interleave a `Send` on the same
+//! connection without being starved for longer than one poll interval,
+//! and another principal's loop never delays it at all.
 
 use std::sync::Arc;
 
@@ -485,24 +485,23 @@ async fn notify_relay_failure(
     // recipient's mailbox, the same shape `ingress.rs::deliver` already
     // relies on.
     let reply = {
-        let mut guard = registry.lock().await;
-        let Some(principal) = guard.get_mut(name) else {
-            drop(guard);
+        // Registry lock for the lookup only; then this principal's own lock.
+        let principal = registry.lock().await.principal(name);
+        let Some(principal) = principal else {
             eprintln!(
                 "famp-gateway: egress[{name}]: cannot notify relay failure: no longer backed"
             );
             return;
         };
-        let reply = principal
+        let mut connection = principal.lock().await;
+        connection
             .send_recv(BusMessage::Send {
                 to: Target::Agent {
                     name: original_from_name.clone(),
                 },
                 envelope: ack,
             })
-            .await;
-        drop(guard);
-        reply
+            .await
     };
 
     match reply {
@@ -547,26 +546,24 @@ pub async fn run_egress(
     vk: TrustedVerifyingKey,
 ) {
     loop {
-        // The registry lock is held only long enough to acquire the
-        // principal and issue the short `Await` — dropped explicitly
-        // right after, BEFORE the match/sign/POST below, so ingress
-        // (09-03) is never blocked on this connection longer than one
-        // poll interval (the shared-connection contract this module's
-        // docs describe).
+        // The registry lock is held only for the lookup. THIS principal's
+        // own lock is held for the short `Await` and dropped right after,
+        // BEFORE the match/sign/POST below, so ingress (09-03) from this
+        // peer is never blocked on this connection longer than one poll
+        // interval, and other peers' deliveries are never blocked by it.
         let reply = {
-            let mut guard = registry.lock().await;
-            let Some(principal) = guard.get_mut(&name) else {
+            let principal = registry.lock().await.principal(&name);
+            let Some(principal) = principal else {
                 eprintln!("famp-gateway: egress[{name}]: no longer backed, stopping drain loop");
                 return;
             };
-            let reply = principal
+            let mut connection = principal.lock().await;
+            connection
                 .send_recv(BusMessage::Await {
                     timeout_ms: AWAIT_TIMEOUT_MS,
                     task: None,
                 })
-                .await;
-            drop(guard);
-            reply
+                .await
         };
 
         let envelopes = match reply {

@@ -5,7 +5,8 @@
 //! (`run_ingress`, 09-03) and drains+signs+POSTs outbound mailbox traffic
 //! for every backed principal (`run_egress`, 09-02), sharing exactly ONE
 //! `Arc<Mutex<GatewayRegistry>>` between both directions (the
-//! shared-connection contract — see `egress`/`ingress` module docs).
+//! shared-connection contract — see the `registry`/`egress` module docs;
+//! each principal's connection has its own lock).
 //!
 //! Usage:
 //! ```text
@@ -681,8 +682,9 @@ async fn main() {
 
     // SHARED-CONNECTION CONTRACT (load-bearing for GW-02): exactly ONE
     // `Arc<Mutex<GatewayRegistry>>` is cloned into `run_ingress` and every
-    // `run_egress` task below. See `egress.rs`/`ingress.rs`'s module docs
-    // for why neither side ever holds this lock across a long await.
+    // `run_egress` task below. See `registry.rs`/`egress.rs`'s module docs:
+    // this lock is held only for lookups, and each principal's connection
+    // has its own lock, so neither side holds a shared lock across a bus call.
     let registry = Arc::new(Mutex::new(registry));
 
     let mut egress_tasks = tokio::task::JoinSet::new();

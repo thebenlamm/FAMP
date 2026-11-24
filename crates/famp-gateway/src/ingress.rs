@@ -20,10 +20,11 @@
 //! mutation. A cheap-to-send request can therefore never force an
 //! expensive Ed25519 verify (D-09) — see
 //! `cheap_checks_reject_before_signature_verify_ever_runs` in this
-//! module's test suite for the pinned proof. The registry lock is held
-//! only for the single delivery `send_recv` call, mirroring 09-02
-//! egress's shared-connection contract so neither direction starves the
-//! other on the same backed principal's UDS connection.
+//! module's test suite for the pinned proof. A delivery holds only the
+//! SENDER's own connection lock for its single `send_recv` call (the
+//! registry lock only for the lookup), mirroring 09-02 egress's
+//! shared-connection contract so neither direction starves the other on
+//! the same backed principal's UDS connection.
 
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -735,13 +736,9 @@ async fn ingest_inbound_at(
         ingress_error_for_guard(reject)
     })?;
 
-    // Short-hold: acquire, read, drop — no mutation, mirroring the
-    // delivery lock's contract below.
-    //
-    // The registry lock is also held by an in-flight delivery for as long as the
-    // local bus takes to answer, so a stuck bus would otherwise park EVERY request
-    // here, before verification, each holding a connection slot. Waiting for the
-    // lock is cancel-safe, so bound it like a delivery and answer 504.
+    // Short-hold: acquire, read, drop — no mutation. The registry lock is only ever
+    // held for a lookup (never across a bus round trip, see `registry.rs`); the
+    // bound is defense in depth so no request can park here, before verification.
     let sender_is_backed = {
         let registry = tokio::time::timeout(state.delivery_timeout, state.registry.lock())
             .await
@@ -752,7 +749,7 @@ async fn ingest_inbound_at(
                 );
                 IngressError::DeliveryTimeout
             })?;
-        registry.get(peeked.from.name()).is_some()
+        registry.backs(peeked.from.name())
     };
 
     let guard_input = GuardInput {
@@ -900,6 +897,17 @@ fn check_audience_and_format(
     Ok(())
 }
 
+/// Tests only: the simulated slow-bus stall (always `None` outside tests).
+#[cfg(test)]
+const fn test_stall(registry: &GatewayRegistry) -> Option<std::time::Duration> {
+    registry.test_delivery_delay()
+}
+
+#[cfg(not(test))]
+const fn test_stall(_: &GatewayRegistry) -> Option<std::time::Duration> {
+    None
+}
+
 /// Content-transparent delivery of an already-verified envelope onto the
 /// local bus. Extracted from `inbox_handler` (Task 1) for the same
 /// `too_many_lines` reason as [`check_audience_and_format`] — behavior is
@@ -939,47 +947,45 @@ async fn deliver(
     // receiving side once it lands on the local bus.
     strip_relay_fields(&mut value);
 
-    // Registry lock held ONLY for this single delivery `send_recv` —
-    // acquired after verification succeeds, dropped immediately after,
-    // mirroring 09-02 egress's short-hold shared-connection contract so
-    // ingress and egress never starve each other on the same backed
-    // principal's connection.
-    //
-    // The lock and the bus round trip run in a SPAWNED task, never in the
-    // request's own future. `send_recv` writes a frame and then reads the reply on
-    // a connection shared by every delivery for this sender; if the request
-    // future were dropped between those two steps (a client that disconnects mid-
-    // delivery, which hyper handles by dropping it) the unread reply would be
-    // handed to the NEXT delivery. The request only waits `timeout` for the task;
-    // on expiry it answers 504 and the task keeps running to completion.
+    // The lookup, the wait for this sender's connection and the bus round trip all
+    // run in a SPAWNED task, never in the request's own future, so nothing between
+    // the nonce being recorded (before this call) and the bus `Send` can be
+    // cancelled by a client that disconnects: once a message is verified and its
+    // nonce recorded, it is delivered. `send_recv` writes a frame and then reads
+    // the reply on a connection shared with this sender's own egress loop (and
+    // its other deliveries), so if the request future were dropped between those
+    // two steps (hyper drops it on disconnect) the unread reply would be handed to
+    // the NEXT user of the connection. Only this sender's own users can make the
+    // task wait; other peers' loops cannot. The request waits `timeout` for the
+    // task; on expiry it answers 504 and the task keeps running to completion.
     let registry = Arc::clone(registry);
     let sender_name = sender.name().to_owned();
     let recipient_name = recipient.name().to_owned();
     let task = tokio::spawn(async move {
-        let mut guard = registry.lock().await;
-        // Task 1 (17-03, INGR-04/D-22): `audience_check` already proved
-        // this sender is backed, pre-verify (`GuardReject::SenderNotBacked`)
-        // — a hostile "sender not backed" request never reaches this far
-        // anymore. This `else` branch is kept purely as defense-in-depth:
-        // reaching it now would mean the sender was backed when the guard
-        // chain ran but was concurrently de-registered before this lock
-        // was acquired, a benign race, not an attack surface.
-        #[cfg(test)]
-        if let Some(delay) = guard.test_delivery_delay() {
-            // Simulates a slow local bus: the lock is held for the whole stall.
-            tokio::time::sleep(delay).await;
+        // The registry lock is held only for this lookup (see `registry.rs`).
+        // Task 1 (17-03, INGR-04/D-22): `audience_check` already proved this
+        // sender is backed, pre-verify (`GuardReject::SenderNotBacked`); a miss
+        // here is kept purely as defense-in-depth.
+        let (principal, stall) = {
+            let guard = registry.lock().await;
+            (guard.principal(&sender_name), test_stall(&guard))
+        };
+        let principal = principal?;
+        let mut connection = principal.lock().await;
+        if let Some(stall) = stall {
+            // Tests only: a slow local bus, with the connection held for the whole stall.
+            tokio::time::sleep(stall).await;
         }
-        let principal = guard.get_mut(&sender_name)?;
-        let reply = principal
-            .send_recv(BusMessage::Send {
-                to: Target::Agent {
-                    name: recipient_name,
-                },
-                envelope: value,
-            })
-            .await;
-        drop(guard);
-        Some(reply)
+        Some(
+            connection
+                .send_recv(BusMessage::Send {
+                    to: Target::Agent {
+                        name: recipient_name,
+                    },
+                    envelope: value,
+                })
+                .await,
+        )
     });
     let reply = match tokio::time::timeout(timeout, task).await {
         Ok(Ok(Some(reply))) => reply,
@@ -2007,9 +2013,10 @@ mod tests {
     }
 
     /// A request waits only `delivery_timeout` for the local bus (then 504), but the
-    /// delivery itself is never cancelled: it completes exactly once, also when the
-    /// request future is dropped mid-delivery, and later deliveries are not poisoned.
-    /// A stalled delivery also must not park every other request before verification.
+    /// delivery itself is never cancelled or dropped: it completes exactly once, also
+    /// when it had to wait for the sender's busy connection and when the request future
+    /// is dropped mid-delivery, and later deliveries are not poisoned. A stalled
+    /// delivery also must not park other requests.
     #[tokio::test]
     async fn a_slow_local_bus_gives_504_but_the_delivery_still_lands_once_and_nothing_is_poisoned()
     {
@@ -2065,26 +2072,36 @@ mod tests {
             (StatusCode::GATEWAY_TIMEOUT, Some("delivery_timeout".into()))
         );
         assert!(started.elapsed() < std::time::Duration::from_millis(800));
-        // 2. While that delivery still holds the lock, another request does not hang
-        //    before verification: it gives up after the same bound.
+        // 2. While that delivery still holds the sender's connection, another request
+        //    does not hang: it gives up after the same bound.
         let (r, b) = send("blocked");
         let blocked =
             tokio::time::timeout(std::time::Duration::from_secs(5), post_inbox(r, &to, b))
                 .await
-                .expect("a busy registry must not park requests forever");
+                .expect("a busy connection must not park requests forever");
         assert_eq!(
             status_and_error(blocked).await,
             (StatusCode::GATEWAY_TIMEOUT, Some("delivery_timeout".into()))
         );
-        // 3. The first delivery was NOT cancelled: it lands exactly once.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while count_in_tree(&tree, ID) < one * 2 && std::time::Instant::now() < deadline {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
+        // 3. Neither delivery was cancelled or dropped: the first lands, and so does the
+        //    blocked one, whose nonce was already recorded (a 504 means "may still land",
+        //    never "lost"). Each lands exactly once.
+        let settle = |target: usize| {
+            let tree = tree.clone();
+            async move {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                while count_in_tree(&tree, ID) < target && std::time::Instant::now() < deadline {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+                // Longer than one stall, so a duplicate would have shown up by now.
+                tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                count_in_tree(&tree, ID)
+            }
+        };
         assert_eq!(
-            count_in_tree(&tree, ID),
-            one * 2,
-            "detached delivery must complete once"
+            settle(one * 3).await,
+            one * 3,
+            "both detached deliveries must complete, once each"
         );
 
         // 4. A request future dropped mid-delivery (client disconnect) still delivers.
@@ -2093,13 +2110,9 @@ mod tests {
             tokio::time::timeout(std::time::Duration::from_millis(100), post_inbox(r, &to, b))
                 .await;
         assert!(dropped.is_err(), "the request was dropped while waiting");
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while count_in_tree(&tree, ID) < one * 3 && std::time::Instant::now() < deadline {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
         assert_eq!(
-            count_in_tree(&tree, ID),
-            one * 3,
+            settle(one * 4).await,
+            one * 4,
             "a dropped request must not cancel delivery"
         );
 
@@ -2107,7 +2120,76 @@ mod tests {
         registry.lock().await.set_test_delivery_delay(None);
         let (r, b) = send("after");
         assert_eq!(post_inbox(r, &to, b).await.status(), StatusCode::ACCEPTED);
-        assert_eq!(count_in_tree(&tree, ID), one * 4);
+        assert_eq!(count_in_tree(&tree, ID), one * 5);
+    }
+
+    /// A gateway backs every peer, and each peer's egress loop long-polls the local bus
+    /// (`Await`, 1 s, expired on the broker's 1 s tick). A delivery from one peer must
+    /// not queue behind the OTHER peers' polls: on a 4-computer mesh (3 peers) it used
+    /// to take ~7-12 s and outlast the sender's 10 s client timeout, so the sender
+    /// reported a delivery that had in fact landed as failed.
+    #[tokio::test]
+    async fn a_delivery_does_not_wait_behind_other_peers_egress_polls() {
+        let sk = FampSigningKey::from_bytes([86u8; 32]);
+        let from: Principal = "agent:hosta.test/oscar".parse().unwrap();
+        let to: Principal = "agent:hostb.test/peggy".parse().unwrap();
+        let mut keyring = Keyring::new();
+        keyring.pin_tofu(from.clone(), sk.verifying_key()).unwrap();
+        let broker = LiveBroker::spawn().await;
+        let peers = ["oscar", "trent", "victor"];
+        let mut registry = GatewayRegistry::default();
+        for name in peers {
+            registry.back(&broker.sock, name.to_owned()).await.unwrap();
+        }
+        let registry = Arc::new(Mutex::new(registry));
+        let transport =
+            Arc::new(famp_transport_http::HttpTransport::new_client_only(None).unwrap());
+        let egress_key = FampSigningKey::from_bytes([87u8; 32]);
+        let loops: Vec<_> = peers
+            .iter()
+            .map(|name| {
+                tokio::spawn(crate::egress::run_egress(
+                    (*name).to_owned(),
+                    registry.clone(),
+                    "hostb.test".to_owned(),
+                    transport.clone(),
+                    FampSigningKey::from_bytes([87u8; 32]),
+                    egress_key.verifying_key(),
+                ))
+            })
+            .collect();
+        // Let every loop reach its long-poll.
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        let router = build_gateway_router_with(
+            registry.clone(),
+            Arc::new(keyring),
+            Arc::from("hostb.test"),
+            Arc::new(Mutex::new(IngressGuard::new())),
+            None,
+            RouterOptions {
+                recipient_allowlist: Some(crate::recipient_allowlist::test_allowlist()),
+                ..RouterOptions::default()
+            },
+        );
+        let mut worst = std::time::Duration::ZERO;
+        for i in 0..3 {
+            let started = std::time::Instant::now();
+            let resp = post_inbox(router.clone(), &to, ack_bytes(&sk, &from, &to)).await;
+            let took = started.elapsed();
+            eprintln!("delivery {i} with {} backed peers: {took:?}", peers.len());
+            assert_eq!(resp.status(), StatusCode::ACCEPTED);
+            worst = worst.max(took);
+        }
+        for task in loops {
+            task.abort();
+        }
+        // Waiting on the sender's OWN poll is inherent (one bus connection per peer):
+        // at most a 1 s Await plus a 1 s broker tick. Queuing behind the other peers'
+        // polls is not.
+        assert!(
+            worst < std::time::Duration::from_secs(3),
+            "a delivery took {worst:?}; it must not wait behind other peers' polls"
+        );
     }
 
     /// With a peer address the source is that address (what the real server always

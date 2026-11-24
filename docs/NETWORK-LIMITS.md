@@ -85,19 +85,23 @@ behavior is marked UNVERIFIED where it is a claim about systemd, ufw or pf that 
     capped at 1 MiB.
 
 20. **A delivery that times out is not cancelled and is not bounded.** The request answers
-    `504` after 15 s, but the spawned delivery task keeps waiting for the sender registry and then
-    for the local bus, with no timeout and no cap on how many such tasks exist (no semaphore).
-    While the local bus is stalled, tasks pile up behind the registry mutex, each holding its
-    request body (up to 1 MiB); the only bound is the per-sender rate budget (120 per minute) and
-    the number of pinned peers. Three consequences:
-    (a) the allowlist is checked BEFORE the task is spawned, not inside it, so a message that is
-    already queued still lands after `famp network deny`; (b) a sender that re-sends after a 504
-    under a NEW nonce can be delivered twice, because the first still lands; (c) memory grows
-    with the backlog until the bus answers.
+    `504` after 15 s, but the spawned delivery task keeps waiting for the sender's bus connection
+    and then for the local bus, with no timeout and no cap on how many such tasks exist (no
+    semaphore). While the local bus is stalled for a peer, that peer's tasks pile up behind its
+    connection lock, each holding its request body (up to 1 MiB); the only bound is the
+    per-sender rate budget (120 per minute) and the number of pinned peers. A broker that accepts
+    a frame and never replies holds that peer's connection forever (other peers are unaffected).
+    Three consequences: (a) the allowlist is checked BEFORE the task is spawned, not inside it, so
+    a message that is already queued still lands after `famp network deny`; (b) a sender that
+    re-sends after a 504 under a NEW nonce can be delivered twice, because the first still lands;
+    (c) memory grows with the backlog until the bus answers.
 21. **A nonce is recorded before delivery, so delivery is at-most-once.** The replay record is
     written after the signature verifies and before the allowlist check and the delivery. If the
     allowlist refuses or the delivery fails or times out, a retry of the SAME signed envelope is
-    refused as a replay; the sender must sign a new one (see 20b for the duplicate risk).
+    refused as a replay; the sender must sign a new one (see 20b for the duplicate risk). The
+    same holds if the client disconnects while the gateway reads the allowlist file: the nonce
+    is recorded and nothing is delivered. From the start of delivery on, a disconnect no longer
+    matters (the delivery runs in its own task).
 22. **The exact-SAN check binds a certificate to an IP address, not to a peer.** A certificate is
     accepted for the one address it lists and no other, but which computer owns that address is
     still the self-asserted card (limit 14); the firewall and Tailscale ACLs decide who can
@@ -123,8 +127,25 @@ behavior is marked UNVERIFIED where it is a claim about systemd, ufw or pf that 
     The route never touches the peer keyring; pinning the redeemer is a separate step on this
     computer. **Before `famp network enable`,** look at `~/.famp/gateway/pairing.json`: it must be
     absent or hold no live invite; if no pairing is in progress, move it out of `~/.famp/gateway/`.
+27. **Only computer names are reachable remotely.** `famp send --to agent:<domain>/<name>` routes
+    on the local bus by `<name>` alone (`crates/famp/src/cli/send/mod.rs`, the bus target is
+    the leaf name). The gateway stands in locally only for each peer's computer name (one
+    principal per computer), so `--to agent:devgpu.famp/devgpu` crosses to devgpu, but
+    `--to agent:devgpu.famp/alice` is delivered to THIS computer's local mailbox `alice`
+    (created if absent) and never leaves the computer. Per-session agent names on another
+    computer cannot be addressed in this release; address the computer name, and on that
+    computer the message goes to the mailbox of that name, subject to its recipient allowlist.
 
 ## Behavior changes in this release
+- **A peer's delivery no longer waits for other peers' polls.** Each pinned peer's bus
+  connection has its own lock, shared only by that peer's outbound poll (`Await`, 1 s, expired
+  on the broker's 1 s tick) and its inbound deliveries. A delivery now waits at most for its own
+  peer's poll (about 2 s), not for every peer's: on a 3-peer mesh it used to take 7-12 s, past
+  the sender's 10 s client timeout, so the sender reported messages that had landed as failed.
+  A `504` still means "may still land": the delivery waits for its peer's connection in a
+  detached task (limit 20). Before, a request that met a busy registry got its `504` before
+  signature verification and was not delivered; now it is verified, its nonce is recorded, and
+  it is delivered once the connection is free.
 - **Restart the broker after installing these binaries.** A new `famp` talking to a broker that
   was started from an older binary gets a Hello error (`possible mixed FAMP binary/protocol`).
   After installing `famp` and `famp-gateway`, run `famp daemon restart`; open agent windows then
@@ -195,7 +216,8 @@ Design notes from review, so they are not rediscovered:
 ## Release 2 hardening list (not built)
 In priority order, from the reviews of the release-1 candidate:
 1. Bound the detached delivery: a semaphore that answers `503` when full, a timeout INSIDE the
-   task, and an allowlist recheck inside the task (limits 20, 21).
+   task (with a reconnect, since a timed-out bus read leaves the connection out of step), and an
+   allowlist recheck inside the task (limits 20, 21).
 2. Re-check the bind address at `network serve` start (limit 15).
 3. Key all post-verify state (rate, replay) on the VERIFIED envelope sender
    (`envelope_sender(&envelope)`) instead of the pre-verification peek, so it cannot disagree

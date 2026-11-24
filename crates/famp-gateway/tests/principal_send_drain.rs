@@ -207,17 +207,20 @@ async fn registry_get_mut_returns_backed_and_none_for_unbacked() {
         .await
         .expect("back dave");
 
-    assert!(registry.get_mut("dave").is_some());
-    assert!(registry.get_mut("nobody").is_none());
+    assert!(registry.backs("dave"));
+    assert!(!registry.backs("nobody"));
+    assert!(registry.principal("nobody").is_none());
 
-    // Mutable access is actually usable — issue a send_recv through it.
-    let dave = registry.get_mut("dave").expect("dave backed");
+    // The principal's own lock is actually usable — issue a send_recv through it.
+    let dave = registry.principal("dave").expect("dave backed");
+    let mut dave = dave.lock().await;
     let reply = dave
         .send_recv(BusMessage::Await {
             timeout_ms: 200,
             task: None,
         })
         .await
-        .expect("send_recv via get_mut");
+        .expect("send_recv via the principal's lock");
+    drop(dave);
     assert!(matches!(reply, BusReply::AwaitTimeout {}));
 }
