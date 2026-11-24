@@ -12,12 +12,12 @@ description = "FAMP v0.5.2 — famp-transport-http crate"
 workspace = true
 
 [dependencies]
-famp-core      = { path = "../famp-core", version = "1.1.0-rc.2" }
-famp-envelope  = { path = "../famp-envelope", version = "1.1.0-rc.2" }
-famp-crypto    = { path = "../famp-crypto", version = "1.1.0-rc.2" }
-famp-keyring   = { path = "../famp-keyring", version = "1.1.0-rc.2" }
-famp-transport = { path = "../famp-transport", version = "1.1.0-rc.2" }
-famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.2" }
+famp-core      = { path = "../famp-core", version = "1.1.0-rc.3" }
+famp-envelope  = { path = "../famp-envelope", version = "1.1.0-rc.3" }
+famp-crypto    = { path = "../famp-crypto", version = "1.1.0-rc.3" }
+famp-keyring   = { path = "../famp-keyring", version = "1.1.0-rc.3" }
+famp-transport = { path = "../famp-transport", version = "1.1.0-rc.3" }
+famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.3" }
 
 axum                     = "0.8"
 axum-server              = { version = "0.8", features = ["tls-rustls-no-provider"] }
@@ -37,6 +37,6 @@ futures-util             = "0.3"
 
 [dev-dependencies]
 tempfile       = "3"
-famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.2" }
+famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.3" }
 tower          = { version = "0.5", features = ["util"] }
 tokio          = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }

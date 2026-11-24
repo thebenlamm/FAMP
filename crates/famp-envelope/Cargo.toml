@@ -15,9 +15,9 @@ workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.2" }
-famp-crypto = { path = "../famp-crypto", version = "1.1.0-rc.2" }
-famp-core = { path = "../famp-core", version = "1.1.0-rc.2" }
+famp-canonical = { path = "../famp-canonical", version = "1.1.0-rc.3" }
+famp-crypto = { path = "../famp-crypto", version = "1.1.0-rc.3" }
+famp-core = { path = "../famp-core", version = "1.1.0-rc.3" }
 
 [dev-dependencies]
 proptest = { workspace = true }
